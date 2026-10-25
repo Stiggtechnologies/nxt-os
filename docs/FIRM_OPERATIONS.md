@@ -2,6 +2,8 @@
 
 Firm Operations is a module in NXT OS for coordinating an accounting group's work. It shares the workspace sign-in, storage infrastructure, and native NXT Ledger. Client and company onboarding is intentionally deferred; the module starts with reusable templates and empty operational lists.
 
+Client/company onboarding is the next product priority, including the group hierarchy, tenant isolation, company switching, verified roles, reviewed imports, and assignments. It is planned rather than implemented in this release. See the [NXT OS product roadmap](PRODUCT_ROADMAP.md) for phases and acceptance criteria.
+
 The implementation is original NXT software informed by the inspected QuickBooks capability inventory. It does not connect to a QuickBooks backend or install an Excel add-in.
 
 ## Observed-feature coverage
@@ -56,7 +58,7 @@ The module uses the existing `Store` abstraction. Set `KV_REST_API_URL` and `KV_
 
 Set a strong `ADMIN_API_KEY` on every deployed workspace. The application's existing open mode permits API access when that key is absent; deploying a sensitive workspace in open mode is unsuitable. The static app uses the same bearer-key session as other NXT modules.
 
-This initial module keeps a bounded state document (up to 8 MiB) with compare-and-exchange writes to prevent concurrent changes from overwriting each other. Bounds include 500 projects, 100 tasks per project, 100 workflows, 1,000 runs, 1,000 approvals, 200 closes, 100 export artifacts, 100 account templates, and 20 stored prior revisions per account template. The audit list retains the latest 1,000 events. Each retained CSV is limited to 10,000 data rows or 1 MiB; narrow report ranges when necessary. Its XLSX rendering is produced on demand and may be larger. Requests that exceed a bound return an error rather than silently dropping active work.
+This initial module keeps a bounded state document (up to 8 MiB) with compare-and-exchange writes to prevent concurrent changes from overwriting each other. Bounds include 500 projects, 100 tasks per project, 100 workflows, 1,000 runs, 1,000 approvals, 200 closes, 100 export artifacts, 100 account templates, and 20 stored prior revisions per account template. The audit list retains the latest 1,000 events. Each retained CSV is limited to 10,000 data rows or 1 MiB; narrow report ranges when necessary. Its XLSX rendering is produced on demand and is capped at 4 MiB for deployment response headroom. Oversized workbook requests return a validation error directing the user to CSV. Requests that exceed a bound return an error rather than silently dropping active work.
 
 Remove unneeded export artifacts through the API/UI as capacity fills. Run/approval archival and a long-term audit archive are not implemented in this initial state model; plan that retention extension before sustained high-volume unattended use. Redis durability does not remove these application-level limits.
 

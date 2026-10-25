@@ -3,7 +3,8 @@
 //! Text is always inlineStr; imported text can never become an Excel formula.
 
 const MAX_CSV: usize = 1024 * 1024;
-const MAX_WORKBOOK: usize = 10 * 1024 * 1024;
+// Keep the binary response below the deployed function's payload ceiling.
+const MAX_WORKBOOK: usize = 4 * 1024 * 1024;
 
 pub(super) fn parse_csv(csv: &str) -> Result<Vec<Vec<String>>, String> {
     if csv.len() > MAX_CSV { return Err("CSV exceeds the 1 MiB report limit".into()); }
@@ -98,7 +99,7 @@ pub(super) fn workbook(csv: &str) -> Result<Vec<u8>, String> {
             }
         }
         sheet.push_str("</row>");
-        if sheet.len() > MAX_WORKBOOK - 20000 { return Err("workbook exceeds the 10 MiB output limit".into()); }
+        if sheet.len() > MAX_WORKBOOK - 20000 { return Err("workbook exceeds the 4 MiB output limit; download CSV instead".into()); }
     }
     sheet.push_str(&format!("</sheetData><autoFilter ref=\"{dimension}\"/></worksheet>"));
     let files = [
@@ -126,7 +127,7 @@ fn crc32(data: &[u8]) -> u32 {
 fn zip(files: &[(&str, String)]) -> Result<Vec<u8>, String> {
     let mut output = Vec::new(); let mut directory = Vec::new();
     for (name, contents) in files {
-        if name.len() > u16::MAX as usize || contents.len() > MAX_WORKBOOK { return Err("invalid workbook ZIP entry size".into()); }
+        if name.len() > u16::MAX as usize || contents.len() > MAX_WORKBOOK { return Err("workbook ZIP entry exceeds the 4 MiB output limit; download CSV instead".into()); }
         let offset = output.len() as u32; let bytes = contents.as_bytes(); let length = bytes.len() as u32; let crc = crc32(bytes);
         u32le(&mut output, 0x04034b50); u16le(&mut output, 20); u16le(&mut output, 0x0800); u16le(&mut output, 0);
         u16le(&mut output, 0); u16le(&mut output, 0x0021); u32le(&mut output, crc); u32le(&mut output, length); u32le(&mut output, length);
@@ -134,7 +135,7 @@ fn zip(files: &[(&str, String)]) -> Result<Vec<u8>, String> {
         u32le(&mut directory, 0x02014b50); u16le(&mut directory, 20); u16le(&mut directory, 20); u16le(&mut directory, 0x0800); u16le(&mut directory, 0);
         u16le(&mut directory, 0); u16le(&mut directory, 0x0021); u32le(&mut directory, crc); u32le(&mut directory, length); u32le(&mut directory, length);
         u16le(&mut directory, name.len() as u16); u16le(&mut directory, 0); u16le(&mut directory, 0); u16le(&mut directory, 0); u16le(&mut directory, 0); u32le(&mut directory, 0); u32le(&mut directory, offset); directory.extend_from_slice(name.as_bytes());
-        if output.len() + directory.len() + 22 > MAX_WORKBOOK { return Err("workbook exceeds the 10 MiB output limit".into()); }
+        if output.len() + directory.len() + 22 > MAX_WORKBOOK { return Err("workbook exceeds the 4 MiB output limit; download CSV instead".into()); }
     }
     let offset = output.len() as u32; let length = directory.len() as u32; output.extend_from_slice(&directory);
     u32le(&mut output, 0x06054b50); u16le(&mut output, 0); u16le(&mut output, 0); u16le(&mut output, files.len() as u16); u16le(&mut output, files.len() as u16); u32le(&mut output, length); u32le(&mut output, offset); u16le(&mut output, 0);
@@ -168,5 +169,16 @@ mod tests {
         assert_eq!(crc32(b"123456789"), 0xcbf43926);
         assert!(workbook("debit_cents\r\n9223372036854775807\r\n").is_err());
         assert!(workbook(&format!("memo\r\n{}\r\n", "x".repeat(32768))).is_err());
+    }
+    #[test]
+    fn expanded_workbook_is_bounded_with_csv_fallback() {
+        let mut csv = (0..64).map(|i| format!("text_{i}")).collect::<Vec<_>>().join(",");
+        csv.push_str("\r\n");
+        let row = format!("{}\r\n", vec!["x"; 64].join(","));
+        for _ in 0..1000 { csv.push_str(&row); }
+        assert!(csv.len() < MAX_CSV);
+        let error = workbook(&csv).unwrap_err();
+        assert!(error.contains("4 MiB"));
+        assert!(error.contains("download CSV instead"));
     }
 }
