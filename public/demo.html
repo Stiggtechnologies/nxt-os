@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo Storefront</title>
+<style>
+  :root { --bg:#fbfaf7; --ink:#1a1a1f; --muted:#666; --line:#e6e3dc; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121215; --ink:#eee; --muted:#9a9aa3; --line:#2a2a30; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, sans-serif; }
+  header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  main { max-width:900px; margin:0 auto; padding:32px 16px; }
+  .products { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:16px; }
+  .p { border:1px solid var(--line); border-radius:14px; padding:18px; }
+  .p .img { aspect-ratio:4/3; border-radius:10px; margin-bottom:10px; }
+  .muted { color:var(--muted); }
+  button { background:var(--ink); color:var(--bg); border:0; border-radius:10px; padding:10px 14px; font:600 14px system-ui, sans-serif; cursor:pointer; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Acme Store (demo)</strong>
+  <span class="muted">Signed in as jane@example.com · <button onclick="ReferralSuite.open()">Refer a friend</button></span>
+</header>
+<main>
+  <h1 style="letter-spacing:-.02em">Everyday goods</h1>
+  <p class="muted">This page embeds <code>widget.js</code> exactly as a merchant would. Use the floating button or "Refer a friend" to get a share link, then open it in a private window to see the friend experience.</p>
+  <div class="products">
+    <div class="p"><div class="img" style="background:#e9d8c4"></div><b>Linen Tote</b><div class="muted">$38</div></div>
+    <div class="p"><div class="img" style="background:#c9d6cf"></div><b>Ceramic Mug</b><div class="muted">$24</div></div>
+    <div class="p"><div class="img" style="background:#d3d0e6"></div><b>Wool Throw</b><div class="muted">$120</div></div>
+  </div>
+</main>
+<script src="/widget.js" data-email="jane@example.com" data-name="Jane Doe" async></script>
+</body>
+</html>

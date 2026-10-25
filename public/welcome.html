@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>You've got a gift</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#15151a; --muted:#5b5b66; --line:#e3e1dc; --accent:#15151a; --ok:#0b7a43; --err:#b00020; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111114; --card:#1b1b20; --ink:#f2f2f5; --muted:#a3a3ad; --line:#2c2c33; --accent:#f2f2f5; --ok:#3ecf8e; --err:#ff6b81; } }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; padding:16px; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, sans-serif; }
+  .card { width:100%; max-width:440px; background:var(--card); border:1px solid var(--line); border-radius:18px; padding:32px 28px; text-align:center; }
+  .gift { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+  h1 { margin:8px 0 10px; font-size:30px; line-height:1.15; letter-spacing:-.02em; }
+  p { color:var(--muted); margin:0 0 20px; }
+  form { display:flex; gap:8px; }
+  input { flex:1; min-width:0; padding:12px 14px; border:1px solid var(--line); border-radius:10px; font:inherit; background:transparent; color:inherit; }
+  button { padding:12px 16px; border:0; border-radius:10px; background:var(--accent); color:var(--bg); font:600 15px system-ui, sans-serif; cursor:pointer; }
+  .coupon { margin-top:8px; padding:18px; border:2px dashed var(--ok); border-radius:12px; font:700 24px ui-monospace, monospace; letter-spacing:.06em; color:var(--ok); }
+  .err { color:var(--err); font-size:14px; margin-top:10px; min-height:1em; }
+</style>
+</head>
+<body>
+<main class="card" id="card">
+  <div class="gift" id="from">A gift for you</div>
+  <h1 id="headline">Loading your offer…</h1>
+  <p id="copy"></p>
+  <form id="claim" hidden>
+    <input id="email" type="email" required placeholder="you@example.com" aria-label="Email address">
+    <button>Claim</button>
+  </form>
+  <div class="err" id="err"></div>
+</main>
+<script>
+  const ref = new URLSearchParams(location.search).get("ref") || (document.cookie.match(/(?:^|; )rs_ref=([^;]+)/) || [])[1];
+  const $ = (id) => document.getElementById(id);
+  async function api(path, body) {
+    const r = await fetch(path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : undefined);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    return j;
+  }
+  (async () => {
+    if (!ref) { $("headline").textContent = "This referral link is missing its code."; return; }
+    try {
+      const d = await api("/api/public/referrer/" + encodeURIComponent(ref));
+      const amount = d.offer.headline.replace(/^Give (.*), Get .*$/, "$1");
+      $("from").textContent = d.referrer_first_name ? `A gift from ${d.referrer_first_name}` : "A gift for you";
+      $("headline").textContent = `${amount} off your first order`;
+      $("copy").textContent = d.offer.friend_copy + " Enter your email to get your code.";
+      $("claim").hidden = false;
+    } catch (e) { $("headline").textContent = "This referral link isn't valid."; }
+  })();
+  $("claim").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    $("err").textContent = "";
+    try {
+      const g = await api("/api/public/claim", { code: ref, email: $("email").value });
+      $("claim").replaceWith(Object.assign(document.createElement("div"), { className: "coupon", textContent: g.coupon_code || "Reward added to your account" }));
+      $("copy").textContent = "Use this code at checkout on your first order.";
+    } catch (e) { $("err").textContent = e.message; }
+  });
+</script>
+</body>
+</html>

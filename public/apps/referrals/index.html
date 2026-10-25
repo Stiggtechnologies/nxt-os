@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NXT Referrals</title>
+<link rel="stylesheet" href="/nxt/brand.css">
+<style>
+  :root { --chip: var(--panel-2); --ok: var(--good); }
+  .embedded #logout, .embedded #storage, .embedded #login { display:none !important; }
+  * { box-sizing:border-box; }
+  body { margin:0; }
+  header { display:flex; align-items:center; gap:16px; padding:14px 24px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; display:flex; align-items:center; gap:8px; }
+  header h1 svg { width:24px; height:24px; }
+  nav { display:flex; gap:4px; flex-wrap:wrap; }
+  nav button { background:none; border:0; padding:7px 12px; border-radius:8px; color:var(--muted); font:500 14px var(--ui); cursor:pointer; }
+  nav button[aria-selected="true"] { background:var(--chip); color:var(--ink); }
+  .spacer { flex:1; }
+  .pill { font-size:12px; padding:3px 9px; border-radius:999px; background:var(--chip); color:var(--muted); }
+  main { max-width:1180px; margin:0 auto; padding:24px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:12px; }
+  .tile, .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .tile .k { color:var(--muted); font-size:12px; }
+  .tile .v { font:600 24px var(--display); color:var(--ink); letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .panel { margin-top:16px; overflow-x:auto; }
+  .panel h2 { margin:0 0 12px; font-size:16px; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { font-weight:500; color:var(--muted); font-size:12px; }
+  td.num, th.num { text-align:right; }
+  .st { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--chip); }
+  .st.approved { color:var(--ok); } .st.rejected { color:var(--bad); } .st.organic { color:var(--muted); }
+  form.cols { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:14px 18px; }
+  label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
+  input, select, textarea { font:14px var(--ui); padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }
+  button.primary { background:var(--accent); color:var(--accent-ink); border:0; border-radius:8px; padding:9px 16px; font:600 14px var(--ui); cursor:pointer; }
+  button.ghost { background:var(--chip); color:var(--ink); border:0; border-radius:8px; padding:9px 14px; cursor:pointer; font:500 14px var(--ui); }
+  pre { background:var(--chip); padding:12px; border-radius:8px; overflow-x:auto; font-size:12.5px; }
+  .bars { display:flex; flex-direction:column; gap:8px; height:auto; align-items:stretch; padding-top:0; }
+  .bar { display:grid; grid-template-columns:90px 1fr 50px; align-items:center; gap:10px; font-size:13px; }
+  .bar i { display:block; height:10px; border-radius:4px; background:var(--accent); min-width:2px; }
+  .bar span:last-child { text-align:right; font-variant-numeric:tabular-nums; color:var(--muted); }
+  .msg { margin-top:10px; font-size:13px; } .msg.err { color:var(--bad); } .msg.ok { color:var(--ok); }
+  .login { max-width:420px; margin:12vh auto; }
+  .empty { color:var(--muted); padding:20px 0; text-align:center; }
+  [hidden] { display:none !important; }
+  @media (max-width:640px) { main { padding:16px; } header { padding:12px 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="brand">NXT Referrals</h1>
+  <nav role="tablist" id="tabs" hidden>
+    <button data-tab="overview" aria-selected="true">Overview</button>
+    <button data-tab="advocates">Advocates</button>
+    <button data-tab="conversions">Conversions</button>
+    <button data-tab="rewards">Rewards</button>
+    <button data-tab="loyalty">Loyalty</button>
+    <button data-tab="settings">Settings</button>
+    <button data-tab="install">Install</button>
+  </nav>
+  <span class="spacer"></span>
+  <span class="pill" id="storage"></span>
+  <button class="ghost" id="logout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login" class="panel login" hidden>
+    <h2>Sign in</h2>
+    <p style="color:var(--muted);margin-top:0">Enter the <code>ADMIN_API_KEY</code> configured for this deployment.</p>
+    <form id="loginForm" style="display:flex;gap:8px">
+      <input id="key" type="password" placeholder="Admin API key" style="flex:1" required aria-label="Admin API key">
+      <button class="primary">Sign in</button>
+    </form>
+    <div class="msg err" id="loginErr"></div>
+  </section>
+
+  <section data-view="overview" hidden>
+    <div class="grid" id="tiles"></div>
+    <div class="panel"><h2>Shares by channel</h2><div class="bars" id="channels"></div></div>
+    <div class="panel">
+      <h2>Simulate activity</h2>
+      <p style="color:var(--muted);margin-top:0">Record a purchase the way your store backend would via <code>POST /api/track/purchase</code>.</p>
+      <form class="cols" id="simForm">
+        <label>Order ID<input name="order_id" required></label>
+        <label>Customer email<input name="email" type="email" required></label>
+        <label>Amount<input name="amount" type="number" step="0.01" min="0" required value="75"></label>
+        <label>Referral code (optional)<input name="referral_code"></label>
+        <label>Coupon code (optional)<input name="coupon_code"></label>
+        <label style="justify-content:flex-end"><button class="primary">Track purchase</button></label>
+      </form>
+      <div class="msg" id="simMsg"></div>
+    </div>
+  </section>
+
+  <section data-view="advocates" hidden>
+    <div class="panel">
+      <h2>Enroll an advocate</h2>
+      <form id="advForm" style="display:flex;gap:8px;flex-wrap:wrap">
+        <input name="name" placeholder="Name"><input name="email" type="email" placeholder="Email" required>
+        <button class="primary">Create link</button>
+      </form>
+      <div class="msg" id="advMsg"></div>
+    </div>
+    <div class="panel"><h2>Advocates</h2><div id="advTable"></div></div>
+  </section>
+
+  <section data-view="conversions" hidden><div class="panel"><h2>Conversions</h2><div id="convTable"></div></div></section>
+  <section data-view="rewards" hidden><div class="panel"><h2>Rewards issued</h2><div id="rwdTable"></div></div></section>
+
+  <section data-view="loyalty" hidden>
+    <div class="panel">
+      <h2>Customer lookup</h2>
+      <form id="custForm" style="display:flex;gap:8px;flex-wrap:wrap">
+        <input name="email" type="email" placeholder="customer@example.com" required>
+        <button class="primary">Look up</button>
+        <button class="ghost" type="button" id="signupBtn">Record signup</button>
+      </form>
+      <div id="custOut"></div>
+      <form id="redeemForm" style="display:flex;gap:8px;margin-top:12px" hidden>
+        <input name="points" type="number" min="1" placeholder="Points to redeem" required>
+        <button class="primary">Redeem for coupon</button>
+      </form>
+      <div class="msg" id="custMsg"></div>
+    </div>
+  </section>
+
+  <section data-view="settings" hidden>
+    <div class="panel">
+      <h2>Program settings</h2>
+      <form class="cols" id="settingsForm">
+        <label>Brand name<input name="brand_name"></label>
+        <label>Currency symbol<input name="currency_symbol"></label>
+        <label>Friend landing URL<input name="landing_url"></label>
+        <label>Advocate reward type<select name="advocate_reward.kind"></select></label>
+        <label>Advocate reward amount<input name="advocate_reward.amount" type="number" step="0.01" min="0"></label>
+        <label>Friend incentive type<select name="friend_incentive.kind"></select></label>
+        <label>Friend incentive amount<input name="friend_incentive.amount" type="number" step="0.01" min="0"></label>
+        <label>Minimum order for reward<input name="min_order_amount" type="number" step="0.01" min="0"></label>
+        <label>Max rewards per advocate (0 = ∞)<input name="max_rewards_per_advocate" type="number" min="0"></label>
+        <label>Loyalty enabled<select name="loyalty_enabled"><option value="true">Yes</option><option value="false">No</option></select></label>
+        <label>Points per currency unit spent<input name="points_per_currency_unit" type="number" step="0.1" min="0"></label>
+        <label>Signup bonus points<input name="signup_points" type="number" min="0"></label>
+        <label>Points per 1 unit of discount<input name="points_per_redemption_unit" type="number" min="1"></label>
+        <label>Webhook URL<input name="webhook_url" placeholder="https://your-store.com/hooks/referrals"></label>
+        <label>Webhook signing secret<input name="webhook_secret"></label>
+      </form>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="primary" id="saveSettings">Save</button>
+        <button class="ghost" id="testHook">Send test webhook</button>
+      </div>
+      <div class="msg" id="setMsg"></div>
+    </div>
+  </section>
+
+  <section data-view="install" hidden>
+    <div class="panel"><h2>1. Add the widget to your storefront</h2><pre id="snipWidget"></pre>
+      <p style="color:var(--muted)">Set <code>WIDGET_SIGNING_SECRET</code> and pass <code>data-signature</code> (hex HMAC-SHA256 of the lowercase email) to stop anyone fetching another customer's link.</p></div>
+    <div class="panel"><h2>2. Track purchases from your backend</h2><pre id="snipPurchase"></pre></div>
+    <div class="panel"><h2>3. Receive webhooks</h2>
+      <p style="color:var(--muted);margin-top:0">Events: <code>advocate.enrolled</code>, <code>reward.issued</code>, <code>conversion.tracked</code>. Create the coupon code from <code>reward.issued</code> in your store. Verify <code>X-RS-Signature: sha256=HMAC(secret, body)</code>.</p></div>
+    <div class="panel"><h2>Try it</h2><p style="margin:0"><a href="/demo.html" style="color:var(--accent)">Open the demo storefront →</a></p></div>
+  </section>
+</main>
+
+<script src="/nxt/ui.js"></script>
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
+let KEY = NXT.key.get();
+try { const t = localStorage.getItem("nxt_theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+document.getElementById("brand").innerHTML = NXT.MARK + "NXT Referrals";
+if (window.parent !== window) document.documentElement.classList.add("embedded");
+const KINDS = { coupon_fixed: "Coupon (fixed)", coupon_percent: "Coupon (%)", points: "Points", credit: "Store credit" };
+let settings = null;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "content-type": "application/json", authorization: "Bearer " + KEY, ...(opts.headers || {}) } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || "HTTP " + r.status); e.status = r.status; throw e; }
+  return j;
+}
+const money = (v) => (settings?.currency_symbol || "$") + Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const date = (s) => s ? new Date(s).toLocaleString() : "";
+const rewardLabel = (r) => r.kind === "coupon_percent" ? r.amount + "%" : r.kind === "points" ? r.amount + " pts" : money(r.amount);
+
+function table(rows, cols) {
+  if (!rows.length) return '<div class="empty">Nothing here yet.</div>';
+  return "<table><thead><tr>" + cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.h}</th>`).join("") + "</tr></thead><tbody>" +
+    rows.map((r) => "<tr>" + cols.map((c) => `<td class="${c.num ? "num" : ""}">${c.f(r)}</td>`).join("") + "</tr>").join("") + "</tbody></table>";
+}
+
+const views = {
+  async overview() {
+    const a = await api("/api/admin/analytics");
+    const t = a.totals, pct = (v) => (v * 100).toFixed(1) + "%";
+    $("#storage").textContent = "storage: " + a.storage;
+    $("#tiles").innerHTML = [
+      ["Advocates", t.advocates], ["Link clicks", t.clicks], ["Shares", t.shares], ["Referred orders", t.referrals],
+      ["Referred revenue", money(t.referred_revenue)], ["Total revenue", money(t.revenue)],
+      ["Click → order", pct(a.rates.click_to_referral)], ["Referred share", pct(a.rates.referred_revenue_share)],
+      ["Rejected (fraud)", t.rejected], ["Rewards issued", t.rewards], ["Points issued", t.points_issued], ["Points redeemed", t.points_redeemed],
+    ].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join("");
+    const ch = Object.entries(a.share_channels), max = Math.max(1, ...ch.map(([, v]) => v));
+    $("#channels").innerHTML = ch.map(([k, v]) => `<div class="bar"><span>${k}</span><i style="width:${(v / max) * 100}%"></i><span>${v}</span></div>`).join("");
+  },
+  async advocates() {
+    const rows = await api("/api/admin/advocates");
+    $("#advTable").innerHTML = table(rows, [
+      { h: "Name", f: (r) => esc(r.name || "—") }, { h: "Email", f: (r) => esc(r.email) }, { h: "Code", f: (r) => `<code>${esc(r.code)}</code>` },
+      { h: "Clicks", num: 1, f: (r) => r.clicks }, { h: "Shares", num: 1, f: (r) => r.shares }, { h: "Referrals", num: 1, f: (r) => r.referrals },
+      { h: "Revenue", num: 1, f: (r) => money(r.referred_revenue) }, { h: "Joined", f: (r) => date(r.created_at) },
+    ]);
+  },
+  async conversions() {
+    const rows = await api("/api/admin/conversions");
+    $("#convTable").innerHTML = table(rows, [
+      { h: "Order", f: (r) => esc(r.order_id) }, { h: "Customer", f: (r) => esc(r.email) }, { h: "Amount", num: 1, f: (r) => money(r.amount) },
+      { h: "Status", f: (r) => `<span class="st ${r.status}">${r.status}</span>` }, { h: "Reason", f: (r) => esc(r.reason || "") },
+      { h: "Code", f: (r) => esc(r.referral_code || "") }, { h: "Points", num: 1, f: (r) => r.points_awarded }, { h: "When", f: (r) => date(r.created_at) },
+    ]);
+  },
+  async rewards() {
+    const rows = await api("/api/admin/rewards");
+    $("#rwdTable").innerHTML = table(rows, [
+      { h: "Recipient", f: (r) => esc(r.email) }, { h: "Role", f: (r) => r.role }, { h: "Reward", f: (r) => rewardLabel(r.reward) },
+      { h: "Coupon", f: (r) => r.coupon_code ? `<code>${esc(r.coupon_code)}</code>` : "—" }, { h: "Referral", f: (r) => esc(r.referral_code || "") },
+      { h: "When", f: (r) => date(r.created_at) },
+    ]);
+  },
+  async loyalty() {},
+  async settings() {
+    settings = await api("/api/admin/settings");
+    const f = $("#settingsForm");
+    f.querySelectorAll("select[name$='.kind']").forEach((s) => { s.innerHTML = Object.entries(KINDS).map(([v, l]) => `<option value="${v}">${l}</option>`).join(""); });
+    f.querySelectorAll("[name]").forEach((el) => {
+      const v = el.name.split(".").reduce((o, k) => o?.[k], settings);
+      el.value = String(v ?? "");
+    });
+  },
+  async install() {
+    const o = location.origin;
+    $("#snipWidget").textContent = `<script src="${o}/widget.js"\n        data-email="{{ customer.email }}"\n        data-name="{{ customer.name }}" async><\/script>`;
+    $("#snipPurchase").textContent = `curl -X POST ${o}/api/track/purchase \\\n  -H "Authorization: Bearer $ADMIN_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"order_id":"1001","email":"friend@example.com","amount":89.00,\n       "coupon_code":"RS-AB12-CD34","referral_code":"<from rs_ref cookie>"}'`;
+  },
+};
+
+async function show(tab) {
+  if (window.parent !== window) window.parent.postMessage({ nxt: "view", view: tab }, location.origin);
+  if (location.hash.slice(1) !== tab) history.replaceState(null, "", "#" + tab);
+  document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === tab));
+  document.querySelectorAll("[data-view]").forEach((s) => (s.hidden = s.dataset.view !== tab));
+  try { await views[tab](); } catch (e) { if (e.status === 401) return signOut(); console.error(e); }
+}
+
+function signOut() { KEY = ""; NXT.key.clear(); if (window.parent !== window) window.parent.postMessage({ nxt: "signed-out" }, location.origin); boot(); }
+
+async function boot() {
+  const authed = !!KEY;
+  $("#login").hidden = authed; $("#tabs").hidden = !authed; $("#logout").hidden = !authed;
+  if (!authed) { document.querySelectorAll("[data-view]").forEach((s) => (s.hidden = true)); return; }
+  try { settings = await api("/api/admin/settings"); } catch (e) { $("#loginErr").textContent = e.message; return signOut(); }
+  const want = location.hash.slice(1);
+  show(views[want] ? want : "overview");
+}
+window.addEventListener("hashchange", () => { const t = location.hash.slice(1); if (views[t] && KEY) show(t); });
+
+$("#loginForm").onsubmit = async (e) => {
+  e.preventDefault(); KEY = $("#key").value.trim();
+  try { await api("/api/admin/settings"); NXT.key.set(KEY); $("#loginErr").textContent = ""; boot(); }
+  catch (err) { $("#loginErr").textContent = err.message; KEY = ""; }
+};
+$("#logout").onclick = signOut;
+$("#tabs").onclick = (e) => { const t = e.target.closest("button")?.dataset.tab; if (t) show(t); };
+
+const formJson = (f) => Object.fromEntries(new FormData(f).entries());
+const say = (el, text, ok) => { el.textContent = text; el.className = "msg " + (ok ? "ok" : "err"); };
+
+$("#simForm").onsubmit = async (e) => {
+  e.preventDefault(); const d = formJson(e.target); d.amount = Number(d.amount);
+  ["referral_code", "coupon_code"].forEach((k) => { if (!d[k]) delete d[k]; });
+  try { const c = await api("/api/track/purchase", { method: "POST", body: JSON.stringify(d) }); say($("#simMsg"), `Tracked: ${c.status}${c.reason ? " (" + c.reason + ")" : ""}, +${c.points_awarded} points`, c.status !== "rejected"); views.overview(); }
+  catch (err) { say($("#simMsg"), err.message); }
+};
+$("#advForm").onsubmit = async (e) => {
+  e.preventDefault();
+  try { const r = await api("/api/admin/advocates", { method: "POST", body: JSON.stringify(formJson(e.target)) }); say($("#advMsg"), "Share link: " + r.share_url, true); views.advocates(); }
+  catch (err) { say($("#advMsg"), err.message); }
+};
+let custEmail = "";
+async function loadCustomer(email) {
+  custEmail = email;
+  const d = await api("/api/admin/customers/" + encodeURIComponent(email));
+  const c = d.customer;
+  $("#custOut").innerHTML = `<div class="grid" style="margin-top:14px">${[["Points", c.points], ["Orders", c.orders], ["Spent", money(c.total_spent)], ["Referred by", c.referred_by || "—"]].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>` +
+    `<h2 style="font-size:14px;margin:16px 0 6px">Ledger</h2>` + table(d.ledger, [{ h: "Change", num: 1, f: (r) => (r.delta > 0 ? "+" : "") + r.delta }, { h: "Balance", num: 1, f: (r) => r.balance }, { h: "Reason", f: (r) => esc(r.reason) }, { h: "When", f: (r) => date(r.created_at) }]);
+  $("#redeemForm").hidden = false;
+}
+$("#custForm").onsubmit = async (e) => { e.preventDefault(); try { await loadCustomer(formJson(e.target).email); $("#custMsg").textContent = ""; } catch (err) { say($("#custMsg"), err.message); } };
+$("#signupBtn").onclick = async () => {
+  const email = $("#custForm [name=email]").value; if (!email) return;
+  try { await api("/api/track/signup", { method: "POST", body: JSON.stringify({ email }) }); await loadCustomer(email); say($("#custMsg"), "Signup recorded", true); } catch (err) { say($("#custMsg"), err.message); }
+};
+$("#redeemForm").onsubmit = async (e) => {
+  e.preventDefault();
+  try { const g = await api("/api/loyalty/redeem", { method: "POST", body: JSON.stringify({ email: custEmail, points: Number(formJson(e.target).points) }) }); say($("#custMsg"), `Coupon ${g.coupon_code} for ${rewardLabel(g.reward)}`, true); loadCustomer(custEmail); }
+  catch (err) { say($("#custMsg"), err.message); }
+};
+$("#saveSettings").onclick = async () => {
+  const f = $("#settingsForm"), s = structuredClone(settings);
+  f.querySelectorAll("[name]").forEach((el) => {
+    const path = el.name.split("."), last = path.pop(), obj = path.reduce((o, k) => o[k], s);
+    obj[last] = el.type === "number" ? Number(el.value) : el.name === "loyalty_enabled" ? el.value === "true" : el.value;
+  });
+  try { settings = await api("/api/admin/settings", { method: "PUT", body: JSON.stringify(s) }); say($("#setMsg"), "Saved", true); } catch (err) { say($("#setMsg"), err.message); }
+};
+$("#testHook").onclick = async () => {
+  try { const r = await api("/api/admin/webhook/test", { method: "POST" }); say($("#setMsg"), r.delivered ? "Delivered (HTTP " + r.status + ")" : "Delivery failed", r.delivered); } catch (err) { say($("#setMsg"), err.message); }
+};
+boot();
+</script>
+</body>
+</html>
