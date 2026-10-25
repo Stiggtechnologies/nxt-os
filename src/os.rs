@@ -16,6 +16,7 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct Os {
     pub ledger: Arc<Ledger>,
+    pub firm: Arc<crate::firm::Firm>,
     pub referrals: Arc<Referrals>,
 }
 
@@ -53,6 +54,7 @@ async fn status(State(os): State<Os>) -> Json<Value> {
         "storage": os.ledger.store.backend_name(),
         "apps": [
             { "id": "ledger", "name": "NXT Ledger", "path": "/apps/ledger/" },
+            { "id": "firm", "name": "Firm Operations", "path": "/apps/firm/" },
             { "id": "referrals", "name": "NXT Referrals", "path": "/apps/referrals/" },
         ],
     }))
@@ -132,14 +134,16 @@ async fn insights(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
 // ---- assistant ----------------------------------------------------------------
 
 const SYSTEM_PROMPT: &str = "You are NXT, the assistant built into NXT OS: an operating system for running a Canadian business. \
-Two apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports) \
-and NXT Referrals (customer referral and loyalty programs).
+Three apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports), \
+Firm Operations (projects, templates, automated internal work, human approvals, reports and books close), and NXT Referrals (customer referral and loyalty programs).
 
 How you work:
 - Answer from the user's live data. Use the tools to look things up; never estimate or invent figures.
 - Every money value returned by tools is an integer number of cents in CAD. Present amounts in dollars, e.g. $12,345.67.
-- Your access is read-only. When the user wants to create or change something (send an invoice, record a payment, \
-categorize a transaction), call open_app to take them to the right screen and tell them what to do there.
+- Read data with the lookup tools. You may prepare an internal task or report with propose_firm_action only when requested. \
+That tool queues an immutable proposal for human approval; it does not execute it. Use a unique idempotency_key per intended action and reuse it for retries. \
+Never say a proposal was executed or approved. Open Firm Operations at approvals for the user to review it. \
+For accounting changes (send an invoice, record a payment, categorize a transaction), call open_app to take the user to the right screen.
 - Dates are ISO (YYYY-MM-DD). If the user gives a relative period like \"last quarter\", resolve it against today's date from get_dashboard.
 - GST/HST figures are working papers, not filed returns; say so when asked about filing.
 
@@ -200,12 +204,36 @@ fn tools() -> Value {
             "input_schema": { "type": "object", "properties": {} }
         },
         {
+            "name": "get_firm_summary",
+            "description": "Read-only overview of firm operations: projects, open tasks, templates, workflows, pending human approvals, close checklists, and workflow runs. Does not approve, enable or execute actions.",
+            "input_schema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "propose_firm_action",
+            "description": "Prepare an internal task or native ledger report for human review. Always creates a pending proposal, never executes, approves, sends messages, posts accounting entries or connects external accounts. Reuse the same idempotency key for retries of the same action.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Short description of the proposed work" },
+                    "idempotency_key": { "type": "string", "description": "Unique action key; stable across retries" },
+                    "action": {
+                        "oneOf": [
+                            { "type": "object", "properties": { "kind": {"const":"create_task"}, "title":{"type":"string"}, "project_id":{"type":"string"} }, "required":["kind","title"], "additionalProperties":false },
+                            { "type": "object", "properties": { "kind":{"const":"generate_report"}, "report":{"type":"string","enum":["profit-loss","balance-sheet","trial-balance","general-ledger","journal"]}, "from":{"type":"string"}, "to":{"type":"string"} }, "required":["kind","report"], "additionalProperties":false }
+                        ]
+                    }
+                },
+                "required": ["name","idempotency_key","action"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "open_app",
             "description": "Opens an NXT OS app at a screen so the user can act. Ledger views: dashboard, invoices, invoices/new, bills, bills/new, customers, vendors, banking, accounts, journal, reports/profit-loss, reports/balance-sheet, reports/trial-balance, reports/ar-aging, reports/ap-aging, reports/sales-tax, reports/general-ledger, settings. Referrals views: overview, advocates, conversions, rewards, loyalty, settings.",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "app": { "type": "string", "enum": ["ledger", "referrals"] },
+                    "app": { "type": "string", "enum": ["ledger", "firm", "referrals"] },
                     "view": { "type": "string" }
                 },
                 "required": ["app"]
@@ -232,6 +260,13 @@ fn s(v: &Value, k: &str) -> Option<String> {
 async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) -> Result<Value, String> {
     let l = &os.ledger;
     match name {
+        "get_firm_summary" => os.firm.summary().await.map_err(|e| e.1),
+        "propose_firm_action" => {
+            let proposal = serde_json::from_value::<crate::firm::models::ProposalInput>(input.clone()).map_err(|e| e.to_string())?;
+            let run = os.firm.propose_action(proposal).await.map_err(|e| e.1)?;
+            actions.push(json!({"type":"open_app","app":"firm","view":"approvals"}));
+            Ok(json!({"proposal":run,"executed":false,"requires_human_approval":true}))
+        },
         "get_dashboard" => l.dashboard().await.map_err(|e| format!("{e:?}")),
         "run_report" => {
             let report = s(input, "report").ok_or("report is required")?;
@@ -302,8 +337,8 @@ async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) 
         }
         "open_app" => {
             let app = s(input, "app").ok_or("app is required")?;
-            if app != "ledger" && app != "referrals" {
-                return Err("app must be ledger or referrals".into());
+            if app != "ledger" && app != "firm" && app != "referrals" {
+                return Err("app must be ledger, firm or referrals".into());
             }
             actions.push(json!({ "type": "open_app", "app": app, "view": s(input, "view") }));
             Ok(json!({ "opened": true }))
@@ -505,4 +540,30 @@ async fn sample_data(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
         }
     }
     Ok(Json(json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod firm_tool_tests {
+    use super::*;
+    use crate::{firm::Firm, store::Store};
+
+    #[tokio::test]
+    async fn assistant_can_propose_but_cannot_approve_or_execute() {
+        let ledger = Arc::new(Ledger::new(Store::memory()));
+        let firm = Arc::new(Firm::new(Store::memory(), ledger.clone()));
+        let os = Os { ledger, firm, referrals: Arc::new(Referrals::new(Store::memory())) };
+        let mut actions = Vec::new();
+        let input = json!({"name":"Prepare review checklist","idempotency_key":"assistant-test-once","action":{"kind":"create_task","title":"Review reporting package"}});
+        let response = run_tool(&os, "propose_firm_action", &input, &mut actions).await.unwrap();
+        assert_eq!(response["executed"], false);
+        assert_eq!(response["proposal"]["status"], "proposed");
+        assert_eq!(response["requires_human_approval"], true);
+        assert_eq!(actions[0]["view"], "approvals");
+        let summary = run_tool(&os, "get_firm_summary", &json!({}), &mut actions).await.unwrap();
+        assert_eq!(summary["pending_approvals"], 1);
+        assert_eq!(summary["open_tasks"], 0);
+        let repeat = run_tool(&os, "propose_firm_action", &input, &mut actions).await.unwrap();
+        assert_eq!(response["proposal"]["id"], repeat["proposal"]["id"]);
+        assert!(run_tool(&os, "approve_firm_action", &json!({}), &mut actions).await.is_err());
+    }
 }

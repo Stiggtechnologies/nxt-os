@@ -1,10 +1,11 @@
 # NXT OS
 
-An AI-native operating system for running a Canadian business. One Rust function on Vercel hosts three apps:
+An AI-native operating system for running a Canadian business. One Rust function on Vercel hosts the OS shell and three business modules:
 
 | App | What it does |
 |---|---|
 | **NXT OS shell** (`/`) | Workspace sign-in, home screen with live KPIs and prioritized insights, app dock, ⌘K command bar, and **Ask NXT**, an assistant that answers questions from your live data and opens the right screen. |
+| **Firm Operations** (`/apps/firm/`) | Projects and reusable checklists, scheduled internal workflows, immutable human approval proposals, close tracking, report exports, account-template previews, and an audit trail. Clients and companies can be introduced later. |
 | **NXT Ledger** (`/apps/ledger/`) | Double-entry accounting: chart of accounts, journal entries, invoices and bills with per-line GST/HST, payments (auto-applied to the oldest open documents), expenses, deposits, transfers, GST/HST remittances, bank CSV import with learned categorization rules, reconciliation, period close, audit log. |
 | **NXT Referrals** (`/apps/referrals/`) | Referral and loyalty programs: advocate links, friend incentives, attribution, fraud checks, points, signed webhooks, an embeddable widget (`/widget.js`) and a friend landing page (`/welcome.html`). |
 
@@ -29,7 +30,15 @@ One click above, or import manually at https://vercel.com/new. Then:
 
 ## Ask NXT
 
-Ask NXT calls the Claude Messages API with read-only tools: dashboard, reports, invoice and bill lists, accounts, contacts, referral performance, and `open_app`. It never edits the books. When you ask it to do something, it takes you to the right screen. Refusal fallbacks (`fallbacks: "default"`) are enabled.
+Ask NXT calls the Claude Messages API with lookup tools for dashboard, reports, invoice and bill lists, accounts, contacts, referral performance, and firm operations. It can prepare an internal task or report proposal for the human approval queue; it cannot approve or execute that proposal. Accounting changes still open the relevant Ledger screen. It never edits the books. Refusal fallbacks (`fallbacks: "default"`) are enabled.
+
+## Firm Operations
+
+Open **Firm Operations** from the OS dock or command palette. The module uses the existing workspace authentication, Ledger and storage provider. Its NXT gold/black styling follows [NXT Corporation](https://www.nxtcorporation.ca/); workflows and screen structure were mapped from observed firm-management capabilities and implemented independently.
+
+Reports use native NXT Ledger data. External QuickBooks OAuth, external Excel add-in connections, and client/company onboarding are not configured by this module. CSV spreadsheet feeds are read-only. The implementation does not claim full QuickBooks feature parity.
+
+See [module operations and feature coverage](docs/FIRM_OPERATIONS.md) for API contracts, acceptance checks, storage bounds, scheduler setup and the current shared-credential access model. To dispatch due workflows continuously, run `scripts/firm-worker.mjs` with `NXT_OS_URL` and `ADMIN_API_KEY` in a supervised Node.js process, or invoke it with `--once` from an external scheduler. No background schedule or live integration is silently activated by deployment.
 
 ## Develop
 

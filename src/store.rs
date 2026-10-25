@@ -124,6 +124,28 @@ impl Store {
         }
     }
 
+    /// Atomically publish an update only while the previously read value still
+    /// matches. Used by Firm Operations to commit approvals and their effects
+    /// together, including when several serverless instances handle requests.
+    pub async fn compare_exchange(&self, key: &str, expected: Option<&str>, value: &str) -> StoreResult<bool> {
+        let key = format!("{PREFIX}{key}");
+        match self {
+            Store::Memory(m) => {
+                let mut m = m.lock().map_err(|_| "storage lock poisoned".to_string())?;
+                if m.strings.get(&key).map(String::as_str) != expected {
+                    return Ok(false);
+                }
+                m.strings.insert(key, value.to_string());
+                Ok(true)
+            }
+            Store::Redis { .. } => {
+                let script = "local current = redis.call('GET', KEYS[1]); if (ARGV[1] == 'missing' and not current) or (ARGV[1] == 'present' and current == ARGV[2]) then redis.call('SET', KEYS[1], ARGV[3]); return 1; end; return 0;";
+                let result = self.redis(vec![json!("EVAL"), json!(script), json!(1), json!(key), json!(if expected.is_some() { "present" } else { "missing" }), json!(expected.unwrap_or("")), json!(value)]).await?;
+                Ok(result.as_i64() == Some(1))
+            }
+        }
+    }
+
     pub async fn incr_by(&self, key: &str, by: i64) -> StoreResult<i64> {
         let key = format!("{PREFIX}{key}");
         match self {
@@ -257,4 +279,33 @@ fn strings(v: Value) -> Vec<String> {
     v.as_array()
         .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod compare_exchange_tests {
+    use super::Store;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn missing_empty_and_stale_values_are_distinct() {
+        let store = Store::memory();
+        assert!(store.compare_exchange("firm", None, "").await.unwrap());
+        assert!(!store.compare_exchange("firm", None, "lost").await.unwrap());
+        assert!(store.compare_exchange("firm", Some(""), "approved").await.unwrap());
+        assert!(!store.compare_exchange("firm", Some(""), "rejected").await.unwrap());
+        assert_eq!(store.get("firm").await.unwrap().as_deref(), Some("approved"));
+    }
+
+    #[tokio::test]
+    async fn only_one_concurrent_approval_can_publish() {
+        let store = Arc::new(Store::memory());
+        store.set("proposal", "pending").await.unwrap();
+        let a = store.clone();
+        let b = store.clone();
+        let (a, b) = tokio::join!(
+            async move { a.compare_exchange("proposal", Some("pending"), "approved").await.unwrap() },
+            async move { b.compare_exchange("proposal", Some("pending"), "rejected").await.unwrap() }
+        );
+        assert_ne!(a, b, "one decision must win without overwriting it");
+    }
 }
