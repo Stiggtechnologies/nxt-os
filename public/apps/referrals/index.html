@@ -257,14 +257,22 @@ async function show(tab) {
 function signOut() { KEY = ""; NXT.key.clear(); if (window.parent !== window) window.parent.postMessage({ nxt: "signed-out" }, location.origin); boot(); }
 
 async function boot() {
-  const authed = !!KEY;
-  $("#login").hidden = authed; $("#tabs").hidden = !authed; $("#logout").hidden = !authed;
-  if (!authed) { document.querySelectorAll("[data-view]").forEach((s) => (s.hidden = true)); return; }
-  try { settings = await api("/api/admin/settings"); } catch (e) { $("#loginErr").textContent = e.message; return signOut(); }
+  // Try without asking first: open workspaces need no key.
+  try { settings = await api("/api/admin/settings"); }
+  catch (e) {
+    if (e.status === 401) {
+      $("#login").hidden = false; $("#tabs").hidden = true; $("#logout").hidden = true;
+      document.querySelectorAll("[data-view]").forEach((s) => (s.hidden = true));
+      if (KEY) $("#loginErr").textContent = e.message;
+      return;
+    }
+    $("#loginErr").textContent = e.message; return;
+  }
+  $("#login").hidden = true; $("#tabs").hidden = false; $("#logout").hidden = !KEY;
   const want = location.hash.slice(1);
   show(views[want] ? want : "overview");
 }
-window.addEventListener("hashchange", () => { const t = location.hash.slice(1); if (views[t] && KEY) show(t); });
+window.addEventListener("hashchange", () => { const t = location.hash.slice(1); if (views[t] && settings) show(t); });
 
 $("#loginForm").onsubmit = async (e) => {
   e.preventDefault(); KEY = $("#key").value.trim();

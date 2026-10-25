@@ -285,9 +285,14 @@ $("#sample").onclick = async () => {
 
 // ---- auth ----
 async function boot() {
-  if (!NXT.key.get()) { $("#signin").hidden = false; $("#os").hidden = true; return; }
+  // Open workspaces (no ADMIN_API_KEY on the server) skip sign-in entirely.
   try { status = await api("/api/os/status"); }
-  catch (e) { NXT.key.clear(); $("#signinErr").textContent = e.status === 401 ? "That key didn't work." : e.message; $("#signin").hidden = false; $("#os").hidden = true; return; }
+  catch (e) {
+    if (e.status === 401 && NXT.key.get()) $("#signinErr").textContent = "That key didn't work.";
+    else if (e.status !== 401) $("#signinErr").textContent = e.message;
+    NXT.key.clear(); $("#signin").hidden = false; $("#os").hidden = true; return;
+  }
+  $("#signOut").hidden = !status.auth_required;
   $("#signin").hidden = true; $("#os").hidden = false;
   route();
 }

@@ -48,6 +48,7 @@ pub fn router(os: Os) -> Router {
 async fn status(State(os): State<Os>) -> Json<Value> {
     Json(json!({
         "ai_enabled": api_key().is_some(),
+        "auth_required": crate::referral::routes::auth_required(),
         "model": model(),
         "storage": os.ledger.store.backend_name(),
         "apps": [

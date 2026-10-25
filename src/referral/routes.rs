@@ -91,16 +91,22 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+/// True when ADMIN_API_KEY is set; without it the workspace runs open (no sign-in).
+pub fn auth_required() -> bool {
+    std::env::var("ADMIN_API_KEY").is_ok_and(|k| !k.is_empty())
+}
+
 pub async fn require_admin(headers: HeaderMap, req: Request, next: Next) -> Response {
-    let Ok(expected) = std::env::var("ADMIN_API_KEY") else {
-        return ApiError(StatusCode::SERVICE_UNAVAILABLE, "ADMIN_API_KEY is not configured".into()).into_response();
-    };
+    if !auth_required() {
+        return next.run(req).await;
+    }
+    let expected = std::env::var("ADMIN_API_KEY").unwrap_or_default();
     let given = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("");
-    if expected.is_empty() || !constant_time_eq(given.as_bytes(), expected.as_bytes()) {
+    if !constant_time_eq(given.as_bytes(), expected.as_bytes()) {
         return ApiError(StatusCode::UNAUTHORIZED, "invalid or missing API key".into()).into_response();
     }
     next.run(req).await
