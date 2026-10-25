@@ -25,7 +25,10 @@ One click above, or import manually at https://vercel.com/new. Then:
    - `ADMIN_API_KEY`: the workspace key used to sign in to NXT OS. Use a long random value.
    - `ANTHROPIC_API_KEY`: turns on **Ask NXT**. It defaults to `claude-opus-5-5`; override with `NXT_AI_MODEL`.
    - Optional: `WIDGET_SIGNING_SECRET` for the referral widget.
-3. Add **Upstash Redis** from Vercel's Storage marketplace. It provides `KV_REST_API_URL` and `KV_REST_API_TOKEN`. Without it, data lives in memory and is lost between serverless instances.
+3. Configure a durable storage provider before entering operational data:
+   - **Supabase PostgreSQL:** apply the checked-in migration to your selected project, then set `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (or the legacy `SUPABASE_SERVICE_ROLE_KEY`), and a distinct `NXT_STORE_NAMESPACE` for the deployment. Follow the [Supabase setup and verification guide](docs/SUPABASE.md). Keep the secret key on the server; it must never appear in browser code, client storage, or a public environment variable.
+   - **Upstash Redis:** set `KV_REST_API_URL` and `KV_REST_API_TOKEN` (or the supported `UPSTASH_REDIS_REST_*` equivalents).
+   Supplying any Supabase setting selects that backend; incomplete or invalid Supabase configuration fails rather than falling back to memory. With neither provider configured, data lives in local process memory and is lost across serverless instances or restarts. Switching providers does not transfer existing records automatically.
 4. Open the site, sign in with your `ADMIN_API_KEY`, and choose **Load sample data** to explore with six months of realistic activity.
 
 ## Ask NXT
@@ -37,6 +40,8 @@ Ask NXT calls the Claude Messages API with lookup tools for dashboard, reports, 
 Open **Firm Operations** from the OS dock or command palette. The module uses the existing workspace authentication, Ledger and storage provider. Its NXT gold/black styling follows [NXT Corporation](https://www.nxtcorporation.ca/); workflows and screen structure were mapped from observed firm-management capabilities and implemented independently.
 
 Reports use native NXT Ledger data. External QuickBooks OAuth, external Excel add-in connections, and client/company onboarding are not configured by this module. CSV spreadsheet feeds are read-only. The implementation does not claim full QuickBooks feature parity.
+
+Storage namespaces separate deployments; they do not implement company tenancy or individual staff authentication. The current workspace still uses the shared `ADMIN_API_KEY`. Adding Supabase storage does not enable Supabase Auth, verified staff roles, or per-company access control, and the repository does not provision or deploy a hosted Supabase project automatically.
 
 See [module operations and feature coverage](docs/FIRM_OPERATIONS.md) for API contracts, acceptance checks, storage bounds, scheduler setup and the current shared-credential access model. To dispatch due workflows continuously, run `scripts/firm-worker.mjs` with `NXT_OS_URL` and `ADMIN_API_KEY` in a supervised Node.js process, or invoke it with `--once` from an external scheduler. No background schedule or live integration is silently activated by deployment.
 

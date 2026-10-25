@@ -81,7 +81,8 @@ function updateSummary(summary) {
   const n = Number(summary.pending_approvals) || 0;
   $("#approval-badge").textContent = n;
   $("#approval-badge").hidden = !n;
-  $("#storage-label").textContent = summary.storage === "redis" ? "Persistent workspace · Redis" : "Development storage · resets on restart";
+  const storageLabels = { supabase: "Persistent workspace · Supabase", redis: "Persistent workspace · Redis", memory: "Development storage · resets on restart", unavailable: "Storage unavailable" };
+  $("#storage-label").textContent = storageLabels[summary.storage] || "Storage provider not identified";
 }
 
 function showDialog(title, content, onSave, { saveLabel = "Save", wide = false } = {}) {
