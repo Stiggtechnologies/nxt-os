@@ -14,6 +14,11 @@ NXT Ledger is original software built from standard double-entry and CRA GST/HST
 
 ## Deploy to Vercel
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FStiggtechnologies%2Fnxt-os&project-name=nxt-os&repository-name=nxt-os&env=ADMIN_API_KEY,ANTHROPIC_API_KEY&envDescription=ADMIN_API_KEY%20is%20your%20workspace%20sign-in%20key%20(any%20long%20random%20string).%20ANTHROPIC_API_KEY%20enables%20Ask%20NXT%20(optional).&env-link=https%3A%2F%2Fgithub.com%2FStiggtechnologies%2Fnxt-os%23deploy-to-vercel)
+
+One click above, or import manually at https://vercel.com/new. Then:
+
+
 1. Push this folder to a Git repo and import it in Vercel with Framework Preset **Other**, or run `npx vercel deploy --prod` here.
 2. Set these environment variables:
    - `ADMIN_API_KEY`: the workspace key used to sign in to NXT OS. Use a long random value.
