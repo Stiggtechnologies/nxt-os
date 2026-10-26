@@ -59,6 +59,7 @@ async fn status(State(os): State<Os>) -> Json<Value> {
             { "id": "firm", "name": "Firm Operations", "path": "/apps/firm/" },
             { "id": "tax", "name": "NXT Tax", "path": "/apps/tax/" },
             { "id": "engagements", "name": "NXT Engagements", "path": "/apps/engagements/" },
+            { "id": "migrations", "name": "Parallel testing", "path": "/apps/migrations/" },
             { "id": "referrals", "name": "NXT Referrals", "path": "/apps/referrals/" },
         ],
     }))
@@ -254,7 +255,7 @@ fn tools() -> Value {
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "app": { "type": "string", "enum": ["ledger", "firm", "tax", "engagements", "referrals"] },
+                    "app": { "type": "string", "enum": ["ledger", "firm", "tax", "engagements", "migrations", "referrals"] },
                     "view": { "type": "string" }
                 },
                 "required": ["app"]
@@ -370,8 +371,8 @@ async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) 
         }
         "open_app" => {
             let app = s(input, "app").ok_or("app is required")?;
-            if !["ledger","firm","tax","engagements","referrals"].contains(&app.as_str()) {
-                return Err("app must be ledger, firm, tax, engagements or referrals".into());
+            if !["ledger","firm","tax","engagements","migrations","referrals"].contains(&app.as_str()) {
+                return Err("app must be ledger, firm, tax, engagements, migrations or referrals".into());
             }
             actions.push(json!({ "type": "open_app", "app": app, "view": s(input, "view") }));
             Ok(json!({ "opened": true }))

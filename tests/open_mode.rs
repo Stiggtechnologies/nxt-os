@@ -27,6 +27,7 @@ async fn missing_workspace_key_fails_closed_across_modules() {
         .merge(nxt_os::firm::router(firm.clone()))
         .merge(nxt_os::tax::router(tax.clone()))
         .merge(nxt_os::engagement::router(engagements.clone()))
+        .merge(nxt_os::migrations::router(Arc::new(nxt_os::migrations::Migrations::new(Store::memory()))))
         .merge(nxt_os::os::router(nxt_os::os::Os {
             ledger: ledger.clone(), referrals: referrals.clone(), firm: firm.clone(), tax: tax.clone(), engagements: engagements.clone(),
         }))
@@ -47,6 +48,8 @@ async fn missing_workspace_key_fails_closed_across_modules() {
             ("GET", "/api/firm/summary"),
             ("GET", "/api/tax/summary"),
             ("GET", "/api/engagements/summary"),
+            ("GET", "/api/migrations"),
+            ("GET", "/api/migrations/unavailable/archive"),
             ("GET", "/api/firm/exports/unavailable/download"),
             ("GET", "/api/tax/returns/unavailable/package"),
             ("GET", "/api/engagements/unavailable/package"),
@@ -58,6 +61,8 @@ async fn missing_workspace_key_fails_closed_across_modules() {
             ("POST", "/api/firm/workflows/tick"),
             ("POST", "/api/tax/returns"),
             ("POST", "/api/engagements"),
+            ("POST", "/api/migrations/chunks"),
+            ("POST", "/api/migrations/snapshots"),
         ] {
             for key in [None, Some("Bearer guessed-key")] {
                 let response = call(&router, method, uri, key).await;
@@ -89,7 +94,7 @@ async fn missing_workspace_key_fails_closed_across_modules() {
     let bytes = axum::body::to_bytes(response.into_body(), 8192).await.unwrap();
     let status: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(status["auth_required"], true);
-    assert_eq!(status["apps"].as_array().unwrap().len(), 5);
+    assert_eq!(status["apps"].as_array().unwrap().len(), 6);
     unsafe { std::env::remove_var("ADMIN_API_KEY") };
     assert_eq!(call(&router, "GET", "/api/os/status", Some("Bearer configured-test-key")).await.status().as_u16(), 503);
 }

@@ -9,6 +9,7 @@ pub mod referral;
 pub mod store;
 pub mod tax;
 pub mod engagement;
+pub mod migrations;
 
 use axum::Router;
 use std::sync::Arc;
@@ -26,15 +27,17 @@ fn app_modules(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::eng
 
 fn app_modules_with_tax(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>) -> Router {
     let engagements = Arc::new(engagement::Engagements::new(Store::from_env(),ledger.clone(),tax.clone(),firm.clone()));
-    app_all(ledger,referrals,firm,tax,engagements)
+    let migrations = Arc::new(migrations::Migrations::new(Store::from_env()));
+    app_all(ledger,referrals,firm,tax,engagements,migrations)
 }
 
-fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>) -> Router {
+fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>, migrations:Arc<migrations::Migrations>) -> Router {
     Router::new()
         .merge(ledger::routes::router(ledger.clone()))
         .merge(firm::router(firm.clone()))
         .merge(tax::router(tax.clone()))
         .merge(engagement::router(engagements.clone()))
+        .merge(migrations::router(migrations))
         .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
 }
@@ -46,5 +49,6 @@ pub fn app_with(make_store: impl Fn() -> Store) -> Router {
     let firm = Arc::new(firm::Firm::new(make_store(), ledger.clone()));
     let tax = Arc::new(tax::Tax::new(make_store()));
     let engagements=Arc::new(engagement::Engagements::new(make_store(),ledger.clone(),tax.clone(),firm.clone()));
-    app_all(ledger, referrals, firm, tax, engagements)
+    let migrations = Arc::new(migrations::Migrations::new(make_store()));
+    app_all(ledger, referrals, firm, tax, engagements,migrations)
 }
