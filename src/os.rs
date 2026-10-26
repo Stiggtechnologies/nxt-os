@@ -17,6 +17,7 @@ use std::time::Duration;
 pub struct Os {
     pub ledger: Arc<Ledger>,
     pub firm: Arc<crate::firm::Firm>,
+    pub tax: Arc<crate::tax::Tax>,
     pub referrals: Arc<Referrals>,
 }
 
@@ -55,6 +56,7 @@ async fn status(State(os): State<Os>) -> Json<Value> {
         "apps": [
             { "id": "ledger", "name": "NXT Ledger", "path": "/apps/ledger/" },
             { "id": "firm", "name": "Firm Operations", "path": "/apps/firm/" },
+            { "id": "tax", "name": "NXT Tax", "path": "/apps/tax/" },
             { "id": "referrals", "name": "NXT Referrals", "path": "/apps/referrals/" },
         ],
     }))
@@ -134,8 +136,9 @@ async fn insights(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
 // ---- assistant ----------------------------------------------------------------
 
 const SYSTEM_PROMPT: &str = "You are NXT, the assistant built into NXT OS: an operating system for running a Canadian business. \
-Three apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports), \
-Firm Operations (projects, templates, automated internal work, human approvals, reports and books close), and NXT Referrals (customer referral and loyalty programs).
+Four apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports), \
+Firm Operations (projects, templates, automated internal work, human approvals, reports and books close), \
+NXT Tax (independent scoped T1, T2, T3 and T5013 workpapers), and NXT Referrals (customer referral and loyalty programs).
 
 How you work:
 - Answer from the user's live data. Use the tools to look things up; never estimate or invent figures.
@@ -146,6 +149,7 @@ Never say a proposal was executed or approved. Open Firm Operations at approvals
 For accounting changes (send an invoice, record a payment, categorize a transaction), call open_app to take the user to the right screen.
 - Dates are ISO (YYYY-MM-DD). If the user gives a relative period like \"last quarter\", resolve it against today's date from get_dashboard.
 - GST/HST figures are working papers, not filed returns; say so when asked about filing.
+- Tax calculations are scoped internal workpapers. Read their ruleset and diagnostics; never claim complete DT Max parity, CRA certification, approval or filing. Open the Tax workspace for editing or review. You cannot approve, calculate, import or transmit returns through assistant tools.
 
 Voice: direct, confident and plain-spoken. Lead with the answer, then the key numbers, then one practical next step \
 when it helps. Keep replies short; use a compact list or table only when comparing several figures.";
@@ -228,12 +232,22 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "get_tax_summary",
+            "description": "Read-only aggregate counts and readiness of the independent tax workspace. No tax identifiers, client names, input documents, approvals or filing actions.",
+            "input_schema": { "type":"object", "properties":{} }
+        },
+        {
+            "name": "get_tax_calculation",
+            "description": "Read the existing calculation, scope and diagnostics for a known tax return ID. Excludes identity, related-party and input records. Does not calculate, approve or file anything.",
+            "input_schema": { "type":"object", "properties":{"return_id":{"type":"string"}}, "required":["return_id"], "additionalProperties":false }
+        },
+        {
             "name": "open_app",
             "description": "Opens an NXT OS app at a screen so the user can act. Ledger views: dashboard, invoices, invoices/new, bills, bills/new, customers, vendors, banking, accounts, journal, reports/profit-loss, reports/balance-sheet, reports/trial-balance, reports/ar-aging, reports/ap-aging, reports/sales-tax, reports/general-ledger, settings. Referrals views: overview, advocates, conversions, rewards, loyalty, settings.",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "app": { "type": "string", "enum": ["ledger", "firm", "referrals"] },
+                    "app": { "type": "string", "enum": ["ledger", "firm", "tax", "referrals"] },
                     "view": { "type": "string" }
                 },
                 "required": ["app"]
@@ -260,6 +274,17 @@ fn s(v: &Value, k: &str) -> Option<String> {
 async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) -> Result<Value, String> {
     let l = &os.ledger;
     match name {
+        "get_tax_summary" => os.tax.summary().await.map_err(|e|e.1),
+        "get_tax_calculation" => {
+            let record_id=s(input,"return_id").ok_or("return_id is required")?;
+            let r=os.tax.get(&record_id).await.map_err(|e|e.1)?;
+            let calculation=r.calculation.as_ref().map(|c| {
+                let totals=c.result["totals"].as_object().map(|t|t.iter().filter(|(k,_)|!k.starts_with("partner.")).map(|(k,v)|(k.clone(),v.clone())).collect::<serde_json::Map<_,_>>()).unwrap_or_default();
+                // Allowlist aggregates; partner labels/IDs and arbitrary replay keys stay local.
+                json!({"id":c.id,"input_revision":c.input_revision,"created_at":c.created_at,"ruleset":c.result["ruleset"],"supported":c.result["supported"],"scope":c.result["scope"],"totals":totals,"diagnostics":c.result["diagnostics"],"sources":c.result["sources"]})
+            });
+            Ok(json!({"return_id":r.id,"program":r.program,"tax_year":r.tax_year,"jurisdiction":r.jurisdiction,"status":r.status,"calculation":calculation,"filing_enabled":false}))
+        },
         "get_firm_summary" => os.firm.summary().await.map_err(|e| e.1),
         "propose_firm_action" => {
             let proposal = serde_json::from_value::<crate::firm::models::ProposalInput>(input.clone()).map_err(|e| e.to_string())?;
@@ -337,8 +362,8 @@ async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) 
         }
         "open_app" => {
             let app = s(input, "app").ok_or("app is required")?;
-            if app != "ledger" && app != "firm" && app != "referrals" {
-                return Err("app must be ledger, firm or referrals".into());
+            if app != "ledger" && app != "firm" && app != "tax" && app != "referrals" {
+                return Err("app must be ledger, firm, tax or referrals".into());
             }
             actions.push(json!({ "type": "open_app", "app": app, "view": s(input, "view") }));
             Ok(json!({ "opened": true }))
@@ -548,10 +573,28 @@ mod firm_tool_tests {
     use crate::{firm::Firm, store::Store};
 
     #[tokio::test]
+    async fn tax_assistant_receives_aggregates_without_partner_identity_or_replay_keys() {
+        let ledger=Arc::new(Ledger::new(Store::memory()));
+        let tax=Arc::new(crate::tax::Tax::new(Store::memory()));
+        let input=serde_json::from_value(json!({"program":"T5013","tax_year":2025,"jurisdiction":"CA","name":"SECRET TAXPAYER","client_ref":"SECRET CLIENT REF","inputs":{"scope_confirmed":true,"allocation_verified":true,"revenue_cents":10001,"partners":[{"id":"PRIVATE_ID","name":"SECRET PARTNER NAME","share_bps":10000}]}})).unwrap();
+        let r=tax.save(None,input).await.map_err(|e|e.1).unwrap();
+        tax.calculate(&r.id,crate::tax::models::RevisionInput{expected_revision:r.revision,idempotency_key:Some("SECRET REPLAY KEY".into())}).await.map_err(|e|e.1).unwrap();
+        let os=Os{firm:Arc::new(Firm::new(Store::memory(),ledger.clone())),ledger,tax,referrals:Arc::new(Referrals::new(Store::memory()))};
+        let mut actions=Vec::new();
+        let result=run_tool(&os,"get_tax_calculation",&json!({"return_id":r.id}),&mut actions).await.unwrap();
+        let encoded=result.to_string();
+        for private in ["SECRET TAXPAYER","SECRET CLIENT REF","PRIVATE_ID","SECRET PARTNER NAME","SECRET REPLAY KEY","idempotency_key"] { assert!(!encoded.contains(private)); }
+        assert_eq!(result["calculation"]["totals"]["net_income"],10001);
+        assert_eq!(result["filing_enabled"],false);
+        assert!(run_tool(&os,"approve_tax_return",&json!({}),&mut actions).await.is_err());
+        assert!(actions.is_empty());
+    }
+
+    #[tokio::test]
     async fn assistant_can_propose_but_cannot_approve_or_execute() {
         let ledger = Arc::new(Ledger::new(Store::memory()));
         let firm = Arc::new(Firm::new(Store::memory(), ledger.clone()));
-        let os = Os { ledger, firm, referrals: Arc::new(Referrals::new(Store::memory())) };
+        let os = Os { ledger, firm, tax: Arc::new(crate::tax::Tax::new(Store::memory())), referrals: Arc::new(Referrals::new(Store::memory())) };
         let mut actions = Vec::new();
         let input = json!({"name":"Prepare review checklist","idempotency_key":"assistant-test-once","action":{"kind":"create_task","title":"Review reporting package"}});
         let response = run_tool(&os, "propose_firm_action", &input, &mut actions).await.unwrap();

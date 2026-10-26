@@ -1,0 +1,184 @@
+{
+  "format": "nxt-cutover-rehearsal/v1",
+  "mode": "offline_comparison",
+  "cohort_id": "synthetic-company-001",
+  "as_of": "2025-12-31",
+  "source_environment_id": "synthetic-legacy-readonly",
+  "target_environment_id": "synthetic-nxt-rehearsal",
+  "synthetic": true,
+  "currency": "CAD",
+  "controls_passed": false,
+  "live_cutover_allowed": false,
+  "external_approval_verified": false,
+  "production_writes": 0,
+  "network_requests": 0,
+  "approval_status": "External signed cutover authorization is not evaluated by this tool. Passing controls never authorizes a live cutover.",
+  "input_provenance": {
+    "source": {
+      "sha256": "076e30784927d9b1db5a0737db278d1edca0fc77f546d2f200d0d65234cdd386",
+      "bytes": 905,
+      "basis": "raw-file-bytes",
+      "file": "source.json"
+    },
+    "target": {
+      "sha256": "f8131ae008cb017a9a3dc1f0a0a8a6303409d04f0c1e9a316a524fc109a5abed",
+      "bytes": 795,
+      "basis": "raw-file-bytes",
+      "file": "target-mismatch.json"
+    },
+    "mapping": {
+      "sha256": "e70b3d5f0b1476d74cc4ee5de5c3c42ce52749d6f1210b3404200fa45fc74442",
+      "bytes": 2747,
+      "basis": "raw-file-bytes",
+      "file": "mapping.json"
+    }
+  },
+  "entities": [
+    {
+      "source_entity": "accounts",
+      "target_entity": "accounts",
+      "source_count": 2,
+      "target_count": 2,
+      "mapped_count": 2,
+      "matched_count": 2,
+      "money_totals": {},
+      "ignored_source_fields": [],
+      "ignored_target_fields": []
+    },
+    {
+      "source_entity": "contacts",
+      "target_entity": "contacts",
+      "source_count": 1,
+      "target_count": 1,
+      "mapped_count": 1,
+      "matched_count": 1,
+      "money_totals": {
+        "balance_cents": {
+          "complete": true,
+          "source_cents": "1250",
+          "target_cents": "1250",
+          "delta_cents": "0"
+        }
+      },
+      "ignored_source_fields": [
+        {
+          "field": "legacy_note",
+          "reason": "Synthetic display-only note deliberately excluded; source retained in provenance-controlled manifest."
+        }
+      ],
+      "ignored_target_fields": []
+    },
+    {
+      "source_entity": "journal_entries",
+      "target_entity": "journal_entries",
+      "source_count": 1,
+      "target_count": 1,
+      "mapped_count": 1,
+      "matched_count": 1,
+      "money_totals": {},
+      "ignored_source_fields": [],
+      "ignored_target_fields": []
+    },
+    {
+      "source_entity": "journal_lines",
+      "target_entity": "journal_lines",
+      "source_count": 2,
+      "target_count": 2,
+      "mapped_count": 2,
+      "matched_count": 1,
+      "money_totals": {
+        "debit_cents": {
+          "complete": true,
+          "source_cents": "10000",
+          "target_cents": "10001",
+          "delta_cents": "1"
+        },
+        "credit_cents": {
+          "complete": true,
+          "source_cents": "10000",
+          "target_cents": "10000",
+          "delta_cents": "0"
+        }
+      },
+      "ignored_source_fields": [],
+      "ignored_target_fields": []
+    }
+  ],
+  "ledger": {
+    "source": {
+      "entry_count": 1,
+      "line_count": 2,
+      "debit_cents": "10000",
+      "credit_cents": "10000",
+      "balanced": true
+    },
+    "target": {
+      "entry_count": 1,
+      "line_count": 2,
+      "debit_cents": "10001",
+      "credit_cents": "10000",
+      "balanced": false
+    },
+    "accounts": [
+      {
+        "source_id": "a-cash",
+        "target_id": "acc_cash",
+        "source_debit_cents": "10000",
+        "source_credit_cents": "0",
+        "target_debit_cents": "10001",
+        "target_credit_cents": "0",
+        "matches": false
+      },
+      {
+        "source_id": "a-revenue",
+        "target_id": "acc_revenue",
+        "source_debit_cents": "0",
+        "source_credit_cents": "10000",
+        "target_debit_cents": "0",
+        "target_credit_cents": "10000",
+        "matches": true
+      }
+    ]
+  },
+  "blocker_count": 6,
+  "blockers": [
+    {
+      "code": "field_mismatch",
+      "location": "journal_lines.l-1.debit_cents",
+      "message": "Target field differs from the explicitly transformed source"
+    },
+    {
+      "code": "money_control_mismatch",
+      "location": "journal_lines.debit_cents",
+      "message": "Transformed source and target monetary control totals differ"
+    },
+    {
+      "code": "unbalanced_or_empty_journal",
+      "location": "target.journal_entries.je_1",
+      "message": "Each journal entry must have posted lines with equal, nonzero debit and credit totals"
+    },
+    {
+      "code": "unbalanced_gl",
+      "location": "target",
+      "message": "GL aggregate debit and credit controls do not balance"
+    },
+    {
+      "code": "gl_control_total_mismatch",
+      "location": "ledger",
+      "message": "Source and target GL debit/credit controls differ"
+    },
+    {
+      "code": "account_gl_control_mismatch",
+      "location": "ledger.account.a-cash",
+      "message": "Mapped account debit/credit controls differ"
+    }
+  ],
+  "omitted_blockers": 0,
+  "limits": [
+    "Supplied control manifests are not native QuickBooks, WebTax or DT Max exports/imports.",
+    "Input hashes prove the bytes compared, not export completeness, source authenticity or tenant authorization.",
+    "Only explicit one-to-one ID/scalar mappings and supplied accounting controls are compared; attachments, source-system semantics and operational readiness require separate evidence.",
+    "Live approval verification, data loading, dual-write/freeze, rollback and production promotion are outside this offline tool."
+  ],
+  "report_sha256": "898029a18bf3ae380bf560bc6373930ae8ba22f33f577b6999f94228eed139a8"
+}

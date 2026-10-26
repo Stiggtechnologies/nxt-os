@@ -10,6 +10,24 @@ The native lifecycle, concurrency, replay/retry behavior, close gates, and repor
 
 Acceptance for this phase is the existing regression suite plus deployment verification of authentication, durable storage, static assets, and the selected scheduler. A successful application deployment alone does not start a scheduler or connect an external account.
 
+## Independent Tax foundation and comparison audit
+
+NXT Tax adds initial bounded 2025 T1 Alberta, T2 Alberta, federal-only T3 and ordinary T5013 allocation workpapers, saved exact-input calculation histories, internal human review, native JSON/print output and optional T2 corporate/selected GIFI reconciliation. These initial scopes are narrower than the requested full replications. They do not use a DT Max runtime, produce certified returns or enable filing. See [NXT Tax operations](NXT_TAX.md).
+
+Full QuickBooks/DT Max/WebTax equivalence remains a separate requirement matrix, not a completed milestone. [The comparison audit](REPLICATION_COMPARISON_AUDIT.md) separates QuickBooks Firm Operations, DT Max T1/T2/T3/T5013 and WebTaxT2, with source evidence, native test limits, remaining gaps and closure criteria. Independent formula fixtures and binary metadata do not prove vendor calculation/workflow parity.
+
+## Immediate priority: safe migration and cutover readiness
+
+The user has prioritized a detailed cutover plan and controlled execution. [CUTOVER_PLAN.md](CUTOVER_PLAN.md) and [CUTOVER_CHECKLIST.csv](CUTOVER_CHECKLIST.csv) define phased inventory/mapping, engineering prerequisites, export/archive/recovery controls, rehearsals, independent reconciliation, scoped pilot waves, go/no-go and source-retirement gates.
+
+Current live financial/client-record cutover is **NO-GO**: validated source importers, verified individual roles/company isolation, accepted required-case coverage and measured data recovery are absent. Application deployment can progress with synthetic records while these gates remain open. Sources remain authoritative until a specific capability/cohort is independently accepted. A code rollback is not post-write financial recovery, and a database namespace is not company tenancy or a separate backup.
+
+Phase 0 planning and limited synthetic/development evidence are complete. The user's new backup priority is now in implementation: dedicated private backup repository, encrypted off-site artifacts, read-only backup credentials, nightly execution and isolated restore validation. First actual run, schedule/alert verification and off-device key custody remain evidence gates. No plaintext backup belongs in the public source repository. Completing this backup work does not answer the migration cohort/reviewer questions or authorize financial cutover.
+
+Delivery sequence is source/cohort inventory, identity/isolation and batch-provenance foundation, capacity/archive/recovery work, source-specific staging/importers, paired reconciliation, at least two rehearsals, shadow pilot, scoped cutover and stabilization. QuickBooks, each DT Max program and WebTaxT2 require separate contracts/acceptance. Noncritical out-of-scope features may remain on the source under explicit scoped acceptance; there is no blanket requirement to complete every unrelated feature before a useful low-risk capability can be piloted.
+
+The plan's engineering/week ranges are assumptions pending source samples, volumes and team availability, not release promises. Keep financial migration and certification/filing acceptance separate from the reported development regression results. No source account is canceled or archive destroyed on deployment or pilot completion.
+
 ## Next priority: clients, companies, and group operations
 
 Client/company onboarding is restored as the next product priority. It is planned work, not part of the current implementation.
