@@ -217,7 +217,7 @@ impl Engagements {
         Err(conflict("workspace changed repeatedly; reload and retry"))
     }
     pub fn catalog() -> Value {
-        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html"],"limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text documents only; no CaseView, Office embedding, proprietary files, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
+        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html"],"annotation_kinds":["note","agreed","recalculated","traced","inspected","confirmed"],"annotation_scope":"Text body SHA-256 anchors; operator labels are unverified metadata; no PDF/image annotations or Caseware compatibility","limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text documents only; no CaseView, Office embedding, proprietary files, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
     }
     pub async fn get(&self, record_id: &str) -> EResult<EngagementRecord> {
         self.load()
@@ -520,6 +520,7 @@ impl Engagements {
             for paper in &mut document.workpapers {
                 paper.body.clear();
                 paper.adjustment_ids.clear();
+                paper.annotations.clear();
             }
             document.issues.retain(|issue| issue.carry_forward && issue.status == "open");
             document.notes.clear();

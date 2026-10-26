@@ -234,6 +234,19 @@ async fn print(State(e): S, Path(id): Path<String>) -> EResult<Response> {
             esc(&p.folder),
             esc(&p.body)
         ));
+        if !p.annotations.is_empty() {
+            html.push_str("<h3>Text-version tickmarks and notes</h3><p>Operator labels are unverified metadata. Check calculation diagnostics for stale text anchors.</p><table><tr><th>Kind</th><th>Note</th><th>Operator label</th><th>Text SHA-256</th></tr>");
+            for annotation in &p.annotations {
+                html.push_str(&format!(
+                    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                    esc(&annotation.kind),
+                    esc(&annotation.note),
+                    esc(&annotation.operator_label),
+                    esc(&annotation.body_sha256)
+                ));
+            }
+            html.push_str("</table>");
+        }
     }
     html.push_str(&format!(
         "<h2>Notes</h2><pre>{}</pre><h2>Checkpoint metadata</h2><pre>{}</pre></html>",

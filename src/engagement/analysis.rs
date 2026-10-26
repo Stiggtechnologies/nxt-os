@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Datelike, NaiveDate};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use super::models::*;
 
@@ -305,6 +306,8 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
             balance(line.debit_cents, line.credit_cents, "Adjustment line")?;
         }
     }
+    let mut annotation_count = 0usize;
+    let mut annotation_ids = BTreeSet::new();
     for paper in &input.workpapers {
         id(&paper.id, "Workpaper ID")?;
         code(&paper.reference, "Workpaper reference")?;
@@ -324,6 +327,38 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
             "workpaper adjustment reference",
         )?;
         references(&paper.depends_on, &papers, 100, "workpaper dependency")?;
+        annotation_count += paper.annotations.len();
+        if paper.annotations.len() > 50 || annotation_count > 500 {
+            return Err("Annotations exceed 50 per workpaper or 500 per engagement".into());
+        }
+        for annotation in &paper.annotations {
+            id(&annotation.id, "Annotation ID")?;
+            if !annotation_ids.insert(&annotation.id) {
+                return Err("Duplicate annotation ID".into());
+            }
+            if !matches!(
+                annotation.kind.as_str(),
+                "note" | "agreed" | "recalculated" | "traced" | "inspected" | "confirmed"
+            ) {
+                return Err("Unknown native annotation kind".into());
+            }
+            text(&annotation.note, "Annotation note", 4096, true, true)?;
+            text(
+                &annotation.operator_label,
+                "Annotation operator label",
+                128,
+                true,
+                false,
+            )?;
+            if annotation.body_sha256.len() != 64
+                || !annotation
+                    .body_sha256
+                    .bytes()
+                    .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+            {
+                return Err("Annotation body anchor must be a lowercase SHA-256".into());
+            }
+        }
     }
     let graph: BTreeMap<&str, &[String]> = input
         .workpapers
@@ -594,6 +629,20 @@ fn calculate(input: &EngagementInput) -> Result<Value, String> {
         );
     }
     for paper in &input.workpapers {
+        let body_hash = hex::encode(Sha256::digest(paper.body.as_bytes()));
+        for annotation in &paper.annotations {
+            if annotation.body_sha256 != body_hash {
+                diagnostic(
+                    &mut diagnostics,
+                    "stale_workpaper_annotation",
+                    format!(
+                        "Workpaper {} annotation {} refers to an earlier text version; review and replace it or remove it.",
+                        paper.reference, annotation.id
+                    ),
+                    true,
+                );
+            }
+        }
         if paper.required && paper.body.trim().is_empty() {
             diagnostic(
                 &mut diagnostics,

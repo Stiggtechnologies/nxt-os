@@ -76,6 +76,7 @@ impl RollforwardCopyPolicy {
                 "current_account_balances",
                 "local_adjustments",
                 "workpaper_bodies",
+                "workpaper_annotations",
                 "workpaper_adjustment_references",
                 "notes",
                 "active_calculation",

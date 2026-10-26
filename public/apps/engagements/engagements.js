@@ -8,6 +8,7 @@
   const list=v=>Array.isArray(v)?v:[], clone=v=>structuredClone(v), enc=encodeURIComponent;
   const kinds=['asset','liability','equity','revenue','expense'], engagementKinds=['internal','compilation','review','audit'];
   const sections=[['overview','Engagement information','Period and internal profile'],['documents','Document manager','Text workpapers and references'],['trial-balance','Trial balance','Accounts and imported amounts'],['mapping','Mapping','Groups and GIFI references'],['adjustments','Adjusting entries','Local working-paper entries'],['issues','Issues','Review notes and resolution'],['results','Calculated results','Totals and validation'],['review','Sign-offs & completion','Internal checkpoints'],['history','History','Snapshots, locks and audit'],['import','Import trial balance','Native JSON preview'],['integrations','Module handoffs','Reviewed native copies'],['output','Output & rollforward','Native packages and continuity']];
+  sections.splice(2,0,['annotations','Tickmarks & notes','Version-bound text annotations']);
   const request=(path='',options)=>api(API+path,options), editable=()=>S.record&&!['locked','archived'].includes(S.record.status);
   const pretty=v=>String(v??'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()), stamp=v=>v?new Date(v).toLocaleString('en-CA'):'—';
   const id=prefix=>prefix+'-'+crypto.randomUUID(), b=(label,action,value='',style='')=>`<button class="btn ${style}" type="button" data-action="${esc(action)}" data-id="${esc(value)}">${esc(label)}</button>`;
@@ -43,6 +44,7 @@
   function renderEditor(){const host=$('#editor');if(!host||!S.draft)return;$$('[data-section]',main).forEach(x=>x.classList.toggle('active',x.dataset.section===S.section));const d=S.draft;
     if(S.section==='overview')host.innerHTML=title('Engagement information')+notice()+`<div class="card"><div class="form">${field('Name',input('name',d.name,'text','data-document required maxlength="200"'))}${field('Client reference',input('client_ref',d.client_ref,'text','data-document maxlength="100"'))}${field('Kind',select('kind',engagementKinds,d.kind,'data-document'))}${field('Currency',input('currency','CAD','text','disabled'))}${field('Period start',input('period_start',d.period_start,'date','data-document'))}${field('Period end',input('period_end',d.period_end,'date','data-document'))}${field('Prior period start',input('prior_period_start',d.prior_period_start||'','date','data-document'))}${field('Prior period end',input('prior_period_end',d.prior_period_end||'','date','data-document'))}${field('Engagement notes',text('notes',d.notes,'data-document maxlength="16000"'),'Internal review context; do not store credentials.',true)}</div></div>`;
     else if(S.section==='documents')renderDocuments();
+    else if(S.section==='annotations')renderAnnotations();
     else if(S.section==='trial-balance')renderAccounts();
     else if(S.section==='mapping')renderMapping();
     else if(S.section==='adjustments')renderAdjustments();
@@ -86,7 +88,45 @@
   async function commitImport(){if(!S.preview)throw Error('Preview the current source first.');requireSaved();const r=await request('/'+enc(S.record.id)+'/import/commit',{body:{preview_id:S.preview.id||S.preview.preview_id,expected_revision:S.record.revision}});S.record=r;S.draft=clone(r.document);S.preview=null;S.section='trial-balance';renderWorkspace();toast('Native account import committed');}
   async function remove(kind,value){if(!editable())return;const d=S.draft,collections={account:'accounts',group:'groups',paper:'workpapers',adjustment:'adjustments',issue:'issues'},key=collections[kind];if(!key)return;if(kind==='group'&&d.accounts.some(a=>a.group_id===value))throw Error('Unassign the group from its accounts before removing it.');if(kind==='account'&&(d.adjustments.some(a=>a.lines.some(l=>l.account_id===value))||d.workpapers.some(p=>p.account_ids.includes(value))))throw Error('Remove account references from entries and workpapers first.');if(kind==='adjustment'&&d.workpapers.some(p=>p.adjustment_ids.includes(value)))throw Error('Remove workpaper references to this entry first.');if(kind==='paper'&&(d.workpapers.some(p=>p.depends_on.includes(value))||d.issues.some(i=>i.workpaper_id===value)))throw Error('Remove dependent workpaper and issue links first.');if(!await NXT.confirm('Remove from engagement draft?','Remove this item from the current draft? Save to record the change.','Remove'))return;d[key]=d[key].filter(x=>x.id!==value);dirty();renderEditor();}
   async function viewPaper(value){const p=S.draft.workpapers.find(x=>x.id===value);if(!p)return;await modal(p.reference+' · '+p.title,(el,close)=>{el.innerHTML=`<p class="help">${esc(p.folder||'Unfiled')} · ${p.required?'Required for completion':'Optional workpaper'}</p><div class="paper-preview">${esc(p.body||'No text entered.')}</div><div class="actions"><button class="btn primary" data-close>Done</button></div>`;$('[data-close]',el).onclick=()=>close();},{wide:true});}
-  const actions={new:createEngagement,open:value=>go('engagement/'+value),refresh:async()=>{if(!await discard())return;await route(true);},section:value=>{S.section=value;renderEditor();},save,calculate,paper:editPaper,account:editAccount,group:editGroup,adjustment:editAdjustment,issue:editIssue,'view-paper':viewPaper,'remove-paper':v=>remove('paper',v),'remove-account':v=>remove('account',v),'remove-group':v=>remove('group',v),'remove-adjustment':v=>remove('adjustment',v),'remove-issue':v=>remove('issue',v),signoff,transition,rollforward,package:()=>download('package'),print:()=>download('print'),'preview-import':previewImport,'commit-import':commitImport,'ledger-preview':ledgerPreview,'tax-preview':taxPreview,'firm-proposal':firmProposal,'open-firm-approvals':()=>openApp('firm','approvals'),ask:()=>{if(parent!==window)parent.postMessage({nxt:'ask'},location.origin);}};
+
+  const annotationKinds=[['note','Note'],['agreed','AG · Agreed'],['recalculated','RC · Recalculated'],['traced','TR · Traced'],['inspected','IN · Inspected'],['confirmed','CF · Confirmed']];
+  function renderAnnotations(){
+    const rows=S.draft.workpapers.flatMap(p=>list(p.annotations).map(a=>({paper:p,annotation:a})));
+    $('#editor').innerHTML=title('Tickmarks & notes',mutatingButton('+ Add tickmark or note','annotation','','primary'))+
+      '<p class="form-note">Each mark records a stated procedure or note against an exact workpaper text version. Save and calculate to check its anchor. Changed text blocks completion until affected marks are reviewed and replaced or removed. Operator labels are unverified metadata.</p>'+
+      `<div class="card">${table(['Workpaper','Mark / note','Operator label','Text anchor',''],rows,({paper:p,annotation:a})=>`<tr><td>${esc(p.reference)} · ${esc(p.title)}</td><td><strong>${esc(annotationKinds.find(x=>x[0]===a.kind)?.[1]||a.kind)}</strong><pre>${esc(a.note)}</pre></td><td>${esc(a.operator_label)}</td><td><code title="${esc(a.body_sha256)}">${esc(a.body_sha256.slice(0,12))}…</code><div class="help">Check calculated results</div></td><td>${mutatingButton('Remove','remove-annotation',a.id,'sm ghost danger')}</td></tr>`)}</div>`;
+  }
+  async function addAnnotation(){
+    if(!editable())return;
+    const draft=S.draft,recordId=S.record.id,version=S.version;
+    if(!draft.workpapers.length)throw Error('Create a text workpaper before adding a tickmark or note.');
+    const current=()=>S.draft===draft&&S.record?.id===recordId&&S.version===version&&editable();
+    const saved=await dialog('Add tickmark or note',`<p class="form-note">This records your stated work against the current text. NXT does not perform the marked procedure. Replace a stale mark only after reviewing the changed text.</p><div class="form">${field('Workpaper',select('workpaper_id',draft.workpapers.map(p=>[p.id,p.reference+' · '+p.title]),draft.workpapers[0].id))}${field('Mark',select('kind',annotationKinds,'note'))}${field('Operator label (unverified)',input('operator_label','','text','required maxlength="128"'))}${field('Evidence note',text('note','','required maxlength="4000"'),'Describe the work or observation supporting this mark.',true)}</div>`,async fd=>{
+      if(!current())throw Error('Engagement changed; reopen the annotation dialog.');
+      const paper=draft.workpapers.find(p=>p.id===fd.get('workpaper_id'));
+      if(!paper)throw Error('Workpaper no longer exists.');
+      if(list(paper.annotations).length>=50||draft.workpapers.reduce((n,p)=>n+list(p.annotations).length,0)>=500)throw Error('Maximum 50 annotations per workpaper and 500 per engagement.');
+      const note=fd.get('note').trim(),operator=fd.get('operator_label').trim(),body=paper.body;
+      if(!note||!operator)throw Error('Enter a note and operator label.');
+      const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body));
+      if(!current()||paper.body!==body)throw Error('Workpaper changed while anchoring the mark; review it and retry.');
+      const annotation={id:id('annotation'),kind:fd.get('kind'),note,operator_label:operator,body_sha256:Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('')};
+      paper.annotations=[...list(paper.annotations),annotation];
+      return true;
+    },'Add to draft');
+    if(saved&&current()){dirty();renderEditor();}
+  }
+  async function removeAnnotation(annotationId){
+    if(!editable())return;
+    const draft=S.draft,recordId=S.record.id,version=S.version;
+    if(!await NXT.confirm('Remove tickmark or note?','Remove this mark from the draft? Prior calculation snapshots retain their recorded marks. Save and recalculate before review.','Remove'))return;
+    if(S.draft!==draft||S.record?.id!==recordId||S.version!==version||!editable())throw Error('Engagement changed; reload before removing a mark.');
+    for(const paper of draft.workpapers)if(list(paper.annotations).some(a=>a.id===annotationId)){
+      paper.annotations=paper.annotations.filter(a=>a.id!==annotationId);
+      dirty();renderEditor();return;
+    }
+  }
+  const actions={new:createEngagement,open:value=>go('engagement/'+value),refresh:async()=>{if(!await discard())return;await route(true);},section:value=>{S.section=value;renderEditor();},save,calculate,paper:editPaper,account:editAccount,group:editGroup,adjustment:editAdjustment,issue:editIssue,annotation:addAnnotation,'remove-annotation':removeAnnotation,'view-paper':viewPaper,'remove-paper':v=>remove('paper',v),'remove-account':v=>remove('account',v),'remove-group':v=>remove('group',v),'remove-adjustment':v=>remove('adjustment',v),'remove-issue':v=>remove('issue',v),signoff,transition,rollforward,package:()=>download('package'),print:()=>download('print'),'preview-import':previewImport,'commit-import':commitImport,'ledger-preview':ledgerPreview,'tax-preview':taxPreview,'firm-proposal':firmProposal,'open-firm-approvals':()=>openApp('firm','approvals'),ask:()=>{if(parent!==window)parent.postMessage({nxt:'ask'},location.origin);}};
   async function invoke(name,value){if(S.busy)return;const action=actions[name];if(!action)return;S.busy=true;setBusy();try{await action(value);}catch(e){toast(e.message+(e.status===409?' Reload before resolving a stale revision.':''),true);}finally{S.busy=false;setBusy();}}
   document.addEventListener('click',async event=>{const os=event.target.closest('[data-os]');if(os){if(!await discard())return;if(parent!==window)parent.postMessage({nxt:'open-app',app:os.dataset.os,view:''},location.origin);else location.href='/#/'+os.dataset.os;return;}const section=event.target.closest('[data-section]');if(section){S.section=section.dataset.section;renderEditor();return;}const folder=event.target.closest('[data-folder]');if(folder){S.folder=folder.dataset.folder;renderEditor();return;}const button=event.target.closest('[data-action]');if(button&&!button.disabled)invoke(button.dataset.action,button.dataset.id);});
   document.addEventListener('input',event=>{const el=event.target;if(el.hasAttribute('data-filter')){S[el.name]=el.value;renderWorklist();return;}if(el.hasAttribute('data-import-json')){S.preview=null;const host=$('#import-preview');if(host)host.innerHTML='<p class="form-note">The source changed. Preview again before committing.</p>';return;}if(el.hasAttribute('data-document')&&editable()&&!S.busy){S.draft[el.name]=el.value||(['prior_period_start','prior_period_end'].includes(el.name)?null:'');dirty();}});

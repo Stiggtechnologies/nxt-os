@@ -269,6 +269,172 @@ async fn engagement_workpaper_lifecycle() {
     }
     engagement_bridge_acceptance().await;
     engagement_rollforward_origin_acceptance().await;
+    engagement_annotation_acceptance().await;
+}
+
+async fn engagement_annotation_acceptance() {
+    let router = app_with(Store::memory);
+    let ledger_before = ok(&router, "GET", "/api/ledger/entries", None).await;
+    let mut input = fixture();
+    let body = "Synthetic caf\u{00e9} evidence\r\nReviewed \u{1f4ce}";
+    input["workpapers"][0]["body"] = json!(body);
+    let anchor = hex::encode(Sha256::digest(body.as_bytes()));
+    let annotation = json!({"id":"mark_1","kind":"agreed","note":"<img src=x onerror=alert(1)> Synthetic source agreed.","operator_label":"Synthetic preparer <label>","body_sha256":anchor});
+    input["workpapers"][0]["annotations"] = json!([annotation]);
+    for variant in [
+        "kind",
+        "hash",
+        "label",
+        "duplicate",
+        "per_paper_limit",
+        "total_limit",
+    ] {
+        let mut invalid = input.clone();
+        match variant {
+            "kind" => invalid["workpapers"][0]["annotations"][0]["kind"] = json!("signed"),
+            "hash" => {
+                invalid["workpapers"][0]["annotations"][0]["body_sha256"] = json!("A".repeat(64))
+            }
+            "label" => invalid["workpapers"][0]["annotations"][0]["operator_label"] = json!(" "),
+            "duplicate" => {
+                invalid["workpapers"][1]["annotations"] =
+                    input["workpapers"][0]["annotations"].clone()
+            }
+            "per_paper_limit" => {
+                invalid["workpapers"][0]["annotations"] = json!(vec![annotation.clone(); 51])
+            }
+            "total_limit" => {
+                let template = input["workpapers"][0].clone();
+                invalid["workpapers"] = json!(
+                    (0..11)
+                        .map(|paper| {
+                            let mut p = template.clone();
+                            p["id"] = json!(format!("p{paper}"));
+                            p["reference"] = json!(format!("P{paper}"));
+                            p["annotations"] = json!(
+                                (0..50)
+                                    .map(|mark| {
+                                        let mut a = annotation.clone();
+                                        a["id"] = json!(format!("m{paper}_{mark}"));
+                                        a
+                                    })
+                                    .collect::<Vec<_>>()
+                            );
+                            p
+                        })
+                        .collect::<Vec<_>>()
+                );
+            }
+            _ => unreachable!(),
+        }
+        fails(&router, "POST", "/api/engagements", Some(invalid), 400).await;
+    }
+    assert_eq!(
+        ok(&router, "GET", "/api/engagements", None).await,
+        json!([])
+    );
+    let record = ok(&router, "POST", "/api/engagements", Some(input)).await;
+    assert!(
+        record["document"]["workpapers"][1]
+            .get("annotations")
+            .is_none(),
+        "Legacy empty workpapers keep their signed input representation"
+    );
+    let calculated = calculate(&router, &record).await;
+    assert_eq!(calculated["snapshot"]["result"]["supported"], true);
+    assert_eq!(
+        calculated["snapshot"]["input_document"]["workpapers"][0]["annotations"][0],
+        annotation
+    );
+    let printed = raw(&router, "GET", &endpoint(&calculated, "/print"), None, true)
+        .await
+        .3;
+    assert!(printed.contains("&lt;img src=x onerror=alert(1)&gt;"));
+    assert!(!printed.contains("<img src=x"));
+    assert!(printed.contains(&anchor));
+    let prepared = signoff(&router, &calculated, "wp_lead", "prepared").await;
+    let mut changed = editable(&prepared);
+    changed["workpapers"][0]["body"] = json!("Changed evidence requires a new review.");
+    let edited = ok(
+        &router,
+        "PUT",
+        &endpoint(&prepared, ""),
+        Some(changed.clone()),
+    )
+    .await;
+    assert!(edited["snapshot"].is_null());
+    assert_eq!(edited["signoffs"], json!([]));
+    fails(&router, "PUT", &endpoint(&edited, ""), Some(changed), 409).await;
+    let blocked = calculate(&router, &edited).await;
+    assert_eq!(blocked["snapshot"]["result"]["supported"], false);
+    assert!(
+        blocked["snapshot"]["result"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["code"] == "stale_workpaper_annotation" && d["blocking"] == true)
+    );
+    fails(&router,"POST",&endpoint(&blocked,"/signoffs"),Some(json!({"expected_revision":revision(&blocked),"workpaper_id":"wp_lead","stage":"prepared","operator":"Synthetic","note":"Must fail stale anchor"})),409).await;
+    let mut reviewed_text = editable(&blocked);
+    reviewed_text["workpapers"][0]["annotations"][0]["body_sha256"] =
+        json!(hex::encode(Sha256::digest(
+            reviewed_text["workpapers"][0]["body"]
+                .as_str()
+                .unwrap()
+                .as_bytes()
+        )));
+    let saved = ok(&router, "PUT", &endpoint(&blocked, ""), Some(reviewed_text)).await;
+    let mut ready = calculate(&router, &saved).await;
+    assert_eq!(ready["snapshot"]["result"]["supported"], true);
+    ready = signoff(&router, &ready, "wp_lead", "prepared").await;
+    ready = signoff(&router, &ready, "wp_review", "prepared").await;
+    ready = transition(
+        &router,
+        &ready,
+        "in_review",
+        "Synthetic text anchor reviewed",
+    )
+    .await;
+    ready = signoff(&router, &ready, "wp_lead", "reviewed").await;
+    ready = signoff(&router, &ready, "wp_review", "reviewed").await;
+    let locked = transition(
+        &router,
+        &ready,
+        "locked",
+        "Synthetic annotated workpapers locked",
+    )
+    .await;
+    fails(
+        &router,
+        "PUT",
+        &endpoint(&locked, ""),
+        Some(editable(&locked)),
+        409,
+    )
+    .await;
+    let next = ok(&router,"POST",&endpoint(&locked,"/rollforward"),Some(json!({"expected_revision":revision(&locked),"period_start":"2026-01-01","period_end":"2026-12-31"}))).await;
+    assert!(
+        next["document"]["workpapers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p.get("annotations").is_none())
+    );
+    assert_eq!(
+        next["rollforward_origin"]["source_snapshot"]["input_document"]["workpapers"][0]["annotations"],
+        locked["document"]["workpapers"][0]["annotations"]
+    );
+    assert!(
+        next["rollforward_origin"]["copy_policy"]["cleared_fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "workpaper_annotations")
+    );
+    assert_eq!(
+        ok(&router, "GET", "/api/ledger/entries", None).await,
+        ledger_before
+    );
 }
 
 async fn engagement_rollforward_origin_acceptance() {
@@ -339,7 +505,7 @@ async fn engagement_rollforward_origin_acceptance() {
         "workpaper_account_references"
     ]));
     assert_eq!(policy["cleared_fields"],json!([
-        "current_account_balances","local_adjustments","workpaper_bodies","workpaper_adjustment_references",
+        "current_account_balances","local_adjustments","workpaper_bodies","workpaper_annotations","workpaper_adjustment_references",
         "notes","active_calculation","calculation_history","signoffs","signoff_history","lock_history","import_history"
     ]));
 

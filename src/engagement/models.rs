@@ -72,6 +72,16 @@ pub struct Adjustment {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct Annotation {
+    pub id: String,
+    pub kind: String,
+    pub note: String,
+    pub operator_label: String,
+    pub body_sha256: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Workpaper {
     pub id: String,
     pub reference: String,
@@ -88,6 +98,9 @@ pub struct Workpaper {
     pub adjustment_ids: Vec<String>,
     #[serde(default)]
     pub depends_on: Vec<String>,
+    // Empty values are omitted to preserve existing signed input preimages.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub annotations: Vec<Annotation>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -141,4 +154,21 @@ pub struct EngagementInput {
     pub notes: String,
     #[serde(default)]
     pub expected_revision: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_annotations_preserve_legacy_workpaper_preimage() {
+        let legacy = r#"{"id":"p1","reference":"A","title":"Legacy","folder":"","body":"Existing evidence","required":true,"account_ids":[],"adjustment_ids":[],"depends_on":[]}"#;
+        let decoded: Workpaper = serde_json::from_str(legacy).unwrap();
+        assert!(decoded.annotations.is_empty());
+        assert_eq!(serde_json::to_string(&decoded).unwrap(), legacy);
+        let mut explicit_empty = serde_json::to_value(&decoded).unwrap();
+        explicit_empty["annotations"] = serde_json::json!([]);
+        let decoded_empty: Workpaper = serde_json::from_value(explicit_empty).unwrap();
+        assert_eq!(serde_json::to_string(&decoded_empty).unwrap(), legacy);
+    }
 }
