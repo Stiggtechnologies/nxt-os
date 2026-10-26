@@ -1,0 +1,100 @@
+{
+  "format": "nxt-seven-module-release-evidence/v1",
+  "recorded_at": "2026-10-26T19:08:36.565Z",
+  "scope": "Bounded original NXT modules; full QuickBooks, DT Max, WebTax, Caseware and DocuSign parity remains incomplete",
+  "deployment": {
+    "id": "dpl_84LMKEnALZhbHQKiYYhDaET2YUvP",
+    "source_commit": "a62afed50f8175d2e1a7572e9eff7bb96ec5728d",
+    "url": "https://os.nxtcorporation.ca",
+    "alias_verified": true,
+    "previous_verified_deployment": "dpl_AL9mQLoaA5JivTW76w9awTttTbYd"
+  },
+  "linux_ci": {
+    "id": 40381784670,
+    "conclusion": "success",
+    "url": "https://github.com/Stiggtechnologies/nxt-os/actions/runs/40381784670"
+  },
+  "local_tests": {
+    "rust": 48,
+    "node": 39,
+    "python": 27,
+    "source_parity_verified": false
+  },
+  "production_smoke": {
+    "engagement_module": true,
+    "engagement_anonymous_status": 401,
+    "engagements": 0,
+    "url": "https://os.nxtcorporation.ca",
+    "authenticated": true,
+    "anonymous_status": 401,
+    "tax_anonymous_status": 401,
+    "storage": "supabase",
+    "firm_module": true,
+    "tax_module": true,
+    "programs": 4,
+    "filing_disabled": true,
+    "static_assets": true,
+    "projects": 0,
+    "closes": 0,
+    "tax_returns": 0,
+    "ai_enabled": false,
+    "migration_module": true,
+    "migration_anonymous_status": 401,
+    "snapshots": 2,
+    "source_authoritative": true,
+    "live_cutover_allowed": false,
+    "apps": 7,
+    "signature_preparation_module": true,
+    "signature_anonymous_status": 401,
+    "external_send_enabled": false,
+    "signing_enabled": false
+  },
+  "browser": {
+    "live_firm_clients_shows_two_source_copies": true,
+    "firm_to_snapshot_link_tested_in_synthetic_qa": true,
+    "signature_prepared_text_preview_tested_in_synthetic_qa": true,
+    "live_signature_connector_unconfigured": true
+  },
+  "source_review": {
+    "verified_read_only_snapshots": 2,
+    "exact_original_archive_readbacks": 2,
+    "targeted_source_rows_verified": 24,
+    "preserved_blank_amount_flags": 4,
+    "remaining_visible_companies_not_acquired": 152,
+    "financial_imports": 0,
+    "live_sync": false,
+    "source_completeness_verified": false,
+    "company_iam_complete": false
+  },
+  "signature_preparation": {
+    "native_internal_preparation_only": true,
+    "source_home_ax_observed": true,
+    "rea_target_analysis_performed": false,
+    "source_workflow_parity_verified": false,
+    "synthetic_supabase_exact_restart_readback": true,
+    "synthetic_package_sha256": "745c7e5802942663a853c96522a515e0c0e003fe6f498f7a63c05ba06802c6e3",
+    "ledger_unchanged_in_synthetic_flow": true,
+    "external_send_enabled": false,
+    "signing_enabled": false,
+    "connector_status": "unconfigured",
+    "verified_record_bridges": false,
+    "production_agreement_records_created": 0
+  },
+  "backup": {
+    "run_id": "40382626698",
+    "artifact_id": "12679566853",
+    "artifact_url": "https://github.com/Stiggtechnologies/nxt-os-backups/actions/runs/40382626698/artifacts/12679566853",
+    "source_pin": "a62afed50f8175d2e1a7572e9eff7bb96ec5728d",
+    "encrypted_artifact_bytes": 3959853,
+    "workflow_isolated_restore_passed": true,
+    "local_decryption_checksums_verified": true,
+    "plaintext_removed": true,
+    "new_local_postgresql_restore_performed": false,
+    "scheduled_trigger_observed": false,
+    "notification_drill_complete": false,
+    "independent_off_device_key_custody_verified": false,
+    "scope": "Three NXT Store tables across namespaces and included recovery sources; not all Supabase services or credentials"
+  },
+  "source_systems_authoritative": true,
+  "live_cutover_allowed": false
+}
