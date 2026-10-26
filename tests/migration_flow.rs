@@ -449,6 +449,34 @@ async fn parallel_source_archives_are_immutable_scoped_and_never_financial_write
     assert!(page["rows"][0][1][1][4].is_null());
     assert_eq!(page["next_from_row"], 3);
     assert_eq!(page["has_more"], true);
+    // Vercel's wildcard rewrite appends a reserved path query parameter.
+    // Its normalized value must identify this exact snapshot/report route;
+    // accepting it must not relax pagination or other query-field validation.
+    for rewrite_path in [
+        "migrations%2Fsynthetic-shadow-A%2Freports%2Fjournal%2Frows",
+        "%2Fmigrations%2Fsynthetic-shadow-A%2Freports%2Fjournal%2Frows",
+        "api%2Fmigrations%2Fsynthetic-shadow-A%2Freports%2Fjournal%2Frows",
+        "%2Fapi%2Fmigrations%2Fsynthetic-shadow-A%2Freports%2Fjournal%2Frows",
+    ] {
+        let url = format!(
+            "/api/migrations/synthetic-shadow-A/reports/journal/rows?from_row=1&limit=1&path={rewrite_path}"
+        );
+        let rewritten = call(&router, "GET", &url, None, 200).await;
+        assert_eq!(rewritten, page, "rewrite path must preserve the exact page");
+    }
+    for query in [
+        "path=migrations%2Fother-snapshot%2Freports%2Fjournal%2Frows",
+        "path=migrations%2Fsynthetic-shadow-A%2Freports%2Fother-report%2Frows",
+        "path=migrations%2Fsynthetic-shadow-A%2Farchive",
+        "path=migrations%2Fsynthetic-shadow-A%2Freports%2Fjournal%2Frows%2Fextra",
+        "unexpected=1",
+        "path=migrations%2Fsynthetic-shadow-A%2Freports%2Fjournal%2Frows&unexpected=1",
+    ] {
+        let url = format!(
+            "/api/migrations/synthetic-shadow-A/reports/journal/rows?from_row=1&limit=1&{query}"
+        );
+        call(&router, "GET", &url, None, 400).await;
+    }
     let zeros = call(
         &router,
         "GET",

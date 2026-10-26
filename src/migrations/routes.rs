@@ -51,6 +51,9 @@ async fn detail(State(state): S, Path(id): Path<String>) -> R {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Page {
+    // Vercel's /api/:path* rewrite retains this transport query parameter.
+    #[serde(default, rename = "path")]
+    transport_path: Option<String>,
     #[serde(default = "first_row")]
     from_row: u32,
     #[serde(default = "page_size")]
@@ -67,6 +70,13 @@ async fn rows(
     Path((id, report_id)): Path<(String, String)>,
     Query(page): Query<Page>,
 ) -> R {
+    if let Some(path) = &page.transport_path {
+        let path = path.trim_start_matches('/');
+        let path = path.strip_prefix("api/").unwrap_or(path);
+        if path != format!("migrations/{id}/reports/{report_id}/rows") {
+            return Err(bad("Transport path does not match the requested report"));
+        }
+    }
     Ok(Json(
         state
             .rows(&id, &report_id, page.from_row, page.limit)
