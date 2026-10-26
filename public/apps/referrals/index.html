@@ -257,7 +257,7 @@ async function show(tab) {
 function signOut() { KEY = ""; NXT.key.clear(); if (window.parent !== window) window.parent.postMessage({ nxt: "signed-out" }, location.origin); boot(); }
 
 async function boot() {
-  // Try without asking first: open workspaces need no key.
+  // Reuse an existing workspace session; server configuration never opens access.
   try { settings = await api("/api/admin/settings"); }
   catch (e) {
     if (e.status === 401) {

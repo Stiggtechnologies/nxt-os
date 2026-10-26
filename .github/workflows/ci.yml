@@ -25,4 +25,6 @@ jobs:
           node --check public/apps/engagements/engagements.js
           node --check scripts/backup-nxt-store.mjs
           node --check scripts/cutover-rehearsal.mjs
+          node --check scripts/migration-preflight.mjs
           node --test tests/cutover_rehearsal.test.mjs
+          node --test tests/migration_preflight.test.mjs

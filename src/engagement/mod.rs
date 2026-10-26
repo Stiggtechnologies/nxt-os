@@ -96,6 +96,7 @@ fn record(input: EngagementInput, record_id: &str, at: &str) -> EngagementRecord
         created_at: at.into(),
         updated_at: at.into(),
         rollforward_from: None,
+        rollforward_origin: None,
     }
 }
 fn touch(r: &mut EngagementRecord) {
@@ -471,7 +472,85 @@ impl Engagements {
         input: RollforwardInput,
     ) -> EResult<EngagementRecord> {
         let new_id = id("eng");
-        self.mutate(|s|{let old=s.engagements.iter().find(|r|r.id==rid).cloned().ok_or_else(missing)?;check_revision(&old,input.expected_revision)?;if old.status!="locked"{return Err(conflict("lock source engagement before rolling forward"));}let snapshot=fresh(&old)?;if s.engagements.len()>=200{return Err(conflict("engagement capacity reached"));}if input.period_start<=old.document.period_end{return Err(bad("next period must start after source period ends"));}if s.engagements.iter().any(|r|r.rollforward_from.as_deref()==Some(rid)&&r.document.period_start==input.period_start&&r.document.period_end==input.period_end){return Err(conflict("this source period has already been rolled forward"));}let mut d=old.document.clone();d.name=input.name.clone().unwrap_or_else(||d.name.clone());d.prior_period_start=Some(d.period_start.clone());d.prior_period_end=Some(d.period_end.clone());d.period_start=input.period_start.clone();d.period_end=input.period_end.clone();let rows=snapshot.result["accounts"].as_array().ok_or_else(||conflict("snapshot rows unavailable"))?;for a in &mut d.accounts{let row=rows.iter().find(|v|v["id"]==a.id).ok_or_else(||conflict("snapshot account missing"))?;a.prior_debit_cents=row["adjusted_debit_cents"].as_i64().ok_or_else(||conflict("invalid snapshot amount"))?;a.prior_credit_cents=row["adjusted_credit_cents"].as_i64().ok_or_else(||conflict("invalid snapshot amount"))?;a.debit_cents=0;a.credit_cents=0;}d.adjustments.clear();for paper in &mut d.workpapers{paper.body.clear();paper.adjustment_ids.clear();}d.issues.retain(|i|i.carry_forward&&i.status=="open");d.notes.clear();let d=checked_input(d)?;let mut r=record(d,&new_id,&now());r.rollforward_from=Some(rid.into());s.engagements.push(r.clone());audit(s,rid,"rolled_forward","Created separate next-period draft with adjusted comparatives; current balances, paper bodies and approvals cleared");Ok(r)}).await
+        self.mutate(|s| {
+            let old = s.engagements.iter().find(|r| r.id == rid).cloned().ok_or_else(missing)?;
+            check_revision(&old, input.expected_revision)?;
+            if old.status != "locked" {
+                return Err(conflict("lock source engagement before rolling forward"));
+            }
+            let snapshot = fresh(&old)?;
+            if s.engagements.len() >= 200 {
+                return Err(conflict("engagement capacity reached"));
+            }
+            if input.period_start <= old.document.period_end {
+                return Err(bad("next period must start after source period ends"));
+            }
+            if s.engagements.iter().any(|r| {
+                if let Some(origin) = &r.rollforward_origin {
+                    origin.source_engagement_id == rid
+                        && origin.target_period_start == input.period_start
+                        && origin.target_period_end == input.period_end
+                } else {
+                    r.rollforward_from.as_deref() == Some(rid)
+                        && r.document.period_start == input.period_start
+                        && r.document.period_end == input.period_end
+                }
+            }) {
+                return Err(conflict("this source period has already been rolled forward"));
+            }
+            let mut document = old.document.clone();
+            document.name = input.name.clone().unwrap_or_else(|| document.name.clone());
+            document.prior_period_start = Some(document.period_start.clone());
+            document.prior_period_end = Some(document.period_end.clone());
+            document.period_start = input.period_start.clone();
+            document.period_end = input.period_end.clone();
+            let rows = snapshot.result["accounts"].as_array()
+                .ok_or_else(|| conflict("snapshot rows unavailable"))?;
+            for account in &mut document.accounts {
+                let row = rows.iter().find(|row| row["id"] == account.id)
+                    .ok_or_else(|| conflict("snapshot account missing"))?;
+                account.prior_debit_cents = row["adjusted_debit_cents"].as_i64()
+                    .ok_or_else(|| conflict("invalid snapshot amount"))?;
+                account.prior_credit_cents = row["adjusted_credit_cents"].as_i64()
+                    .ok_or_else(|| conflict("invalid snapshot amount"))?;
+                account.debit_cents = 0;
+                account.credit_cents = 0;
+            }
+            document.adjustments.clear();
+            for paper in &mut document.workpapers {
+                paper.body.clear();
+                paper.adjustment_ids.clear();
+            }
+            document.issues.retain(|issue| issue.carry_forward && issue.status == "open");
+            document.notes.clear();
+            let document = checked_input(document)?;
+            let copied_at = now();
+            let mut target = record(document, &new_id, &copied_at);
+            target.rollforward_from = Some(old.id.clone());
+            target.rollforward_origin = Some(RollforwardOrigin {
+                source_engagement_id: old.id.clone(),
+                source_snapshot_id: snapshot.id.clone(),
+                source_input_revision: snapshot.input_revision,
+                source_input_hash: snapshot.input_hash.clone(),
+                source_output_hash: snapshot.output_hash.clone(),
+                source_period_start: snapshot.input_document.period_start.clone(),
+                source_period_end: snapshot.input_document.period_end.clone(),
+                target_period_start: target.document.period_start.clone(),
+                target_period_end: target.document.period_end.clone(),
+                copied_at,
+                copy_policy: RollforwardCopyPolicy::adjusted_comparatives(),
+                source_snapshot: snapshot.clone(),
+            });
+            // The embedded archive is subject to mutate's existing 1 MiB record
+            // and 8 MiB workspace bounds before this single CAS can commit.
+            s.engagements.push(target.clone());
+            audit(s, rid, "rolled_forward", &format!(
+                "Created {} from snapshot {} at input revision {}; input SHA-256 {}; output SHA-256 {}; copy policy nxt-engagement-rollforward/v1; source evidence retained only in the origin archive, current work and approvals cleared",
+                target.id, snapshot.id, snapshot.input_revision,
+                snapshot.input_hash, snapshot.output_hash,
+            ));
+            Ok(target)
+        }).await
     }
     pub async fn preview(&self, rid: &str, input: PreviewInput) -> EResult<Value> {
         let raw = match &input.document {

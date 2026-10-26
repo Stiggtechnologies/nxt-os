@@ -639,6 +639,7 @@ mod tests {
             created_at: String::new(),
             updated_at: String::new(),
             rollforward_from: None,
+            rollforward_origin: None,
         }
     }
 

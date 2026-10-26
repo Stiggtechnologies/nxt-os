@@ -1,5 +1,7 @@
 # NXT OS product roadmap
 
+2026-10-26 gap-closure checkpoint: fail-closed shared-key configuration, durable native rollforward provenance and offline migration intake are implemented and tested. QuickBooks pilot preparation has started at the user's request, including an additional company cohort. Client/company onboarding now needs to progress with verified individual authorization, company-scoped storage and safe import batches before live intake. It remains undelivered; no live migration is implied. See [GAP_CLOSURE_STATUS.md](GAP_CLOSURE_STATUS.md) for the execution order and unresolved gates.
+
 Firm Operations is one module in the AI-native operating system for an accounting group. The product direction is autonomous coordination with human review of consequential actions. This roadmap records delivery order and acceptance gates; it does not assign unrequested deadlines or claim that planned features are implemented.
 
 ## Current foundation: native Firm Operations

@@ -296,7 +296,7 @@ $("#sample").onclick = async () => {
 
 // ---- auth ----
 async function boot() {
-  // Open workspaces (no ADMIN_API_KEY on the server) skip sign-in entirely.
+  // A missing server key is a configuration error; protected APIs stay closed.
   try { status = await api("/api/os/status"); }
   catch (e) {
     if (e.status === 401 && NXT.key.get()) $("#signinErr").textContent = "That key didn't work.";

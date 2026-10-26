@@ -24,7 +24,7 @@ One click above, or import manually at https://vercel.com/new. Then:
 
 1. Push this folder to a Git repo and import it in Vercel with Framework Preset **Other**, or run `npx vercel deploy --prod` here.
 2. Set these environment variables:
-   - `ADMIN_API_KEY`: the shared workspace key used to sign in to NXT OS. Use a long random value. Without this setting, workspace APIs run without sign-in; it is required for private access.
+   - `ADMIN_API_KEY`: the shared workspace key required to sign in to NXT OS, including local development. Use a long random value. Missing, empty or whitespace-only configuration rejects protected APIs with HTTP 503; it never opens workspace access.
    - `ANTHROPIC_API_KEY`: turns on **Ask NXT**. It defaults to `claude-opus-5-5`; override with `NXT_AI_MODEL`.
    - Optional: `WIDGET_SIGNING_SECRET` for the referral widget.
 3. Configure a durable storage provider before entering operational data:

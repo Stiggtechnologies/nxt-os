@@ -158,7 +158,7 @@ impl Firm {
             "storage": self.store.backend_name(), "clients_deferred": true,
             "scheduler": "invoke /api/firm/workflows/tick from a trusted authenticated scheduler; no background daemon is installed",
             "auth_required": crate::referral::routes::auth_required(),
-            "access_model": if crate::referral::routes::auth_required() { "shared admin credential; responsibility labels are routing metadata, not verified individual identities" } else { "open local workspace; responsibility labels are routing metadata, not verified individual identities" },
+            "access_model": "shared admin credential; responsibility labels are routing metadata, not verified individual identities",
         }))
     }
 

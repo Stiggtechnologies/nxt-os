@@ -1,5 +1,7 @@
 # NXT OS cutover plan
 
+Latest preparation checkpoint, 2026-10-26: the user has authorized beginning with QuickBooks Online and adding a second named company cohort. Read-only source assessment/export acquisition has begun; private company identities and artifacts stay outside Git. An independent reviewer, period/cutoff, verified company access model, validated importer and post-write recovery remain unaccepted. **Live financial cutover remains NO-GO.** [GAP_CLOSURE_STATUS.md](GAP_CLOSURE_STATUS.md) records actual control changes and [MIGRATION_PREFLIGHT.md](MIGRATION_PREFLIGHT.md) defines the new local intake inventory. Earlier dated deployment/backup details in this plan are historical checkpoints, not new cutover acceptance.
+
 ## Decision and scope
 
 **Current financial/live-record cutover decision: NO-GO.** NXT has a verified application deployment, bounded native tests and backup/recovery evidence, but no validated QuickBooks/DT Max/WebTax migration importers, verified individual roles, company/tenant isolation, accepted source-to-target mappings, measured business-write recovery or sufficiently complete coverage for a live cohort. Source exports and real-client migration evidence have not been obtained. The 28 passing expanded development tests and 11 offline control tests are not migration sign-off.

@@ -1,0 +1,23 @@
+# Gap closure and migration preparation
+
+Checkpoint: 2026-10-26. Full source-product replication remains incomplete. The comparison matrix continues to distinguish native correctness from verified source equivalence. No live financial cutover has been authorized by a test result or a report.
+
+| Gap | Change and evidence | Closure boundary |
+| --- | --- | --- |
+| Missing server key opened protected APIs | Protected APIs now return HTTP 503 for missing, empty or whitespace-only `ADMIN_API_KEY`; configured missing/incorrect bearer keys return 401. Both errors carry `private, no-store` and `nosniff`. The regression exercises reads, writes, AI, jobs and downloads across modules and verifies rejected calls do not initialize protected records. | Native fail-closed configuration control implemented; shared-key identity and company isolation remain missing. Public liveness and intentionally public referral endpoints retain their existing scope. |
+| Rollforward lost a durable structured origin | New drafts embed the exact nonrecursive source snapshot and versioned copy policy with source/target dates, revision and hashes. Native HTTP/storage tests cover legacy serialization, source reopening/editing, immutable origin preservation and duplicate retries after target-date edits. | Native archive/provenance and replay controls implemented. Caseware posting bases, retained-earnings close, document choices and paired runtime equivalence remain open. |
+| No pinned migration intake | `scripts/migration-preflight.mjs` validates a private charter and exact bounded local artifacts before inventory readiness. It rejects unknown approval claims, unsafe paths, changed/missing files, scope gaps and missing pilot inputs, and never grants live GO. | Intake inventory control implemented; it does not parse source exports, validate authority or import records. [Contract](MIGRATION_PREFLIGHT.md). |
+| Source migration contract unobserved | Authorized read-only QuickBooks pilot assessment has begun; actual financial report acquisition and private byte identities are retained outside Git. No company names, source amounts or raw exports are published. | Actual source discovery has started. A report ZIP is not a complete company backup or a validated full-ledger importer. |
+
+The full locked native suite passes **44 Rust tests (35 library, nine integration)**. The offline comparator and intake tool pass **19 Node tests (11 comparator, eight intake)**. The optional symlink exercise was unavailable on this Windows host; successful ordinary-file/directory/replacement cases do not establish a passed symlink exercise. CI and deployment evidence must identify their actual commit separately.
+
+## Migration execution order
+
+1. Keep each selected QuickBooks company in its own private cohort register. Identify source realm, exact period/cutoff, reporting basis/currency, volume, source archive, required capabilities, preparer and independent financial reviewer. A display name alone cannot bind a company, and duplicate names require explicit selection.
+2. Acquire read-only source exports, preserve original bytes and hashes, inspect the actual schema/precision, and inventory records that reports omit. Do not assume a selected report ZIP includes attachments, nonposting transactions, audit history, permissions or complete source IDs.
+3. Complete verified individual authority and company-scoped isolation before accepting live target records. Current `gl:company` is a single Ledger company, and a deployment namespace is not multi-company authorization.
+4. Deliver a staged source-specific importer with immutable batch identity, explicit mappings, preview, idempotency and interruption recovery. Current bank-feed `set_nx`, record and index writes are separate; that route cannot serve as a safe full-ledger migration importer.
+5. Run at least two isolated rehearsals with per-account, per-entry and subledger reconciliation, measured post-write recovery and independent review. Backups are configured and manual restore checks passed; scheduled-trigger observation, alert drill and off-device key custody remain distinct requirements.
+6. Present a concrete cohort GO/NO-GO decision only after its gates pass. Keep source software authoritative for unsupported functions and certified filing. Preserve source records and a readable archive.
+
+User authorization to begin migration starts preparation and assessment. It does not make missing functionality, company isolation, independent review or recovery evidence pass. See [the cutover plan](CUTOVER_PLAN.md), [global comparison](REPLICATION_COMPARISON_AUDIT.md) and [Caseware comparison](CASEWARE_PARITY_AUDIT.md) for unresolved scope.

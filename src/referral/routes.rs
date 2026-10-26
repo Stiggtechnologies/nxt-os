@@ -91,25 +91,33 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// True when ADMIN_API_KEY is set; without it the workspace runs open (no sign-in).
+/// Protected workspace APIs always require sign-in. A missing server key is
+/// configuration failure, never an instruction to expose the workspace.
 pub fn auth_required() -> bool {
-    std::env::var("ADMIN_API_KEY").is_ok_and(|k| !k.is_empty())
+    true
 }
 
 pub async fn require_admin(headers: HeaderMap, req: Request, next: Next) -> Response {
-    if !auth_required() {
-        return next.run(req).await;
-    }
-    let expected = std::env::var("ADMIN_API_KEY").unwrap_or_default();
+    let expected = match std::env::var("ADMIN_API_KEY") {
+        Ok(key) if !key.trim().is_empty() => key,
+        _ => return auth_error(StatusCode::SERVICE_UNAVAILABLE, "Workspace sign-in is unavailable. Contact the administrator."),
+    };
     let given = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("");
     if !constant_time_eq(given.as_bytes(), expected.as_bytes()) {
-        return ApiError(StatusCode::UNAUTHORIZED, "invalid or missing API key".into()).into_response();
+        return auth_error(StatusCode::UNAUTHORIZED, "invalid or missing API key");
     }
     next.run(req).await
+}
+
+fn auth_error(status: StatusCode, message: &str) -> Response {
+    let mut response = ApiError(status, message.into()).into_response();
+    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
+    response.headers_mut().insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    response
 }
 
 /// Public endpoints are called by the widget from merchant storefronts.

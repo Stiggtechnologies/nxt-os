@@ -3,6 +3,7 @@
 use axum::{body::Body, http::Request};
 use nxt_os::{app_with, store::Store};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -267,6 +268,149 @@ async fn engagement_workpaper_lifecycle() {
         for field in ["document","snapshot","snapshots","signoff_history","lock_history","import_history"] {assert!(row.get(field).is_none(),"List projection must not embed {field}");}
     }
     engagement_bridge_acceptance().await;
+    engagement_rollforward_origin_acceptance().await;
+}
+
+async fn engagement_rollforward_origin_acceptance() {
+    // A separate in-memory app makes preservation assertions independent from
+    // other acceptance scenarios. These are synthetic HTTP calls, not services.
+    let router = app_with(Store::memory);
+    ok(&router,"PUT","/api/ledger/company",Some(json!({"name":"Synthetic origin sentinel","currency":"CAD","province":"AB","default_tax_code":"GST"}))).await;
+    ok(&router,"GET","/api/ledger/accounts",None).await;
+    ok(&router,"POST","/api/ledger/entries",Some(json!({"date":"2025-01-02","memo":"Synthetic origin preservation sentinel","lines":[{"account_id":"acc_1000","debit":10_000},{"account_id":"acc_3000","credit":10_000}]}))).await;
+    let tax_sentinel = ok(&router,"POST","/api/tax/returns",Some(json!({"program":"T1","tax_year":2025,"jurisdiction":"AB","name":"Synthetic origin Tax sentinel","client_ref":"synthetic-only","inputs":{},"parties":[],"notes":"Preserve this draft exactly."}))).await;
+    let firm_sentinel = ok(&router,"POST","/api/firm/projects",Some(json!({"name":"Synthetic origin Firm sentinel","tasks":[{"title":"Preserve this task exactly"}]}))).await;
+    let ledger_before = ok(&router,"GET","/api/ledger/entries",None).await;
+    let tax_before = ok(&router,"GET","/api/tax/returns",None).await;
+    let firm_before = ok(&router,"GET","/api/firm/projects",None).await;
+    assert_eq!(ledger_before.as_array().unwrap().len(),1);
+    assert_eq!(tax_before.as_array().unwrap().len(),1);
+    assert_eq!(firm_before.as_array().unwrap().len(),1);
+
+    let source = ok(&router,"POST","/api/engagements",Some(fixture())).await;
+    assert!(source.get("rollforward_origin").is_none_or(Value::is_null),"An ordinary new engagement has no fabricated rollforward origin");
+    let source = calculate(&router,&source).await;
+    let source = signoff(&router,&source,"wp_lead","prepared").await;
+    let source = signoff(&router,&source,"wp_review","prepared").await;
+    let source = transition(&router,&source,"in_review","Review synthetic origin source.").await;
+    let source = signoff(&router,&source,"wp_lead","reviewed").await;
+    let source = signoff(&router,&source,"wp_review","reviewed").await;
+    let source = transition(&router,&source,"locked","Freeze the exact synthetic comparative source.").await;
+    let source_snapshot = source["snapshot"].clone();
+    let next_period = json!({"expected_revision":revision(&source),"period_start":"2026-01-01","period_end":"2026-12-31","name":"Synthetic immutable origin target"});
+
+    let before_rollforward = ok(&router,"GET","/api/engagements",None).await;
+    let mut stale = next_period.clone(); stale["expected_revision"] = json!(revision(&source)-1);
+    fails(&router,"POST",&endpoint(&source,"/rollforward"),Some(stale),409).await;
+    assert_eq!(ok(&router,"GET","/api/engagements",None).await,before_rollforward,"A stale rollforward cannot create a target");
+    assert_eq!(ok(&router,"GET",&endpoint(&source,""),None).await,source);
+
+    let next = ok(&router,"POST",&endpoint(&source,"/rollforward"),Some(next_period.clone())).await;
+    let origin = next["rollforward_origin"].clone();
+    assert!(origin.is_object(),"A rolled-forward record must carry structured source provenance");
+    assert_eq!(next["rollforward_from"],source["id"]);
+    assert_eq!(origin["source_engagement_id"],source["id"]);
+    assert_eq!(origin["source_snapshot_id"],source_snapshot["id"]);
+    assert_eq!(origin["source_input_revision"],source_snapshot["input_revision"]);
+    assert_eq!(origin["source_input_hash"],source_snapshot["input_hash"]);
+    assert_eq!(origin["source_output_hash"],source_snapshot["output_hash"]);
+    assert_eq!(origin["source_period_start"],source["document"]["period_start"]);
+    assert_eq!(origin["source_period_end"],source["document"]["period_end"]);
+    assert_eq!(origin["target_period_start"],"2026-01-01");
+    assert_eq!(origin["target_period_end"],"2026-12-31");
+    assert!(chrono::DateTime::parse_from_rfc3339(origin["copied_at"].as_str().unwrap()).is_ok());
+    assert_eq!(origin["source_snapshot"],source_snapshot,"Retain the exact snapshot, not a pointer to the mutable source record");
+    assert!(origin["source_snapshot"].get("rollforward_origin").is_none(),"The embedded snapshot is not a recursive engagement archive");
+    let preimage:nxt_os::engagement::models::EngagementInput=serde_json::from_value(origin["source_snapshot"]["input_document"].clone()).unwrap();
+    assert_eq!(hex::encode(Sha256::digest(serde_json::to_vec(&preimage).unwrap())),origin["source_input_hash"].as_str().unwrap());
+    assert_eq!(hex::encode(Sha256::digest(serde_json::to_vec(&origin["source_snapshot"]["result"]).unwrap())),origin["source_output_hash"].as_str().unwrap());
+    let policy=&origin["copy_policy"];
+    assert_eq!(policy["version"],"nxt-engagement-rollforward/v1");
+    assert_eq!(policy["comparatives"],"source_snapshot_adjusted_trial_balance");
+    assert_eq!(policy["current_balances"],"zero");
+    assert_eq!(policy["name"],"source_unless_explicitly_overridden");
+    assert_eq!(policy["source_evidence"],"embedded_source_snapshot_archive_only");
+    assert_eq!(policy["issues"],"open_and_carry_forward_only");
+    assert_eq!(policy["source_mutated"],false);
+    assert_eq!(policy["external_modules_mutated"],false);
+    assert_eq!(policy["preserved_fields"],json!([
+        "client_ref","engagement_kind","currency","account_ids_codes_names_kinds_and_groups",
+        "group_definitions_and_gifi_metadata","workpaper_ids_references_titles_folders_and_dependencies",
+        "workpaper_account_references"
+    ]));
+    assert_eq!(policy["cleared_fields"],json!([
+        "current_account_balances","local_adjustments","workpaper_bodies","workpaper_adjustment_references",
+        "notes","active_calculation","calculation_history","signoffs","signoff_history","lock_history","import_history"
+    ]));
+
+    assert_eq!(next["status"],"draft");
+    assert!(next["snapshot"].is_null());
+    assert_eq!(next["snapshots"],json!([]));
+    assert_eq!(next["signoffs"],json!([]));
+    assert_eq!(next["signoff_history"],json!([]));
+    assert_eq!(next["document"]["adjustments"],json!([]));
+    assert_eq!(next["document"]["prior_period_start"],source["document"]["period_start"]);
+    assert_eq!(next["document"]["prior_period_end"],source["document"]["period_end"]);
+    assert_eq!(next["document"]["groups"],source["document"]["groups"]);
+    for account in next["document"]["accounts"].as_array().unwrap() {
+        let row=source_snapshot["result"]["accounts"].as_array().unwrap().iter().find(|row|row["id"]==account["id"]).unwrap();
+        assert_eq!(account["prior_debit_cents"],row["adjusted_debit_cents"]);
+        assert_eq!(account["prior_credit_cents"],row["adjusted_credit_cents"]);
+        assert_eq!(account["debit_cents"],0); assert_eq!(account["credit_cents"],0);
+    }
+    assert!(next["document"]["workpapers"].as_array().unwrap().iter().all(|p|p["body"]==""&&p["adjustment_ids"]==json!([])));
+    let after_rollforward = ok(&router,"GET","/api/engagements",None).await;
+    fails(&router,"POST",&endpoint(&source,"/rollforward"),Some(next_period),409).await;
+    assert_eq!(ok(&router,"GET","/api/engagements",None).await,after_rollforward,"A duplicate source-period rollforward cannot create another target");
+    assert_eq!(ok(&router,"GET",&endpoint(&next,""),None).await,next);
+    assert_eq!(ok(&router,"GET",&endpoint(&source,""),None).await,source,"Rollforward cannot mutate the locked source");
+
+    // A draft's planning dates may change, but they cannot free the original
+    // copy slot: replay protection binds the immutable origin destination.
+    let mut replanned=editable(&next);
+    replanned["period_start"]=json!("2027-01-01");
+    replanned["period_end"]=json!("2027-12-31");
+    let replanned=ok(&router,"PUT",&endpoint(&next,""),Some(replanned)).await;
+    assert_eq!(replanned["rollforward_origin"],origin);
+    let before_replay=ok(&router,"GET","/api/engagements",None).await;
+    fails(&router,"POST",&endpoint(&source,"/rollforward"),Some(json!({
+        "expected_revision":revision(&source),"period_start":"2026-01-01","period_end":"2026-12-31"
+    })),409).await;
+    assert_eq!(ok(&router,"GET","/api/engagements",None).await,before_replay);
+    let mut restored=editable(&replanned);
+    restored["period_start"]=json!("2026-01-01");
+    restored["period_end"]=json!("2026-12-31");
+    let next=ok(&router,"PUT",&endpoint(&replanned,""),Some(restored)).await;
+    assert_eq!(next["rollforward_origin"],origin);
+
+    let reopened = transition(&router,&source,"draft","Correct source after its exact snapshot was copied.").await;
+    assert!(reopened["snapshot"].is_null());
+    let mut edit=editable(&reopened);
+    edit["notes"]=json!("Synthetic source changed after rollforward; prior origin must not follow this edit.");
+    edit["accounts"][0]["debit_cents"]=json!(1_020_000);
+    edit["accounts"][4]["credit_cents"]=json!(1_220_000);
+    let changed_source = ok(&router,"PUT",&endpoint(&reopened,""),Some(edit)).await;
+    assert!(changed_source["input_revision"].as_u64().unwrap()>origin["source_input_revision"].as_u64().unwrap());
+    assert!(changed_source["snapshot"].is_null());
+    assert!(changed_source["snapshots"].as_array().unwrap().contains(&source_snapshot));
+    let retained = ok(&router,"GET",&endpoint(&next,""),None).await;
+    assert_eq!(retained,next,"Changing the source cannot rewrite the target or its comparatives");
+    assert_eq!(retained["rollforward_origin"],origin);
+    let package = ok(&router,"GET",&endpoint(&next,"/package"),None).await;
+    assert_eq!(package["engagement"]["rollforward_origin"],origin,"Native export preserves the self-contained origin after the source changes");
+
+    let mut target_edit=editable(&retained); target_edit["notes"]=json!("Synthetic next-period planning note.");
+    let changed_target=ok(&router,"PUT",&endpoint(&retained,""),Some(target_edit.clone())).await;
+    assert_eq!(changed_target["rollforward_origin"],origin,"Target edits cannot replace immutable origin metadata");
+    fails(&router,"PUT",&endpoint(&retained,""),Some(target_edit),409).await;
+    assert_eq!(ok(&router,"GET",&endpoint(&retained,""),None).await,changed_target);
+    assert_eq!(ok(&router,"GET","/api/ledger/entries",None).await,ledger_before);
+    assert_eq!(ok(&router,"GET","/api/tax/returns",None).await,tax_before);
+    assert_eq!(ok(&router,"GET",&format!("/api/tax/returns/{}",id(&tax_sentinel)),None).await,tax_sentinel);
+    assert_eq!(ok(&router,"GET","/api/firm/projects",None).await,firm_before);
+    assert_eq!(ok(&router,"GET",&format!("/api/firm/projects/{}",id(&firm_sentinel)),None).await,firm_sentinel);
+    assert_eq!(ok(&router,"GET","/api/firm/runs",None).await,json!([]));
+    assert_eq!(ok(&router,"GET","/api/firm/approvals",None).await,json!([]));
 }
 
 async fn engagement_bridge_acceptance() {
