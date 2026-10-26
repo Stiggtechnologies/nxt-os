@@ -10,6 +10,7 @@ pub mod store;
 pub mod tax;
 pub mod engagement;
 pub mod migrations;
+pub mod signatures;
 
 use axum::Router;
 use std::sync::Arc;
@@ -28,16 +29,18 @@ fn app_modules(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::eng
 fn app_modules_with_tax(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>) -> Router {
     let engagements = Arc::new(engagement::Engagements::new(Store::from_env(),ledger.clone(),tax.clone(),firm.clone()));
     let migrations = Arc::new(migrations::Migrations::new(Store::from_env()));
-    app_all(ledger,referrals,firm,tax,engagements,migrations)
+    let signatures = Arc::new(signatures::Signatures::new(Store::from_env()));
+    app_all(ledger,referrals,firm,tax,engagements,migrations,signatures)
 }
 
-fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>, migrations:Arc<migrations::Migrations>) -> Router {
+fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>, migrations:Arc<migrations::Migrations>, signatures:Arc<signatures::Signatures>) -> Router {
     Router::new()
         .merge(ledger::routes::router(ledger.clone()))
         .merge(firm::router(firm.clone()))
         .merge(tax::router(tax.clone()))
         .merge(engagement::router(engagements.clone()))
         .merge(migrations::router(migrations))
+        .merge(signatures::router(signatures))
         .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
 }
@@ -50,5 +53,6 @@ pub fn app_with(make_store: impl Fn() -> Store) -> Router {
     let tax = Arc::new(tax::Tax::new(make_store()));
     let engagements=Arc::new(engagement::Engagements::new(make_store(),ledger.clone(),tax.clone(),firm.clone()));
     let migrations = Arc::new(migrations::Migrations::new(make_store()));
-    app_all(ledger, referrals, firm, tax, engagements,migrations)
+    let signatures = Arc::new(signatures::Signatures::new(make_store()));
+    app_all(ledger, referrals, firm, tax, engagements,migrations,signatures)
 }

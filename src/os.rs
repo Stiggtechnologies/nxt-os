@@ -60,6 +60,7 @@ async fn status(State(os): State<Os>) -> Json<Value> {
             { "id": "tax", "name": "NXT Tax", "path": "/apps/tax/" },
             { "id": "engagements", "name": "NXT Engagements", "path": "/apps/engagements/" },
             { "id": "migrations", "name": "Parallel testing", "path": "/apps/migrations/" },
+            { "id": "signatures", "name": "Prepare signatures", "path": "/apps/signatures/" },
             { "id": "referrals", "name": "NXT Referrals", "path": "/apps/referrals/" },
         ],
     }))
@@ -139,9 +140,11 @@ async fn insights(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
 // ---- assistant ----------------------------------------------------------------
 
 const SYSTEM_PROMPT: &str = "You are NXT, the assistant built into NXT OS: an operating system for running a Canadian business. \
-Four apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports), \
+Seven apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports), \
 Firm Operations (projects, templates, automated internal work, human approvals, reports and books close), \
-NXT Tax (independent scoped T1, T2, T3 and T5013 workpapers), and NXT Referrals (customer referral and loyalty programs).
+NXT Tax (independent scoped T1, T2, T3 and T5013 workpapers), NXT Engagements (working papers and internal review), \
+Parallel testing (read-only source snapshots), Prepare signatures (internal agreement preparation), \
+and NXT Referrals (customer referral and loyalty programs).
 
 How you work:
 - Answer from the user's live data. Use the tools to look things up; never estimate or invent figures.
@@ -153,6 +156,8 @@ For accounting changes (send an invoice, record a payment, categorize a transact
 - Dates are ISO (YYYY-MM-DD). If the user gives a relative period like \"last quarter\", resolve it against today's date from get_dashboard.
 - GST/HST figures are working papers, not filed returns; say so when asked about filing.
 - Tax calculations are scoped internal workpapers. Read their ruleset and diagnostics; never claim complete DT Max parity, CRA certification, approval or filing. Open the Tax workspace for editing or review. You cannot approve, calculate, import or transmit returns through assistant tools.
+- Prepare signatures supports internal drafts, templates and review. External sending and signing are unavailable; DocuSign is not connected. Open its workspace when requested. Assistant tools cannot read or change agreement preparation records.
+- Parallel testing holds frozen source-company snapshots separate from native NXT books. Assistant tools cannot read their financial rows. Never present native empty or zero balances as migrated source balances. Open Parallel testing for source-report review.
 
 Voice: direct, confident and plain-spoken. Lead with the answer, then the key numbers, then one practical next step \
 when it helps. Keep replies short; use a compact list or table only when comparing several figures.";
@@ -255,7 +260,7 @@ fn tools() -> Value {
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "app": { "type": "string", "enum": ["ledger", "firm", "tax", "engagements", "migrations", "referrals"] },
+                    "app": { "type": "string", "enum": ["ledger", "firm", "tax", "engagements", "migrations", "signatures", "referrals"] },
                     "view": { "type": "string" }
                 },
                 "required": ["app"]
@@ -371,8 +376,8 @@ async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) 
         }
         "open_app" => {
             let app = s(input, "app").ok_or("app is required")?;
-            if !["ledger","firm","tax","engagements","migrations","referrals"].contains(&app.as_str()) {
-                return Err("app must be ledger, firm, tax, engagements, migrations or referrals".into());
+            if !["ledger","firm","tax","engagements","migrations","signatures","referrals"].contains(&app.as_str()) {
+                return Err("app must be ledger, firm, tax, engagements, migrations, signatures or referrals".into());
             }
             actions.push(json!({ "type": "open_app", "app": app, "view": s(input, "view") }));
             Ok(json!({ "opened": true }))
@@ -626,5 +631,10 @@ mod firm_tool_tests {
         let repeat = run_tool(&os, "propose_firm_action", &input, &mut actions).await.unwrap();
         assert_eq!(response["proposal"]["id"], repeat["proposal"]["id"]);
         assert!(run_tool(&os, "approve_firm_action", &json!({}), &mut actions).await.is_err());
+        let mut navigation = Vec::new();
+        let opened = run_tool(&os, "open_app", &json!({"app":"signatures","view":"drafts"}), &mut navigation).await.unwrap();
+        assert_eq!(opened["opened"], true);
+        assert_eq!(navigation, vec![json!({"type":"open_app","app":"signatures","view":"drafts"})]);
+        assert!(run_tool(&os, "get_signature_draft", &json!({}), &mut navigation).await.is_err());
     }
 }

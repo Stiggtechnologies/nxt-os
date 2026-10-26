@@ -1,5 +1,7 @@
 # Gap closure and migration preparation
 
+Production review update: [parallel release evidence](PARALLEL_RELEASE_EVIDENCE.json) binds the deployed source commit, successful CI, two protected read-only snapshots, exact ZIP and targeted-row readback, and the subsequent encrypted backup/isolated recovery and local decryption verification. This closes the review-copy availability gap for those two acquisitions; it does not establish complete migration, source completeness or financial acceptance. The remainder of the authorized client roster still requires acquisition and verification.
+
 Checkpoint: 2026-10-26. The user explicitly authorized as-is source preservation and protected read-only snapshot publication in **parallel test mode**. QuickBooks and the other original applications remain the source of truth. Full source-product replication remains incomplete; expanded navigation labels do not establish implemented capability or parity. No live financial cutover has been authorized by a test result, snapshot or report.
 
 | Gap | Change and evidence | Closure boundary |

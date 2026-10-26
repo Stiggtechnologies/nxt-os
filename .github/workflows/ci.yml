@@ -22,8 +22,10 @@ jobs:
       - name: Verify browser and operational scripts
         run: |
           node --check public/apps/tax/tax.js
+          node --check public/apps/firm/firm.js
           node --check public/apps/engagements/engagements.js
           node --check public/apps/migrations/migrations.js
+          node --check public/apps/signatures/signatures.js
           node --check public/apps/ledger/qb-navigation.js
           node --check scripts/publish-shadow-snapshot.mjs
           node --check scripts/backup-nxt-store.mjs
@@ -33,6 +35,7 @@ jobs:
           node --test tests/migration_preflight.test.mjs
           node --test tests/shadow_publisher.test.mjs
           node --test tests/qb_navigation.test.mjs
+          node --test tests/signatures_navigation.test.mjs
       - name: Verify bounded QuickBooks financial report assessment
         run: python3 -B -m unittest discover -s tests -p test_qbo_export.py
       - name: Verify source-preserving parallel test preparation

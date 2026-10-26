@@ -7,8 +7,8 @@ use tower::ServiceExt;
 async fn call(router: &axum::Router, method: &str, uri: &str, key: Option<&str>) -> axum::response::Response {
     let mut request = Request::builder().method(method).uri(uri);
     if let Some(key) = key { request = request.header("authorization", key); }
-    if method == "POST" { request = request.header("content-type", "application/json"); }
-    router.clone().oneshot(request.body(if method == "POST" { Body::from("{}") } else { Body::empty() }).unwrap()).await.unwrap()
+    if method == "POST" || method == "PUT" { request = request.header("content-type", "application/json"); }
+    router.clone().oneshot(request.body(if method == "POST" || method == "PUT" { Body::from("{}") } else { Body::empty() }).unwrap()).await.unwrap()
 }
 
 /// One sequential test owns environment mutation in this executable. Other
@@ -22,12 +22,14 @@ async fn missing_workspace_key_fails_closed_across_modules() {
     let firm = Arc::new(nxt_os::firm::Firm::new(Store::memory(), ledger.clone()));
     let tax = Arc::new(nxt_os::tax::Tax::new(Store::memory()));
     let engagements = Arc::new(nxt_os::engagement::Engagements::new(Store::memory(), ledger.clone(), tax.clone(), firm.clone()));
+    let signatures = Arc::new(nxt_os::signatures::Signatures::new(Store::memory()));
     let router = axum::Router::new()
         .merge(nxt_os::ledger::routes::router(ledger.clone()))
         .merge(nxt_os::firm::router(firm.clone()))
         .merge(nxt_os::tax::router(tax.clone()))
         .merge(nxt_os::engagement::router(engagements.clone()))
         .merge(nxt_os::migrations::router(Arc::new(nxt_os::migrations::Migrations::new(Store::memory()))))
+        .merge(nxt_os::signatures::router(signatures.clone()))
         .merge(nxt_os::os::router(nxt_os::os::Os {
             ledger: ledger.clone(), referrals: referrals.clone(), firm: firm.clone(), tax: tax.clone(), engagements: engagements.clone(),
         }))
@@ -50,6 +52,12 @@ async fn missing_workspace_key_fails_closed_across_modules() {
             ("GET", "/api/engagements/summary"),
             ("GET", "/api/migrations"),
             ("GET", "/api/migrations/unavailable/archive"),
+            ("GET", "/api/signatures"),
+            ("GET", "/api/signatures/catalog"),
+            ("GET", "/api/signatures/audit?path=signatures%2Faudit&offset=0&limit=1"),
+            ("GET", "/api/signatures/unavailable"),
+            ("GET", "/api/signatures/unavailable/package"),
+            ("GET", "/api/signatures/templates/unavailable"),
             ("GET", "/api/firm/exports/unavailable/download"),
             ("GET", "/api/tax/returns/unavailable/package"),
             ("GET", "/api/engagements/unavailable/package"),
@@ -63,6 +71,11 @@ async fn missing_workspace_key_fails_closed_across_modules() {
             ("POST", "/api/engagements"),
             ("POST", "/api/migrations/chunks"),
             ("POST", "/api/migrations/snapshots"),
+            ("POST", "/api/signatures"),
+            ("PUT", "/api/signatures/unavailable"),
+            ("POST", "/api/signatures/unavailable/transition"),
+            ("POST", "/api/signatures/unavailable/template"),
+            ("POST", "/api/signatures/templates/unavailable/instantiate"),
         ] {
             for key in [None, Some("Bearer guessed-key")] {
                 let response = call(&router, method, uri, key).await;
@@ -81,20 +94,38 @@ async fn missing_workspace_key_fails_closed_across_modules() {
         assert!(firm.store.get("firm:state:v1").await.unwrap().is_none());
         assert!(tax.store.get("tax:state:v1").await.unwrap().is_none());
         assert!(engagements.store.get("engagements:state:v1").await.unwrap().is_none());
+        assert!(signatures.store.get("signatures:state:v1").await.unwrap().is_none());
     }
 
     unsafe { std::env::set_var("ADMIN_API_KEY", "configured-test-key") };
     for supplied in [None, Some("Bearer wrong-key"), Some("Basic configured-test-key")] {
-        let response = call(&router, "GET", "/api/os/status", supplied).await;
-        assert_eq!(response.status().as_u16(), 401);
-        assert_eq!(response.headers()["cache-control"], "private, no-store");
+        for (method, uri) in [
+            ("GET", "/api/os/status"),
+            ("GET", "/api/signatures"),
+            ("GET", "/api/signatures/catalog"),
+            ("GET", "/api/signatures/audit"),
+            ("GET", "/api/signatures/unavailable"),
+            ("GET", "/api/signatures/unavailable/package"),
+            ("GET", "/api/signatures/templates/unavailable"),
+            ("POST", "/api/signatures"),
+            ("PUT", "/api/signatures/unavailable"),
+            ("POST", "/api/signatures/unavailable/transition"),
+            ("POST", "/api/signatures/unavailable/template"),
+            ("POST", "/api/signatures/templates/unavailable/instantiate"),
+        ] {
+            let response = call(&router, method, uri, supplied).await;
+            assert_eq!(response.status().as_u16(), 401, "{method} {uri}");
+            assert_eq!(response.headers()["cache-control"], "private, no-store");
+        }
     }
+    assert!(signatures.store.get("signatures:state:v1").await.unwrap().is_none());
     let response = call(&router, "GET", "/api/os/status", Some("Bearer configured-test-key")).await;
     assert_eq!(response.status().as_u16(), 200);
     let bytes = axum::body::to_bytes(response.into_body(), 8192).await.unwrap();
     let status: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(status["auth_required"], true);
-    assert_eq!(status["apps"].as_array().unwrap().len(), 6);
+    assert_eq!(status["apps"].as_array().unwrap().len(), 7);
+    assert!(status["apps"].as_array().unwrap().iter().any(|app| app["id"] == "signatures" && app["path"] == "/apps/signatures/"));
     unsafe { std::env::remove_var("ADMIN_API_KEY") };
     assert_eq!(call(&router, "GET", "/api/os/status", Some("Bearer configured-test-key")).await.status().as_u16(), 503);
 }
