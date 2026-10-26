@@ -1,0 +1,35 @@
+{
+  "verified_at": "2026-10-26T04:10:41.2809167Z",
+  "url": "https://os.nxtcorporation.ca",
+  "deployment_id": "dpl_3TFWdFWtsU3tZMpRXdWYQGGJsnRa",
+  "source_commit": "75a0f4aa2be43a72a7e096ffb7868ccef8237f3c",
+  "previous_verified_deployment_id": "dpl_22rTvdseYSqPurc5tczBCEXRn9P7",
+  "change": "Validation-only homepage guidance, final backup hardening/evidence and CI",
+  "linux_ci": {
+    "id": 40267246646,
+    "conclusion": "success",
+    "url": "https://github.com/Stiggtechnologies/nxt-os/actions/runs/40267246646"
+  },
+  "production_smoke": {
+    "url": "https://os.nxtcorporation.ca",
+    "authenticated": true,
+    "anonymous_status": 401,
+    "tax_anonymous_status": 401,
+    "storage": "supabase",
+    "firm_module": true,
+    "tax_module": true,
+    "programs": 4,
+    "filing_disabled": true,
+    "static_assets": true,
+    "projects": 0,
+    "closes": 0,
+    "tax_returns": 0,
+    "ai_enabled": false
+  },
+  "financial_migration": false,
+  "financial_cutover_decision": "NO-GO",
+  "backup_run": 40265656732,
+  "backup_artifact": 12625963167,
+  "off_device_key_custody": "pending",
+  "server_firm_tax_sources_unchanged_from_initial_verified_release": true
+}

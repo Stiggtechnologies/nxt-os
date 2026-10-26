@@ -128,3 +128,6 @@ P1 denotes material functional/calculation/output/external gates. P2 denotes wor
 | Full-replication completion | `partial` | All required rows resolved and independently reviewed; currently substantial gaps remain. |
 
 This audit records actual bounded release/backup results and the remaining comparison gaps. Financial migration remains NO-GO until its specific cohort gates close. It is not sign-off that all replications are complete or any product is certified.
+
+
+Final validation-release checkpoint: [RELEASE_EVIDENCE.json](RELEASE_EVIDENCE.json) binds application source `75a0f4aa2be43a72a7e096ffb7868ccef8237f3c`, passing Linux CI and verified deployment `dpl_3TFWdFWtsU3tZMpRXdWYQGGJsnRa` at https://os.nxtcorporation.ca. This release adds synthetic-validation homepage guidance; it does not close any source-product parity or financial migration gap.

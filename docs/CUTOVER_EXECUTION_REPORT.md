@@ -49,3 +49,9 @@ No pilot company/cohort or independent business/tax reviewer has been selected. 
 The next steps are to observe/monitor scheduled backups, establish off-device key custody, finish G0 cohort/owner/volume/deadline/retention inputs, and deliver the security/import/recovery foundation before rehearsing any live cohort. Source systems remain authoritative until their precise capabilities are independently accepted.
 
 See [CUTOVER_PLAN.md](CUTOVER_PLAN.md), [CUTOVER_CHECKLIST.csv](CUTOVER_CHECKLIST.csv) and [REPLICATION_COMPARISON_AUDIT.md](REPLICATION_COMPARISON_AUDIT.md). Completed technical subchecks are not financial cutover approval; pending future scheduled events do not prevent this completed documentation checkpoint from being published.
+
+## Final validation release checkpoint
+
+At 2026-10-26 04:10:41 UTC, deployment `dpl_3TFWdFWtsU3tZMpRXdWYQGGJsnRa`, application source `75a0f4aa2be43a72a7e096ffb7868ccef8237f3c`, was promoted and verified at https://os.nxtcorporation.ca. [Linux CI run 40267246646](https://github.com/Stiggtechnologies/nxt-os/actions/runs/40267246646) passed. Server, Firm and Tax source trees, API entry point and dependency lockfile match the initial verified release; the homepage now explicitly directs synthetic validation use. Live anonymous Firm/Tax requests returned401; authenticated Supabase-backed module/assets checks passed and filing stayed disabled. [RELEASE_EVIDENCE.json](RELEASE_EVIDENCE.json) binds the exact deployment, CI and smoke result.
+
+The user approved live browser sign-in and local Windows-encrypted workspace/recovery-key handoff files. Sign-in succeeded; the temporary plaintext sign-in file was cleared. Those DPAPI copies remain tied to this Windows account/machine and do not complete independent off-device custody. No financial accounts were migrated. The financial cutover decision remains NO-GO.
