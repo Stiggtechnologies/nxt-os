@@ -93,11 +93,28 @@ async function fingerprints(session) {
   }
   return result;
 }
-const schemaQuery = `SELECT json_build_object('columns',(SELECT json_agg(row_to_json(c) ORDER BY table_name,ordinal_position) FROM (SELECT table_name,column_name,ordinal_position,data_type,is_nullable,column_default,is_identity,identity_generation FROM information_schema.columns WHERE table_schema='nxt_private') c),'constraints',(SELECT json_agg(row_to_json(k) ORDER BY table_name,conname) FROM (SELECT r.relname AS table_name,x.conname,pg_get_constraintdef(x.oid) AS definition FROM pg_constraint x JOIN pg_class r ON r.oid=x.conrelid JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname='nxt_private') k))::text;`;
+const columnsConstraintsQuery = `SELECT json_build_object('columns',(SELECT json_agg(row_to_json(c) ORDER BY table_name,ordinal_position) FROM (SELECT table_name,column_name,ordinal_position,data_type,is_nullable,column_default,is_identity,identity_generation FROM information_schema.columns WHERE table_schema='nxt_private') c),'constraints',(SELECT json_agg(row_to_json(k) ORDER BY table_name,conname) FROM (SELECT r.relname AS table_name,x.conname,pg_get_constraintdef(x.oid) AS definition FROM pg_constraint x JOIN pg_class r ON r.oid=x.conrelid JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname='nxt_private') k))::text;`;
 async function schemaIdentity(session) {
   const definition = (await session.query(`SELECT pg_get_functiondef('public.nxt_store_command(text,jsonb)'::regprocedure);`)).join('\n').replaceAll('\r\n', '\n') + '\n';
-  const schema = (await session.query(schemaQuery)).join('\n');
-  return { definition, schema, rpc_sha256: digest(definition), schema_sha256: digest(schema) };
+  const columnsConstraints = (await session.query(columnsConstraintsQuery)).join('\n');
+  return { definition, rpc_sha256: digest(definition), columns_constraints_sha256: digest(columnsConstraints) };
+}
+async function verifyRestoredAccessContract(session) {
+  const roles = ['anon', 'authenticated', 'service_role'];
+  for (const table of TABLES) {
+    requireThat((await session.query(`SELECT relrowsecurity FROM pg_class WHERE oid='nxt_private.${table}'::regclass;`)).join('') === 't', 'restored Store table RLS is disabled');
+    for (const role of roles) {
+      const tablePrivileges = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'].map(p => `has_table_privilege('${role}','nxt_private.${table}','${p}')`);
+      const columnPrivileges = ['SELECT', 'INSERT', 'UPDATE', 'REFERENCES'].map(p => `has_any_column_privilege('${role}','nxt_private.${table}','${p}')`);
+      requireThat((await session.query(`SELECT ${[...tablePrivileges, ...columnPrivileges].join(' OR ')};`)).join('') === 'f', 'restored API role has direct Store table/column privileges');
+    }
+  }
+  for (const role of roles) {
+    requireThat((await session.query(`SELECT has_schema_privilege('${role}','nxt_private','USAGE');`)).join('') === 'f', 'restored API role has private-schema usage');
+    const expected = role === 'service_role' ? 't' : 'f';
+    requireThat((await session.query(`SELECT has_function_privilege('${role}','public.nxt_store_command(text,jsonb)','EXECUTE');`)).join('') === expected, 'restored Store RPC execute contract differs');
+  }
+  return { rls_enabled_tables: [...TABLES], no_direct_schema_table_column_access: roles, rpc_execute_allowed: ['service_role'], rpc_execute_denied: ['anon', 'authenticated'], scope: 'restored core Store contract; source backup-reader SELECT policy is intentionally excluded' };
 }
 async function fileDigest(path) {
   const hash = createHash('sha256'); for await (const chunk of createReadStream(path)) hash.update(chunk); return hash.digest('hex');
@@ -135,7 +152,7 @@ try {
   const role = JSON.parse((await source.query(`SELECT json_build_object('superuser',rolsuper,'bypass_rls',rolbypassrls) FROM pg_roles WHERE rolname=current_user;`)).join(''));
   requireThat(!role.superuser && !role.bypass_rls, 'backup role must not bypass RLS');
   for (const table of TABLES) {
-    const check = JSON.parse((await source.query(`SELECT json_build_object('read',has_table_privilege(current_user,'nxt_private.${table}','SELECT'),'write',has_table_privilege(current_user,'nxt_private.${table}','INSERT') OR has_table_privilege(current_user,'nxt_private.${table}','UPDATE') OR has_table_privilege(current_user,'nxt_private.${table}','DELETE') OR has_table_privilege(current_user,'nxt_private.${table}','TRUNCATE'),'full_policy',EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='nxt_private' AND tablename='${table}' AND cmd IN ('SELECT','ALL') AND permissive='PERMISSIVE' AND qual='true' AND (current_user::name=ANY(roles) OR 'public'::name=ANY(roles))),'restrictive_policy',EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='nxt_private' AND tablename='${table}' AND cmd IN ('SELECT','ALL') AND permissive='RESTRICTIVE' AND (current_user::name=ANY(roles) OR 'public'::name=ANY(roles))));`)).join(''));
+    const check = JSON.parse((await source.query(`SELECT json_build_object('read',has_table_privilege(current_user,'nxt_private.${table}','SELECT'),'write',has_table_privilege(current_user,'nxt_private.${table}','INSERT') OR has_table_privilege(current_user,'nxt_private.${table}','UPDATE') OR has_table_privilege(current_user,'nxt_private.${table}','DELETE') OR has_table_privilege(current_user,'nxt_private.${table}','TRUNCATE'),'full_policy',EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='nxt_private' AND tablename='${table}' AND cmd IN ('SELECT','ALL') AND permissive='PERMISSIVE' AND qual='true' AND (current_user::name=ANY(roles) OR 'public'::name=ANY(roles))),'restrictive_policy',EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='nxt_private' AND tablename='${table}' AND cmd IN ('SELECT','ALL') AND permissive='RESTRICTIVE'));`)).join(''));
     requireThat(check.read && !check.write && check.full_policy && !check.restrictive_policy, 'backup policy/privilege mismatch');
   }
   requireThat((await source.query(`SELECT has_function_privilege(current_user,'public.nxt_store_command(text,jsonb)','EXECUTE');`)).join('') === 'f', 'backup role must not execute the write-capable Store RPC');
@@ -160,15 +177,21 @@ try {
   await destination.query(`SET timezone='UTC'; SET datestyle='ISO, YMD';`);
   const restored = await fingerprints(destination), restoredIdentity = await schemaIdentity(destination);
   requireThat(JSON.stringify(original) === JSON.stringify(restored), 'restored table hashes/counts differ');
-  requireThat(identity.rpc_sha256 === restoredIdentity.rpc_sha256 && identity.schema_sha256 === restoredIdentity.schema_sha256, 'restored schema/RPC differs from source');
+  requireThat(identity.rpc_sha256 === restoredIdentity.rpc_sha256 && identity.columns_constraints_sha256 === restoredIdentity.columns_constraints_sha256, 'restored columns/constraints or RPC definition differ from source');
   requireThat((await destination.query(`SELECT last_value >= coalesce((SELECT max(position) FROM nxt_private.list_values),0) FROM nxt_private.list_values_position_seq;`)).join('') === 't', 'restored list sequence is behind data');
+  stage = 'restored access-contract verification';
+  const accessContract = await verifyRestoredAccessContract(destination);
   const probe = `backup-restore-${randomUUID()}`;
   await destination.query('BEGIN;');
+  await destination.query('SET LOCAL ROLE service_role;');
+  requireThat((await destination.query('SELECT current_user;')).join('') === 'service_role', 'RPC smoke did not assume service_role');
   await destination.query(`SELECT public.nxt_store_command('${probe}','["SET","probe","recovery-ok"]'::jsonb);`);
   const rpc = JSON.parse((await destination.query(`SELECT public.nxt_store_command('${probe}','["GET","probe"]'::jsonb);`)).join(''));
   await destination.query('ROLLBACK;');
-  requireThat(rpc.result === 'recovery-ok', 'restored RPC smoke failed'); destination.close(); destination = null;
-  const manifest = { format: 'nxt-store-backup/v1', created_at: new Date().toISOString(), source_commit: sourceSha, scope: 'all rows in the three NXT Store tables visible to the dedicated read-only role; no other Supabase schemas/services or deployment secrets', tools, migrations: migrationHashes, cargo_lock_sha256: await fileDigest(join(bundle, 'Cargo.lock')), driver_sha256: await fileDigest(fileURLToPath(import.meta.url)), database_ca_sha256: sourceEnv.PGSSLROOTCERT ? await fileDigest(join(bundle, 'database-root-ca.crt')) : null, dump_sha256: await fileDigest(dump), source: original, restored, schema_sha256: identity.schema_sha256, rpc_sha256: identity.rpc_sha256, validation: { isolated_postgresql_major: 17, table_content_match: true, schema_rpc_match: true, rpc_smoke_rolled_back: true, ciphertext_decryption_tested: false } };
+  requireThat(rpc.result === 'recovery-ok', 'restored service-role RPC smoke failed');
+  requireThat(JSON.stringify(restored) === JSON.stringify(await fingerprints(destination)), 'RPC smoke rollback changed restored data');
+  destination.close(); destination = null;
+  const manifest = { format: 'nxt-store-backup/v1', created_at: new Date().toISOString(), source_commit: sourceSha, scope: 'all rows in the three NXT Store tables visible to the dedicated read-only role; no other Supabase schemas/services or deployment secrets', tools, migrations: migrationHashes, cargo_lock_sha256: await fileDigest(join(bundle, 'Cargo.lock')), driver_sha256: await fileDigest(fileURLToPath(import.meta.url)), database_ca_sha256: sourceEnv.PGSSLROOTCERT ? await fileDigest(join(bundle, 'database-root-ca.crt')) : null, dump_sha256: await fileDigest(dump), source: original, restored, columns_constraints_sha256: identity.columns_constraints_sha256, schema_sha256: identity.columns_constraints_sha256, schema_fingerprint_scope: 'columns_and_constraints_only; schema_sha256 is a legacy alias', rpc_sha256: identity.rpc_sha256, restored_access_contract: accessContract, validation: { isolated_postgresql_major: 17, table_content_match: true, columns_constraints_match: true, rpc_definition_match: true, schema_rpc_match: true, schema_rpc_match_scope: 'columns_constraints_and_rpc_definition_only', restored_access_contract_checked: true, service_role_rpc_smoke_rolled_back: true, rpc_smoke_rolled_back: true, ciphertext_decryption_tested: false } };
   await writeFile(join(bundle, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   stage = 'archive encryption';
   const archive = join(temporary, 'nxt-store.tar.gz'); await run('tar', ['-czf', archive, '-C', bundle, '.']);
