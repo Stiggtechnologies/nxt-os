@@ -2,6 +2,7 @@
 pub mod analysis;
 pub mod bridges;
 pub mod models;
+mod preview_binding;
 mod routes;
 pub mod storage_models;
 use crate::{referral::routes::ApiError, store::Store};
@@ -217,7 +218,7 @@ impl Engagements {
         Err(conflict("workspace changed repeatedly; reload and retry"))
     }
     pub fn catalog() -> Value {
-        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html"],"annotation_kinds":["note","agreed","recalculated","traced","inspected","confirmed"],"annotation_scope":"Text body SHA-256 anchors; operator labels are unverified metadata; no PDF/image annotations or Caseware compatibility","limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text documents only; no CaseView, Office embedding, proprietary files, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
+        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html"],"import_preview_binding":"nxt-engagement-preview-binding/v1","legacy_uncommitted_preview":"regenerate","annotation_kinds":["note","agreed","recalculated","traced","inspected","confirmed"],"annotation_scope":"Text body SHA-256 anchors; operator labels are unverified metadata; no PDF/image annotations or Caseware compatibility","limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text documents only; no CaseView, Office embedding, proprietary files, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
     }
     pub async fn get(&self, record_id: &str) -> EResult<EngagementRecord> {
         self.load()
@@ -594,7 +595,7 @@ impl Engagements {
         let at = now();
         let expires =
             (Utc::now() + Duration::minutes(30)).to_rfc3339_opts(SecondsFormat::Secs, true);
-        self.mutate(|s|{let r=s.engagements.iter().find(|r|r.id==rid).ok_or_else(missing)?;check_revision(r,expected)?;editable(r)?;let old=r.document.accounts.iter().map(|a|(a.id.as_str(),a)).collect::<HashMap<_,_>>();let mut warnings=vec!["Replaces saved accounts only after explicit commit; local adjustments and source Ledger remain unchanged.".into()];let mut accounts=accounts.clone();for a in &mut accounts{a.group_id=old.get(a.id.as_str()).filter(|prior|prior.kind==a.kind).and_then(|a|a.group_id.clone());}let mut d=r.document.clone();d.accounts=accounts.clone();let d=checked_input(d)?;let checks=analysis::analyze(&d);let canonical_hash=hash(&accounts)?;let unmapped=accounts.iter().filter(|a|a.group_id.is_none()).count();if unmapped>0{warnings.push(format!("{unmapped} accounts require mapping before review."));}let p=ImportPreview{id:pid.clone(),engagement_id:rid.into(),expected_revision:expected,source_hash:source_hash.clone(),canonical_hash,created_at:at.clone(),expires_at:expires.clone(),summary:json!({"accounts":accounts.len(),"unmapped_accounts":unmapped,"existing_accounts":r.document.accounts.len(),"target_revision":expected}),warnings,accounts,checks,committed_revision:None,provenance:provenance.clone()};s.previews.retain(|p|p.expires_at>at||p.committed_revision.is_some());if s.previews.len()>=40{return Err(conflict("import preview capacity reached (40)"));}let out=preview_value(&p);s.previews.push(p);audit(s,rid,"import_preview","Validated reviewed-copy trial balance; no target inputs changed");Ok(out)}).await
+        self.mutate(|s|{let r=s.engagements.iter().find(|r|r.id==rid).ok_or_else(missing)?;check_revision(r,expected)?;editable(r)?;let old=r.document.accounts.iter().map(|a|(a.id.as_str(),a)).collect::<HashMap<_,_>>();let mut warnings=vec!["Replaces saved accounts only after explicit commit; local adjustments and source Ledger remain unchanged.".into()];let mut accounts=accounts.clone();for a in &mut accounts{a.group_id=old.get(a.id.as_str()).filter(|prior|prior.kind==a.kind).and_then(|a|a.group_id.clone());}let mut d=r.document.clone();d.accounts=accounts.clone();let d=checked_input(d)?;let checks=analysis::analyze(&d);let canonical_hash=hash(&accounts)?;let unmapped=accounts.iter().filter(|a|a.group_id.is_none()).count();if unmapped>0{warnings.push(format!("{unmapped} accounts require mapping before review."));}let mut p=ImportPreview{id:pid.clone(),engagement_id:rid.into(),expected_revision:expected,source_hash:source_hash.clone(),canonical_hash,created_at:at.clone(),expires_at:expires.clone(),summary:json!({"accounts":accounts.len(),"unmapped_accounts":unmapped,"existing_accounts":r.document.accounts.len(),"target_revision":expected}),warnings,accounts,checks,committed_revision:None,provenance:provenance.clone(),binding_sha256:None,target_input_sha256:Some(hash(&r.document)?)};p.binding_sha256=Some(preview_binding::digest(&p)?);s.previews.retain(|p|p.expires_at>at||p.committed_revision.is_some());if s.previews.len()>=40{return Err(conflict("import preview capacity reached (40)"));}let out=preview_value(&p);s.previews.push(p);audit(s,rid,"import_preview","Validated reviewed-copy trial balance; no target inputs changed");Ok(out)}).await
     }
     pub async fn commit(&self, rid: &str, input: CommitInput) -> EResult<EngagementRecord> {
         self.mutate(|s| {
@@ -612,8 +613,17 @@ impl Engagements {
             if hash(&p.accounts)? != p.canonical_hash {
                 return Err(conflict("stored preview accounts do not match their hash"));
             }
+            if p.binding_sha256.is_some() {
+                preview_binding::verify(&p)?;
+            }
             if p.committed_revision.is_some() {
+                preview_binding::verify_receipt(&p, r)?;
                 return Ok(r.clone());
+            }
+            preview_binding::verify(&p)?;
+            let target_hash = hash(&r.document)?;
+            if p.target_input_sha256.as_deref() != Some(target_hash.as_str()) {
+                return Err(conflict("target inputs differ from the reviewed preview; generate a fresh preview"));
             }
             check_revision(r, input.expected_revision)?;
             editable(r)?;
@@ -638,6 +648,7 @@ impl Engagements {
                 provenance: p.provenance,
                 input_revision: r.input_revision,
                 at: now(),
+                preview_binding_sha256: p.binding_sha256,
             });
             invalidate(r);
             touch(r);

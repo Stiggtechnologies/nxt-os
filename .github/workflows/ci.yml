@@ -37,6 +37,7 @@ jobs:
           node --test tests/qb_navigation.test.mjs
           node --test tests/signatures_navigation.test.mjs
           node --test tests/engagement_annotations.test.mjs
+          node --test tests/engagement_preview.test.mjs
       - name: Verify bounded QuickBooks financial report assessment
         run: python3 -B -m unittest discover -s tests -p test_qbo_export.py
       - name: Verify source-preserving parallel test preparation

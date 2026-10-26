@@ -270,6 +270,91 @@ async fn engagement_workpaper_lifecycle() {
     engagement_bridge_acceptance().await;
     engagement_rollforward_origin_acceptance().await;
     engagement_annotation_acceptance().await;
+    engagement_preview_binding_acceptance().await;
+}
+
+async fn engagement_preview_binding_acceptance() {
+    use nxt_os::{engagement,firm,ledger,tax};
+    let ledger=Arc::new(ledger::engine::Ledger::new(Store::memory()));
+    let tax=Arc::new(tax::Tax::new(Store::memory()));
+    let firm=Arc::new(firm::Firm::new(Store::memory(),ledger.clone()));
+    let engagements=Arc::new(engagement::Engagements::new(Store::memory(),ledger.clone(),tax,firm));
+    let router=engagement::router(engagements.clone()).merge(ledger::routes::router(ledger));
+    let ledger_before=ok(&router,"GET","/api/ledger/entries",None).await;
+    let created=ok(&router,"POST","/api/engagements",Some(fixture())).await;
+    let preview=ok(&router,"POST",&endpoint(&created,"/import/preview"),Some(json!({"expected_revision":revision(&created),"document":{"format":"nxt-engagement-tb/v1","accounts":created["document"]["accounts"]}}))).await;
+    assert_eq!(preview["binding_sha256"].as_str().unwrap().len(),64);
+    let request=json!({"expected_revision":revision(&created),"preview_id":preview["id"]});
+    let baseline=engagements.store.get("engagements:state:v1").await.unwrap().unwrap();
+    for field in ["source_hash","canonical_hash","target_input_sha256","created_at","expires_at","expected_revision","summary","warnings","checks","provenance","accounts_and_canonical_hash","binding_sha256","legacy_unbound"] {
+        let mut stored:Value=serde_json::from_str(&baseline).unwrap();
+        let p=&mut stored["previews"][0];
+        match field {
+            "expected_revision"=>p[field]=json!(2),
+            "summary"=>p[field]["accounts"]=json!(999),
+            "warnings"=>p[field]=json!([]),
+            "checks"=>p[field]["totals"]["adjusted_debit_cents"]=json!(1),
+            "provenance"=>p[field]=json!({"source":"altered_synthetic_origin"}),
+            "accounts_and_canonical_hash"=>{
+                p["accounts"][0]["debit_cents"]=json!(999);
+                let accounts:Vec<engagement::models::Account>=serde_json::from_value(p["accounts"].clone()).unwrap();
+                p["canonical_hash"]=json!(hex::encode(Sha256::digest(serde_json::to_vec(&accounts).unwrap())));
+            },
+            "legacy_unbound"=>{p.as_object_mut().unwrap().remove("binding_sha256");},
+            _=>p[field]=json!("b".repeat(64))
+        }
+        let corrupt=stored.to_string();
+        engagements.store.set("engagements:state:v1",&corrupt).await.unwrap();
+        fails(&router,"POST",&endpoint(&created,"/import/commit"),Some(request.clone()),409).await;
+        assert_eq!(engagements.store.get("engagements:state:v1").await.unwrap().unwrap(),corrupt,"{field}: rejection must make no record, receipt or audit write");
+        assert_eq!(ok(&router,"GET",&endpoint(&created,""),None).await,created);
+    }
+    let mut target_drift:Value=serde_json::from_str(&baseline).unwrap();
+    target_drift["engagements"][0]["document"]["notes"]=json!("Synthetic target drift without a revision increment");
+    let drift_bytes=target_drift.to_string();
+    engagements.store.set("engagements:state:v1",&drift_bytes).await.unwrap();
+    fails(&router,"POST",&endpoint(&created,"/import/commit"),Some(request.clone()),409).await;
+    assert_eq!(engagements.store.get("engagements:state:v1").await.unwrap().unwrap(),drift_bytes);
+    engagements.store.set("engagements:state:v1",&baseline).await.unwrap();
+    let imported=ok(&router,"POST",&endpoint(&created,"/import/commit"),Some(request.clone())).await;
+    assert_eq!(imported["import_history"][0]["preview_binding_sha256"],preview["binding_sha256"]);
+    assert_eq!(ok(&router,"POST",&endpoint(&created,"/import/commit"),Some(request.clone())).await,imported);
+    let committed=engagements.store.get("engagements:state:v1").await.unwrap().unwrap();
+    for variant in ["missing_receipt","source","canonical","provenance","binding","duplicate_receipt","commit_marker"] {
+        let mut stored:Value=serde_json::from_str(&committed).unwrap();
+        match variant {
+            "missing_receipt"=>stored["engagements"][0]["import_history"]=json!([]),
+            "source"=>stored["engagements"][0]["import_history"][0]["source_hash"]=json!("c".repeat(64)),
+            "canonical"=>stored["engagements"][0]["import_history"][0]["canonical_hash"]=json!("c".repeat(64)),
+            "provenance"=>stored["engagements"][0]["import_history"][0]["provenance"]=json!({"source":"changed"}),
+            "binding"=>stored["engagements"][0]["import_history"][0]["preview_binding_sha256"]=json!("c".repeat(64)),
+            "duplicate_receipt"=>{let receipt=stored["engagements"][0]["import_history"][0].clone();stored["engagements"][0]["import_history"].as_array_mut().unwrap().push(receipt);},
+            "commit_marker"=>stored["previews"][0]["committed_revision"]=json!(999),
+            _=>unreachable!()
+        }
+        let corrupt=stored.to_string();
+        engagements.store.set("engagements:state:v1",&corrupt).await.unwrap();
+        fails(&router,"POST",&endpoint(&created,"/import/commit"),Some(request.clone()),409).await;
+        assert_eq!(engagements.store.get("engagements:state:v1").await.unwrap().unwrap(),corrupt);
+    }
+    let mut legacy:Value=serde_json::from_str(&committed).unwrap();
+    legacy["previews"][0].as_object_mut().unwrap().remove("binding_sha256");
+    legacy["previews"][0].as_object_mut().unwrap().remove("target_input_sha256");
+    legacy["engagements"][0]["import_history"][0].as_object_mut().unwrap().remove("preview_binding_sha256");
+    let legacy_bytes=legacy.to_string();
+    engagements.store.set("engagements:state:v1",&legacy_bytes).await.unwrap();
+    let retained=ok(&router,"POST",&endpoint(&created,"/import/commit"),Some(request)).await;
+    assert!(retained["import_history"][0].get("preview_binding_sha256").is_none());
+    assert_eq!(serde_json::from_str::<Value>(&engagements.store.get("engagements:state:v1").await.unwrap().unwrap()).unwrap(),legacy,"Legacy committed replay must not fabricate a new receipt or binding");
+    engagements.store.set("engagements:state:v1",&baseline).await.unwrap();
+    let second=ok(&router,"POST","/api/engagements",Some(fixture())).await;
+    let mut crossed:Value=serde_json::from_str(&engagements.store.get("engagements:state:v1").await.unwrap().unwrap()).unwrap();
+    crossed["previews"][0]["engagement_id"]=second["id"].clone();
+    let crossed_bytes=crossed.to_string();
+    engagements.store.set("engagements:state:v1",&crossed_bytes).await.unwrap();
+    fails(&router,"POST",&endpoint(&second,"/import/commit"),Some(json!({"expected_revision":revision(&second),"preview_id":preview["id"]})),409).await;
+    assert_eq!(engagements.store.get("engagements:state:v1").await.unwrap().unwrap(),crossed_bytes);
+    assert_eq!(ok(&router,"GET","/api/ledger/entries",None).await,ledger_before);
 }
 
 async fn engagement_annotation_acceptance() {

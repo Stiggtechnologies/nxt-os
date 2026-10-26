@@ -40,6 +40,8 @@ pub struct ImportReceipt {
     pub provenance: Value,
     pub input_revision: u64,
     pub at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_binding_sha256: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RollforwardCopyPolicy {
@@ -155,6 +157,10 @@ pub struct ImportPreview {
     pub checks: Value,
     pub committed_revision: Option<u64>,
     pub provenance: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_input_sha256: Option<String>,
 }
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct EngagementState {
