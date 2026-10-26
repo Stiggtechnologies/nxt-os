@@ -18,6 +18,7 @@ pub struct Os {
     pub ledger: Arc<Ledger>,
     pub firm: Arc<crate::firm::Firm>,
     pub tax: Arc<crate::tax::Tax>,
+    pub engagements: Arc<crate::engagement::Engagements>,
     pub referrals: Arc<Referrals>,
 }
 
@@ -57,6 +58,7 @@ async fn status(State(os): State<Os>) -> Json<Value> {
             { "id": "ledger", "name": "NXT Ledger", "path": "/apps/ledger/" },
             { "id": "firm", "name": "Firm Operations", "path": "/apps/firm/" },
             { "id": "tax", "name": "NXT Tax", "path": "/apps/tax/" },
+            { "id": "engagements", "name": "NXT Engagements", "path": "/apps/engagements/" },
             { "id": "referrals", "name": "NXT Referrals", "path": "/apps/referrals/" },
         ],
     }))
@@ -242,12 +244,17 @@ fn tools() -> Value {
             "input_schema": { "type":"object", "properties":{"return_id":{"type":"string"}}, "required":["return_id"], "additionalProperties":false }
         },
         {
+            "name": "get_engagement_summary",
+            "description": "Read-only engagement counts and blocking-issue count. No client names, paper bodies, accounts, signoffs or input documents.",
+            "input_schema": {"type":"object","properties":{},"additionalProperties":false}
+        },
+        {
             "name": "open_app",
             "description": "Opens an NXT OS app at a screen so the user can act. Ledger views: dashboard, invoices, invoices/new, bills, bills/new, customers, vendors, banking, accounts, journal, reports/profit-loss, reports/balance-sheet, reports/trial-balance, reports/ar-aging, reports/ap-aging, reports/sales-tax, reports/general-ledger, settings. Referrals views: overview, advocates, conversions, rewards, loyalty, settings.",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "app": { "type": "string", "enum": ["ledger", "firm", "tax", "referrals"] },
+                    "app": { "type": "string", "enum": ["ledger", "firm", "tax", "engagements", "referrals"] },
                     "view": { "type": "string" }
                 },
                 "required": ["app"]
@@ -274,6 +281,7 @@ fn s(v: &Value, k: &str) -> Option<String> {
 async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) -> Result<Value, String> {
     let l = &os.ledger;
     match name {
+        "get_engagement_summary" => os.engagements.summary().await.map_err(|e|e.1),
         "get_tax_summary" => os.tax.summary().await.map_err(|e|e.1),
         "get_tax_calculation" => {
             let record_id=s(input,"return_id").ok_or("return_id is required")?;
@@ -362,8 +370,8 @@ async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) 
         }
         "open_app" => {
             let app = s(input, "app").ok_or("app is required")?;
-            if app != "ledger" && app != "firm" && app != "tax" && app != "referrals" {
-                return Err("app must be ledger, firm, tax or referrals".into());
+            if !["ledger","firm","tax","engagements","referrals"].contains(&app.as_str()) {
+                return Err("app must be ledger, firm, tax, engagements or referrals".into());
             }
             actions.push(json!({ "type": "open_app", "app": app, "view": s(input, "view") }));
             Ok(json!({ "opened": true }))
@@ -579,7 +587,10 @@ mod firm_tool_tests {
         let input=serde_json::from_value(json!({"program":"T5013","tax_year":2025,"jurisdiction":"CA","name":"SECRET TAXPAYER","client_ref":"SECRET CLIENT REF","inputs":{"scope_confirmed":true,"allocation_verified":true,"revenue_cents":10001,"partners":[{"id":"PRIVATE_ID","name":"SECRET PARTNER NAME","share_bps":10000}]}})).unwrap();
         let r=tax.save(None,input).await.map_err(|e|e.1).unwrap();
         tax.calculate(&r.id,crate::tax::models::RevisionInput{expected_revision:r.revision,idempotency_key:Some("SECRET REPLAY KEY".into())}).await.map_err(|e|e.1).unwrap();
-        let os=Os{firm:Arc::new(Firm::new(Store::memory(),ledger.clone())),ledger,tax,referrals:Arc::new(Referrals::new(Store::memory()))};
+        let firm=Arc::new(Firm::new(Store::memory(),ledger.clone()));
+        let engagements=Arc::new(crate::engagement::Engagements::new(Store::memory(),ledger.clone(),tax.clone(),firm.clone()));
+        engagements.save(None,serde_json::from_value(json!({"name":"SECRET ENGAGEMENT","client_ref":"SECRET ENG CLIENT","period_start":"2025-01-01","period_end":"2025-12-31","workpapers":[{"id":"wp","reference":"A","title":"SECRET PAPER TITLE","body":"SECRET PAPER BODY"}]})).unwrap()).await.map_err(|e|e.1).unwrap();
+        let os=Os{firm,ledger,tax,engagements,referrals:Arc::new(Referrals::new(Store::memory()))};
         let mut actions=Vec::new();
         let result=run_tool(&os,"get_tax_calculation",&json!({"return_id":r.id}),&mut actions).await.unwrap();
         let encoded=result.to_string();
@@ -588,13 +599,19 @@ mod firm_tool_tests {
         assert_eq!(result["filing_enabled"],false);
         assert!(run_tool(&os,"approve_tax_return",&json!({}),&mut actions).await.is_err());
         assert!(actions.is_empty());
+        let summary=run_tool(&os,"get_engagement_summary",&json!({}),&mut actions).await.unwrap();
+        assert_eq!(summary["total"],1);
+        for private in ["SECRET ENGAGEMENT","SECRET ENG CLIENT","SECRET PAPER TITLE","SECRET PAPER BODY"] {assert!(!summary.to_string().contains(private));}
+        assert!(run_tool(&os,"lock_engagement",&json!({}),&mut actions).await.is_err());
     }
 
     #[tokio::test]
     async fn assistant_can_propose_but_cannot_approve_or_execute() {
         let ledger = Arc::new(Ledger::new(Store::memory()));
         let firm = Arc::new(Firm::new(Store::memory(), ledger.clone()));
-        let os = Os { ledger, firm, tax: Arc::new(crate::tax::Tax::new(Store::memory())), referrals: Arc::new(Referrals::new(Store::memory())) };
+        let tax=Arc::new(crate::tax::Tax::new(Store::memory()));
+        let engagements=Arc::new(crate::engagement::Engagements::new(Store::memory(),ledger.clone(),tax.clone(),firm.clone()));
+        let os = Os { ledger, firm, tax, engagements, referrals: Arc::new(Referrals::new(Store::memory())) };
         let mut actions = Vec::new();
         let input = json!({"name":"Prepare review checklist","idempotency_key":"assistant-test-once","action":{"kind":"create_task","title":"Review reporting package"}});
         let response = run_tool(&os, "propose_firm_action", &input, &mut actions).await.unwrap();

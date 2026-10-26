@@ -1,0 +1,136 @@
+# Caseware Working Papers reconstruction evidence
+
+Research checkpoint: **2026-10-26 UTC**. The requested next NXT OS reference is **Caseware Working Papers**, specifically the remote **2025** shortcut reached through Splashtop on `DESKTOP-5ENUJV3`. This is an evidence/specification draft, not a full-parity, working-replica or migration-completion claim.
+
+## Target and evidence boundary
+
+| Evidence class | Current finding | Limit |
+| --- | --- | --- |
+| User-selected target | Remote Working Papers shortcut; the coordinating investigator subsequently confirmed **Working Papers 2025.00.111, 64-bit** in the native Help UI. | This identifies the visible runtime version, not binary hash/resources, full entitlement or enabled templates. The raw Help screen contains registration/network details and must not be published. |
+| Local artifact availability | No local installed Working Papers application was found. The specifically authorized MyCaseware portal supplied a signed 2025 SmartSync installer, statically inspected below. | A setup carrier is distinct from the remote installed application. Its native payload has not been extracted or executed. |
+| Remote transport | Splashtop reaches the remote desktop. | Browser/Splashtop DOM or a remote-viewer screenshot is transport/UI evidence; it is not a native executable inventory, decompilation, data schema or calculation trace. |
+| Native runtime | Coordinating investigator observed the Help version, global menus and New blank-engagement dialog. | No private client engagement was opened. No synthetic engagement calculation, paired result, import/export, sign-off, consolidation, lockdown or year-close behavior has yet been established. |
+| Official documentation | Vendor release notes, surviving versioned 2025 help and current canonical help were read. | Documentation describes intended features; it does not prove this installation's behavior or entitlement. |
+| Adjunct utility artifacts | Separate local Caseware QuickBooks Export Utility static evidence exists, described below. | This utility is not the main Working Papers executable and does not establish its native implementation or an output/import schema. |
+| Client data | No private client files were opened/read by this research task. | Do not copy private names, identifiers, account values, engagement files or screenshots into the repository to establish coverage. |
+
+**Version caveat:** several `documentation.caseware.com/2025/WorkingPapers/...` links redirect to the vendor's current `caseware.com/docs/...` pages, which display 2026 copyright. Those are labeled **current-reference** below. A 2025 URL that redirects does not freeze the destination's behavior to the 2025 release. Exact installed behavior remains to be checked against an authorized synthetic/sample engagement and an About/build capture. No assumption is made that a later update is installed.
+
+REA evidence IDs for the remote installed application's main executable have not been provided. Remote DNS/SMB file acquisition was unavailable. The authorized portal subsequently supplied the installer below; no credential, original registration-bearing download filename, signed URL or IP value is recorded here. No inference from Splashtop replaces native evidence.
+
+### Main-product installer evidence
+
+The portal advertised **Working Papers 2025.00.111 R2**. The downloaded carrier, sanitized locally as `work/caseware-artifacts/working-papers-2025-installer.exe`, is **396,255,776 bytes**, SHA-256 `c6849463ad3ac700a28769803262c6d675f51cff41b8bb7029ec1eec29cefe46`. Windows reports a valid Caseware International Inc. signature. Its launcher file/product version is **25.1.2222.03**, product name Working Papers 2025 (x64), and file description Setup Launcher Unicode. These three version observations identify different surfaces: portal listing, setup launcher, and the remote Help build. They are not assumed to be identical installed binaries.
+
+REA 6.7.0 target-free `inspect-pe-resources` retained complete evidence **`ev_6df4e85922f049829e3dc6a4e6e0e35b5a69ddf86be29e35221ec0cc0bca82ce`** at `work/caseware-evidence/main-installer/pe-resources.json`. It establishes PE32+ / AMD64, 71 resource payloads and 150 examined resource-tree entries for that exact digest. Resource identity/range/hash observations do not establish UI execution, file formats or calculations.
+
+A separate read-only carrier scan found InstallShield/InstallScript/ISSetup markers in the launcher, a file-backed PE image ending at byte 1,378,304 and a 394,877,472-byte overlay. No CAB/ZIP/Compound File/7z magic candidates were found in the complete carrier byte scan; this is a signature-search result, not proof that embedded files are absent. Windows bsdtar's read-only listing rejected the carrier as an unrecognized archive. REA's deeper native overview could not bind a configured provider: Ghidra/IDA were not configured, Hopper was unsupported on this host, and no supported Kuna binding was available. The failed overview is not successful decompilation evidence.
+
+The installer and its custom actions were **never executed**; no extraction switch or installation was used. The payload, main application executable/resources, proprietary storage schema and implementation remain unexamined. The retained carrier-scan script/results and provider diagnostic are local evidence outside the public repository; no installer bytes or proprietary assets are redistributed in NXT.
+
+### Separate QuickBooks export-utility evidence
+
+The local installed `Caseware Quickbooks Export Utility` was inspected statically without running it or reading client data/configuration/token stores. Its native x86 `QBExport.exe` is version **2.0.0.9**, SHA-256 `718c84ff05eba0e15b2d1395fe2958875887de22e8d1e514185b577a4580a104`; Windows reports a valid Caseware signature. Adjacent managed/mixed assemblies expose bridge declarations for selecting export dates/methods and exporting accounting/report categories. They do **not** establish output names, column order, signs/precision, period rules or a Working Papers import contract.
+
+Sanitized private evidence is retained at `work/caseware-evidence/utility-reference/`. Relevant REA identities are:
+
+| Evidence ID | Established scope |
+| --- | --- |
+| `ev_029aa1add967c0655defef4d0714de5f682f831a411a653e7a3a561218769637` | Managed `qbOnlineCSApi.dll` identity/framework/references. |
+| `ev_0f20c9c140c65fb7e1bf25c36ee7e344ae1b84798537a96fdbf1b58d7ee5b367` | Mixed `clicppQBOnline.dll` CLR/native identity. |
+| `ev_7cf96c65f5eb333fd78f324bacc2c8244d6f66d570efa73e307bca12898148dc` | `QBExport.exe` PE resources; no main Working Papers implementation. |
+| `ev_bdbe019197c5d91eac35c314fc7fe4869a6c8a9c21c1e760bfbf0dd5e8c3dfa6` | Selected managed bridge member metadata/CIL anchors. |
+| `ev_debc55eb8697389af5386168715222227f322a47ea7bc796b6c0421f139f52d8` | Selected mixed-wrapper member metadata; partial coverage. |
+
+These are bounded utility declarations, not main-application analysis or format compatibility. NXT intake must use its own explicit native schema until a separately authorized synthetic source export and mapping contract have been tested. No original utility binary or proprietary client output is copied into the repository.
+
+## Vendor source register
+
+All links are primary Caseware sources read at this checkpoint. Concise independent observations follow; no vendor help bodies, icons, mapping databases, templates, forms or executable assets are copied into NXT.
+
+| Ref | Official source | Version classification |
+| --- | --- | --- |
+| CW-D01 | [What's new in Working Papers 2025](https://www.caseware.com/docs/en/desktop/working-papers/explore/release-history/whats-new-wp-2025) | Explicit 2025 release notes. |
+| CW-D02 | [2025 engagement help index](https://documentation.caseware.com/2025/WorkingPapers/en/Content/Engagements/Engagements.htm) | Surviving versioned 2025 index. |
+| CW-D03 | [Account worksheet](https://www.caseware.com/docs/en/desktop/working-papers/engagements/accounts-and-balances/account-worksheet) | Current-reference, reached from 2025 accounts help. |
+| CW-D04 | [About mapping](https://www.caseware.com/docs/en/desktop/working-papers/engagements/mapping-and-grouping/about-mapping) | Current-reference, reached from 2025 mapping help. |
+| CW-D05 | [Adjusting Entry worksheet](https://www.caseware.com/docs/en/desktop/working-papers/engagements/journal-entries/adjusting-entry-worksheet) | Current-reference, reached from 2025 journal help. |
+| CW-D06 | [About consolidation](https://www.caseware.com/docs/en/desktop/working-papers/practice/consolidation/about-consolidation) | Current-reference. Vendor search content supplied the documented distinction; a later full fetch timed out. |
+| CW-D07 | [Document Manager index](https://www.caseware.com/docs/en/desktop/working-papers/engagements/document-manager), [Add documents](https://www.caseware.com/docs/en/desktop/working-papers/engagements/document-manager/add-documents) | Current-reference, reached from the 2025 help tree. |
+| CW-D08 | [2025 annotation index](https://documentation.caseware.com/2025/WorkingPapers/en/Content/Engagements/Review-Signoff/Annotation.htm), [Create tickmarks](https://documentation.caseware.com/2025/WorkingPapers/en/Content/Engagements/Review-Signoff/Annotation/Create-Tickmarks.htm) | Surviving versioned 2025 pages. |
+| CW-D09 | [2025 roles index](https://documentation.caseware.com/2025/WorkingPapers/en/Content/Engagements/Review-Signoff/Roles.htm), [Define role dependencies](https://documentation.caseware.com/2025/WorkingPapers/en/Content/Engagements/Review-Signoff/Roles/Role-Dependencies.htm) | Surviving versioned 2025 pages. |
+| CW-D10 | [Sign off a document](https://www.caseware.com/docs/en/desktop/working-papers/engagements/roles/sign-off-document) | Current-reference; 2025 sign-off URL redirects here. |
+| CW-D11 | [2025 issues index](https://documentation.caseware.com/2025/WorkingPapers/en/Content/Engagements/Review-Signoff/Issues.htm), [Resolve an issue](https://documentation.caseware.com/2025/WorkingPapers/en/Content/Engagements/Review-Signoff/Issues/Resolve-Issue.htm) | Surviving versioned 2025 pages. |
+| CW-D12 | [Lock down a file](https://www.caseware.com/docs/en/desktop/working-papers/practice/lock-down/lock-down-file) | Current-reference; explicitly linked from 2025 release notes. Jurisdictional timings must not be treated as independently verified professional requirements. |
+| CW-D13 | [Perform a year end close](https://www.caseware.com/docs/en/desktop/working-papers/practice/year-end-close/perform-year-end-close), [Year end close options](https://www.caseware.com/docs/en/desktop/working-papers/practice/year-end-close/year-end-close-options) | Current-reference. |
+| CW-D14 | [Imports index](https://www.caseware.com/docs/en/desktop/working-papers/engagements/imports), [Import from ASCII or Excel](https://www.caseware.com/docs/en/desktop/working-papers/engagements/imports/import-ascii-excel) | Current-reference, reached from the 2025 import tree. |
+| CW-D15 | [2025 print/save index](https://documentation.caseware.com/2025/WorkingPapers/en/Content/Engagements/Document-Management/Print-Save.htm), [Save as Excel](https://documentation.caseware.com/2025/WorkingPapers/en/Content/Engagements/Document-Management/Print-Save/Save-Excel.htm) | Surviving versioned 2025 pages. |
+| CW-D16 | [Export to GIFI](https://www.caseware.com/docs/en/desktop/working-papers/practice/tax-canada/export-gifi), [Export adjusting entries](https://www.caseware.com/docs/en/desktop/working-papers/practice/tax-codes-and-exports/export-adjusting-entries) | Current-reference, linked from 2025 release notes. |
+| CW-D17 | [SmartSync work offline](https://www.caseware.com/docs/en/desktop/working-papers/setup/caseware-smartsync/work-offline) | Current-reference; does not prove SmartSync/Cloud entitlement or configuration on this remote installation. |
+
+## Documented capabilities and required distinctions
+
+| Capability | Independent documentation observation | What remains unverified locally |
+| --- | --- | --- |
+| Trial balance and account properties | CW-D03 describes opening/prior/budget data, entity context, mapping, statement classification, leadsheet/GIFI/tax links, transactions, adjustments and final balances. Account locks restrict changes. | Exact column set, precision, period semantics, templates, constraints and rendered behavior in the selected 2025 build. |
+| Mapping/grouping | CW-D04 describes reusable map properties assigned to client accounts, including leadsheet and tax linkage. Templates can be independent of a client's account numbering. | Installed mappings, industry variants, propagation/override behavior, flips, group hierarchy and full schema. No proprietary default mapping library is acquired. |
+| Adjusting entries | CW-D05 distinguishes normal adjustments, reclassifications and factual/projected unrecorded misstatements, with period, document reference and creator context. Entry types have different effects on accounting/report balances. | All types, recurring/reversing/calculated behavior, approval/posting semantics, tax/consolidation effects, locked-period exceptions and exact paired totals. A generic Ledger journal is not sufficient parity. |
+| Consolidation | CW-D06 distinguishes internal real-time divisions within one file from external batch links to separate entity files. Consistent mapping is important; external consolidated files do not preserve all subsidiary GL detail. | Actual entity structure, ownership/currency rules, elimination/translation, periods, reconciliation and SmartSync interactions. |
+| Working-paper documents | CW-D07 describes automatic/CaseView/manual/link/placeholder/Word/Excel document types and folder organization. Placeholders can later be replaced with a document. | CaseView calculation/layout engine, document formats, versioning/link behavior, attachments and every generated schedule. File storage alone does not reproduce a connected workpaper engine. |
+| Tickmarks and references | CW-D08 documents notes, tickmarks, references/commentary, configurable tickmark descriptions/appearance and who/when attribution. | Exact permitted targets, persistence, reference propagation and graphics in this installation. Native equivalents must use original assets. |
+| Role-based sign-off | CW-D09 documents acyclic role dependencies. Protected files block unmet dependency sign-off; unprotected files may allow it with a warning. CW-D10 describes role-specific document sign-off and an optional read-only-after-sign-off policy. | Actual role sets/protection settings, verified users, reversal/changed-document behavior, offline state and permissions. Do not assume every source sign-off is a hard lock or an immutable approval. |
+| Issues | CW-D11 documents issues associated with engagement/document/line context, assignment, progress, resolution text, completion and clearing; protected-file rights affect edits. | State transitions, mandatory fields, issue templates, links, retention/cleanup and rollforward effects in the selected build. |
+| Lockdown | CW-D12 documents immediate or delayed file lockdown, selected document inclusion, a milestone, entity/period context and protection-related rights. Some documents may be excluded. | Exact jurisdiction/date settings, unlock authority, late additions, audit trail and exception behavior. A whole-workspace boolean lock is not demonstrated parity. |
+| Year end/rollforward | CW-D13 describes a new-year file, prior/opening balances, selected balance bases, income-to-retained-earnings handling and selectable documents/issues/annotations/budgets. | Exact options, recurring entries, custom balances, consolidation periods and repeat-close behavior. NXT Tax's profile-only copyforward clears financial values; it is a separate feature. |
+| Import | CW-D14 covers chart/balance, GL-detail and adjusting-entry import, delimited/fixed-width or Excel mapping and saved layouts. Current docs describe some source normalization and limits. | Exact format/encoding/precision contracts for the installed version, supported software versions, duplicates, interruption and reconciliation. Do not silently adopt normalization rules without a reviewed NXT mapping contract. |
+| Export/reporting | CW-D15 documents Excel export for selected documents or an engagement and PDF/print entry points. CW-D16 covers vendor-specific GIFI and adjusting-entry formats. | Actual workbook/PDF fidelity, formulas, field mappings, signs/rounding, notes, target software acceptance and licensed report/template content. |
+| Engagement synchronization/integration | CW-D17 describes local sync copies, cached offline changes and later synchronization/conflict handling with a parent. | Actual Cloud/SmartSync configuration, rights, concurrency/conflicts and supported integration interfaces. Splashtop remote access is not SmartSync. |
+
+The explicitly versioned 2025 release notes (CW-D01) add direct TaxCycle export through GIFI and Xero-compatible adjustment transfer, and describe changes relevant to US-public lockdown and iXBRL styling. They also identify fixes involving prior-year TB balances and timezone-related synchronization conflicts. These are useful regression targets; they do not demonstrate that this installed build includes every fix or that NXT supports those interfaces.
+
+## Practical native acceptance matrix
+
+The following is an **original NXT specification proposal**, not a recovered Caseware data model or an implementation status claim. Every row is pending paired/runtime acceptance. Test with synthetic engagements; keep account/client identities and raw files outside version control.
+
+| ID | Proposed acceptance slice | Objective proof required |
+| --- | --- | --- |
+| CW-A01 | Engagement identity, reporting periods and access | Stable engagement/entity IDs; current/prior period context; validated reporting dates/currency; verified principals and scoped reads/writes/exports. Two engagements with overlapping names cannot leak data. |
+| CW-A02 | Trial balance | Synthetic balanced opening TB plus transactions and adjustments reconciles exactly by account and period to final balances. Zero/negative amounts, precision, prior-year, budget and locked-account cases are explicit. No unexplained normalization. |
+| CW-A03 | Mapping/grouping | Several source accounts map to original reusable map/group definitions with deterministic totals, hierarchy and classification. Test unmapped/duplicate codes, reassignment, flips and override provenance against the source where required. |
+| CW-A04 | Adjusting journals | Separate normal, reclassification and unrecorded/proposed bases. Each fixture proves exactly which ledger/report totals change. Balanced validation, date/period rules, reversal/recurrence, supporting references, authorized approval and idempotency prevent accidental book posting. |
+| CW-A05 | Consolidation | At least two synthetic entities and an elimination fixture reconcile entity, group and consolidated totals without double counting. Define internal versus external update semantics; versioned subsidiary snapshots and missing/stale/conflicting data must be visible. Expand ownership/FX only with independently verified rules. |
+| CW-A06 | Document Manager | Stable folders/document IDs, ordering, type metadata, placeholders, safe attachments and immutable versions survive reload. Replacing a placeholder preserves intended references. Path traversal, unauthorized download and cross-engagement links fail. |
+| CW-A07 | Connected schedules/reporting | TB/mapping/adjustment changes update only the correct schedule/version. Reports retain input hashes, period, balance basis and calculation rules; exported totals reconcile. CaseView formulas/layout/Connector are a separate scope, not implied by HTML/PDF output. |
+| CW-A08 | Tickmarks/references | Original tickmark catalogue, descriptions and notes attach to specific account/document/line versions with author/time. Dangling references and post-version edits are detected; imported graphics never execute content. |
+| CW-A09 | Sign-off | Acyclic role dependencies, permitted signer and exact document/input version are tested. Source protected/unprotected modes are compared explicitly. Native review/override policy is documented; edits/reversals retain history and invalidate stale approval where required. |
+| CW-A10 | Issues | File/document/line scope, assignee, priority/type, status, resolution, complete/cleared distinctions, history and links persist. Unauthorized edits fail; unresolved blocking issues prevent native release under the explicitly chosen policy. |
+| CW-A11 | Lockdown/milestone | Versioned document selection and engagement/entity/period scope; scheduled date/timezone rules; immutable milestone. Unauthorized mutation/unlock fails. Approved post-lock additions/exceptions retain reason, actor and evidence without silently changing signed content. |
+| CW-A12 | Year end/rollforward | New destination and dry-run preview; original year preserved; closing-to-opening/prior and retained-earnings balances reconcile under the chosen basis. Explicitly select documents/issues/annotations and reset or preserve completion/sign-offs by declared policy. Duplicate/repeated runs cannot overwrite unrelated/new work. |
+| CW-A13 | Import preview/commit | Versioned source/field/ID mappings, immutable file SHA-256, row-level errors, counts and control totals; dry run makes no writes. Approved exact batches apply once; retries/interruption and recovery preserve accepted history and company isolation. |
+| CW-A14 | Export round trip | Independently specified CSV/XLSX/PDF/native package plus any explicitly supported vendor format. Check leading-zero codes, signs/cents/rounding, references/notes, formulas/text safety, totals and target import acceptance. A downloaded file alone is not successful interoperability. |
+| CW-A15 | Concurrent/offline collaboration | Version checks, conflict ownership and audit prevent lost updates or duplicate effects. Define online-only versus offline functionality honestly. Do not claim Caseware Cloud/SmartSync connectivity without an implemented, authorized and tested interface. |
+| CW-A16 | NXT OS integration and human control | Accepted Ledger TB snapshots feed an engagement without rewriting books; Firm tasks/close and issues link by stable scoped IDs; approved financial/GIFI outputs map to the native Tax workpaper through a staged contract. AI may prepare evidence-linked proposals; consequential posting, review, lockdown, exports to external systems and migrations follow verified human authority. |
+
+## Integration design boundary
+
+NXT Ledger, Firm Operations and Tax provide useful native building blocks, but this research does not verify a new Working Papers replica. Reusing an existing trial balance, checklist, approval queue, JSON export or T2 GIFI bridge does not close the distinct engagement/mapping/document/consolidation/sign-off requirements above.
+
+Keep engagement adjustments separate from posted Ledger entries until an authorized posting contract explicitly applies them. Bind generated schedules and sign-offs to immutable TB/mapping/document revisions. Treat document bytes, versions and relationships as first-class records with retention/capacity limits; current bounded JSON state and rolling audit retention must not silently become a large engagement-document archive.
+
+Native firm templates, account mappings, tickmark artwork, workpaper layouts and formulas should be original. No CaseView/Connector/Cloud API compatibility, proprietary file import, licensed methodology/template rights or assurance/compliance outcome is inherited from observing a source control or reading its documentation. A named export feature does not establish its complete file schema.
+
+## Native implementation verification checkpoint
+
+The independent initial implementation is documented in [NXT_ENGAGEMENTS.md](NXT_ENGAGEMENTS.md) and compared in [CASEWARE_PARITY_AUDIT.md](CASEWARE_PARITY_AUDIT.md). The release owner reports the final local **42 Rust tests (33 library, nine integration)** and **11 separate offline Node regressions** passed. Engagement HTTP acceptance covers exact-cent reconciliation, strict references/revisions, saved preimages, review/lock/reopen gates, native intake with inspectable proposed amounts/control checks and receipt replay, comparative-only rollforward, output escaping and the native bridges.
+
+An isolated synthetic Supabase rehearsal verified Ledger reviewed-copy intake, local AJE/review/lock, one-success/one-conflict competing edits, unconfirmed Tax draft preview/retry/explicit commit and proposed-only Firm preparation work. Exact native records persisted across a full owned server-process restart; local AJEs did not post to Ledger. A native browser walkthrough visibly checked shared OS sign-in, the Engagements worklist, locked read-only controls and synthetic $1,000+$100=$1,100 results. This checkpoint does **not** claim production deployment of the new module, full UI testing, source-file compatibility, certification or Caseware runtime parity. No source golden engagement was run.
+
+## Next evidence needed from the remote application
+
+1. Preserve the already observed Help build in a sanitized record; establish region/language and enabled components without exposing private engagement paths or license credentials. Keep the remote build distinct from portal/launcher versions.
+2. Identify an authorized vendor sample or create an isolated synthetic engagement with a clearly disposable destination. Do not open existing private client files merely to inspect menu behavior.
+3. Record safe initial navigation, visible column/field/command names and empty/error states for each matrix row, with exact REA/runtime operation IDs. A screenshot supports what it shows, not hidden calculations or backend semantics.
+4. Under the coordinating investigator's authorized workflow, exercise paired synthetic TB, adjustment and mapping cases first; then document/sign-off/issues, lockdown/year-close, consolidation and import/export. Preserve source version, fixture hashes, expected/actual totals and differences.
+5. Continue data-only extraction only with a supported format-aware tool, or collect the actual main executable through an explicitly authorized remote route. Preserve derivation/hash and version identity. The installer resource inventory does not close main-application code/schema coverage; do not equate the remote-viewer host process with Caseware.
+
+No current row establishes complete Working Papers 2025 parity, an accepted migration or permission to retire Caseware. The global comparison audit and roadmap now record this bounded native module; source runtime evidence is still required before any source-equivalence status is expanded. Existing live financial-cutover gates remain open.

@@ -249,19 +249,41 @@ impl Tax {
         let r=self.get(record_id).await?;
         Ok(json!({"format":"nxt-tax-return/v1","classification":"internal_workpaper_not_for_filing","exported_at":now(),"return":ReturnInput::from(&r),"calculation_snapshot":r.calculation,"calculation_history":r.calculations,"review":r.review,"review_history":r.reviews,"input_hash":input_hash(&r)?,"filing_enabled":false}))
     }
-    pub async fn preview(&self, mut document: Value) -> TResult<Value> {
+    pub async fn preview(&self, document: Value) -> TResult<Value> {
+        self.preview_internal(document,false).await
+    }
+    pub(crate) async fn preview_from_engagement(&self, document: Value) -> TResult<Value> {
+        self.preview_internal(document,true).await
+    }
+    async fn preview_internal(&self, mut document: Value, dedupe: bool) -> TResult<Value> {
         if let Some(s)=document.as_str() { document=serde_json::from_str(s).map_err(|_|bad("document must be valid JSON"))?; }
         if document["format"]!="nxt-tax-return/v1" { return Err(bad("only nxt-tax-return/v1 workpaper packages are supported; DT Max database/SDK files are not accepted")); }
         let mut input:ReturnInput=serde_json::from_value(document["return"].clone()).map_err(|_|bad("invalid return document"))?;
         input.expected_revision=None; let input=validate(input)?;
-        let source_hash=hash(&document)?; let preview_id=id("taximport"); let at=now(); let expires=(Utc::now()+Duration::minutes(30)).to_rfc3339_opts(SecondsFormat::Secs,true);
+        // This private flag is selected by the native bridge, never by fields in
+        // an uploaded package. Its hash namespace separates trusted bridge
+        // retries from independently requested public import previews.
+        let source_hash=if dedupe {hash(&json!({"kind":"nxt-engagement-tax-proposal/v1","document":document}))?}else{hash(&document)?};
+        let preview_id=id("taximport"); let at=now(); let expires=(Utc::now()+Duration::minutes(30)).to_rfc3339_opts(SecondsFormat::Secs,true);
         let summary=json!({"program":input.program,"tax_year":input.tax_year,"jurisdiction":input.jurisdiction,"name":input.name,"client_ref":input.client_ref,"input_fields":input.inputs.as_object().map_or(0,|o|o.len()),"parties":input.parties.len()});
         let preview=ImportPreview{id:preview_id.clone(),source_hash,created_at:at,expires_at:expires,summary,warnings:vec!["Creates a new draft. Imported calculations, review decisions and filing claims are never trusted.".into()],committed_return_id:None,document:input};
         self.mutate(|s| {
             s.imports.retain(|p|p.expires_at>now() || p.committed_return_id.is_some());
+            if let Some(existing)=s.imports.iter().find(|p|dedupe&&p.source_hash==preview.source_hash) {
+                let mut out=serde_json::to_value(existing).map_err(|_|bad("invalid stored preview"))?;
+                out.as_object_mut().unwrap().remove("document");
+                return Ok(out);
+            }
             if s.imports.len()>=20 { return Err(conflict("import preview capacity reached (20)")); }
             s.imports.push(preview.clone()); let mut out=serde_json::to_value(&preview).map_err(|_|bad("invalid preview"))?;out.as_object_mut().unwrap().remove("document");Ok(out)
         }).await
+    }
+    /// Read the exact saved input proposal under the same workspace authorization
+    /// as Tax returns. Imported calculations/reviews are never part of this input.
+    pub async fn import_preview(&self, preview_id: &str) -> TResult<Value> {
+        let state=self.load().await?;
+        let preview=state.imports.into_iter().find(|p|p.id==preview_id).ok_or_else(||bad("import preview not found"))?;
+        Ok(json!(preview))
     }
     pub async fn commit_import(&self, preview_id: &str) -> TResult<TaxReturn> {
         let new_id=id("tax"); let at=now();

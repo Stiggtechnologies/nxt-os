@@ -23,6 +23,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/print",get(print))
         .route("/api/tax/returns/{id}/filing",post(filing))
         .route("/api/tax/import/preview",post(preview))
+        .route("/api/tax/import/previews/{id}",get(import_preview))
         .route("/api/tax/import/commit",post(commit))
         .route("/api/tax/audit",get(audit))
         .layer(DefaultBodyLimit::max(1024 * 1024))
@@ -54,6 +55,7 @@ async fn audit(State(t):S,Query(q):Query<AuditQuery>) -> R {
 }
 #[derive(Deserialize)] #[serde(deny_unknown_fields)] struct PreviewInput { document:Value }
 async fn preview(State(t):S,Json(input):Json<PreviewInput>) -> R { ok(t.preview(input.document).await?) }
+async fn import_preview(State(t):S,Path(id):Path<String>) -> R { ok(t.import_preview(&id).await?) }
 #[derive(Deserialize)] #[serde(deny_unknown_fields)] struct CommitInput { preview_id:String }
 async fn commit(State(t):S,Json(input):Json<CommitInput>) -> R { ok(t.commit_import(&input.preview_id).await?) }
 async fn filing(State(t):S,Path(id):Path<String>) -> R {

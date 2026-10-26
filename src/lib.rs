@@ -8,6 +8,7 @@ pub mod os;
 pub mod referral;
 pub mod store;
 pub mod tax;
+pub mod engagement;
 
 use axum::Router;
 use std::sync::Arc;
@@ -24,11 +25,17 @@ fn app_modules(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::eng
 }
 
 fn app_modules_with_tax(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>) -> Router {
+    let engagements = Arc::new(engagement::Engagements::new(Store::from_env(),ledger.clone(),tax.clone(),firm.clone()));
+    app_all(ledger,referrals,firm,tax,engagements)
+}
+
+fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>) -> Router {
     Router::new()
         .merge(ledger::routes::router(ledger.clone()))
         .merge(firm::router(firm.clone()))
         .merge(tax::router(tax.clone()))
-        .merge(os::router(os::Os { ledger, firm, tax, referrals: referrals.clone() }))
+        .merge(engagement::router(engagements.clone()))
+        .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
 }
 
@@ -38,5 +45,6 @@ pub fn app_with(make_store: impl Fn() -> Store) -> Router {
     let referrals = Arc::new(referral::engine::Engine::new(make_store()));
     let firm = Arc::new(firm::Firm::new(make_store(), ledger.clone()));
     let tax = Arc::new(tax::Tax::new(make_store()));
-    app_modules_with_tax(ledger, referrals, firm, tax)
+    let engagements=Arc::new(engagement::Engagements::new(make_store(),ledger.clone(),tax.clone(),firm.clone()));
+    app_all(ledger, referrals, firm, tax, engagements)
 }

@@ -22,6 +22,7 @@ jobs:
       - name: Verify browser and operational scripts
         run: |
           node --check public/apps/tax/tax.js
+          node --check public/apps/engagements/engagements.js
           node --check scripts/backup-nxt-store.mjs
           node --check scripts/cutover-rehearsal.mjs
           node --test tests/cutover_rehearsal.test.mjs

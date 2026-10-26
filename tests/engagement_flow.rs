@@ -1,0 +1,366 @@
+//! Synthetic HTTP acceptance for independent NXT engagement workpapers.
+//! No Caseware file, private client record or external connector is used.
+use axum::{body::Body, http::Request};
+use nxt_os::{app_with, store::Store};
+use serde_json::{Value, json};
+use std::sync::Arc;
+use tower::ServiceExt;
+
+async fn raw(router: &axum::Router, method: &str, uri: &str, body: Option<Value>, auth: bool) -> (u16, String, String, String) {
+    let mut request = Request::builder().method(method).uri(uri);
+    if auth { request = request.header("authorization", "Bearer k"); }
+    let request = match body {
+        Some(body) => request.header("content-type", "application/json").body(Body::from(body.to_string())),
+        None => request.body(Body::empty()),
+    }.unwrap();
+    let response = router.clone().oneshot(request).await.unwrap();
+    let status = response.status().as_u16();
+    let content_type = response.headers().get("content-type").and_then(|v|v.to_str().ok()).unwrap_or("").to_string();
+    let cache = response.headers().get("cache-control").and_then(|v|v.to_str().ok()).unwrap_or("").to_string();
+    let bytes = axum::body::to_bytes(response.into_body(), 4 * 1024 * 1024).await.unwrap();
+    (status, content_type, cache, String::from_utf8(bytes.to_vec()).unwrap())
+}
+async fn call(router: &axum::Router, method: &str, uri: &str, body: Option<Value>) -> (u16, Value) {
+    let (status, _, _, body) = raw(router, method, uri, body, true).await;
+    (status, serde_json::from_str(&body).unwrap_or_else(|_|json!({"raw":body})))
+}
+async fn ok(router: &axum::Router, method: &str, uri: &str, body: Option<Value>) -> Value {
+    let (status,value) = call(router,method,uri,body).await;
+    assert_eq!(status,200,"{method} {uri}: {value}"); value
+}
+async fn fails(router: &axum::Router, method: &str, uri: &str, body: Option<Value>, expected: u16) {
+    let (status,value) = call(router,method,uri,body).await;
+    assert_eq!(status,expected,"{method} {uri}: {value}");
+}
+fn id(record: &Value) -> &str { record["id"].as_str().expect("engagement id") }
+fn revision(record: &Value) -> u64 { record["revision"].as_u64().expect("revision") }
+fn endpoint(record: &Value, suffix: &str) -> String { format!("/api/engagements/{}{suffix}",id(record)) }
+fn editable(record: &Value) -> Value {
+    let mut input = record["document"].clone(); input["expected_revision"] = record["revision"].clone(); input
+}
+async fn calculate(router: &axum::Router, record: &Value) -> Value {
+    ok(router,"POST",&endpoint(record,"/calculate"),Some(json!({"expected_revision":revision(record)}))).await
+}
+async fn transition(router: &axum::Router, record: &Value, status: &str, note: &str) -> Value {
+    ok(router,"POST",&endpoint(record,"/transition"),Some(json!({"expected_revision":revision(record),"status":status,"operator":"Synthetic reviewer","note":note}))).await
+}
+async fn signoff(router: &axum::Router, record: &Value, workpaper: &str, stage: &str) -> Value {
+    ok(router,"POST",&endpoint(record,"/signoffs"),Some(json!({"expected_revision":revision(record),"workpaper_id":workpaper,"stage":stage,"operator":if stage=="prepared"{"Synthetic preparer"}else{"Synthetic reviewer"},"note":"Reviewed synthetic evidence at the saved revision."}))).await
+}
+
+fn fixture() -> Value {
+    let mut accounts = Vec::new(); let mut groups = Vec::new();
+    for (key,kind,debit,credit) in [
+        ("cash","asset",1_000_000,0),("receivables","asset",200_000,0),("equipment","asset",500_000,0),
+        ("payables","liability",0,300_000),("capital","equity",0,1_200_000),
+        ("revenue","revenue",0,900_000),("expense","expense",700_000,0),
+    ] {
+        let group = format!("g_{key}");
+        accounts.push(json!({"id":format!("a_{key}"),"code":format!("code_{key}"),"name":format!("Synthetic {key}"),"kind":kind,"group_id":group,"debit_cents":debit,"credit_cents":credit,"prior_debit_cents":0,"prior_credit_cents":0}));
+        groups.push(json!({"id":group,"code":format!("map_{key}"),"name":format!("Synthetic {key} lead"),"kind":kind}));
+    }
+    json!({
+        "name":"Synthetic engagement acceptance","client_ref":"synthetic-only","kind":"internal",
+        "period_start":"2025-01-01","period_end":"2025-12-31","currency":"CAD","accounts":accounts,"groups":groups,
+        "adjustments":[{"id":"aje1","reference":"AJE1","date":"2025-12-31","kind":"adjusting","description":"Synthetic accrued expense",
+            "lines":[{"account_id":"a_expense","debit_cents":100_000},{"account_id":"a_payables","credit_cents":100_000}]}],
+        "workpapers":[
+            {"id":"wp_lead","reference":"A","title":"Synthetic lead","folder":"Planning","body":"Synthetic evidence body.","required":true,"account_ids":["a_cash"],"adjustment_ids":["aje1"]},
+            {"id":"wp_review","reference":"B","title":"Synthetic dependent review","folder":"Completion","body":"Synthetic review body.","required":true,"depends_on":["wp_lead"]}
+        ],"issues":[],"notes":"Internal workpaper fixture; no source-system data."
+    })
+}
+
+/// One test avoids process-wide authentication environment races in this binary.
+#[tokio::test(flavor="multi_thread", worker_threads=2)]
+async fn engagement_workpaper_lifecycle() {
+    unsafe { std::env::set_var("ADMIN_API_KEY","k") };
+    let router = app_with(Store::memory);
+    for uri in ["/api/engagements","/api/engagements/catalog","/api/engagements/summary","/api/engagements/audit"] {
+        assert_eq!(raw(&router,"GET",uri,None,false).await.0,401);
+    }
+    assert_eq!(raw(&router,"POST","/api/engagements",Some(fixture()),false).await.0,401);
+    assert_eq!(ok(&router,"GET","/api/engagements",None).await,json!([]));
+    let (_,_,cache,_) = raw(&router,"GET","/api/engagements/catalog",None,true).await;
+    assert!(cache.contains("no-store"));
+    let catalog = ok(&router,"GET","/api/engagements/catalog",None).await;
+    assert_eq!(catalog["status"],"validation_only");
+    let summary = ok(&router,"GET","/api/engagements/summary",None).await;
+    assert_eq!(summary["auth_required"],true);
+    assert!(summary["access_model"].as_str().unwrap().contains("shared"));
+    let ledger_before = ok(&router,"GET","/api/ledger/entries",None).await;
+    let tax_before = ok(&router,"GET","/api/tax/returns",None).await;
+    let created = ok(&router,"POST","/api/engagements",Some(fixture())).await;
+    assert_eq!(created["status"],"draft"); assert_eq!(created["revision"],1); assert_eq!(created["input_revision"],1);
+    assert!(created["snapshot"].is_null());
+    fails(&router,"POST",&endpoint(&created,"/transition"),Some(json!({"expected_revision":1,"status":"locked","operator":"Synthetic reviewer","note":"Cannot bypass calculation."})),409).await;
+    let calculated = calculate(&router,&created).await;
+    assert_eq!(calculated["snapshot"]["result"]["supported"],true,"{calculated}");
+    assert_eq!(calculated["snapshot"]["result"]["ruleset"],"nxt-engagement-workpapers-v1");
+    let totals = &calculated["snapshot"]["result"]["totals"];
+    for (key,expected) in [("unadjusted_debit_cents",2_400_000),("unadjusted_credit_cents",2_400_000),("adjustment_debit_cents",100_000),("adjustment_credit_cents",100_000),("adjusted_debit_cents",2_500_000),("adjusted_credit_cents",2_500_000),("adjusted_difference_cents",0)] {
+        assert_eq!(totals[key],expected,"{key}");
+    }
+    assert_eq!(calculated["snapshot"]["result"]["financial_statements"]["current"],json!({
+        "assets_cents":1_700_000,"liabilities_cents":400_000,"equity_cents":1_200_000,"revenue_cents":900_000,"expenses_cents":800_000,"net_income_cents":100_000,"balance_sheet_difference_cents":0
+    }));
+    let mut expected_document = created["document"].clone(); expected_document["expected_revision"] = Value::Null;
+    assert_eq!(calculated["snapshot"]["input_document"],expected_document);
+    for key in ["input_hash","output_hash"] {
+        let digest = calculated["snapshot"][key].as_str().unwrap(); assert_eq!(digest.len(),64); assert!(digest.chars().all(|c|c.is_ascii_hexdigit()));
+    }
+    assert_eq!(ok(&router,"GET","/api/ledger/entries",None).await,ledger_before,"Engagement AJE must not post Ledger entries");
+    assert_eq!(ok(&router,"GET","/api/tax/returns",None).await,tax_before,"Engagement AJE must not create or alter Tax workpapers");
+
+    // Dependencies, distinct preparation/review stages and an exact fresh
+    // calculation form the internal review gate; labels do not establish IAM.
+    fails(&router,"POST",&endpoint(&calculated,"/signoffs"),Some(json!({"expected_revision":revision(&calculated),"workpaper_id":"wp_review","stage":"prepared","operator":"Synthetic preparer","note":"Dependency not ready."})),409).await;
+    fails(&router,"POST",&endpoint(&calculated,"/signoffs"),Some(json!({"expected_revision":revision(&calculated),"workpaper_id":"wp_lead","stage":"reviewed","operator":"Synthetic reviewer","note":"Not prepared."})),409).await;
+    let prepared_a = signoff(&router,&calculated,"wp_lead","prepared").await;
+    let prepared = signoff(&router,&prepared_a,"wp_review","prepared").await;
+    let in_review = transition(&router,&prepared,"in_review","Begin internal workpaper review.").await;
+    fails(&router,"POST",&endpoint(&in_review,"/transition"),Some(json!({"expected_revision":revision(&in_review),"status":"locked","operator":"Synthetic reviewer","note":"Reviews incomplete."})),409).await;
+    let reviewed_a = signoff(&router,&in_review,"wp_lead","reviewed").await;
+    let reviewed = signoff(&router,&reviewed_a,"wp_review","reviewed").await;
+    let locked = transition(&router,&reviewed,"locked","Synthetic evidence reviewed and released internally.").await;
+    assert_eq!(locked["status"],"locked");
+    assert!(!locked["lock_history"].as_array().unwrap().is_empty());
+    fails(&router,"PUT",&endpoint(&locked,""),Some(editable(&locked)),409).await;
+    fails(&router,"POST",&endpoint(&locked,"/calculate"),Some(json!({"expected_revision":revision(&locked)})),409).await;
+    fails(&router,"POST",&endpoint(&locked,"/transition"),Some(json!({"expected_revision":revision(&locked),"status":"draft","operator":"Synthetic reviewer"})),400).await;
+    let reopen_note="Reopen synthetic engagement for a correction.\nSynthetic evidence follow-up:\tretain prior review.";
+    let reopened = transition(&router,&locked,"draft",reopen_note).await;
+    assert_eq!(reopened["lock_history"].as_array().unwrap().last().unwrap()["note"],reopen_note);
+    let historical_snapshot = locked["snapshot"].clone();
+    let mut edit = editable(&reopened); edit["notes"] = json!("Corrected synthetic notes.");
+    let changed = ok(&router,"PUT",&endpoint(&reopened,""),Some(edit.clone())).await;
+    assert_eq!(changed["status"],"draft"); assert!(changed["snapshot"].is_null());
+    assert_eq!(changed["signoffs"],json!([]));
+    assert!(changed["snapshots"].as_array().unwrap().contains(&historical_snapshot));
+    assert_eq!(changed["snapshots"][0]["input_document"]["notes"],created["document"]["notes"]);
+    assert!(!changed["signoff_history"].as_array().unwrap().is_empty());
+    fails(&router,"PUT",&endpoint(&changed,""),Some(edit),409).await;
+    fails(&router,"POST",&endpoint(&changed,"/transition"),Some(json!({"expected_revision":revision(&changed),"status":"in_review","operator":"Synthetic reviewer","note":"Stale result."})),409).await;
+
+    // Preview preserves saved content and mapping; the exact preview commits
+    // once, and imported identity remains local to this engagement.
+    let mut accounts = changed["document"]["accounts"].as_array().unwrap().clone();
+    for account in &mut accounts { account.as_object_mut().unwrap().remove("group_id"); }
+    accounts[0]["debit_cents"] = json!(1_000_001); accounts[4]["credit_cents"] = json!(1_200_001);
+    let preview = ok(&router,"POST",&endpoint(&changed,"/import/preview"),Some(json!({"expected_revision":revision(&changed),"document":{"format":"nxt-engagement-tb/v1","accounts":accounts}}))).await;
+    assert_eq!(preview["accounts"][0]["debit_cents"],1_000_001);
+    assert_eq!(preview["accounts"][0]["group_id"],"g_cash");
+    assert_eq!(preview["checks"]["supported"],true);
+    assert_eq!(preview["checks"]["totals"]["adjusted_debit_cents"],2_500_001);
+    assert_eq!(preview["checks"]["totals"]["adjusted_credit_cents"],2_500_001);
+    assert_eq!(ok(&router,"GET",&endpoint(&changed,""),None).await,changed,"Preview cannot alter saved workpaper or review state");
+    let import_request = json!({"expected_revision":revision(&changed),"preview_id":id(&preview)});
+    let imported = ok(&router,"POST",&endpoint(&changed,"/import/commit"),Some(import_request.clone())).await;
+    assert_eq!(imported["document"]["accounts"][0]["id"],"a_cash");
+    assert_eq!(imported["document"]["accounts"][0]["group_id"],"g_cash");
+    assert_eq!(imported["document"]["accounts"][0]["debit_cents"],1_000_001);
+    assert!(imported["snapshot"].is_null()); assert_eq!(imported["signoffs"],json!([]));
+    assert_eq!(imported["import_history"].as_array().unwrap().len(),1);
+    assert_eq!(imported["import_history"][0]["source_hash"],preview["source_hash"]);
+    assert_eq!(imported["import_history"][0]["canonical_hash"],preview["canonical_hash"]);
+    assert_eq!(imported["import_history"][0]["preview_id"],preview["id"]);
+    assert_eq!(ok(&router,"POST",&endpoint(&changed,"/import/commit"),Some(import_request)).await,imported,"Commit replay cannot create a second import effect");
+    let calculated = calculate(&router,&imported).await;
+    let prepared_a = signoff(&router,&calculated,"wp_lead","prepared").await;
+    let prepared = signoff(&router,&prepared_a,"wp_review","prepared").await;
+    let in_review = transition(&router,&prepared,"in_review","Review the new imported input revision.").await;
+    let reviewed_a = signoff(&router,&in_review,"wp_lead","reviewed").await;
+    let reviewed = signoff(&router,&reviewed_a,"wp_review","reviewed").await;
+    let calculated = transition(&router,&reviewed,"locked","Lock reviewed comparatives before rollforward.").await;
+
+    // Year close here means a new comparative workpaper, never a hidden Ledger
+    // closing entry, carried approval, or automatic tax carryforward.
+    let next = ok(&router,"POST",&endpoint(&calculated,"/rollforward"),Some(json!({"expected_revision":revision(&calculated),"period_start":"2026-01-01","period_end":"2026-12-31"}))).await;
+    assert_ne!(next["id"],calculated["id"]); assert_eq!(next["status"],"draft");
+    assert!(next["snapshot"].is_null()); assert_eq!(next["snapshots"],json!([])); assert_eq!(next["signoffs"],json!([]));
+    assert_eq!(next["document"]["adjustments"],json!([]));
+    assert_eq!(next["document"]["prior_period_start"],"2025-01-01");
+    assert_eq!(next["document"]["prior_period_end"],"2025-12-31");
+    for account in next["document"]["accounts"].as_array().unwrap() { assert_eq!(account["debit_cents"],0); assert_eq!(account["credit_cents"],0); }
+    assert!(next["document"]["workpapers"].as_array().unwrap().iter().all(|p|p["body"]=="" && p["adjustment_ids"]==json!([])));
+    let expense = next["document"]["accounts"].as_array().unwrap().iter().find(|a|a["id"]=="a_expense").unwrap();
+    let payable = next["document"]["accounts"].as_array().unwrap().iter().find(|a|a["id"]=="a_payables").unwrap();
+    assert_eq!(expense["prior_debit_cents"],800_000); assert_eq!(payable["prior_credit_cents"],400_000);
+    assert_eq!(ok(&router,"GET",&endpoint(&calculated,""),None).await,calculated);
+    fails(&router,"POST",&endpoint(&calculated,"/rollforward"),Some(json!({"expected_revision":revision(&calculated),"period_start":"2026-01-01","period_end":"2026-12-31"})),409).await;
+
+    // Schema and reference errors fail instead of creating plausible results.
+    for variant in ["duplicate_account","duplicate_code","dangling_group","dangling_adjustment_account","dependency_cycle","bad_date"] {
+        let mut bad = fixture();
+        match variant {
+            "duplicate_account" => bad["accounts"][1]["id"] = bad["accounts"][0]["id"].clone(),
+            "duplicate_code" => bad["accounts"][1]["code"] = bad["accounts"][0]["code"].clone(),
+            "dangling_group" => bad["accounts"][0]["group_id"] = json!("missing_group"),
+            "dangling_adjustment_account" => bad["adjustments"][0]["lines"][0]["account_id"] = json!("missing_account"),
+            "dependency_cycle" => bad["workpapers"][0]["depends_on"] = json!(["wp_review"]),
+            "bad_date" => bad["period_start"] = json!("2025-02-30"),
+            _ => unreachable!(),
+        }
+        fails(&router,"POST","/api/engagements",Some(bad),400).await;
+    }
+    let mut fractional = fixture(); fractional["accounts"][0]["debit_cents"] = json!(1.25);
+    let (status,_) = call(&router,"POST","/api/engagements",Some(fractional)).await;
+    assert!([400,422].contains(&status),"Fractional cents must be rejected");
+    let mut oversized = fixture(); oversized["workpapers"][0]["body"] = json!("x".repeat(16 * 1024 + 1));
+    fails(&router,"POST","/api/engagements",Some(oversized),400).await;
+    let mut unsupported_currency = fixture(); unsupported_currency["currency"] = json!("USD");
+    fails(&router,"POST","/api/engagements",Some(unsupported_currency),400).await;
+    let mut oversized_request = fixture(); oversized_request["notes"] = json!("x".repeat(1_100_000));
+    fails(&router,"POST","/api/engagements",Some(oversized_request),413).await;
+    for reason in ["unbalanced","unmapped","blank_required_workpaper","open_blocking_issue"] {
+        let mut blocked = fixture();
+        match reason {
+            "unbalanced" => blocked["accounts"][0]["debit_cents"] = json!(1_000_001),
+            "unmapped" => blocked["accounts"][0]["group_id"] = Value::Null,
+            "blank_required_workpaper" => blocked["workpapers"][0]["body"] = json!(""),
+            "open_blocking_issue" => blocked["issues"] = json!([{"id":"issue1","title":"Synthetic blocker","blocking":true,"status":"open","workpaper_id":"wp_lead"}]),
+            _ => unreachable!(),
+        }
+        let blocked = ok(&router,"POST","/api/engagements",Some(blocked)).await;
+        let blocked = calculate(&router,&blocked).await;
+        assert_eq!(blocked["snapshot"]["result"]["supported"],false,"{reason}: {blocked}");
+        fails(&router,"POST",&endpoint(&blocked,"/transition"),Some(json!({"expected_revision":revision(&blocked),"status":"in_review","operator":"Synthetic reviewer","note":"Must not accept blockers."})),409).await;
+    }
+
+    let mut injection = editable(&next); injection["name"] = json!("Synthetic <script>alert('name')</script>");
+    injection["workpapers"][0]["body"] = json!("<img src=x onerror=alert('body')>");
+    let injection = ok(&router,"PUT",&endpoint(&next,""),Some(injection)).await;
+    let mut edit_a = editable(&injection); edit_a["notes"] = json!("Concurrent synthetic change A");
+    let mut edit_b = editable(&injection); edit_b["notes"] = json!("Concurrent synthetic change B");
+    let edit_path = endpoint(&injection,"");
+    let (a,b) = tokio::join!(call(&router,"PUT",&edit_path,Some(edit_a)),call(&router,"PUT",&edit_path,Some(edit_b)));
+    assert!((a.0==200 && b.0==409)||(a.0==409 && b.0==200),"Exactly one stale competing edit must commit: {a:?} {b:?}");
+    let injection = if a.0==200 {a.1}else{b.1};
+    let (status,content_type,cache,html) = raw(&router,"GET",&endpoint(&injection,"/print"),None,true).await;
+    assert_eq!(status,200); assert!(content_type.starts_with("text/html")); assert!(cache.contains("no-store"));
+    assert!(html.contains("&lt;script&gt;")); assert!(html.contains("&lt;img")); assert!(!html.contains("<script>")); assert!(!html.contains("<img src=x"));
+    let (status,content_type,cache,package) = raw(&router,"GET",&endpoint(&calculated,"/package"),None,true).await;
+    assert_eq!(status,200);
+    assert!(content_type.starts_with("application/json")); assert!(cache.contains("no-store"));
+    let package:Value = serde_json::from_str(&package).unwrap();
+    assert!(package.is_object()); assert!(package.to_string().contains(calculated["snapshot"]["input_hash"].as_str().unwrap()));
+    let (status,_,_,locked_html)=raw(&router,"GET",&endpoint(&calculated,"/print"),None,true).await;
+    assert_eq!(status,200);
+    assert!(locked_html.contains("Trial balance control totals"));
+    assert!(locked_html.contains("Current financial summary"));
+    assert!(locked_html.contains("Prior financial summary"));
+    assert!(locked_html.contains("<td>adjusted debit cents</td><td>25000.01</td>"));
+    assert!(locked_html.contains("<td>adjusted credit cents</td><td>25000.01</td>"));
+    assert!(locked_html.contains("<td>net income cents</td><td>1000.00</td>"));
+    let archived = transition(&router,&calculated,"archived","Retain the synthetic engagement history.").await;
+    assert_eq!(archived["status"],"archived");
+    fails(&router,"PUT",&endpoint(&archived,""),Some(editable(&archived)),409).await;
+    fails(&router,"DELETE",&endpoint(&archived,""),None,405).await;
+    assert_eq!(ok(&router,"GET","/api/ledger/entries",None).await,ledger_before);
+    assert_eq!(ok(&router,"GET","/api/tax/returns",None).await,tax_before);
+    let audit = ok(&router,"GET","/api/engagements/audit",None).await;
+    assert!(!audit.as_array().unwrap().is_empty());
+    assert!(audit.to_string().contains("Reopen synthetic engagement for a correction."));
+    fails(&router,"GET","/api/engagements/audit?limit=201",None,400).await;
+    let listed = ok(&router,"GET","/api/engagements",None).await;
+    for row in listed.as_array().unwrap() {
+        for field in ["document","snapshot","snapshots","signoff_history","lock_history","import_history"] {assert!(row.get(field).is_none(),"List projection must not embed {field}");}
+    }
+    engagement_bridge_acceptance().await;
+}
+
+async fn engagement_bridge_acceptance() {
+    // Explicit service references match app composition while each module owns
+    // a separate memory Store; Ledger capture can inspect its exact source.
+    let ledger=Arc::new(nxt_os::ledger::engine::Ledger::new(Store::memory()));
+    let firm=Arc::new(nxt_os::firm::Firm::new(Store::memory(),ledger.clone()));
+    let tax=Arc::new(nxt_os::tax::Tax::new(Store::memory()));
+    let engagements=Arc::new(nxt_os::engagement::Engagements::new(Store::memory(),ledger.clone(),tax.clone(),firm.clone()));
+    let router=axum::Router::new()
+        .merge(nxt_os::ledger::routes::router(ledger.clone()))
+        .merge(nxt_os::firm::router(firm))
+        .merge(nxt_os::tax::router(tax))
+        .merge(nxt_os::engagement::router(engagements));
+    let mut empty = fixture();
+    for key in ["accounts","groups","adjustments","workpapers","issues"] {empty[key]=json!([]);}
+    empty["name"]=json!("Synthetic Ledger capture target");
+    let target = ok(&router,"POST","/api/engagements",Some(empty)).await;
+    fails(&router,"POST",&endpoint(&target,"/ledger/preview"),Some(json!({"expected_revision":revision(&target)})),409).await;
+    assert!(ledger.store.smembers("gl:accounts").await.unwrap().is_empty(),"Capture must not seed the source chart");
+    ok(&router,"PUT","/api/ledger/company",Some(json!({"name":"Synthetic bridge source","currency":"CAD","province":"AB","default_tax_code":"GST"}))).await;
+    let source_accounts = ok(&router,"GET","/api/ledger/accounts",None).await;
+    ok(&router,"POST","/api/ledger/entries",Some(json!({"date":"2025-01-02","memo":"Synthetic bridge capital","lines":[{"account_id":"acc_1000","debit":1_000_000},{"account_id":"acc_3000","credit":1_000_000}]}))).await;
+    let source_entries = ok(&router,"GET","/api/ledger/entries",None).await;
+    let preview = ok(&router,"POST",&endpoint(&target,"/ledger/preview"),Some(json!({"expected_revision":revision(&target)}))).await;
+    assert_eq!(preview["provenance"]["source"],"nxt_ledger");
+    assert_eq!(preview["provenance"]["consistency"],"stable_double_read_not_transactional");
+    assert_eq!(preview["provenance"]["source_write_freeze_verified"],false);
+    assert_eq!(preview["provenance"]["ledger_writes"],false);
+    assert_eq!(preview["provenance"]["source_accounts"].as_u64().unwrap() as usize,source_accounts.as_array().unwrap().len());
+    assert_eq!(ok(&router,"GET",&endpoint(&target,""),None).await,target);
+    let captured = ok(&router,"POST",&endpoint(&target,"/import/commit"),Some(json!({"expected_revision":revision(&target),"preview_id":id(&preview)}))).await;
+    let captured_accounts = captured["document"]["accounts"].as_array().unwrap();
+    assert_eq!(captured_accounts.len(),source_accounts.as_array().unwrap().len(),"Zero-balance source accounts are retained");
+    assert_eq!(captured_accounts.iter().find(|a|a["id"]=="acc_1000").unwrap()["debit_cents"],1_000_000);
+    assert_eq!(captured_accounts.iter().find(|a|a["id"]=="acc_3000").unwrap()["credit_cents"],1_000_000);
+    assert_eq!(captured["import_history"][0]["provenance"]["source"],"nxt_ledger");
+    assert_eq!(captured["import_history"][0]["source_hash"],preview["source_hash"]);
+    assert_eq!(ok(&router,"GET","/api/ledger/entries",None).await,source_entries);
+    // The bridge does not silently infer retained earnings from historical P&L.
+    ok(&router,"POST","/api/ledger/entries",Some(json!({"date":"2024-12-31","memo":"Synthetic unclosed prior expense","lines":[{"account_id":"acc_1000","credit":100},{"account_id":"acc_6600","debit":100}]}))).await;
+    fails(&router,"POST",&endpoint(&captured,"/ledger/preview"),Some(json!({"expected_revision":revision(&captured)})),409).await;
+
+    let source = ok(&router,"POST","/api/engagements",Some(fixture())).await;
+    fails(&router,"POST",&endpoint(&source,"/tax/preview"),Some(json!({"expected_revision":revision(&source),"jurisdiction":"AB"})),409).await;
+    let source = calculate(&router,&source).await;
+    let source = signoff(&router,&source,"wp_lead","prepared").await;
+    let source = signoff(&router,&source,"wp_review","prepared").await;
+    let source = transition(&router,&source,"in_review","Review synthetic bridge source.").await;
+    let source = signoff(&router,&source,"wp_lead","reviewed").await;
+    let source = signoff(&router,&source,"wp_review","reviewed").await;
+    let source = transition(&router,&source,"locked","Release synthetic bridge source for draft projection.").await;
+    let tax_request = json!({"expected_revision":revision(&source),"jurisdiction":"AB"});
+    let tax_preview = ok(&router,"POST",&endpoint(&source,"/tax/preview"),Some(tax_request.clone())).await;
+    assert_eq!(tax_preview["filing_enabled"],false);
+    assert_eq!(tax_preview["taxable_income_inferred"],false);
+    assert_eq!(tax_preview["creates_draft_only_after_commit"],true);
+    assert!(tax_preview["target_preview_hash_scope"].as_str().unwrap().contains("canonical JSON proposal"));
+    assert_eq!(tax_preview["source"]["input_hash"],source["snapshot"]["input_hash"]);
+    assert_eq!(tax_preview["source"]["output_hash"],source["snapshot"]["output_hash"]);
+    assert_eq!(ok(&router,"GET","/api/tax/returns",None).await,json!([]));
+    let preview_id = id(&tax_preview["preview"]);
+    let stored_preview = ok(&router,"GET",&format!("/api/tax/import/previews/{preview_id}"),None).await;
+    let proposed = &stored_preview["document"];
+    assert_eq!(proposed["program"],"T2"); assert_eq!(proposed["tax_year"],2025); assert_eq!(proposed["jurisdiction"],"AB");
+    assert_eq!(proposed["inputs"]["scope_confirmed"],false);
+    assert_eq!(proposed["inputs"]["taxable_income_cents"],0);
+    assert_eq!(proposed["corporate"]["reconciliation_confirmed"],false);
+    assert_eq!(proposed["corporate"]["legal_name"],"");
+    let gifi = proposed["corporate"]["gifi"].as_array().unwrap();
+    for (code,amount) in [("2599",1_700_000),("3499",400_000),("3620",1_300_000),("8299",900_000),("9368",800_000),("9999",100_000)] {
+        assert_eq!(gifi.iter().find(|row|row["code"]==code).unwrap()["current_cents"],amount,"Aggregate {code}");
+    }
+    let imported = ok(&router,"POST","/api/tax/import/commit",Some(json!({"preview_id":preview_id}))).await;
+    assert_eq!(imported["status"],"draft"); assert!(imported["calculation"].is_null()); assert!(imported["review"].is_null());
+    assert_eq!(ok(&router,"POST","/api/tax/import/commit",Some(json!({"preview_id":preview_id}))).await,imported);
+    let repeat = ok(&router,"POST",&endpoint(&source,"/tax/preview"),Some(tax_request)).await;
+    assert_eq!(repeat["preview"]["id"],tax_preview["preview"]["id"]);
+    assert_eq!(ok(&router,"GET","/api/tax/returns",None).await.as_array().unwrap().len(),1);
+    assert_eq!(ok(&router,"GET",&endpoint(&source,""),None).await,source,"Tax proposal cannot alter the engagement source");
+    fails(&router,"POST",&endpoint(&source,"/tax/preview"),Some(json!({"expected_revision":revision(&source),"jurisdiction":"ON"})),409).await;
+
+    let project = ok(&router,"POST","/api/firm/projects",Some(json!({"name":"Synthetic engagement preparation","tasks":[]}))).await;
+    let proposal_request = json!({"expected_revision":revision(&source),"project_id":id(&project)});
+    let proposal = ok(&router,"POST",&endpoint(&source,"/firm-proposal"),Some(proposal_request.clone())).await;
+    assert_eq!(proposal["human_approval_required"],true); assert_eq!(proposal["execution_requested"],false); assert_eq!(proposal["cross_module_atomic"],false);
+    assert_eq!(proposal["proposal"]["status"],"proposed"); assert_eq!(proposal["proposal"]["requires_approval"],true);
+    let replay = ok(&router,"POST",&endpoint(&source,"/firm-proposal"),Some(proposal_request)).await;
+    assert_eq!(replay["proposal"]["id"],proposal["proposal"]["id"]);
+    let project_path = format!("/api/firm/projects/{}",id(&project));
+    assert_eq!(ok(&router,"GET",&project_path,None).await["tasks"],json!([]));
+    let decision_path = format!("/api/firm/approvals/{}/decide",proposal["proposal"]["approval_id"].as_str().unwrap());
+    let accepted = ok(&router,"POST",&decision_path,Some(json!({"decision":"approve","note":"Synthetic human accepted preparation task."}))).await;
+    assert_eq!(accepted["status"],"executed");
+    ok(&router,"POST",&decision_path,Some(json!({"decision":"approve","note":"Synthetic human accepted preparation task."}))).await;
+    assert_eq!(ok(&router,"GET",&project_path,None).await["tasks"].as_array().unwrap().len(),1,"Approval replay cannot execute a second task");
+}

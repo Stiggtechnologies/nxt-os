@@ -1,12 +1,13 @@
 # NXT OS
 
-An AI-native operating system for running a Canadian business. One Rust function on Vercel hosts the OS shell and four business modules:
+An AI-native operating system for running a Canadian business. One Rust function on Vercel hosts the OS shell and five business modules:
 
 | App | What it does |
 |---|---|
 | **NXT OS shell** (`/`) | Workspace sign-in, home screen with live KPIs and prioritized insights, app dock, ⌘K command bar, and **Ask NXT**, an assistant that answers questions from your live data and opens the right screen. |
 | **Firm Operations** (`/apps/firm/`) | Projects and reusable checklists, scheduled internal workflows, immutable human approval proposals, close tracking, report exports, account-template previews, and an audit trail. Clients and companies can be introduced later. |
 | **NXT Tax** (`/apps/tax/`) | Independent, bounded 2025 T1/T2/T3/T5013 workpapers; keyword entry, optional T2 corporate/GIFI reconciliation, saved calculation snapshots, internal review, native package import/export, printable workpapers and rollforward. Certified forms and filing are disabled. |
+| **NXT Engagements** (`/apps/engagements/`) | Original CAD trial-balance and text workpapers, group mappings, local adjustments, issues, internal sign-offs/locks and comparative rollforward. Reviewed Ledger copies, Tax draft previews and human-approved Firm task proposals connect to existing modules. Full Caseware parity is unverified. |
 | **NXT Ledger** (`/apps/ledger/`) | Double-entry accounting: chart of accounts, journal entries, invoices and bills with per-line GST/HST, payments (auto-applied to the oldest open documents), expenses, deposits, transfers, GST/HST remittances, bank CSV import with learned categorization rules, reconciliation, period close, audit log. |
 | **NXT Referrals** (`/apps/referrals/`) | Referral and loyalty programs: advocate links, friend incentives, attribution, fraud checks, points, signed webhooks, an embeddable widget (`/widget.js`) and a friend landing page (`/welcome.html`). |
 
@@ -51,6 +52,13 @@ See [module operations and feature coverage](docs/FIRM_OPERATIONS.md) for API co
 Open **NXT Tax** from the OS dock, home card or command palette. Its independent engine implements the explicit 2025 cases declared in the catalog: selected Alberta personal and corporate workpapers, federal trust calculations, and ordinary partnership allocation. T2 can include a corporate profile, selected GIFI totals and signed manual book-to-tax adjustments. These workpapers do not constitute complete T1/T2/T3/T5013 returns or full DT Max/WebTax parity.
 
 Save, calculate, inspect diagnostics, submit for internal review, then approve the saved snapshot. Edits invalidate the active calculation and review while preserving history. Native JSON imports are previewed before creating a new draft; JSON and printable HTML output remain internal workpapers. DT Max/WebTax files, external GIFI formats, official forms/barcodes, auto-fill and electronic filing are not supported. See [Tax operations, calculation coverage and API contracts](docs/NXT_TAX.md).
+
+
+## NXT Engagements
+
+Open **NXT Engagements** from the same OS dock, home screen or command palette. It uses the existing workspace sign-in, Store/Supabase namespace and backup tables. Its local working adjustments never post Ledger entries. Ledger intake stages a reviewed copy; the bounded Tax bridge stages an unconfirmed 2025 Alberta T2 proposal for explicit import. Firm preparation tasks pass through the existing human approval queue.
+
+Required workpapers must be prepared and reviewed against a fresh saved calculation before internal locking. Editing or reopening clears active approvals while retaining historical evidence. Shared-key operator labels remain metadata. See [Engagement operations](docs/NXT_ENGAGEMENTS.md) and the [Caseware gap audit](docs/CASEWARE_PARITY_AUDIT.md); this initial module does not reproduce CaseView, proprietary file formats, SmartSync, consolidation or a complete assurance methodology.
 
 ## Operational cutover
 

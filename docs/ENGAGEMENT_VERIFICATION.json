@@ -1,0 +1,40 @@
+{
+  "verified_at_utc": "2026-10-26T06:02:41.761087Z",
+  "branch": "feature/caseware-working-papers",
+  "scope": "Independent bounded NXT Engagements module; full Caseware parity is not established",
+  "financial_cutover": "NO-GO",
+  "rust_tests": 42,
+  "offline_node_tests": 11,
+  "actual_supabase": {
+    "namespace": "qa:engagements:20261025",
+    "classification": "synthetic_qa_only",
+    "apps": 5,
+    "authenticated": true,
+    "anonymous_status": 401,
+    "exact_restart_readback": true,
+    "concurrent_mutations": "one 200, one 409",
+    "source_ledger_unchanged": true,
+    "import_receipt": true,
+    "tax_handoff": "unconfirmed draft, explicit commit, replay deduplicated",
+    "firm_handoff": "human-approval proposal only",
+    "snapshot_id": "engcalc_52a06a60625540398ce6282f7c8a38c0",
+    "input_hash": "67f6a7bf7fa96b468458ea5633f5bbf9dfa1fc3f2865da6031eec9c48951a6b7",
+    "output_hash": "1418c4a93ded946d64be68d35280fe8d2bd9f3d85a41d884410dfb4c0a07cf0e"
+  },
+  "browser": {
+    "shared_os_signin": true,
+    "worklist": true,
+    "locked_readonly": true,
+    "native_financial_controls": true,
+    "production": false,
+    "cross_module_tax_replay_navigation": true
+  },
+  "source": {
+    "remote_about": "Working Papers 2025.00.111 64-bit",
+    "official_installer_sha256": "c6849463ad3ac700a28769803262c6d675f51cff41b8bb7029ec1eec29cefe46",
+    "installer_signature": "Valid Caseware International Inc.",
+    "payload_runtime_analyzed": false,
+    "paired_source_fixture": false
+  },
+  "deployment": "pending"
+}

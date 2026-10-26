@@ -388,8 +388,14 @@
   }
 
   async function importPage(version) {
-    state.record = null;
+    state.record = null; state.preview = null;
     page(version, "Import a workpaper package", "Preview an NXT package before creating or replaying a workpaper import.", "", restrictedNotice() + `<div class="import-layout"><div class="card"><h2>Choose an NXT package</h2><p class="form-note" style="margin-top:12px">Only the native nxt-tax-return/v1 package format is accepted. DT Max databases, SDK files, and CRA filing formats are not imported by this screen.</p>${field("Package file", '<input type="file" accept=".json,application/json" data-import-file>', "The selected package is sent to this workspace only when you choose Preview.")}<label class="f" style="margin-top:14px">Or paste the package<textarea class="import-editor" data-import-document placeholder="Paste an exported NXT tax workpaper package" spellcheck="false"></textarea></label><p class="form-error" id="import-error" role="alert" hidden></p>${button("Preview import", "preview-import", "", "primary")}</div><div class="card"><h2>Import preview</h2><div id="import-preview" style="margin-top:15px">${empty("Preview before committing", "Review the program, year and record summary. No workpaper is created by the preview step.")}</div></div></div>`);
+  }
+  async function loadImportHandoff(version, previewId) {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(previewId)) throw new Error("Invalid native import preview reference.");
+    const preview = await request(`/import/previews/${pid(previewId)}`);
+    if (version !== state.version || !$("#import-preview")) return;
+    state.preview = preview; renderImportPreview(preview, true);
   }
   async function previewImport() {
     const text = $("[data-import-document]").value.trim(); if (!text) throw new Error("Choose or paste a native NXT package first.");
@@ -397,10 +403,19 @@
     const preview = await request("/import/preview", { body: { document } });
     if (!$("#import-preview")) return;
     if ($("[data-import-document]").value.trim() !== text) { resetImportPreview(); throw new Error("The package changed while previewing. Preview the current package again."); }
-    state.preview = preview; const p = preview, s = p.summary;
-    $("#import-preview").innerHTML = `<h3>${esc(s.name)}</h3><dl class="dialog-facts"><div><dt>Program / year</dt><dd>${esc(String(s.program).toUpperCase())} · ${Number(s.tax_year)}</dd></div><div><dt>Jurisdiction</dt><dd>${esc(s.jurisdiction)}</dd></div><div><dt>Client reference</dt><dd>${esc(s.client_ref || "—")}</dd></div><div><dt>Input fields</dt><dd>${typeof s.input_fields === "number" ? s.input_fields : list(s.input_fields).length}</dd></div><div><dt>Relationships</dt><dd>${typeof s.parties === "number" ? s.parties : list(s.parties).length}</dd></div><div><dt>Preview expires</dt><dd>${esc(stamp(p.expires_at))}</dd></div></dl>${list(p.warnings).map(w => `<p class="form-note">${esc(typeof w === "string" ? w : w.message || "Review package details")}</p>`).join("")}<p class="help">Committing the same preview is replay-safe.</p>${button(p.committed_return_id ? "Open imported workpaper" : "Commit import", "commit-import", "", "primary")}`;
+    state.preview = preview; renderImportPreview(preview);
   }
-  async function commitImport() { if (!state.preview) throw new Error("Preview the current package before committing it."); const r = await request("/import/commit", { body: { preview_id: state.preview.id } }); state.section = "identity"; go(`return/${r.id}`); toast("Workpaper import committed"); }
+  function renderImportPreview(p, handoff = false) {
+    const s = p.summary, imported = !!p.committed_return_id;
+    $("#import-preview").innerHTML = (handoff ? (imported ? '<div class="notice"><div><strong>Engagements copy already imported</strong><p>This preview has already created a Tax workpaper. The existing record may have changed since import; open it to inspect its current values and review status. Opening it does not repeat the import.</p></div></div>' : '<div class="notice"><div><strong>Reviewed Engagements copy</strong><p>Preparing this preview does not create a Tax return. Review before explicitly committing a new draft. Tax scope and eligibility remain unconfirmed; no Ledger posting or filing occurs.</p></div></div>') : "") + `<h3>${esc(s.name)}</h3><dl class="dialog-facts"><div><dt>Program / year</dt><dd>${esc(String(s.program).toUpperCase())} · ${Number(s.tax_year)}</dd></div><div><dt>Jurisdiction</dt><dd>${esc(s.jurisdiction)}</dd></div><div><dt>Client reference</dt><dd>${esc(s.client_ref || "—")}</dd></div><div><dt>Input fields</dt><dd>${typeof s.input_fields === "number" ? s.input_fields : list(s.input_fields).length}</dd></div><div><dt>Relationships</dt><dd>${typeof s.parties === "number" ? s.parties : list(s.parties).length}</dd></div><div><dt>${imported ? "Original preview expiry" : "Preview expires"}</dt><dd>${esc(stamp(p.expires_at))}</dd></div></dl>${(imported ? [] : list(p.warnings)).map(w => `<p class="form-note">${esc(typeof w === "string" ? w : w.message || "Review package details")}</p>`).join("")}${handoff && !imported ? handoffDocumentMarkup(p.document) : ""}<p class="help">${imported ? "The summary describes the original imported copy. Open the existing workpaper for its current state." : "Committing the same preview is replay-safe."}</p>${imported ? button("Open existing workpaper", "open-return", p.committed_return_id, "primary") : button("Commit import", "commit-import", "", "primary")}`;
+  }
+  function handoffDocumentMarkup(document) {
+    if (!document || typeof document !== "object") return "";
+    const corporate = document.corporate, inputs = document.inputs || {};
+    const amount = value => { if (!Number.isSafeInteger(value)) return "Not available"; const n = BigInt(value), a = n < 0n ? -n : n; return `${n < 0n ? "-$" : "$"}${(a / 100n).toLocaleString("en-CA")}.${String(a % 100n).padStart(2, "0")}`; };
+    return `<details style="margin-top:16px" open><summary>Review copied workpaper data</summary><p class="form-note" style="margin-top:12px">This is the staged copy. Taxable income, eligibility and scope still require independent verification after creating the draft.</p><dl class="dialog-facts"><div><dt>Workpaper name</dt><dd>${esc(document.name)}</dd></div><div><dt>Fiscal period</dt><dd>${esc(document.period_start || "—")} → ${esc(document.period_end || "—")}</dd></div><div><dt>Tax scope confirmed</dt><dd>${inputs.scope_confirmed ? "Yes" : "No"}</dd></div><div><dt>Taxable income input (unverified)</dt><dd>${amount(inputs.taxable_income_cents)}</dd></div></dl>${corporate ? `<h3 style="margin-top:16px">Corporate financial copy</h3><p class="help">Profile name: ${esc(corporate.legal_name || "Not provided")} · Province: ${esc(corporate.province || "Not provided")}</p>${list(corporate.gifi).length ? table(["Statement", "GIFI", "Description", "Current (CAD)", "Prior (CAD)"], corporate.gifi, row => `<tr><td>${esc(pretty(row.section))}</td><td>${esc(row.code)}</td><td>${esc(row.label)}</td><td class="num">${amount(row.current_cents)}</td><td class="num">${amount(row.prior_cents)}</td></tr>`) : '<p class="help">No GIFI rows copied.</p>'}` : ""}</details>`;
+  }
+  async function commitImport() { if (!state.preview) throw new Error("Preview the current package before committing it."); if (state.preview.committed_return_id) { state.section = "identity"; go(`return/${state.preview.committed_return_id}`); return; } const r = await request("/import/commit", { body: { preview_id: state.preview.id } }); state.section = "identity"; go(`return/${r.id}`); toast("Workpaper import committed"); }
   function resetImportPreview() { state.preview = null; const host = $("#import-preview"); if (host) host.innerHTML = empty("Preview the current package", "The package changed. Run a new preview before committing the import."); }
   async function auditPage(version) { state.record = null; const events = list(await request("/audit")); page(version, "Tax audit trail", "Changes, calculation snapshots, imports and review decisions recorded by the workspace.", "", `<div class="card">${auditMarkup(events)}</div>`); }
   async function capabilitiesPage(version) {
@@ -510,13 +525,13 @@
   }
   async function navigate() {
     if (!state.catalog) return;
-    const hash = location.hash.slice(1) || "worklist", [view, id] = hash.split("/");
+    const hash = location.hash.slice(1) || "worklist", [path, query = ""] = hash.split("?"), [view, id] = path.split("/");
     if (state.dirty && hash !== state.loadedHash && !await confirmDiscard()) { history.replaceState(null, "", "#" + state.loadedHash); if (window.parent !== window) window.parent.postMessage({ nxt: "view", view: state.loadedHash }, location.origin); return; }
     const version = ++state.version; state.loadedHash = hash;
     if (window.parent !== window) window.parent.postMessage({ nxt: "view", view: hash }, location.origin);
     $$("[data-nav]").forEach(a => a.setAttribute("aria-current", a.dataset.nav === (view === "return" ? "worklist" : view) ? "page" : "false"));
     main.setAttribute("aria-busy", "true"); main.innerHTML = '<div class="loading"><span class="spinner"></span>Loading tax workspace…</div>';
-    try { if (view === "return" && id) await returnWorkspace(version, id); else if (view === "import") await importPage(version); else if (view === "audit") await auditPage(version); else if (view === "capabilities") await capabilitiesPage(version); else await worklist(version); }
+    try { if (view === "return" && id) await returnWorkspace(version, id); else if (view === "import") { await importPage(version); const previewId = new URLSearchParams(query).get("preview"); if (previewId) await loadImportHandoff(version, previewId); } else if (view === "audit") await auditPage(version); else if (view === "capabilities") await capabilitiesPage(version); else await worklist(version); }
     catch (e) { if (version !== state.version) return; if (e.status === 401) await signIn(); else { main.classList.remove("workspace-mode"); main.innerHTML = `<div class="card"><h2>This view couldn't load.</h2><p class="form-error">${esc(e.message)}</p>${button("Try again", "refresh")} <a class="btn" href="#worklist">Return to worklist</a></div>`; } }
     finally { if (version === state.version) main.removeAttribute("aria-busy"); }
   }
