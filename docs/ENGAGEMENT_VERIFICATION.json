@@ -1,5 +1,5 @@
 {
-  "verified_at_utc": "2026-10-26T06:02:41.761087Z",
+  "verified_at_utc": "2026-10-26T06:22:54.8756927Z",
   "branch": "feature/caseware-working-papers",
   "scope": "Independent bounded NXT Engagements module; full Caseware parity is not established",
   "financial_cutover": "NO-GO",
@@ -26,15 +26,64 @@
     "worklist": true,
     "locked_readonly": true,
     "native_financial_controls": true,
-    "production": false,
-    "cross_module_tax_replay_navigation": true
+    "production": true,
+    "cross_module_tax_replay_navigation": true,
+    "live_authenticated_worklist": true
   },
   "source": {
     "remote_about": "Working Papers 2025.00.111 64-bit",
     "official_installer_sha256": "c6849463ad3ac700a28769803262c6d675f51cff41b8bb7029ec1eec29cefe46",
     "installer_signature": "Valid Caseware International Inc.",
     "payload_runtime_analyzed": false,
-    "paired_source_fixture": false
+    "paired_source_fixture": false,
+    "extracted_program_version": "2025.0.111.2",
+    "msi_sha256": "2e08e56424e47604b6beb411015445865aeb8a56144a5c0cca7a8663bc1dfada",
+    "main_exe_sha256": "3e80563ce8d01d4d65a434ee678d7d10e83cbb45e9d4e9433fa35198d723968c",
+    "core_dll_sha256": "251969d365ea07f8e688837bc341eef84d15777be15f9cbfbbf804091fe56c4f",
+    "main_program_static_resource_inspection": true,
+    "main_exe_rea": "ev_a597122571d3b9bd0daea5e37e6c922b373ba55a02b502913da03e22cbcc864f",
+    "core_dll_rea": "ev_588c2d08903e54c5313f497c81a5e0c42040bb3449531c94603b3815bded8060"
   },
-  "deployment": "pending"
+  "deployment": {
+    "id": "dpl_Fos4cs7S4vX8q6gRrr8zeud1iLrq",
+    "source_commit": "3f1c88338e2d877e1ed7fba98b88f27b62cfbfee",
+    "url": "https://os.nxtcorporation.ca",
+    "previous_verified_deployment": "dpl_3TFWdFWtsU3tZMpRXdWYQGGJsnRa",
+    "alias_verified": true
+  },
+  "linux_ci": {
+    "conclusion": "success",
+    "id": 40278102273,
+    "url": "https://github.com/Stiggtechnologies/nxt-os/actions/runs/40278102273"
+  },
+  "production_smoke": {
+    "engagement_module": true,
+    "engagement_anonymous_status": 401,
+    "engagements": 0,
+    "url": "https://os.nxtcorporation.ca",
+    "authenticated": true,
+    "anonymous_status": 401,
+    "tax_anonymous_status": 401,
+    "storage": "supabase",
+    "firm_module": true,
+    "tax_module": true,
+    "programs": 4,
+    "filing_disabled": true,
+    "static_assets": true,
+    "projects": 0,
+    "closes": 0,
+    "tax_returns": 0,
+    "ai_enabled": false
+  },
+  "backup": {
+    "off_device_key_custody": "pending",
+    "source_pin": "3f1c88338e2d877e1ed7fba98b88f27b62cfbfee",
+    "first_scheduled_run_observed": false,
+    "artifact_id": 12631556277,
+    "run_id": 40278943285,
+    "encrypted_artifact_bytes": 59571,
+    "export_encrypt_isolated_restore": "success"
+  },
+  "financial_migration": false,
+  "pull_request": "https://github.com/Stiggtechnologies/nxt-os/pull/3"
 }
