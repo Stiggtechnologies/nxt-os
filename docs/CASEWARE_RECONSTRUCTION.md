@@ -1,5 +1,9 @@
 # Caseware Working Papers reconstruction evidence
 
+Later static-analysis checkpoint (2026-10-26): an independent bounded PE declaration parser closed the earlier core-linkage output-cap gap without another large `objdump` dump or native execution. Core `x64cw42.dll` declares 49 standard imported DLL descriptors, 9,834 import entries and 506 named exports. Eight smaller artifacts were cross-checked against their complete GNU inventories: exact source hashes, imported DLL-name lists and named-export sets agree. This does not independently cross-check every import entry or establish function bodies, runtime reachability, schemas or paired behavior.
+
+Retained private cross-check `selected-pe-linkage-direct-crosscheck-v3/index.json` SHA-256 is `f1065ce624f713d548b4044a164729aca87fb8dca3959920d98e92477ac03d8c`; parser SHA-256 is `678a5169c8ce7b6b7750b805850f07982a3e44c3808d05ec5b1db025f25c9205`; refreshed core result SHA-256 is `2714c45ee8be16398863b144c8391fdae46056b83d06e8acc2a1d33968731dd8`. Five synthetic parser regressions pass, including forwarder termination bounds and valid exports into a zero-filled virtual section tail. These are separate independent static observations grounded in the [Microsoft PE specification](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format), not new REA Evidence IDs or a functional-parity result. Earlier incomplete cross-check attempts are superseded, not treated as complete evidence.
+
 Research checkpoint: **2026-10-26 UTC**. The requested next NXT OS reference is **Caseware Working Papers**, specifically the remote **2025** shortcut reached through Splashtop on `DESKTOP-5ENUJV3`. This is an evidence/specification draft, not a full-parity, working-replica or migration-completion claim.
 
 ## Target and evidence boundary

@@ -28,3 +28,5 @@ jobs:
           node --check scripts/migration-preflight.mjs
           node --test tests/cutover_rehearsal.test.mjs
           node --test tests/migration_preflight.test.mjs
+      - name: Verify bounded QuickBooks financial report assessment
+        run: python3 -B -m unittest discover -s tests -p test_qbo_export.py

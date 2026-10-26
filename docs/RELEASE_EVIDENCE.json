@@ -1,10 +1,10 @@
 {
-  "verified_at_utc": "2026-10-26T06:22:54.8756927Z",
+  "verified_at_utc": "2026-10-26T07:58:35.3942067Z",
   "branch": "feature/caseware-working-papers",
   "scope": "Independent bounded NXT Engagements module; full Caseware parity is not established",
   "financial_cutover": "NO-GO",
-  "rust_tests": 42,
-  "offline_node_tests": 11,
+  "rust_tests": 44,
+  "offline_node_tests": 19,
   "actual_supabase": {
     "namespace": "qa:engagements:20261025",
     "classification": "synthetic_qa_only",
@@ -45,16 +45,16 @@
     "core_dll_rea": "ev_588c2d08903e54c5313f497c81a5e0c42040bb3449531c94603b3815bded8060"
   },
   "deployment": {
-    "id": "dpl_Fos4cs7S4vX8q6gRrr8zeud1iLrq",
-    "source_commit": "3f1c88338e2d877e1ed7fba98b88f27b62cfbfee",
+    "id": "dpl_7JzqVX1YSmiyNBTGP8BPuSQ8i7fh",
+    "source_commit": "56de8b4817ddae76bab30f79d8addcd3ee4d0d95",
     "url": "https://os.nxtcorporation.ca",
-    "previous_verified_deployment": "dpl_3TFWdFWtsU3tZMpRXdWYQGGJsnRa",
+    "previous_verified_deployment": "dpl_Fos4cs7S4vX8q6gRrr8zeud1iLrq",
     "alias_verified": true
   },
   "linux_ci": {
     "conclusion": "success",
-    "id": 40278102273,
-    "url": "https://github.com/Stiggtechnologies/nxt-os/actions/runs/40278102273"
+    "id": 40287313475,
+    "url": "https://github.com/Stiggtechnologies/nxt-os/actions/runs/40287313475"
   },
   "production_smoke": {
     "engagement_module": true,
@@ -77,13 +77,22 @@
   },
   "backup": {
     "off_device_key_custody": "pending",
-    "source_pin": "3f1c88338e2d877e1ed7fba98b88f27b62cfbfee",
+    "source_pin": "56de8b4817ddae76bab30f79d8addcd3ee4d0d95",
     "first_scheduled_run_observed": false,
-    "artifact_id": 12631556277,
-    "run_id": 40278943285,
-    "encrypted_artifact_bytes": 59571,
+    "artifact_id": 12635167014,
+    "run_id": 40288053215,
+    "encrypted_artifact_bytes": 59562,
     "export_encrypt_isolated_restore": "success"
   },
   "financial_migration": false,
-  "pull_request": "https://github.com/Stiggtechnologies/nxt-os/pull/3"
+  "pull_request": "https://github.com/Stiggtechnologies/nxt-os/pull/3",
+  "rollforward_origin_qa": {
+    "new_engagements": 1,
+    "exact_restart_readback": true,
+    "source_unchanged": true,
+    "classification": "synthetic_only",
+    "source_commit": "56de8b4817ddae76bab30f79d8addcd3ee4d0d95",
+    "safe_report_sha256": "f7445dd6e8c32949d1ec577a028a18fbaa41b2e65b9149fa9f9aea919aa68c1b",
+    "other_modules_unchanged": true
+  }
 }
