@@ -127,3 +127,10 @@ The [additional source comparator analysis](CASEWARE_RECONSTRUCTION.md#selected-
 ## Document navigation release, 2026-10-27
 
 The [bounded navigation release](NXT_ENGAGEMENTS.md#document-navigation-release-acceptance) now passes rendered synthetic and hosted acceptance. Runtime `df182aa4f3a3549a8110ef1a1ee83a0ec1dfd563` adds original search, combined filters, deterministic sorting and locked read-only navigation; 122 Node checks, 16 browser observations, six unchanged saved HTTP bodies, exact hosted assets/authentication and compatible encrypted recovery pass. Backend/schema/permissions remain unchanged. Archived browser and screen-reader audio acceptance remain unverified. This closes the stated native navigation gap while Document Manager stays `partial` and full source UI/runtime equivalence stays `unverified`.
+
+
+## Source interface and dialog refinement, 2026-10-27
+
+The [selected interface checkpoint](CASEWARE_RECONSTRUCTION.md#selected-document-interfaces-and-constructor-refinement-2026-10-27) corroborates ten stored document-type enum constants, four named interface GUIDs and a dialog constructor against source bytes. Independent checks include 12 GUID-reference instructions, nine constructor references, 20 direct calls and seven RTTI anchors. The constructor's earlier access-context hypothesis was corrected; no source authorization behavior is established. A declaration-compatible `AddOld` candidate remains separate from proven receiver/slot binding.
+
+These refinements improve future source-contract tests. They do not convert NXT manual/placeholder or opaque-file policies into Caseware document semantics, prove Office/link/CaseView behavior, verify the installed remote build or supply a paired workflow. Document Manager and related capabilities remain `partial` or `unverified`; the runtime stays `df182aa4f3a3549a8110ef1a1ee83a0ec1dfd563`. No functional parity row, migration count or cutover gate changes.
