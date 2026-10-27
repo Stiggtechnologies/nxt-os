@@ -140,7 +140,9 @@ async fn books_tie_out() {
 
     // OS layer: status, insights, and Ask NXT without a key.
     let st = ok(&r, "GET", "/api/os/status", None).await;
-    assert_eq!(st["apps"].as_array().unwrap().len(), 2);
+    let apps = st["apps"].as_array().unwrap();
+    assert_eq!(apps.len(), 3);
+    assert!(apps.iter().any(|a| a["id"] == "guardvoice"));
     let ins = ok(&r, "GET", "/api/os/insights", None).await;
     assert!(ins["insights"].is_array());
     unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
