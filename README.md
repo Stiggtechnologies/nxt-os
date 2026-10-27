@@ -1,12 +1,13 @@
 # NXT OS
 
-An AI-native operating system for running a Canadian business. One Rust function on Vercel hosts three apps:
+An AI-native operating system for running a Canadian business. One Rust function on Vercel hosts the shell and its apps:
 
 | App | What it does |
 |---|---|
 | **NXT OS shell** (`/`) | Workspace sign-in, home screen with live KPIs and prioritized insights, app dock, ⌘K command bar, and **Ask NXT**, an assistant that answers questions from your live data and opens the right screen. |
 | **NXT Ledger** (`/apps/ledger/`) | Double-entry accounting: chart of accounts, journal entries, invoices and bills with per-line GST/HST, payments (auto-applied to the oldest open documents), expenses, deposits, transfers, GST/HST remittances, bank CSV import with learned categorization rules, reconciliation, period close, audit log. |
 | **NXT Referrals** (`/apps/referrals/`) | Referral and loyalty programs: advocate links, friend incentives, attribution, fraud checks, points, signed webhooks, an embeddable widget (`/widget.js`) and a friend landing page (`/welcome.html`). |
+| **GuardVoice** (`/apps/guardvoice/`) | Phone assistant: Twilio voice in and out, tools over the live books, and a human approval step before payments, voids, or outbound messages. Mock mode needs no Twilio account. See [docs/GUARDVOICE.md](docs/GUARDVOICE.md). |
 
 Ledger reports: profit and loss, balance sheet (with retained earnings roll-forward by fiscal year), trial balance, AR and AP aging, a GST/HST return working paper (CRA lines 101/105/108/109) and the general ledger. Each one prints and exports to CSV.
 
@@ -34,8 +35,10 @@ Ask NXT calls the Claude Messages API with read-only tools: dashboard, reports, 
 ## Develop
 
 ```bash
-cargo test                                       # ledger, referral and OS integration tests
+cargo test                                       # ledger, referral, GuardVoice and OS integration tests
 ADMIN_API_KEY=dev cargo run --example dev        # http://localhost:3000
 ```
+
+Copy `.env.example` when you want Ask NXT or a live GuardVoice line. With Twilio left blank, GuardVoice stays in mock mode: open the app and use **Simulator**. Live numbers, signatures, and the gather-versus-relay choice are covered in [docs/GUARDVOICE.md](docs/GUARDVOICE.md).
 
 All money is stored as integer cents. Every business event posts a balanced journal entry, and every report is computed from those entries, so the books always tie out.

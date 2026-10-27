@@ -116,6 +116,7 @@
     <button data-go="home" aria-label="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span class="tip">Home</span></button>
     <button data-go="ledger" aria-label="NXT Ledger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg><span class="tip">NXT Ledger</span></button>
     <button data-go="referrals" aria-label="NXT Referrals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="16" r="3"/><path d="M10.5 9.5l4 4.5M14 6h6m-3-3v6"/></svg><span class="tip">NXT Referrals</span></button>
+    <button data-go="guardvoice" aria-label="GuardVoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h3l2 5-2 1a12 12 0 0 0 5 5l1-2 5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 4 6a2 2 0 0 1 2-2z"/></svg><span class="tip">GuardVoice</span></button>
     <button data-go="ask" aria-label="Ask NXT"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg><span class="tip">Ask NXT</span></button>
     <div class="spacer grow"></div>
     <button id="themeBtn" aria-label="Toggle theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><span class="tip">Theme</span></button>
@@ -162,6 +163,7 @@
         <div class="apps">
           <button class="app" data-go="ledger"><div class="ic" style="background:var(--accent-soft);color:var(--accent)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></div><div><b>NXT Ledger</b><span>Invoicing, bills, banking, GST/HST and financial statements.</span></div></button>
           <button class="app" data-go="referrals"><div class="ic" style="background:var(--good-soft);color:var(--good)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="16" r="3"/><path d="M10.5 9.5l4 4.5"/></svg></div><div><b>NXT Referrals</b><span>Referral links, rewards, fraud checks and loyalty points.</span></div></button>
+          <button class="app" data-go="guardvoice"><div class="ic" style="background:var(--panel-2);color:var(--ink)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h3l2 5-2 1a12 12 0 0 0 5 5l1-2 5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 4 6a2 2 0 0 1 2-2z"/></svg></div><div><b>GuardVoice</b><span>Phone assistant, call handoffs, and approvals before anything consequential.</span></div></button>
           <button class="app" data-go="ask"><div class="ic" style="background:var(--warn-soft);color:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/></svg></div><div><b>Ask NXT</b><span>Ask about cash, customers, taxes or growth, in plain language.</span></div></button>
         </div>
       </section>
@@ -187,7 +189,7 @@
 <script>
 const { api, esc, money, moneyShort, toast } = NXT;
 const $ = (s) => document.querySelector(s);
-const APPS = { ledger: { name: "NXT Ledger", path: "/apps/ledger/" }, referrals: { name: "NXT Referrals", path: "/apps/referrals/" } };
+const APPS = { ledger: { name: "NXT Ledger", path: "/apps/ledger/" }, referrals: { name: "NXT Referrals", path: "/apps/referrals/" }, guardvoice: { name: "GuardVoice", path: "/apps/guardvoice/" } };
 let status = null, chat = [];
 
 ["#markSignin", "#markDrawer"].forEach((s) => ($(s).innerHTML = NXT.MARK + "<span>NXT</span>"));
@@ -271,6 +273,23 @@ async function loadHome() {
       ? d.insights.map((i, n) => `<button class="insight ${i.level}" data-i="${n}"><span class="dot"></span><div><b>${esc(i.title)}</b><span>${esc(i.body)}</span></div><span class="go">→</span></button>`).join("")
       : `<div class="card muted">You're all caught up. Nothing needs your attention right now.</div>`;
     $("#insights").querySelectorAll("[data-i]").forEach((b) => (b.onclick = () => { const i = d.insights[b.dataset.i]; go(i.app, i.view); }));
+    try {
+      const g = await api("/api/guardvoice/summary");
+      const extra = [];
+      if (g.pending_approvals) extra.push(["warn", `${g.pending_approvals} GuardVoice approval${g.pending_approvals === 1 ? "" : "s"} waiting`, "Payments, voids, and outbound messages stay queued until you decide.", "approvals"]);
+      if (g.unread_notifications) extra.push(["", `${g.unread_notifications} unread GuardVoice note${g.unread_notifications === 1 ? "" : "s"}`, "Call summaries, messages, and handoffs.", "notifications"]);
+      if (extra.length) {
+        const host = $("#insights");
+        if (host.querySelector(".card")) host.innerHTML = "";
+        extra.forEach(([level, title, body, view]) => {
+          const b = document.createElement("button");
+          b.className = "insight " + level;
+          b.innerHTML = `<span class="dot"></span><div><b>${esc(title)}</b><span>${esc(body)}</span></div><span class="go">→</span>`;
+          b.onclick = () => go("guardvoice", view);
+          host.prepend(b);
+        });
+      }
+    } catch (e) { if (e.status && e.status !== 401) toast(e.message, true); }
     const max = Math.max(1, ...dash.months.flatMap((m) => [m.income, m.expenses]));
     $("#bars").innerHTML = dash.months.map((m) => `<div class="m" title="${m.month}: income ${money(m.income)}, expenses ${money(m.expenses)}"><div class="pair"><div class="b in" style="height:${(m.income / max) * 100}%"></div><div class="b out" style="height:${(m.expenses / max) * 100}%"></div></div><div class="lbl">${new Date(m.month + "-01T00:00:00").toLocaleDateString("en-CA", { month: "short" })}</div></div>`).join("");
   } catch (e) { if (e.status !== 401) toast(e.message, true); }
@@ -367,6 +386,11 @@ const COMMANDS = [
   ["Referrals · Overview", () => go("referrals", "overview")],
   ["Referrals · Advocates", () => go("referrals", "advocates")],
   ["Referrals · Settings", () => go("referrals", "settings")],
+  ["GuardVoice · Activity", () => go("guardvoice", "activity")],
+  ["GuardVoice · Approvals", () => go("guardvoice", "approvals")],
+  ["GuardVoice · Calls", () => go("guardvoice", "calls")],
+  ["GuardVoice · Handoffs", () => go("guardvoice", "handoffs")],
+  ["GuardVoice · Simulator", () => go("guardvoice", "simulator")],
 ];
 function openPalette() {
   if (document.querySelector(".palette") || $("#os").hidden) return;

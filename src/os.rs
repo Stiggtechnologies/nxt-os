@@ -54,6 +54,7 @@ async fn status(State(os): State<Os>) -> Json<Value> {
         "apps": [
             { "id": "ledger", "name": "NXT Ledger", "path": "/apps/ledger/" },
             { "id": "referrals", "name": "NXT Referrals", "path": "/apps/referrals/" },
+            { "id": "guardvoice", "name": "GuardVoice", "path": "/apps/guardvoice/" },
         ],
     }))
 }
@@ -132,8 +133,9 @@ async fn insights(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
 // ---- assistant ----------------------------------------------------------------
 
 const SYSTEM_PROMPT: &str = "You are NXT, the assistant built into NXT OS: an operating system for running a Canadian business. \
-Two apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports) \
-and NXT Referrals (customer referral and loyalty programs).
+Three apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports), \
+NXT Referrals (customer referral and loyalty programs), and GuardVoice (the phone assistant: call activity, \
+handoffs, and approvals that a person must confirm before payments, voids, or outbound messages).
 
 How you work:
 - Answer from the user's live data. Use the tools to look things up; never estimate or invent figures.
@@ -201,11 +203,11 @@ fn tools() -> Value {
         },
         {
             "name": "open_app",
-            "description": "Opens an NXT OS app at a screen so the user can act. Ledger views: dashboard, invoices, invoices/new, bills, bills/new, customers, vendors, banking, accounts, journal, reports/profit-loss, reports/balance-sheet, reports/trial-balance, reports/ar-aging, reports/ap-aging, reports/sales-tax, reports/general-ledger, settings. Referrals views: overview, advocates, conversions, rewards, loyalty, settings.",
+            "description": "Opens an NXT OS app at a screen so the user can act. Ledger views: dashboard, invoices, invoices/new, bills, bills/new, customers, vendors, banking, accounts, journal, reports/profit-loss, reports/balance-sheet, reports/trial-balance, reports/ar-aging, reports/ap-aging, reports/sales-tax, reports/general-ledger, settings. Referrals views: overview, advocates, conversions, rewards, loyalty, settings. GuardVoice views: activity, calls, approvals, notifications, handoffs, messages, simulator.",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "app": { "type": "string", "enum": ["ledger", "referrals"] },
+                    "app": { "type": "string", "enum": ["ledger", "referrals", "guardvoice"] },
                     "view": { "type": "string" }
                 },
                 "required": ["app"]
@@ -302,8 +304,8 @@ async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) 
         }
         "open_app" => {
             let app = s(input, "app").ok_or("app is required")?;
-            if app != "ledger" && app != "referrals" {
-                return Err("app must be ledger or referrals".into());
+            if app != "ledger" && app != "referrals" && app != "guardvoice" {
+                return Err("app must be ledger, referrals, or guardvoice".into());
             }
             actions.push(json!({ "type": "open_app", "app": app, "view": s(input, "view") }));
             Ok(json!({ "opened": true }))
