@@ -61,7 +61,7 @@ views.activity = async () => {
   const chips = [
     ["Mode", st.mode, st.mode === "mock" ? "" : "good"],
     ["Transport", st.transport, ""],
-    ["Brain", st.brain, ""],
+    ["Nixon", st.nixon, ""],
     ["Autonomy", st.autonomy, ""],
     ["Signatures", st.signature_mode, ""],
     ["Pending approvals", String(sum.pending_approvals), sum.pending_approvals ? "warn" : "good"],
@@ -69,7 +69,7 @@ views.activity = async () => {
   ];
   page(
     "Activity",
-    "Every call, tool, approval, and owner text lands here. Mock mode never dials a real number.",
+    "Nixon takes the actions. GuardVoice keeps the call, the handoff, and this log. Mock mode never dials a real number.",
     `<button class="btn" id="sim">Open simulator</button>`,
     `<div class="status-line">${chips.map(([k, v, c]) => `<span class="chip ${c}">${esc(k)}: ${esc(v)}</span>`).join("")}</div>
      ${table([
@@ -210,7 +210,7 @@ views.messages = async () => {
 views.simulator = async () => {
   page(
     "Simulator",
-    "Talk to the assistant without Twilio. It uses the same tools, approvals, and handoff records as a live call.",
+    "Talk to Nixon without Twilio. GuardVoice still writes the call, the approvals, and the handoff.",
     "",
     `<div class="card">
       <div class="row" style="margin-bottom:8px">

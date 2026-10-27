@@ -1,22 +1,20 @@
-//! GuardVoice: phone assistant for one NXT OS workspace.
+//! GuardVoice: the phone layer for one NXT OS workspace.
 //!
-//! Voice (Twilio ConversationRelay, or speech `<Gather>` when there is no
-//! long-lived WebSocket), intelligence (tools over Ledger and Referrals,
-//! with permission levels), and a human gate (summaries, handoffs, SMS and
-//! in-app escalation, approval before consequential actions, activity log).
+//! Twilio ConversationRelay, or speech `<Gather>` when there is no long-lived
+//! WebSocket. Nixon (`crate::nixon`) is the assistant that knows the business
+//! and takes actions. This module keeps the call, the handoff, the owner SMS,
+//! and the approval record.
 //!
 //! Secrets come from the environment only. With no Twilio credentials the
 //! process stays in mock mode and never dials or sends a real SMS.
 
-mod brain;
 mod config;
-mod models;
+pub(crate) mod models;
 mod routes;
 mod session;
-mod tools;
-mod voice;
+pub(crate) mod voice;
 
-pub use config::{Autonomy, BrainKind, Config, Mode, SignatureMode, Transport};
+pub use config::{Autonomy, Config, Mode, SignatureMode, Transport};
 pub use routes::router;
 pub use voice::twilio_signature;
 

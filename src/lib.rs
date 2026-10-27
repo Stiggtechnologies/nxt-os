@@ -1,9 +1,12 @@
 //! NXT OS: an AI-native business operating system. Hosts NXT Ledger
-//! (accounting) and NXT Referrals (referral + loyalty), with the "Ask NXT"
-//! assistant across both, served as one Rust function on Vercel.
+//! (accounting), NXT Referrals (referral + loyalty), GuardVoice (the phone
+//! line), and Nixon (the assistant that knows the business and takes actions).
+//! Ask NXT answers questions and stays read-only. Served as one Rust function
+//! on Vercel.
 
 pub mod guardvoice;
 pub mod ledger;
+pub mod nixon;
 pub mod os;
 pub mod referral;
 pub mod store;

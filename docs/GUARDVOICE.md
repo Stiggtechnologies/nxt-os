@@ -1,23 +1,23 @@
 # GuardVoice
 
-GuardVoice is the phone assistant inside NXT OS. It answers calls, looks up and updates the books through the same ledger and referral code the rest of the workspace uses, and keeps a person in control of anything consequential.
+GuardVoice is the phone line inside NXT OS. **Nixon** is the assistant on that line: the intelligence that knows the business and takes actions. NXT Ledger stays the accounting system. Ask NXT stays the read-only assistant in the shell.
 
 It has three layers:
 
-1. **Voice.** Twilio Programmable Voice. The default path is ConversationRelay (speech recognition and text-to-speech on Twilio's side, text over a WebSocket). A `<Gather>` path works on the Vercel function, which cannot hold a socket.
-2. **Intelligence.** A scripted brain for tests and local use, or Claude (the same Messages API as Ask NXT) when `ANTHROPIC_API_KEY` is set and `GUARDVOICE_BRAIN=claude`. Tools call the live ledger and referral engines. Permission levels decide what may run immediately.
-3. **Human in the loop.** Every call writes a summary and a handoff. Decisions raise an in-app notification and, when an owner number is configured, an SMS. Payments, voids, external texts, and outbound calls wait on an approval queue. The activity log is the GuardVoice screen in the shell.
+1. **Voice (GuardVoice).** Twilio Programmable Voice. The default path is ConversationRelay (speech recognition and text-to-speech on Twilio's side, text over a WebSocket). A `<Gather>` path works on the Vercel function, which cannot hold a socket. Code: `src/guardvoice/`.
+2. **Intelligence (Nixon).** A scripted engine for tests and local use, or Claude (the same Messages API as Ask NXT) when `ANTHROPIC_API_KEY` is set and `NIXON_ENGINE=claude`. Nixon's tools call the live ledger and referral engines. Permission levels decide what may run immediately. Code: `src/nixon/` (`Engine`, `think`).
+3. **Human in the loop.** Every call writes a summary and a handoff. Decisions raise an in-app notification and, when an owner number is configured, an SMS from Nixon. Payments, voids, external texts, and outbound calls wait on an approval queue. The activity log is the GuardVoice screen in the shell.
 
 Nothing here dials a real number until Twilio credentials, a from-number, and live mode are all set. The default, with those unset, is mock mode.
 
 ## Architecture
 
 ```
-Caller  →  Twilio Voice  →  TwiML (relay or gather)
+Caller  →  Twilio Voice  →  GuardVoice (TwiML, relay or gather)
                               │
                               ▼
-                    GuardVoice session (Rust)
-                     brain + permission gate
+                         Nixon (src/nixon)
+                     what to say, which tool
                               │
               ┌───────────────┼────────────────┐
               ▼               ▼                ▼
@@ -27,9 +27,9 @@ Caller  →  Twilio Voice  →  TwiML (relay or gather)
                                     in-app note + owner SMS
 ```
 
-The module lives in `src/guardvoice/` and is mounted by the same Axum router as the ledger, referrals, and Ask NXT (`src/lib.rs`). It keeps its own store, created the same way as the others (`Store::from_env`): Upstash Redis when `KV_REST_API_URL` / `KV_REST_API_TOKEN` (or the `UPSTASH_REDIS_REST_*` pair) is set, otherwise process memory. Keys are under the shared `nxt:` prefix with a `gv:` namespace (`gv:call:`, `gv:handoff:`, `gv:approval:`, `gv:activity`, and so on).
+GuardVoice is mounted by the same Axum router as NXT Ledger, referrals, and Ask NXT (`src/lib.rs`). It keeps its own store, created the same way as the others (`Store::from_env`): Upstash Redis when `KV_REST_API_URL` / `KV_REST_API_TOKEN` (or the `UPSTASH_REDIS_REST_*` pair) is set, otherwise process memory. Keys are under the shared `nxt:` prefix with a `gv:` namespace (`gv:call:`, `gv:handoff:`, `gv:approval:`, `gv:activity`, and so on).
 
-Tools do not write the voice store for business data. They call the ledger and referral engines the HTTP API uses, so a contact or invoice created on a call shows up in NXT Ledger.
+Nixon does not write the voice store for business data. Its tools call the ledger and referral engines the HTTP API uses, so a contact or invoice created on a call shows up in NXT Ledger. Invoice memos say "Created by Nixon". A payment memo says "Approved in GuardVoice" once a person approves it on that screen.
 
 ### Voice
 
@@ -50,13 +50,13 @@ Barge-in (`interrupt` on the relay, or Interrupt in the simulator) bumps a gener
 
 `GET /api/guardvoice/health` is public and does not include secrets. The admin status payload reports whether a secret, owner number, or from-number is configured. It does not return the values.
 
-### Intelligence
+### Nixon
 
-`think()` uses Claude when the brain is `claude` and `ANTHROPIC_API_KEY` is set. Any Claude error falls back to the scripted brain and is written to the activity log as `brain_fallback`. Mock mode defaults to the scripted brain so tests and the simulator need no network.
+Nixon introduces itself on every inbound call: "This is Nixon, the virtual assistant." The Claude system prompt uses the same name and says GuardVoice is the phone line. `NIXON_ENGINE=claude` with `ANTHROPIC_API_KEY` set uses Claude. Any Claude error falls back to the scripted engine and is written to the activity log as `nixon_fallback`. Mock mode defaults to `scripted` so tests and the simulator need no network. `GET /api/guardvoice/status` reports `"assistant": "Nixon"` and `"nixon": "scripted"` or `"claude"`.
 
 The persona, adapted from the reference line's manners and not from any tenant sales script:
 
-- It says it is an AI assistant for the business. It does not pretend to be the owner.
+- Nixon says it is an AI assistant for the business. It does not pretend to be the owner.
 - Canadian English, short turns.
 - Money from tools is integer cents; it speaks dollars.
 - It does not invent figures, names, or phone numbers.
@@ -100,7 +100,7 @@ Local, no Twilio account:
 ADMIN_API_KEY=dev cargo run --example dev
 ```
 
-Open http://localhost:3000, sign in with `dev`, and open GuardVoice → Simulator. Suggested lines:
+Open http://localhost:3000, sign in with `dev`, and open GuardVoice → Simulator. Nixon answers. Suggested lines:
 
 - `How much cash do we have?`
 - `Add a customer named Harbour Dental`
@@ -123,8 +123,8 @@ For ConversationRelay, run a process that can hold a WebSocket (`cargo run --exa
 | `GUARDVOICE_TRANSPORT` | `relay` | `relay`, or `gather` / `serverless`. |
 | `GUARDVOICE_SIGNATURE_MODE` | `off` in mock, `enforce` in live | `off`, `log`, `enforce`. |
 | `GUARDVOICE_AUTONOMY` | `write` | `read` holds create/update tools. |
-| `GUARDVOICE_BRAIN` | `scripted` in mock, `claude` in live | `scripted` or `claude`. |
-| `GUARDVOICE_AGENT_NAME` | `NXT` | Name the assistant uses for itself. |
+| `NIXON_ENGINE` | `scripted` in mock, `claude` in live | How Nixon decides: `scripted` or `claude`. |
+| `GUARDVOICE_AGENT_NAME` | `Nixon` | Stored on the status payload. The spoken greeting and the Claude persona say Nixon. |
 | `GUARDVOICE_COMPANY_NAME` | `your business` | Spoken only when the ledger has no company name. |
 | `GUARDVOICE_TIMEZONE` | `America/Toronto` | Recorded on the session. |
 | `GUARDVOICE_OWNER_SMS` | unset | E.164 number for decision and missed-transfer texts. |
@@ -144,8 +144,8 @@ For ConversationRelay, run a process that can hold a WebSocket (`cargo run --exa
 | `TWILIO_ACCOUNT_SID` | unset | Live mode only. |
 | `TWILIO_AUTH_TOKEN` | unset | Signature checks and the REST client. Never logged by the status endpoint. |
 | `TWILIO_PHONE_NUMBER` | unset | Used as the from-number when `GUARDVOICE_FROM_NUMBER` is unset. |
-| `ANTHROPIC_API_KEY` | unset | Required for the Claude brain and for Ask NXT. |
-| `NXT_AI_MODEL` | `claude-opus-5-5` | Model for both Ask NXT and the Claude brain. |
+| `ANTHROPIC_API_KEY` | unset | Required for Nixon's Claude engine and for Ask NXT. |
+| `NXT_AI_MODEL` | `claude-opus-5-5` | Model for Ask NXT and for Nixon when `NIXON_ENGINE=claude`. |
 | `ADMIN_API_KEY` | unset (open workspace) | Workspace key. GuardVoice admin routes use the same bearer check. |
 
 `GET /api/guardvoice/status` (workspace key required) is the checklist: `twilio_ready`, `owner_sms_configured`, `transfer_enabled`, `public_host_configured`, `stream_secret_from_env`, `ai_enabled`.
@@ -156,7 +156,7 @@ For ConversationRelay, run a process that can hold a WebSocket (`cargo run --exa
 - A long-lived `wss` host for ConversationRelay. Vercel serverless cannot hold it; use `GUARDVOICE_TRANSPORT=gather` there, or run `examples/dev.rs` (or another always-on process) for relay.
 - `GUARDVOICE_PUBLIC_HOST`, a unique `GUARDVOICE_STREAM_SECRET`, `GUARDVOICE_SIGNATURE_MODE=enforce`, and the voice webhook pointed at `/api/guardvoice/twiml`.
 - `GUARDVOICE_OWNER_SMS` and `GUARDVOICE_FROM_NUMBER` (or `TWILIO_PHONE_NUMBER`) in E.164. Transfer stays disabled until `GUARDVOICE_TRANSFER_NUMBER` is a different safe number.
-- `ANTHROPIC_API_KEY` if you want the Claude brain. The scripted brain is the tested path.
+- `ANTHROPIC_API_KEY` and `NIXON_ENGINE=claude` if you want Nixon on Claude. The scripted engine is the tested path.
 - Upstash Redis so call records survive across instances. Memory storage is per process.
 - Twilio's recording status callback only logs the event. Playback and retention are not built.
 - Email as a notes sink is not built. The webhook sink is.

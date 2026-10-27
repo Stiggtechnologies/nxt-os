@@ -19,7 +19,7 @@ const JOBS: usize = 100;
 const ACTIVITY: usize = 500;
 
 impl GuardVoice {
-    pub(super) async fn log(&self, kind: &str, call_id: Option<&str>, summary: &str, detail: Value) -> Result<(), String> {
+    pub(crate) async fn log(&self, kind: &str, call_id: Option<&str>, summary: &str, detail: Value) -> Result<(), String> {
         let ev = json!({
             "at": now(),
             "kind": kind,
@@ -49,14 +49,14 @@ impl GuardVoice {
         self.store.set_json(key, v).await
     }
 
-    pub(super) async fn company_name(&self) -> String {
+    pub(crate) async fn company_name(&self) -> String {
         match self.ledger.company().await {
             Ok(c) if !c.name.trim().is_empty() => c.name,
             _ => self.config.company_fallback.clone(),
         }
     }
 
-    pub(super) fn greeting(&self, company: &str, role: &str) -> String {
+    pub(crate) fn greeting(&self, company: &str, role: &str) -> String {
         if role == "transfer-failed" {
             return format!(
                 "Sorry, {} isn't available right now. I can take a message and make sure they get it.",
@@ -69,12 +69,11 @@ impl GuardVoice {
             }
         }
         format!(
-            "Hi, thanks for calling {company}. This is {}, the virtual assistant. How can I help?",
-            self.config.agent_name
+            "Hi, thanks for calling {company}. This is Nixon, the virtual assistant. How can I help?"
         )
     }
 
-    pub(super) async fn start_call(&self, new: NewCall) -> Result<Call, String> {
+    pub(crate) async fn start_call(&self, new: NewCall) -> Result<Call, String> {
         if let Some(existing) = self.call_by_sid(&new.call_sid).await? {
             return Ok(existing);
         }
@@ -124,39 +123,39 @@ impl GuardVoice {
         Ok(call)
     }
 
-    pub(super) async fn call_by_id(&self, id: &str) -> Result<Call, String> {
+    pub(crate) async fn call_by_id(&self, id: &str) -> Result<Call, String> {
         self.store
             .get_json(&format!("gv:call:{id}"))
             .await?
             .ok_or_else(|| format!("call {id} not found"))
     }
 
-    pub(super) async fn call_by_sid(&self, sid: &str) -> Result<Option<Call>, String> {
+    pub(crate) async fn call_by_sid(&self, sid: &str) -> Result<Option<Call>, String> {
         let Some(id) = self.store.get(&format!("gv:sid:{sid}")).await? else {
             return Ok(None);
         };
         Ok(Some(self.call_by_id(&id).await?))
     }
 
-    pub(super) async fn save_call(&self, call: &Call) -> Result<(), String> {
+    pub(crate) async fn save_call(&self, call: &Call) -> Result<(), String> {
         self.put(&format!("gv:call:{}", call.id), call).await
     }
 
-    pub(super) async fn patch_call(&self, id: &str, f: impl FnOnce(&mut Call)) -> Result<Call, String> {
+    pub(crate) async fn patch_call(&self, id: &str, f: impl FnOnce(&mut Call)) -> Result<Call, String> {
         let mut call = self.call_by_id(id).await?;
         f(&mut call);
         self.save_call(&call).await?;
         Ok(call)
     }
 
-    pub(super) async fn list_calls(&self) -> Result<Vec<Call>, String> {
+    pub(crate) async fn list_calls(&self) -> Result<Vec<Call>, String> {
         self.load_many("gv:call_ids", "gv:call:", CALLS).await
     }
 
     /// Caller finished a phrase. The spoken reply is dropped if they barge in
     /// (generation changes) before we commit it, and a leading echo of their
     /// words is stripped.
-    pub(super) async fn on_caller_text(&self, call_id: &str, text: &str) -> Result<TurnOutcome, String> {
+    pub(crate) async fn on_caller_text(&self, call_id: &str, text: &str) -> Result<TurnOutcome, String> {
         let text = text.trim();
         if text.is_empty() {
             return Ok(TurnOutcome { say: None, ended: false, approvals: vec![], tools: vec![], generation: 0 });
@@ -213,7 +212,7 @@ impl GuardVoice {
         })
     }
 
-    pub(super) async fn interrupt(&self, call_id: &str) -> Result<Call, String> {
+    pub(crate) async fn interrupt(&self, call_id: &str) -> Result<Call, String> {
         let call = self
             .patch_call(call_id, |c| {
                 c.generation = c.generation.saturating_add(1);
@@ -229,7 +228,7 @@ impl GuardVoice {
         Ok(call)
     }
 
-    pub(super) async fn hangup(&self, call_id: &str, reason: &str) -> Result<Handoff, String> {
+    pub(crate) async fn hangup(&self, call_id: &str, reason: &str) -> Result<Handoff, String> {
         let mut call = self.call_by_id(call_id).await?;
         if call.status == "ended" {
             if let Some(id) = &call.handoff_id {
@@ -295,7 +294,7 @@ impl GuardVoice {
         Ok(handoff)
     }
 
-    pub(super) async fn notify(&self, level: &str, title: &str, body: &str, href: &str, call_id: Option<&str>) -> Result<Notification, String> {
+    pub(crate) async fn notify(&self, level: &str, title: &str, body: &str, href: &str, call_id: Option<&str>) -> Result<Notification, String> {
         let n = Notification {
             id: new_id("ntf"),
             at: now(),
@@ -311,11 +310,11 @@ impl GuardVoice {
         Ok(n)
     }
 
-    pub(super) async fn notifications(&self) -> Result<Vec<Notification>, String> {
+    pub(crate) async fn notifications(&self) -> Result<Vec<Notification>, String> {
         self.load_many("gv:note_ids", "gv:note:", NOTES).await
     }
 
-    pub(super) async fn mark_read(&self, id: &str) -> Result<Notification, String> {
+    pub(crate) async fn mark_read(&self, id: &str) -> Result<Notification, String> {
         let mut n: Notification = self.store.get_json(&format!("gv:note:{id}")).await?.ok_or_else(|| format!("notification {id} not found"))?;
         n.read = true;
         self.put(&format!("gv:note:{id}"), &n).await?;
@@ -324,7 +323,7 @@ impl GuardVoice {
 
     /// Texts the owner. In mock mode (or without Twilio credentials) the
     /// message is stored in the outbox and nothing leaves the process.
-    pub(super) async fn owner_sms(&self, body: &str, call_id: Option<&str>, kind: &str) -> Result<(), String> {
+    pub(crate) async fn owner_sms(&self, body: &str, call_id: Option<&str>, kind: &str) -> Result<(), String> {
         let Some(to) = self.config.owner_sms.clone() else {
             self.log("sms_skipped", call_id, "Owner SMS number is not configured.", json!({ "kind": kind })).await?;
             return Ok(());
@@ -336,7 +335,7 @@ impl GuardVoice {
         Ok(())
     }
 
-    pub(super) async fn deliver_sms(&self, to: &str, body: &str, call_id: Option<&str>, kind: &str) -> Result<SmsMessage, String> {
+    pub(crate) async fn deliver_sms(&self, to: &str, body: &str, call_id: Option<&str>, kind: &str) -> Result<SmsMessage, String> {
         let to = voice::e164(to).ok_or_else(|| format!("not an E.164 number: {to}"))?;
         if voice::is_blocked_service(&to) {
             return Err("that number can't be texted".into());
@@ -369,26 +368,26 @@ impl GuardVoice {
         Ok(msg)
     }
 
-    pub(super) async fn sms_outbox(&self) -> Result<Vec<SmsMessage>, String> {
+    pub(crate) async fn sms_outbox(&self) -> Result<Vec<SmsMessage>, String> {
         self.load_many("gv:sms_ids", "gv:sms:", SMS).await
     }
 
-    pub(super) async fn activity(&self, limit: usize) -> Result<Vec<Value>, String> {
+    pub(crate) async fn activity(&self, limit: usize) -> Result<Vec<Value>, String> {
         self.store.list_json("gv:activity", limit.min(ACTIVITY)).await
     }
 
-    pub(super) async fn handoffs(&self) -> Result<Vec<Handoff>, String> {
+    pub(crate) async fn handoffs(&self) -> Result<Vec<Handoff>, String> {
         self.load_many("gv:handoff_ids", "gv:handoff:", HANDOFFS).await
     }
 
-    pub(super) async fn save_handoff(&self, h: &Handoff) -> Result<(), String> {
+    pub(crate) async fn save_handoff(&self, h: &Handoff) -> Result<(), String> {
         self.put(&format!("gv:handoff:{}", h.id), h).await?;
         self.push_id("gv:handoff_ids", &h.id, HANDOFFS).await
     }
 
     /// Structured stand-in for the reference handoff miner: new actionable
     /// cards since the cursor, then the cursor moves forward.
-    pub(super) async fn mine(&self) -> Result<Value, String> {
+    pub(crate) async fn mine(&self) -> Result<Value, String> {
         let cursor = self.store.get("gv:mine_cursor").await?.unwrap_or_default();
         let all = self.handoffs().await?;
         let fresh: Vec<Handoff> = all
@@ -405,16 +404,16 @@ impl GuardVoice {
         }))
     }
 
-    pub(super) async fn approvals(&self) -> Result<Vec<Approval>, String> {
+    pub(crate) async fn approvals(&self) -> Result<Vec<Approval>, String> {
         self.load_many("gv:approval_ids", "gv:approval:", APPROVALS).await
     }
 
-    pub(super) async fn pending_for(&self, call_id: &str) -> Result<Vec<Approval>, String> {
+    pub(crate) async fn pending_for(&self, call_id: &str) -> Result<Vec<Approval>, String> {
         let all = self.approvals().await?;
         Ok(all.into_iter().filter(|a| a.call_id == call_id && a.status == "pending").collect())
     }
 
-    pub(super) async fn enqueue_approval(&self, call_id: &str, tool: &str, input: Value, summary: String) -> Result<Approval, String> {
+    pub(crate) async fn enqueue_approval(&self, call_id: &str, tool: &str, input: Value, summary: String) -> Result<Approval, String> {
         let a = Approval {
             id: new_id("apr"),
             call_id: call_id.into(),
@@ -431,11 +430,11 @@ impl GuardVoice {
         self.push_id("gv:approval_ids", &a.id, APPROVALS).await?;
         self.log("approval_queued", Some(call_id), &summary, json!({ "approval_id": a.id, "tool": tool })).await?;
         self.notify("warn", "Approval needed", &summary, "approvals", Some(call_id)).await?;
-        self.owner_sms(&format!("[NXT GuardVoice] Decision needed: {summary}"), Some(call_id), "decision").await?;
+            self.owner_sms(&format!("[Nixon] Decision needed: {summary}"), Some(call_id), "decision").await?;
         Ok(a)
     }
 
-    pub(super) async fn summary_counts(&self) -> Result<Value, String> {
+    pub(crate) async fn summary_counts(&self) -> Result<Value, String> {
         let notes = self.notifications().await?;
         let approvals = self.approvals().await?;
         let handoffs = self.handoffs().await?;
@@ -447,7 +446,7 @@ impl GuardVoice {
         }))
     }
 
-    pub(super) async fn save_job(&self, job: &OutboundJob) -> Result<(), String> {
+    pub(crate) async fn save_job(&self, job: &OutboundJob) -> Result<(), String> {
         let fresh = self.store.get(&format!("gv:job:{}", job.id)).await?.is_none();
         self.put(&format!("gv:job:{}", job.id), job).await?;
         if fresh {
@@ -456,7 +455,7 @@ impl GuardVoice {
         Ok(())
     }
 
-    pub(super) async fn job(&self, id: &str) -> Result<OutboundJob, String> {
+    pub(crate) async fn job(&self, id: &str) -> Result<OutboundJob, String> {
         self.store.get_json(&format!("gv:job:{id}")).await?.ok_or_else(|| format!("outbound job {id} not found"))
     }
 
@@ -486,7 +485,7 @@ impl GuardVoice {
         }
     }
 
-    pub(super) async fn twilio_form(&self, path: &str, fields: &[(&str, &str)]) -> Result<Value, String> {
+    pub(crate) async fn twilio_form(&self, path: &str, fields: &[(&str, &str)]) -> Result<Value, String> {
         if self.config.mode != Mode::Live {
             return Err("mock mode does not call Twilio".into());
         }
@@ -511,7 +510,7 @@ impl GuardVoice {
     }
 }
 
-pub(super) struct TurnOutcome {
+pub(crate) struct TurnOutcome {
     pub say: Option<String>,
     pub ended: bool,
     pub approvals: Vec<String>,
@@ -548,13 +547,13 @@ fn transcript_text(call: &Call) -> String {
         .join("\n")
 }
 
-pub(super) struct Hints {
+pub(crate) struct Hints {
     pub name: Option<String>,
     pub phone: Option<String>,
     pub actionable: bool,
 }
 
-pub(super) fn score_transcript(text: &str) -> Hints {
+pub(crate) fn score_transcript(text: &str) -> Hints {
     let low = text.to_lowercase();
     let keys = ["call me back", "callback", "call back", "follow up", "follow-up", "schedule", "meeting", "message", "have them call", "have him call", "have her call"];
     let actionable = keys.iter().any(|k| low.contains(k));

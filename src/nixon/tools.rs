@@ -1,14 +1,13 @@
-//! Tools wired to NXT Ledger and NXT Referrals.
+//! Nixon's tools, wired to NXT Ledger and NXT Referrals.
 //!
 //! Reads run immediately. Internal writes run when autonomy is `write`.
 //! Payments, voids, texts to other people, and outbound calls are
 //! consequential: they are stored and wait for a person, even if autonomy
-//! is wide open.
+//! is wide open. GuardVoice delivers the phone call around these actions.
 
-use super::config::Autonomy;
-use super::models::*;
-use super::voice::{self, mask_number};
-use super::GuardVoice;
+use crate::guardvoice::models::*;
+use crate::guardvoice::voice::{self, mask_number};
+use crate::guardvoice::{Autonomy, GuardVoice, Mode};
 use crate::ledger::engine::{fmt_money, today, ContactInput, DocInput, DocLineInput, PaymentInput};
 use crate::ledger::models::{Contact, ContactKind, DocKind};
 use crate::ledger::routes::{run_report, Range};
@@ -59,7 +58,7 @@ impl GuardVoice {
         self.execute(call_id, tool, &input).await
     }
 
-    pub(super) async fn decide(&self, id: &str, approve: bool) -> Result<Approval, String> {
+    pub(crate) async fn decide(&self, id: &str, approve: bool) -> Result<Approval, String> {
         let mut a: Approval = self
             .store
             .get_json(&format!("gv:approval:{id}"))
@@ -292,7 +291,7 @@ impl GuardVoice {
                             date: today(),
                             due_date: None,
                             number: None,
-                            memo: "Created by GuardVoice".into(),
+                            memo: "Created by Nixon".into(),
                             lines: vec![DocLineInput {
                                 description,
                                 qty: 1.0,
@@ -379,7 +378,7 @@ impl GuardVoice {
             "escalate" => {
                 let summary = str_field(input, "summary").unwrap_or_else(|| "A decision is needed.".into());
                 self.notify("warn", "Decision needed", &summary, "handoffs", Some(call_id)).await?;
-                self.owner_sms(&format!("[NXT GuardVoice] {summary}"), Some(call_id), "escalate").await?;
+                self.owner_sms(&format!("[Nixon] {summary}"), Some(call_id), "escalate").await?;
                 json!({ "ok": true, "speech": "I've passed that to the team." })
             }
             "transfer_call" => self.transfer_call(call_id, input).await?,
@@ -465,7 +464,7 @@ impl GuardVoice {
         };
         self.save_handoff(&h).await?;
         self.notify("warn", "Message from a call", &summary, "handoffs", Some(call_id)).await?;
-        self.owner_sms(&format!("[NXT GuardVoice] Message. {summary}"), Some(call_id), "message").await?;
+        self.owner_sms(&format!("[Nixon] Message. {summary}"), Some(call_id), "message").await?;
         let spoken_phone = phone
             .as_deref()
             .map(|p| p.chars().filter(|c| c.is_ascii_digit()).collect::<Vec<_>>().into_iter().collect::<String>())
@@ -512,7 +511,7 @@ impl GuardVoice {
         let target = format!("+1{target_d}");
         self.patch_call(call_id, |c| {
             c.transfer_attempted = true;
-            c.transfer = Some(super::models::Transfer {
+            c.transfer = Some(Transfer {
                 reason: reason.clone(),
                 caller_name: caller_name.clone(),
                 accepted: false,
@@ -548,7 +547,7 @@ impl GuardVoice {
         }))
     }
 
-    pub(super) async fn apply_screen(&self, parent_sid: &str, digit: &str) -> Result<String, String> {
+    pub(crate) async fn apply_screen(&self, parent_sid: &str, digit: &str) -> Result<String, String> {
         let Some(call) = self.call_by_sid(parent_sid).await? else {
             return Ok(voice::screen_twiml(""));
         };
@@ -574,7 +573,7 @@ impl GuardVoice {
         Ok(voice::screen_twiml(digit))
     }
 
-    pub(super) async fn apply_transfer_result(&self, parent_sid: &str, dial_status: &str, call_status: &str, host: &str) -> Result<String, String> {
+    pub(crate) async fn apply_transfer_result(&self, parent_sid: &str, dial_status: &str, call_status: &str, host: &str) -> Result<String, String> {
         let Some(call) = self.call_by_sid(parent_sid).await? else {
             return Ok(voice::say_hangup("Goodbye."));
         };
@@ -597,7 +596,7 @@ impl GuardVoice {
             if outcome == "reconnect" {
                 c.role = "transfer-failed".into();
                 c.speaking = true;
-                c.turns.push(super::models::Turn {
+                c.turns.push(Turn {
                     role: "agent".into(),
                     text: greet.clone(),
                     at: now(),
@@ -641,7 +640,7 @@ impl GuardVoice {
         Ok(e)
     }
 
-    pub(super) async fn place_outbound(&self, to: &str, purpose: &str, brief: &str, dry_run: bool) -> Result<OutboundJob, String> {
+    pub(crate) async fn place_outbound(&self, to: &str, purpose: &str, brief: &str, dry_run: bool) -> Result<OutboundJob, String> {
         let to = self.reject_destination(to)?;
         let from = self.config.from_number.clone().unwrap_or_default();
         let mut job = OutboundJob {
@@ -652,7 +651,7 @@ impl GuardVoice {
             brief: brief.chars().take(500).collect(),
             status: if dry_run {
                 "dry_run".into()
-            } else if self.config.mode == super::config::Mode::Mock {
+            } else if self.config.mode == Mode::Mock {
                 "mock".into()
             } else {
                 "queued".into()

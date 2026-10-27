@@ -2,6 +2,7 @@
 //! secret is written back out.
 
 use super::voice::{digits10, e164};
+use crate::nixon::Engine;
 use serde_json::{Value, json};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,18 +27,12 @@ pub enum SignatureMode {
     Enforce,
 }
 
-/// What the assistant may do without a person.
+/// What Nixon may do without a person.
 /// Consequential actions always wait, whichever level this is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Autonomy {
     Read,
     Write,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BrainKind {
-    Scripted,
-    Claude,
 }
 
 #[derive(Clone, Debug)]
@@ -46,7 +41,8 @@ pub struct Config {
     pub transport: Transport,
     pub signature_mode: SignatureMode,
     pub autonomy: Autonomy,
-    pub brain: BrainKind,
+    /// How Nixon decides: scripted in tests and mock mode, Claude when asked.
+    pub nixon: Engine,
     pub agent_name: String,
     pub company_fallback: String,
     pub timezone: String,
@@ -77,8 +73,8 @@ impl Config {
             transport: Transport::Relay,
             signature_mode: SignatureMode::Off,
             autonomy: Autonomy::Write,
-            brain: BrainKind::Scripted,
-            agent_name: "NXT".into(),
+            nixon: Engine::Scripted,
+            agent_name: "Nixon".into(),
             company_fallback: "your business".into(),
             timezone: "America/Toronto".into(),
             owner_sms: Some("+15555550199".into()),
@@ -144,14 +140,14 @@ impl Config {
             "read" | "readonly" => Autonomy::Read,
             _ => Autonomy::Write,
         };
-        c.brain = match env("GUARDVOICE_BRAIN").to_ascii_lowercase().as_str() {
-            "scripted" | "mock" => BrainKind::Scripted,
-            "claude" | "anthropic" => BrainKind::Claude,
+        c.nixon = match env("NIXON_ENGINE").to_ascii_lowercase().as_str() {
+            "scripted" | "mock" => Engine::Scripted,
+            "claude" | "anthropic" => Engine::Claude,
             _ => {
                 if c.mode == Mode::Mock {
-                    BrainKind::Scripted
+                    Engine::Scripted
                 } else {
-                    BrainKind::Claude
+                    Engine::Claude
                 }
             }
         };
@@ -218,7 +214,8 @@ impl Config {
             "transport": match self.transport { Transport::Relay => "relay", Transport::Gather => "gather" },
             "signature_mode": match self.signature_mode { SignatureMode::Off => "off", SignatureMode::Log => "log", SignatureMode::Enforce => "enforce" },
             "autonomy": match self.autonomy { Autonomy::Read => "read", Autonomy::Write => "write" },
-            "brain": match self.brain { BrainKind::Scripted => "scripted", BrainKind::Claude => "claude" },
+            "nixon": match self.nixon { Engine::Scripted => "scripted", Engine::Claude => "claude" },
+            "assistant": "Nixon",
             "agent_name": self.agent_name,
             "timezone": self.timezone,
             "owner_sms_configured": self.owner_sms.is_some(),

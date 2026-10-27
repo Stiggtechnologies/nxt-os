@@ -61,11 +61,14 @@ async fn mock_call_reads_books_and_does_not_echo() {
     let health = call(&r, "GET", "/api/guardvoice/health", None, false).await;
     assert_eq!(health.0, 200);
     assert_eq!(health.1["mode"], "mock");
+    let st = ok(&r, "GET", "/api/guardvoice/status", None).await;
+    assert_eq!(st["assistant"], "Nixon");
+    assert_eq!(st["nixon"], "scripted");
 
     let started = start(&r, "+15555550123").await;
     let id = started["call"]["id"].as_str().unwrap();
     let greeting = started["greeting"].as_str().unwrap();
-    assert!(greeting.contains("virtual assistant"));
+    assert!(greeting.contains("This is Nixon, the virtual assistant"), "{greeting}");
     assert!(!greeting.contains("gv-mock-stream-secret"));
 
     let dash = say(&r, id, "How much cash do we have?").await;
