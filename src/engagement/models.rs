@@ -94,6 +94,30 @@ pub struct Annotation {
     pub custom_mark: Option<TickmarkDefinition>,
 }
 
+/// Original NXT planning/evidence distinction; no proprietary document format.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkpaperType {
+    #[default]
+    Manual,
+    Placeholder,
+}
+impl WorkpaperType {
+    pub fn is_manual(&self) -> bool {
+        *self == Self::Manual
+    }
+}
+impl<'de> Deserialize<'de> for WorkpaperType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        match value.as_str() {
+            "manual" => Ok(Self::Manual),
+            "placeholder" => Ok(Self::Placeholder),
+            _ => Err(serde::de::Error::unknown_variant(&value, &["manual", "placeholder"])),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Workpaper {
@@ -117,6 +141,9 @@ pub struct Workpaper {
     pub annotations: Vec<Annotation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachment_versions: Vec<AttachmentVersion>,
+    // Appended/omitted so legacy manual documents retain exact signed preimages.
+    #[serde(default, skip_serializing_if = "WorkpaperType::is_manual")]
+    pub document_type: WorkpaperType,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

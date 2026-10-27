@@ -241,7 +241,7 @@ impl Engagements {
         Err(conflict("workspace changed repeatedly; reload and retry"))
     }
     pub fn catalog() -> Value {
-        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html","nxt-engagement-file-bundle-zip"],"attachment_contract":{"format":"nxt-engagement-files/v1","per_file_bytes":262144,"per_workpaper_versions":16,"workspace_versions":128,"workspace_binary_bytes":2097152,"bundle_max_bytes":4194304,"processing":"opaque bytes only; no rendering, execution, editing or malware scan","storage":"existing atomic EngagementState KV; original-byte SHA-256 and version metadata bindings","identity":"unverified operator labels under shared workspace access"},"import_preview_binding":"nxt-engagement-preview-binding/v1","legacy_uncommitted_preview":"regenerate","annotation_kinds":["note","agreed","recalculated","traced","inspected","confirmed","custom"],"custom_tickmark_catalogue":{"format":"nxt-custom-text-tickmarks/v1","maximum_definitions":50,"code_maximum_ascii_bytes":12,"code_characters":"ASCII uppercase letters, digits, underscores and hyphens","reserved_codes":["NOTE","AG","RC","TR","IN","CF"],"label_maximum_utf8_bytes":128,"description_maximum_utf8_bytes":1024,"definition_text":"nonempty single-line text without control characters","annotation_definition":"immutable copied definition for an existing annotation ID; no live catalogue lookup","rollforward":"catalogue retained; active annotations cleared","scope":"Original NXT text marks only; no glyph/image marks or verified source parity"},"annotation_scope":"Text body SHA-256 anchors and copied custom definitions; existing 50 annotations per workpaper and 500 per engagement bounds apply; operator labels are unverified metadata; no PDF/image annotations or Caseware compatibility","limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text workpapers with bounded opaque file versions; no CaseView or Office editing, proprietary format interpretation, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
+        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html","nxt-engagement-file-bundle-zip"],"attachment_contract":{"format":"nxt-engagement-files/v1","per_file_bytes":262144,"per_workpaper_versions":16,"workspace_versions":128,"workspace_binary_bytes":2097152,"bundle_max_bytes":4194304,"processing":"opaque bytes only; no rendering, execution, editing or malware scan","storage":"existing atomic EngagementState KV; original-byte SHA-256 and version metadata bindings","identity":"unverified operator labels under shared workspace access"},"import_preview_binding":"nxt-engagement-preview-binding/v1","legacy_uncommitted_preview":"regenerate","workpaper_document_types":{"manual":{"default":true,"serialization":"omitted for legacy manual workpaper hashes","scope":"Original NXT text evidence with bounded opaque file versions"},"placeholder":{"scope":"Pending planning only; not evidence","body":"exactly empty","annotations":"none","file_versions":"none","signoffs":"prohibited","required":"blocking pending diagnostic","optional":"nonblocking pending diagnostic"},"conversion":"Revision-checked save on the same workpaper; clear and save manual body and annotations first, retaining immutable file history","rollforward":"types retained; body, annotations and active file versions cleared","parity":"Original NXT policy; no proprietary document interpretation or verified Caseware parity"},"annotation_kinds":["note","agreed","recalculated","traced","inspected","confirmed","custom"],"custom_tickmark_catalogue":{"format":"nxt-custom-text-tickmarks/v1","maximum_definitions":50,"code_maximum_ascii_bytes":12,"code_characters":"ASCII uppercase letters, digits, underscores and hyphens","reserved_codes":["NOTE","AG","RC","TR","IN","CF"],"label_maximum_utf8_bytes":128,"description_maximum_utf8_bytes":1024,"definition_text":"nonempty single-line text without control characters","annotation_definition":"immutable copied definition for an existing annotation ID; no live catalogue lookup","rollforward":"catalogue retained; active annotations cleared","scope":"Original NXT text marks only; no glyph/image marks or verified source parity"},"annotation_scope":"Text body SHA-256 anchors and copied custom definitions; existing 50 annotations per workpaper and 500 per engagement bounds apply; operator labels are unverified metadata; no PDF/image annotations or Caseware compatibility","limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text workpapers with bounded opaque file versions; no CaseView or Office editing, proprietary format interpretation, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
     }
     pub async fn get(&self, record_id: &str) -> EResult<EngagementRecord> {
         self.load()
@@ -284,6 +284,17 @@ impl Engagements {
                 editable(&r)?;
                 attachments::preserve_versions(&r.document, &input)?;
                 preserve_custom_tickmarks(&r.document,&input)?;
+                for paper in &input.workpapers {
+                    if paper.document_type == WorkpaperType::Placeholder {
+                        if let Some(prior) = r.document.workpapers.iter().find(|old| old.id == paper.id) {
+                            if prior.document_type == WorkpaperType::Manual
+                                && (!prior.body.is_empty() || !prior.annotations.is_empty() || !prior.attachment_versions.is_empty())
+                            {
+                                return Err(conflict("Clear and save manual evidence before converting the same workpaper to a placeholder; file-version history must be retained"));
+                            }
+                        }
+                    }
+                }
                 r.document = input.clone();
                 r.input_revision += 1;
                 invalidate(&mut r);
@@ -369,13 +380,16 @@ impl Engagements {
                 .ok_or_else(missing)?;
             check_revision(r, input.expected_revision)?;
             editable(r)?;
-            let snapshot = fresh(r)?.clone();
             let paper = r
                 .document
                 .workpapers
                 .iter()
                 .find(|p| p.id == input.workpaper_id)
                 .ok_or_else(|| bad("unknown workpaper"))?;
+            if paper.document_type == WorkpaperType::Placeholder {
+                return Err(conflict("Placeholder workpapers are pending planning material and cannot be signed off; convert to manual and add evidence"));
+            }
+            let snapshot = fresh(r)?.clone();
             if paper.body.trim().is_empty() {
                 return Err(conflict("workpaper content is required before sign-off"));
             }
@@ -561,6 +575,9 @@ impl Engagements {
             let mut copy_policy=RollforwardCopyPolicy::adjusted_comparatives();
             if !old.document.tickmark_catalogue.is_empty() {
                 copy_policy.preserved_fields.push("tickmark_catalogue".into());
+            }
+            if old.document.workpapers.iter().any(|paper| paper.document_type == WorkpaperType::Placeholder) {
+                copy_policy.preserved_fields.push("workpaper_document_types".into());
             }
             target.rollforward_origin = Some(RollforwardOrigin {
                 source_engagement_id: old.id.clone(),

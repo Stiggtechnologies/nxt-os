@@ -341,6 +341,11 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
         text(&paper.title, "Workpaper title", 256, true, false)?;
         text(&paper.folder, "Workpaper folder", 256, false, false)?;
         text(&paper.body, "Workpaper body", 16 * 1024, false, true)?;
+        if paper.document_type == WorkpaperType::Placeholder
+            && (!paper.body.is_empty() || !paper.annotations.is_empty() || !paper.attachment_versions.is_empty())
+        {
+            return Err("Placeholder workpapers must have an exactly empty body and no annotations or file versions".into());
+        }
         references(
             &paper.account_ids,
             &accounts,
@@ -663,6 +668,15 @@ fn calculate(input: &EngagementInput) -> Result<Value, String> {
         );
     }
     for paper in &input.workpapers {
+        if paper.document_type == WorkpaperType::Placeholder {
+            diagnostic(
+                &mut diagnostics,
+                if paper.required { "required_placeholder_workpaper" } else { "optional_placeholder_pending" },
+                format!("{} placeholder workpaper {} is pending planning material, not evidence; convert it to manual and add evidence before sign-off.", if paper.required { "Required" } else { "Optional" }, paper.reference),
+                paper.required,
+            );
+            continue;
+        }
         let body_hash = hex::encode(Sha256::digest(paper.body.as_bytes()));
         for annotation in &paper.annotations {
             if annotation.body_sha256 != body_hash {

@@ -26,7 +26,19 @@ The synthetic acceptance fixture starts with debit and credit totals of 2,400,00
 
 ## Workpapers, issues and human review
 
-A workpaper has a stable ID/reference, title, folder label, evidence text, required flag, account/adjustment references and prerequisite workpapers. References must exist, be unique within each list and form an acyclic dependency graph. Folder labels organize text workpapers; they do not create filesystem paths. Attachment storage, Office/CaseView execution, tickmark graphics and a linked-document calculation engine are separate missing capabilities.
+A workpaper has a stable ID/reference, title, folder label, evidence text, required flag, account/adjustment references and prerequisite workpapers. References must exist, be unique within each list and form an acyclic dependency graph. Folder labels organize workpapers; they do not create filesystem paths. Bounded opaque file versions are documented below. Scalable attachment storage, Office/CaseView execution, tickmark graphics and a linked-document calculation engine remain separate capabilities.
+
+### Manual text and placeholder workpapers, local implementation checkpoint
+
+The original NXT document type is `manual` (plain text with optional bounded opaque files) or `placeholder` (pending planning material). Manual is the default and is omitted from serialization, preserving legacy workpaper input and snapshot preimages. Unknown types and explicit null types are rejected. Neither type interprets a proprietary Caseware, Office or CaseView document.
+
+A placeholder retains its stable ID, reference, title, folder, required flag and planning references/dependencies, while its body must contain exactly zero bytes and it cannot carry annotations or file versions. A required placeholder produces a blocking pending diagnostic; an optional placeholder produces a nonblocking pending diagnostic. Neither can receive a sign-off or direct file upload. An optional placeholder can still prevent a dependent workpaper's checkpoint under the existing dependency rules. Convert it to manual text before adding evidence. These are NXT review policies, not recovered vendor rules.
+
+Conversion uses the normal revision-checked workpaper save on the same ID, retaining issue/dependency references. Converting a manual paper to a placeholder requires its existing body and annotations to be explicitly cleared/removed and saved first. A paper with retained immutable file versions must remain manual; create a separate placeholder rather than dropping those versions. Type conversion does not silently discard evidence or retain old approvals: saving invalidates the active calculation/sign-offs under the existing history controls. Locked and archived engagements remain read-only.
+
+Native snapshots, JSON/ZIP packages and escaped print retain the type; print labels placeholders as pending material rather than evidence. Comparative rollforward retains document types and planning links while clearing current evidence and approvals, and its origin retains the exact prior snapshot. The copy policy adds the type-preservation declaration only when a source placeholder exists, preserving the legacy empty-type policy. Earlier readers reject stored placeholder fields; use a compatible reader or a forward fix after adoption, without deleting evidence to make an older reader load.
+
+This is a local implementation checkpoint until separate release evidence establishes deployment and hosted acceptance. The source-format, full document-manager, Office/CaseView, scalable retention, verified identity and paired source-workflow gaps remain open.
 
 Issues can reference a workpaper and carry title/detail, priority (`low`, `medium`, `high`), blocking flag, state (`open`, `resolved`), resolution and carry-forward preference. Resolving an issue requires an explanation. Blocking open issues prevent supported review; the issue record is evidence, not a message delivered to anyone.
 
