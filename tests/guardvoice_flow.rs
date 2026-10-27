@@ -119,7 +119,7 @@ async fn writes_run_and_consequential_actions_wait() {
     let pay = say(&r, &id, "Record a payment from Harbour Dental").await;
     let pay_say = pay["say"].as_str().unwrap();
     assert!(pay_say.to_lowercase().contains("approve"), "{pay_say}");
-    assert!(pay_say.to_lowercase().contains("not been done"), "{pay_say}");
+    assert!(pay_say.contains("Chequing. It has not been done"), "{pay_say}");
     assert!(ok(&r, "GET", "/api/ledger/payments", None).await.as_array().unwrap().is_empty());
 
     let sms = ok(&r, "GET", "/api/guardvoice/sms", None).await;

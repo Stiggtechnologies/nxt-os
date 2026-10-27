@@ -47,6 +47,7 @@ impl GuardVoice {
         };
         if hold {
             let (input, summary) = self.prepare(tool, &input).await?;
+            let summary = format!("{}.", summary.trim().trim_end_matches('.'));
             let speech = format!("I've asked the team to approve this. {summary} It has not been done yet.");
             let a = self.enqueue_approval(call_id, tool, input, summary).await?;
             return Ok(ToolOut {
