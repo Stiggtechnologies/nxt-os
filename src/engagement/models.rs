@@ -81,6 +81,36 @@ pub struct TickmarkDefinition {
     pub description: String,
 }
 
+/// A copied local-account context digest, in addition to the required text anchor.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct AccountAnchor {
+    pub engagement_id: String,
+    pub account_id: String,
+    pub context_sha256: String,
+}
+impl<'de> Deserialize<'de> for AccountAnchor {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ObjectOnly;
+        impl<'de> serde::de::Visitor<'de> for ObjectOnly {
+            type Value = AccountAnchor;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("an account anchor object")
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(self, map: M) -> Result<AccountAnchor, M::Error> {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Fields { engagement_id: String, account_id: String, context_sha256: String }
+                let value = Fields::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(AccountAnchor { engagement_id: value.engagement_id, account_id: value.account_id, context_sha256: value.context_sha256 })
+            }
+        }
+        deserializer.deserialize_map(ObjectOnly)
+    }
+}
+fn present_account_anchor<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<AccountAnchor>, D::Error> {
+    AccountAnchor::deserialize(deserializer).map(Some)
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Annotation {
@@ -92,6 +122,9 @@ pub struct Annotation {
     // Appended/omitted to keep legacy signed annotation preimages unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_mark: Option<TickmarkDefinition>,
+    // Missing is legacy body-only scope; a present anchor must be an object, not null.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present_account_anchor")]
+    pub account_anchor: Option<AccountAnchor>,
 }
 
 /// Original NXT planning/evidence distinction; no proprietary document format.

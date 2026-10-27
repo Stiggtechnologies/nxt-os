@@ -1,5 +1,6 @@
 //! Original, bounded NXT engagement workpapers; no Caseware runtime dependency.
 pub mod analysis;
+pub mod account_annotations;
 pub mod attachment_models;
 mod attachments;
 pub mod bridges;
@@ -83,11 +84,15 @@ fn checked_input(mut input: EngagementInput) -> EResult<EngagementInput> {
     }
     Ok(input)
 }
-fn preserve_custom_tickmarks(previous: &EngagementInput, next: &EngagementInput) -> EResult<()> {
+fn preserve_annotation_bindings(previous: &EngagementInput, next: &EngagementInput) -> EResult<()> {
     let prior:HashMap<&str,&Annotation>=previous.workpapers.iter().flat_map(|paper|paper.annotations.iter())
         .map(|annotation|(annotation.id.as_str(),annotation)).collect();
     for annotation in next.workpapers.iter().flat_map(|paper|paper.annotations.iter()) {
         if let Some(old)=prior.get(annotation.id.as_str()) {
+            if (old.account_anchor.is_some() || annotation.account_anchor.is_some())
+                && (old.account_anchor != annotation.account_anchor || old.body_sha256 != annotation.body_sha256) {
+                return Err(conflict("Existing account annotation scope and text binding are immutable; remove it and use a new annotation ID to reanchor"));
+            }
             if (old.custom_mark.is_some() || annotation.custom_mark.is_some()
                 || old.kind=="custom" || annotation.kind=="custom")
                 && (old.kind!=annotation.kind || old.custom_mark!=annotation.custom_mark) {
@@ -114,6 +119,7 @@ fn record(input: EngagementInput, record_id: &str, at: &str) -> EngagementRecord
         updated_at: at.into(),
         rollforward_from: None,
         rollforward_origin: None,
+        annotation_bindings: vec![],
     }
 }
 fn touch(r: &mut EngagementRecord) {
@@ -241,7 +247,7 @@ impl Engagements {
         Err(conflict("workspace changed repeatedly; reload and retry"))
     }
     pub fn catalog() -> Value {
-        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html","nxt-engagement-file-bundle-zip"],"attachment_contract":{"format":"nxt-engagement-files/v1","per_file_bytes":262144,"per_workpaper_versions":16,"workspace_versions":128,"workspace_binary_bytes":2097152,"bundle_max_bytes":4194304,"processing":"opaque bytes only; no rendering, execution, editing or malware scan","storage":"existing atomic EngagementState KV; original-byte SHA-256 and version metadata bindings","identity":"unverified operator labels under shared workspace access"},"import_preview_binding":"nxt-engagement-preview-binding/v1","legacy_uncommitted_preview":"regenerate","workpaper_document_types":{"manual":{"default":true,"serialization":"omitted for legacy manual workpaper hashes","scope":"Original NXT text evidence with bounded opaque file versions"},"placeholder":{"scope":"Pending planning only; not evidence","body":"exactly empty","annotations":"none","file_versions":"none","signoffs":"prohibited","required":"blocking pending diagnostic","optional":"nonblocking pending diagnostic"},"conversion":"Revision-checked save on the same workpaper; clear and save manual body and annotations first, retaining immutable file history","rollforward":"types retained; body, annotations and active file versions cleared","parity":"Original NXT policy; no proprietary document interpretation or verified Caseware parity"},"annotation_kinds":["note","agreed","recalculated","traced","inspected","confirmed","custom"],"custom_tickmark_catalogue":{"format":"nxt-custom-text-tickmarks/v1","maximum_definitions":50,"code_maximum_ascii_bytes":12,"code_characters":"ASCII uppercase letters, digits, underscores and hyphens","reserved_codes":["NOTE","AG","RC","TR","IN","CF"],"label_maximum_utf8_bytes":128,"description_maximum_utf8_bytes":1024,"definition_text":"nonempty single-line text without control characters","annotation_definition":"immutable copied definition for an existing annotation ID; no live catalogue lookup","rollforward":"catalogue retained; active annotations cleared","scope":"Original NXT text marks only; no glyph/image marks or verified source parity"},"annotation_scope":"Text body SHA-256 anchors and copied custom definitions; existing 50 annotations per workpaper and 500 per engagement bounds apply; operator labels are unverified metadata; no PDF/image annotations or Caseware compatibility","limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text workpapers with bounded opaque file versions; no CaseView or Office editing, proprietary format interpretation, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
+        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html","nxt-engagement-file-bundle-zip"],"attachment_contract":{"format":"nxt-engagement-files/v1","per_file_bytes":262144,"per_workpaper_versions":16,"workspace_versions":128,"workspace_binary_bytes":2097152,"bundle_max_bytes":4194304,"processing":"opaque bytes only; no rendering, execution, editing or malware scan","storage":"existing atomic EngagementState KV; original-byte SHA-256 and version metadata bindings","identity":"unverified operator labels under shared workspace access"},"import_preview_binding":"nxt-engagement-preview-binding/v1","legacy_uncommitted_preview":"regenerate","workpaper_document_types":{"manual":{"default":true,"serialization":"omitted for legacy manual workpaper hashes","scope":"Original NXT text evidence with bounded opaque file versions"},"placeholder":{"scope":"Pending planning only; not evidence","body":"exactly empty","annotations":"none","file_versions":"none","signoffs":"prohibited","required":"blocking pending diagnostic","optional":"nonblocking pending diagnostic"},"conversion":"Revision-checked save on the same workpaper; clear and save manual body and annotations first, retaining immutable file history","rollforward":"types retained; body, annotations and active file versions cleared","parity":"Original NXT policy; no proprietary document interpretation or verified Caseware parity"},"annotation_kinds":["note","agreed","recalculated","traced","inspected","confirmed","custom"],"custom_tickmark_catalogue":{"format":"nxt-custom-text-tickmarks/v1","maximum_definitions":50,"code_maximum_ascii_bytes":12,"code_characters":"ASCII uppercase letters, digits, underscores and hyphens","reserved_codes":["NOTE","AG","RC","TR","IN","CF"],"label_maximum_utf8_bytes":128,"description_maximum_utf8_bytes":1024,"definition_text":"nonempty single-line text without control characters","annotation_definition":"immutable copied definition for an existing annotation ID; no live catalogue lookup","rollforward":"catalogue retained; active annotations cleared","scope":"Original NXT text marks only; no glyph/image marks or verified source parity"},"account_annotations":{"context_format":account_annotations::CONTEXT_FORMAT,"options_format":account_annotations::OPTIONS_FORMAT,"scope":account_annotations::SCOPE,"anchors":"owning engagement ID, selected referenced account context SHA-256 and required exact workpaper body SHA-256","canonical":"SHA-256 of compact sorted-key UTF-8 JSON; complete selected account/group definitions, all touching local adjustments and counterpart lines in saved order","immutable":"Lifetime server-owned reservations survive removal and save; an account-scoped annotation ID can restore only the identical binding (owner, paper, kind, custom meaning, account anchor and body SHA); body-only IDs cannot become account-scoped","registry_format":account_annotations::BINDING_FORMAT,"lifetime_annotation_id_limit":account_annotations::REGISTRY_MAX,"registry_storage":"append-only compact binding digests and body-only ID reservations, within existing 1 MiB record and 8 MiB workspace bounds; legacy body-only reservations seeded before removal","rollforward_registry":"source registry retained; new target registry empty; exact source snapshot origin keeps source ownership","stale":"blocking stale_account_annotation diagnostics; stale drafts retained for review","limits":"existing annotation and workspace capacities unchanged","identity":"unverified operator responsibility labels"},"annotation_scope":"Text body SHA-256 anchors and copied custom definitions; existing 50 annotations per workpaper and 500 per engagement bounds apply; operator labels are unverified metadata; no PDF/image annotations or Caseware compatibility","limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text workpapers with bounded opaque file versions; no CaseView or Office editing, proprietary format interpretation, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
     }
     pub async fn get(&self, record_id: &str) -> EResult<EngagementRecord> {
         self.load()
@@ -250,6 +256,19 @@ impl Engagements {
             .into_iter()
             .find(|r| r.id == record_id)
             .ok_or_else(missing)
+    }
+    pub async fn account_anchor_options(&self, record_id: &str, paper_id: &str) -> EResult<Value> {
+        let record = self.get(record_id).await?;
+        analysis::validate(&record.document).map_err(|_| conflict("saved engagement inputs are invalid; recover before reading annotation options"))?;
+        let paper = record.document.workpapers.iter().find(|p| p.id == paper_id).ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "workpaper not found".into()))?;
+        if paper.document_type != WorkpaperType::Manual {
+            return Err(conflict("Account annotation options require a saved manual workpaper; placeholders are planning only"));
+        }
+        let accounts = paper.account_ids.iter().map(|account_id| {
+            account_annotations::context_sha256(&record.document, &record.id, &paper.id, account_id)
+                .map(|context_sha256| json!({"account_id":account_id,"context_sha256":context_sha256}))
+        }).collect::<Result<Vec<_>,_>>().map_err(conflict)?;
+        Ok(json!({"format":account_annotations::OPTIONS_FORMAT,"engagement_id":record.id,"expected_revision":record.revision,"input_revision":record.input_revision,"input_hash":hash(&record.document)?,"workpaper_id":paper.id,"body_sha256":hex::encode(Sha256::digest(paper.body.as_bytes())),"accounts":accounts,"scope":account_annotations::SCOPE}))
     }
     pub async fn list(&self) -> EResult<Vec<Value>> {
         Ok(self.load().await?.engagements.into_iter().map(|r|json!({"id":r.id,"revision":r.revision,"input_revision":r.input_revision,"name":r.document.name,"client_ref":r.document.client_ref,"kind":r.document.kind,"period_start":r.document.period_start,"period_end":r.document.period_end,"status":r.status,"accounts":r.document.accounts.len(),"workpapers":r.document.workpapers.len(),"open_issues":r.document.issues.iter().filter(|i|i.status=="open").count(),"supported":r.snapshot.as_ref().map(|s|s.result["supported"].clone()),"updated_at":r.updated_at,"created_at":r.created_at,"rollforward_from":r.rollforward_from})).collect())
@@ -275,6 +294,7 @@ impl Engagements {
         }
         let input = checked_input(input)?;
         let rid = existing.map(str::to_owned).unwrap_or_else(|| id("eng"));
+        account_annotations::validate_owners(&rid, &input).map_err(conflict)?;
         let at = now();
         self.mutate(|s| {
             let old = s.engagements.iter().find(|r| r.id == rid).cloned();
@@ -282,8 +302,9 @@ impl Engagements {
                 let mut r = old.ok_or_else(missing)?;
                 check_revision(&r, expected.unwrap())?;
                 editable(&r)?;
+                account_annotations::seed_legacy_body_only(&mut r).map_err(conflict)?;
                 attachments::preserve_versions(&r.document, &input)?;
-                preserve_custom_tickmarks(&r.document,&input)?;
+                preserve_annotation_bindings(&r.document,&input)?;
                 for paper in &input.workpapers {
                     if paper.document_type == WorkpaperType::Placeholder {
                         if let Some(prior) = r.document.workpapers.iter().find(|old| old.id == paper.id) {
@@ -310,6 +331,7 @@ impl Engagements {
                 record(input.clone(), &rid, &at)
             };
             r.document.expected_revision = None;
+            account_annotations::register_saved_document(&mut r).map_err(conflict)?;
             s.engagements.retain(|r| r.id != rid);
             s.engagements.push(r.clone());
             audit(

@@ -8,7 +8,7 @@ use super::models::*;
 
 const MAX_AMOUNT: i64 = 100_000_000_000_000;
 const MAX_JSON_CENTS: i128 = 9_007_199_254_740_991;
-const RULESET: &str = "nxt-engagement-workpapers-v1";
+pub(super) const RULESET: &str = "nxt-engagement-workpapers-v1";
 const SCOPE: &str = "Original NXT engagement workpapers: exact-cent trial balance, local working adjustments, group reconciliation and text workpaper controls. No Ledger posting, assurance opinion, certified GIFI or proprietary Caseware format compatibility.";
 
 fn text(
@@ -397,6 +397,16 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
             {
                 return Err("Annotation body anchor must be a lowercase SHA-256".into());
             }
+            if let Some(anchor) = &annotation.account_anchor {
+                id(&anchor.engagement_id, "Account annotation engagement ID")?;
+                id(&anchor.account_id, "Account annotation account ID")?;
+                if !accounts.contains(&anchor.account_id) || !paper.account_ids.contains(&anchor.account_id) {
+                    return Err("Account annotation must target an existing account referenced by its manual workpaper".into());
+                }
+                if anchor.context_sha256.len() != 64 || !anchor.context_sha256.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) {
+                    return Err("Account annotation context must be a lowercase SHA-256".into());
+                }
+            }
         }
     }
     let graph: BTreeMap<&str, &[String]> = input
@@ -678,6 +688,7 @@ fn calculate(input: &EngagementInput) -> Result<Value, String> {
             continue;
         }
         let body_hash = hex::encode(Sha256::digest(paper.body.as_bytes()));
+        let mut account_contexts = BTreeMap::new();
         for annotation in &paper.annotations {
             if annotation.body_sha256 != body_hash {
                 diagnostic(
@@ -689,6 +700,12 @@ fn calculate(input: &EngagementInput) -> Result<Value, String> {
                     ),
                     true,
                 );
+            }
+            if let Some(anchor) = &annotation.account_anchor {
+                let context = account_contexts.entry((anchor.engagement_id.as_str(), anchor.account_id.as_str())).or_insert_with(|| super::account_annotations::context_sha256(input, &anchor.engagement_id, &paper.id, &anchor.account_id));
+                if context.as_ref().map_or(true, |digest| digest != &anchor.context_sha256) {
+                    diagnostic(&mut diagnostics, "stale_account_annotation", format!("Workpaper {} annotation {} account {} in engagement {} refers to an earlier local account context; remove it and use a new annotation ID after review.",paper.reference,annotation.id,anchor.account_id,anchor.engagement_id), true);
+                }
             }
         }
         if paper.required && paper.body.trim().is_empty() {

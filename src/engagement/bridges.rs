@@ -640,6 +640,7 @@ mod tests {
             updated_at: String::new(),
             rollforward_from: None,
             rollforward_origin: None,
+            annotation_bindings: vec![],
         }
     }
 

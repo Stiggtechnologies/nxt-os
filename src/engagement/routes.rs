@@ -31,6 +31,7 @@ pub fn router(state: Arc<Engagements>) -> Router {
         .route("/api/engagements/{id}/package", get(package))
         .route("/api/engagements/{id}/attachments/package", get(file_package))
         .route("/api/engagements/{id}/workpapers/{paper}/attachments", post(file_upload))
+        .route("/api/engagements/{id}/workpapers/{paper}/account-anchors", get(account_anchor_options))
         .route("/api/engagements/{id}/workpapers/{paper}/attachments/{version}", get(file_download))
         .route("/api/engagements/{id}/print", get(print))
         .layer(DefaultBodyLimit::max(1024 * 1024))
@@ -55,6 +56,9 @@ async fn list(State(e): S) -> R {
 }
 async fn detail(State(e): S, Path(id): Path<String>) -> R {
     ok(e.get(&id).await?)
+}
+async fn account_anchor_options(State(e): S, Path((id, paper)): Path<(String, String)>) -> R {
+    ok(e.account_anchor_options(&id, &paper).await?)
 }
 async fn create(State(e): S, Json(v): Json<EngagementInput>) -> R {
     ok(e.save(None, v).await?)
@@ -267,16 +271,18 @@ async fn print(State(e): S, Path(id): Path<String>) -> EResult<Response> {
             html.push_str("<p class=\"notice\">Placeholder · pending planning material, not evidence. No body evidence, annotations, file versions or sign-offs are permitted. Convert to manual before adding evidence.</p>");
         }
         if !p.annotations.is_empty() {
-            html.push_str("<h3>Text-version tickmarks and notes</h3><p>Operator labels are unverified metadata. Check calculation diagnostics for stale text anchors. Custom meanings below are saved copies, independent of the current catalogue.</p><table><tr><th>Kind</th><th>Saved custom definition</th><th>Note</th><th>Operator label</th><th>Text SHA-256</th></tr>");
+            html.push_str("<h3>Text-version tickmarks and notes</h3><p>Operator labels are unverified metadata. Account targets bind local account inputs and exact text, not group aggregates or certified balances. Check calculation diagnostics for stale text/account anchors. Custom meanings below are saved copies, independent of the current catalogue.</p><table><tr><th>Kind</th><th>Saved custom definition</th><th>Note</th><th>Operator label</th><th>Text SHA-256</th><th>Saved account target / context SHA-256</th></tr>");
             for annotation in &p.annotations {
                 let saved=annotation.custom_mark.as_ref().map(|mark|format!("{} · {} · {} · {}",mark.id,mark.code,mark.label,mark.description)).unwrap_or_default();
+                let account=annotation.account_anchor.as_ref().map(|anchor|format!("{} · {} · {}",anchor.engagement_id,anchor.account_id,anchor.context_sha256)).unwrap_or_default();
                 html.push_str(&format!(
-                    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
                     esc(&annotation.kind),
                     esc(&saved),
                     esc(&annotation.note),
                     esc(&annotation.operator_label),
-                    esc(&annotation.body_sha256)
+                    esc(&annotation.body_sha256),
+                    esc(&account)
                 ));
             }
             html.push_str("</table>");

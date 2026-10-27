@@ -115,6 +115,15 @@ pub struct RollforwardOrigin {
     pub source_snapshot: Snapshot,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnnotationBindingReceipt {
+    pub annotation_id: String,
+    /// None reserves a previously observed body-only ID without freezing its
+    /// legacy editable text. Some pins the complete immutable account binding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_binding_sha256: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EngagementRecord {
     pub id: String,
     pub revision: u64,
@@ -133,6 +142,9 @@ pub struct EngagementRecord {
     pub rollforward_from: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rollforward_origin: Option<RollforwardOrigin>,
+    // Server-owned lifetime reservations; omitted for unchanged legacy records.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub annotation_bindings: Vec<AnnotationBindingReceipt>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuditEvent {
@@ -252,6 +264,11 @@ mod tests {
         let legacy = legacy_value();
         let record: EngagementRecord = serde_json::from_value(legacy.clone()).unwrap();
         assert!(record.rollforward_origin.is_none());
+        assert!(record.annotation_bindings.is_empty());
+        let mut explicit_empty = legacy.clone();
+        explicit_empty["annotation_bindings"] = json!([]);
+        let empty: EngagementRecord = serde_json::from_value(explicit_empty).unwrap();
+        assert_eq!(serde_json::to_value(&empty).unwrap(), legacy);
         assert_eq!(serde_json::to_value(&record).unwrap(), legacy);
         assert_eq!(serde_json::to_string(&record.document).unwrap(), INPUT_PREIMAGE);
         assert_eq!(super::super::hash(&record.document).map_err(|error| error.1).unwrap(), INPUT_SHA256);

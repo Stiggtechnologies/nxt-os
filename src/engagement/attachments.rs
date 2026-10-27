@@ -152,6 +152,7 @@ pub(super) fn validate_state(state: &EngagementState) -> EResult<()> {
             return Err(conflict("stored engagement identity is invalid"));
         }
         for (owner, doc) in documents(record) {
+            account_annotations::validate_owners(owner, doc).map_err(|_| conflict("stored account-annotation owner is invalid; recovery required"))?;
             for paper in &doc.workpapers {
                 validate_paper_shape(paper).map_err(|_| {
                     conflict("stored file-version metadata is invalid; recovery required")
@@ -180,6 +181,9 @@ pub(super) fn validate_state(state: &EngagementState) -> EResult<()> {
                 }
             }
         }
+    }
+    for record in &state.engagements {
+        account_annotations::validate_registry(record).map_err(|reason| conflict(format!("stored annotation binding registry is invalid; recovery required: {reason}")))?;
     }
     if versions.len() > VERSIONS_MAX || referenced.len() != blobs.len() {
         return Err(conflict(
