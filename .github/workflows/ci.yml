@@ -53,3 +53,5 @@ jobs:
         run: python3 -B -m unittest discover -s tests -p test_shadow_snapshot.py
       - name: Verify source-bound company journal operator
         run: python3 -B -m unittest discover -s tests -p test_company_books_operator.py
+      - name: Verify offline opaque source preservation
+        run: python3 -B -m unittest discover -s tests -p test_tax_source_preservation.py
