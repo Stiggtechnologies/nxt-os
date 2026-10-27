@@ -215,7 +215,7 @@
   function annotationAnchorMarkup(annotation){
     const body=`<div class="help">Workpaper text SHA-256</div><code title="${esc(annotation.body_sha256)}">${esc(annotation.body_sha256.slice(0,12))}…</code>`;
     if(annotation.text_range_anchor){
-      const anchor=annotation.text_range_anchor,recorded=esc(anchor.selected_text).replace(/\r/g,'&#13;');
+      const anchor=annotation.text_range_anchor,recorded=esc(anchor.selected_text).replace(/\r\n/g,'&#13;\n').replace(/\r/g,'&#13;<br>');
       return body+`<div class="help">Recorded selected text copy · not reconstructed from current text</div><pre class="paper-preview"><span>${recorded}</span></pre><div class="help">Recorded engagement ID</div><code>${esc(anchor.engagement_id)}</code><div class="help">Recorded original UTF-8 byte range [start, end)</div><code>[${esc(anchor.start_utf8_byte)}, ${esc(anchor.end_utf8_byte)})</code><div class="help">Recorded selection SHA-256</div><code>${esc(anchor.selection_sha256)}</code><div class="help">This retained copy records stated work, not an independently verified operator or completed procedure. Check current calculation diagnostics for stale text.</div>`;
     }
     if(!annotation.account_anchor)return body+'<div class="help">Workpaper text only · check calculated results</div>';

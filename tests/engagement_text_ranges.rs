@@ -389,7 +389,8 @@ async fn http_saved_owner_cas_recorded_copy_print_stale_review_and_rollforward()
             "range_crlf",
             TEXT.find("\r\n").unwrap(),
             "\r\n"
-        )
+        ),
+        mark(r["id"].as_str().unwrap(), "range_bare_cr", 0, "\r")
     ]);
     let (status, r, headers) = call(&app, "PUT", &path, Some(d.clone()), true).await;
     assert_eq!(status, 200);
@@ -431,6 +432,8 @@ async fn http_saved_owner_cas_recorded_copy_print_stale_review_and_rollforward()
     assert!(!html.contains("<script>"));
     assert!(html.contains("<pre><span>\n</span></pre>"));
     assert!(html.contains("<pre><span>&#13;\n</span></pre>"));
+    assert!(html.contains("<pre><span>&#13;<br></span></pre>"));
+    assert!(!html.contains("&#13;<br>\n"));
     assert_eq!(call(&app,"POST",&(path.clone()+"/signoffs"),Some(json!({"expected_revision":r["revision"],"workpaper_id":"paper1","stage":"prepared","operator":"Synthetic","note":"Synthetic"})),true).await.0,409);
     let mut d = r["document"].clone();
     d["expected_revision"] = r["revision"].clone();
@@ -473,7 +476,7 @@ async fn http_saved_owner_cas_recorded_copy_print_stale_review_and_rollforward()
     }
     let (_, package, _) = call(&app, "GET", &(path.clone() + "/package"), None, true).await;
     assert_eq!(package["engagement"], r);
-    assert_eq!(r["annotation_bindings"].as_array().unwrap().len(), 4);
+    assert_eq!(r["annotation_bindings"].as_array().unwrap().len(), 5);
     let(status,next,_)=call(&app,"POST",&(path.clone()+"/rollforward"),Some(json!({"expected_revision":r["revision"],"period_start":"2026-01-01","period_end":"2026-12-31"})),true).await;
     assert_eq!(status, 200);
     assert!(next.get("annotation_bindings").is_none());

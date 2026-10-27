@@ -285,7 +285,7 @@ async fn print(State(e): S, Path(id): Path<String>) -> EResult<Response> {
                     esc(&account)
                 ));
                 if let Some(anchor)=&annotation.text_range_anchor {
-                    let recorded=esc(&anchor.selected_text).replace('\r',"&#13;");
+                    let recorded=esc(&anchor.selected_text).replace("\r\n","&#13;\n").replace('\r',"&#13;<br>");
                     html.push_str(&format!("<tr><td colspan=\"6\"><strong>Recorded selected text — not reconstructed from the current body</strong><p>Owner {} · recorded UTF-8 bytes {}..{} · selection SHA-256 {}</p><pre><span>{}</span></pre></td></tr>",esc(&anchor.engagement_id),anchor.start_utf8_byte,anchor.end_utf8_byte,esc(&anchor.selection_sha256),recorded));
                 }
             }
