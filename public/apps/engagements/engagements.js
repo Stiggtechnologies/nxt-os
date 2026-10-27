@@ -112,27 +112,78 @@
   async function viewPaper(value){const p=S.draft.workpapers.find(x=>x.id===value);if(!p)return;await modal(p.reference+' · '+p.title,(el,close)=>{el.innerHTML=`<p class="help">${esc(p.folder||'Unfiled')} · ${p.required?'Required for completion':'Optional workpaper'}</p><div class="paper-preview">${esc(p.body||'No text entered.')}</div><div class="actions"><button class="btn primary" data-close>Done</button></div>`;$('[data-close]',el).onclick=()=>close();},{wide:true});}
 
   const annotationKinds=[['note','Note'],['agreed','AG · Agreed'],['recalculated','RC · Recalculated'],['traced','TR · Traced'],['inspected','IN · Inspected'],['confirmed','CF · Confirmed']];
+  const reservedTickmarkCodes=new Set(['NOTE','AG','RC','TR','IN','CF']);
+  const markLabel=a=>a.kind==='custom'&&a.custom_mark?`${a.custom_mark.code} · ${a.custom_mark.label}`:annotationKinds.find(x=>x[0]===a.kind)?.[1]||a.kind;
+  function validateTickmarkDefinition(mark,catalogue){
+    if(!/^[A-Za-z0-9_-]{1,64}$/.test(mark.id))throw Error('Invalid tickmark definition ID.');
+    if(!/^[A-Z0-9_-]{1,12}$/.test(mark.code)||reservedTickmarkCodes.has(mark.code))throw Error('Use 1–12 uppercase letters, digits, underscores or hyphens; built-in codes are reserved.');
+    for(const [key,max] of [['label',128],['description',1024]])if(!mark[key].trim()||new TextEncoder().encode(mark[key]).length>max||/[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(mark[key]))throw Error(`Tickmark ${key} must be nonempty single-line text, at most ${max} UTF-8 bytes.`);
+    if(catalogue.some(m=>m.id!==mark.id&&m.code.toUpperCase()===mark.code))throw Error('Another catalogue definition already uses that code.');
+  }
   function renderAnnotations(){
     const rows=S.draft.workpapers.flatMap(p=>list(p.annotations).map(a=>({paper:p,annotation:a})));
-    $('#editor').innerHTML=title('Tickmarks & notes',mutatingButton('+ Add tickmark or note','annotation','','primary'))+
+    const catalogue=list(S.draft.tickmark_catalogue);
+    $('#editor').innerHTML=title('Tickmarks & notes',mutatingButton('+ Custom definition','edit-tickmark')+mutatingButton('+ Add tickmark or note','annotation','','primary'))+
       '<p class="form-note">Each mark records a stated procedure or note against an exact workpaper text version. Save and calculate to check its anchor. Changed text blocks completion until affected marks are reviewed and replaced or removed. Operator labels are unverified metadata.</p>'+
-      `<div class="card">${table(['Workpaper','Mark / note','Operator label','Text anchor',''],rows,({paper:p,annotation:a})=>`<tr><td>${esc(p.reference)} · ${esc(p.title)}</td><td><strong>${esc(annotationKinds.find(x=>x[0]===a.kind)?.[1]||a.kind)}</strong><pre>${esc(a.note)}</pre></td><td>${esc(a.operator_label)}</td><td><code title="${esc(a.body_sha256)}">${esc(a.body_sha256.slice(0,12))}…</code><div class="help">Check calculated results</div></td><td>${mutatingButton('Remove','remove-annotation',a.id,'sm ghost danger')}</td></tr>`)}</div>`;
+      `<div class="card"><h3>Custom text catalogue</h3><p class="help">Up to 50 original definitions for this engagement. Each applied mark retains its own definition copy. Editing or removing a catalogue item affects future marks; existing marks keep their recorded meaning.</p>${catalogue.length?table(['Code / label','Procedure description',''],catalogue,m=>`<tr><td><strong>${esc(m.code)}</strong> · ${esc(m.label)}</td><td>${esc(m.description)}</td><td>${mutatingButton('Edit','edit-tickmark',m.id,'sm ghost')}${mutatingButton('Remove','remove-tickmark',m.id,'sm ghost danger')}</td></tr>`):'<p class="help">No custom definitions. The six built-in marks remain available.</p>'}</div>`+
+      `<div class="card">${table(['Workpaper','Mark / note','Operator label','Text anchor',''],rows,({paper:p,annotation:a})=>`<tr><td>${esc(p.reference)} · ${esc(p.title)}</td><td><strong>${esc(markLabel(a))}</strong>${a.custom_mark?`<p class="help">${esc(a.custom_mark.description)} · Recorded definition</p>`:''}<pre>${esc(a.note)}</pre></td><td>${esc(a.operator_label)}</td><td><code title="${esc(a.body_sha256)}">${esc(a.body_sha256.slice(0,12))}…</code><div class="help">Check calculated results</div></td><td>${mutatingButton('Remove','remove-annotation',a.id,'sm ghost danger')}</td></tr>`)}</div>`;
+  }
+  async function editTickmark(definitionId){
+    if(!editable())return;
+    const draft=S.draft,recordId=S.record.id,version=S.version,existing=list(draft.tickmark_catalogue).find(m=>m.id===definitionId);
+    if(definitionId&&!existing)throw Error('Tickmark definition no longer exists.');
+    const original=existing?JSON.stringify(existing):null,definitionKey=existing?.id||id('mark');
+    const current=()=>S.draft===draft&&S.record?.id===recordId&&S.version===version&&editable();
+    const saved=await dialog(existing?'Edit custom text definition':'Add custom text definition',`<p class="form-note">Applied marks retain their recorded definition. This change affects future marks and requires saving and recalculating before review.</p><div class="form">${field('Code',input('code',existing?.code||'','text','required maxlength="12"'))}${field('Label',input('label',existing?.label||'','text','required maxlength="128"'))}${field('Procedure description',input('description',existing?.description||'','text','required maxlength="1024"'),'Single-line text describing what this mark means.',true)}</div>`,fd=>{
+      if(!current())throw Error('Engagement changed; reopen the definition dialog.');
+      const catalogue=list(draft.tickmark_catalogue),live=catalogue.find(m=>m.id===definitionKey);
+      if(existing&&JSON.stringify(live)!==original)throw Error('Definition changed; reopen it before editing.');
+      if(!existing&&catalogue.length>=50)throw Error('Maximum 50 custom definitions per engagement.');
+      const definition={id:definitionKey,code:String(fd.get('code')||'').trim().toUpperCase(),label:String(fd.get('label')||'').trim(),description:String(fd.get('description')||'').trim()};
+      validateTickmarkDefinition(definition,catalogue);
+      draft.tickmark_catalogue=existing?catalogue.map(m=>m.id===definitionKey?definition:m):[...catalogue,definition];
+      return true;
+    },'Save to draft');
+    if(saved&&current()){dirty();renderEditor();}
+  }
+  async function removeTickmark(definitionId){
+    if(!editable())return;
+    const draft=S.draft,recordId=S.record.id,version=S.version,existing=list(draft.tickmark_catalogue).find(m=>m.id===definitionId);
+    if(!existing)throw Error('Tickmark definition no longer exists.');
+    const original=JSON.stringify(existing);
+    if(!await NXT.confirm('Remove custom definition?','Remove it from the catalogue for future marks? Existing marks retain their recorded definition. Save and recalculate before review.','Remove'))return;
+    if(S.draft!==draft||S.record?.id!==recordId||S.version!==version||!editable())throw Error('Engagement changed; reload before removing a definition.');
+    if(JSON.stringify(list(draft.tickmark_catalogue).find(m=>m.id===definitionId))!==original)throw Error('Definition changed; review it before removing it.');
+    draft.tickmark_catalogue=list(draft.tickmark_catalogue).filter(m=>m.id!==definitionId);dirty();renderEditor();
   }
   async function addAnnotation(){
     if(!editable())return;
     const draft=S.draft,recordId=S.record.id,version=S.version;
     if(!draft.workpapers.length)throw Error('Create a text workpaper before adding a tickmark or note.');
     const current=()=>S.draft===draft&&S.record?.id===recordId&&S.version===version&&editable();
-    const saved=await dialog('Add tickmark or note',`<p class="form-note">This records your stated work against the current text. NXT does not perform the marked procedure. Replace a stale mark only after reviewing the changed text.</p><div class="form">${field('Workpaper',select('workpaper_id',draft.workpapers.map(p=>[p.id,p.reference+' · '+p.title]),draft.workpapers[0].id))}${field('Mark',select('kind',annotationKinds,'note'))}${field('Operator label (unverified)',input('operator_label','','text','required maxlength="128"'))}${field('Evidence note',text('note','','required maxlength="4000"'),'Describe the work or observation supporting this mark.',true)}</div>`,async fd=>{
+    const offeredDefinitions=clone(list(draft.tickmark_catalogue));
+    const available=[...annotationKinds,...offeredDefinitions.map(m=>['custom:'+m.id,m.code+' · '+m.label])];
+    const saved=await dialog('Add tickmark or note',`<p class="form-note">This records your stated work against the current text. NXT does not perform the marked procedure. Replace a stale mark only after reviewing the changed text.</p><div class="form">${field('Workpaper',select('workpaper_id',draft.workpapers.map(p=>[p.id,p.reference+' · '+p.title]),draft.workpapers[0].id))}${field('Mark',select('kind',available,'note'))}${field('Operator label (unverified)',input('operator_label','','text','required maxlength="128"'))}${field('Evidence note',text('note','','required maxlength="4000"'),'Describe the work or observation supporting this mark.',true)}</div>`,async fd=>{
       if(!current())throw Error('Engagement changed; reopen the annotation dialog.');
       const paper=draft.workpapers.find(p=>p.id===fd.get('workpaper_id'));
       if(!paper)throw Error('Workpaper no longer exists.');
       if(list(paper.annotations).length>=50||draft.workpapers.reduce((n,p)=>n+list(p.annotations).length,0)>=500)throw Error('Maximum 50 annotations per workpaper and 500 per engagement.');
       const note=fd.get('note').trim(),operator=fd.get('operator_label').trim(),body=paper.body;
       if(!note||!operator)throw Error('Enter a note and operator label.');
+      if(new TextEncoder().encode(note).length>4096||/[\x00-\x1f\x7f-\x9f]/.test(note.replace(/[\r\n\t]/g,'')))throw Error('Evidence note must be at most 4,096 UTF-8 bytes without unsupported control characters.');
+      if(new TextEncoder().encode(operator).length>128||/[\x00-\x1f\x7f-\x9f]/.test(operator))throw Error('Operator label must be at most 128 UTF-8 bytes without control characters.');
+      const selected=String(fd.get('kind')||''),customId=selected.startsWith('custom:')?selected.slice(7):null;
+      const custom=customId?offeredDefinitions.find(m=>m.id===customId):null;
+      if(customId&&!custom)throw Error('Custom definition no longer exists; choose a current mark.');
+      if(!custom&&!annotationKinds.some(([kind])=>kind===selected))throw Error('Choose a supported mark.');
+      const customMark=custom?clone(custom):null,definitionPreimage=custom?JSON.stringify(custom):null;
+      if(customMark&&JSON.stringify(list(draft.tickmark_catalogue).find(m=>m.id===customId))!==definitionPreimage)throw Error('Custom definition changed; reopen the dialog and review it.');
       const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body));
-      if(!current()||paper.body!==body)throw Error('Workpaper changed while anchoring the mark; review it and retry.');
-      const annotation={id:id('annotation'),kind:fd.get('kind'),note,operator_label:operator,body_sha256:Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('')};
+      if(!current()||!draft.workpapers.includes(paper)||paper.body!==body)throw Error('Workpaper changed while anchoring the mark; review it and retry.');
+      if(customMark&&JSON.stringify(list(draft.tickmark_catalogue).find(m=>m.id===customId))!==definitionPreimage)throw Error('Custom definition changed while anchoring the mark; review it and retry.');
+      if(list(paper.annotations).length>=50||draft.workpapers.reduce((n,p)=>n+list(p.annotations).length,0)>=500)throw Error('Maximum 50 annotations per workpaper and 500 per engagement.');
+      const annotation={id:id('annotation'),kind:customMark?'custom':selected,note,operator_label:operator,body_sha256:Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('')};
+      if(customMark)annotation.custom_mark=customMark;
       paper.annotations=[...list(paper.annotations),annotation];
       return true;
     },'Add to draft');
@@ -194,7 +245,7 @@
     throw Error('File version unavailable. Reload the saved engagement.');
   }
   function hasFiles(){const r=S.record;return [r?.document,...list(r?.snapshots).map(s=>s.input_document),r?.rollforward_origin?.source_snapshot?.input_document].some(d=>list(d?.workpapers).some(p=>list(p.attachment_versions).length));}
-  const actions={new:createEngagement,open:value=>go('engagement/'+value),refresh:async()=>{if(!await discard())return;await route(true);},section:value=>{S.section=value;renderEditor();},save,calculate,paper:editPaper,account:editAccount,group:editGroup,adjustment:editAdjustment,issue:editIssue,annotation:addAnnotation,'upload-file':uploadFile,'download-file':downloadFile,'file-bundle':()=>download('attachments/package'),'remove-annotation':removeAnnotation,'view-paper':viewPaper,'remove-paper':v=>remove('paper',v),'remove-account':v=>remove('account',v),'remove-group':v=>remove('group',v),'remove-adjustment':v=>remove('adjustment',v),'remove-issue':v=>remove('issue',v),signoff,transition,rollforward,package:()=>download('package'),print:()=>download('print'),'preview-import':previewImport,'commit-import':commitImport,'ledger-preview':ledgerPreview,'tax-preview':taxPreview,'firm-proposal':firmProposal,'open-firm-approvals':()=>openApp('firm','approvals'),ask:()=>{if(parent!==window)parent.postMessage({nxt:'ask'},location.origin);}};
+  const actions={new:createEngagement,open:value=>go('engagement/'+value),refresh:async()=>{if(!await discard())return;await route(true);},section:value=>{S.section=value;renderEditor();},save,calculate,paper:editPaper,account:editAccount,group:editGroup,adjustment:editAdjustment,issue:editIssue,annotation:addAnnotation,'edit-tickmark':editTickmark,'remove-tickmark':removeTickmark,'upload-file':uploadFile,'download-file':downloadFile,'file-bundle':()=>download('attachments/package'),'remove-annotation':removeAnnotation,'view-paper':viewPaper,'remove-paper':v=>remove('paper',v),'remove-account':v=>remove('account',v),'remove-group':v=>remove('group',v),'remove-adjustment':v=>remove('adjustment',v),'remove-issue':v=>remove('issue',v),signoff,transition,rollforward,package:()=>download('package'),print:()=>download('print'),'preview-import':previewImport,'commit-import':commitImport,'ledger-preview':ledgerPreview,'tax-preview':taxPreview,'firm-proposal':firmProposal,'open-firm-approvals':()=>openApp('firm','approvals'),ask:()=>{if(parent!==window)parent.postMessage({nxt:'ask'},location.origin);}};
   async function invoke(name,value){if(S.busy)return;const action=actions[name];if(!action)return;S.busy=true;setBusy();try{await action(value);}catch(e){toast(e.message+(e.status===409?' Reload before resolving a stale revision.':''),true);}finally{S.busy=false;setBusy();}}
   document.addEventListener('click',async event=>{const os=event.target.closest('[data-os]');if(os){if(!await discard())return;if(parent!==window)parent.postMessage({nxt:'open-app',app:os.dataset.os,view:''},location.origin);else location.href='/#/'+os.dataset.os;return;}const section=event.target.closest('[data-section]');if(section){S.section=section.dataset.section;renderEditor();return;}const folder=event.target.closest('[data-folder]');if(folder){S.folder=folder.dataset.folder;renderEditor();return;}const button=event.target.closest('[data-action]');if(button&&!button.disabled)invoke(button.dataset.action,button.dataset.id);});
   document.addEventListener('input',event=>{const el=event.target;if(el.hasAttribute('data-filter')){S[el.name]=el.value;renderWorklist();return;}if(el.hasAttribute('data-import-json')){S.preview=null;const host=$('#import-preview');if(host)host.innerHTML='<p class="form-note">The source changed. Preview again before committing.</p>';return;}if(el.hasAttribute('data-document')&&editable()&&!S.busy){S.draft[el.name]=el.value||(['prior_period_start','prior_period_end'].includes(el.name)?null:'');dirty();}});

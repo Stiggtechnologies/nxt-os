@@ -83,6 +83,20 @@ fn checked_input(mut input: EngagementInput) -> EResult<EngagementInput> {
     }
     Ok(input)
 }
+fn preserve_custom_tickmarks(previous: &EngagementInput, next: &EngagementInput) -> EResult<()> {
+    let prior:HashMap<&str,&Annotation>=previous.workpapers.iter().flat_map(|paper|paper.annotations.iter())
+        .map(|annotation|(annotation.id.as_str(),annotation)).collect();
+    for annotation in next.workpapers.iter().flat_map(|paper|paper.annotations.iter()) {
+        if let Some(old)=prior.get(annotation.id.as_str()) {
+            if (old.custom_mark.is_some() || annotation.custom_mark.is_some()
+                || old.kind=="custom" || annotation.kind=="custom")
+                && (old.kind!=annotation.kind || old.custom_mark!=annotation.custom_mark) {
+                return Err(conflict("Existing annotation custom meaning is immutable; remove it and use a new annotation ID for a different definition"));
+            }
+        }
+    }
+    Ok(())
+}
 fn record(input: EngagementInput, record_id: &str, at: &str) -> EngagementRecord {
     EngagementRecord {
         id: record_id.into(),
@@ -227,7 +241,7 @@ impl Engagements {
         Err(conflict("workspace changed repeatedly; reload and retry"))
     }
     pub fn catalog() -> Value {
-        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html","nxt-engagement-file-bundle-zip"],"attachment_contract":{"format":"nxt-engagement-files/v1","per_file_bytes":262144,"per_workpaper_versions":16,"workspace_versions":128,"workspace_binary_bytes":2097152,"bundle_max_bytes":4194304,"processing":"opaque bytes only; no rendering, execution, editing or malware scan","storage":"existing atomic EngagementState KV; original-byte SHA-256 and version metadata bindings","identity":"unverified operator labels under shared workspace access"},"import_preview_binding":"nxt-engagement-preview-binding/v1","legacy_uncommitted_preview":"regenerate","annotation_kinds":["note","agreed","recalculated","traced","inspected","confirmed"],"annotation_scope":"Text body SHA-256 anchors; operator labels are unverified metadata; no PDF/image annotations or Caseware compatibility","limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text workpapers with bounded opaque file versions; no CaseView or Office editing, proprietary format interpretation, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
+        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html","nxt-engagement-file-bundle-zip"],"attachment_contract":{"format":"nxt-engagement-files/v1","per_file_bytes":262144,"per_workpaper_versions":16,"workspace_versions":128,"workspace_binary_bytes":2097152,"bundle_max_bytes":4194304,"processing":"opaque bytes only; no rendering, execution, editing or malware scan","storage":"existing atomic EngagementState KV; original-byte SHA-256 and version metadata bindings","identity":"unverified operator labels under shared workspace access"},"import_preview_binding":"nxt-engagement-preview-binding/v1","legacy_uncommitted_preview":"regenerate","annotation_kinds":["note","agreed","recalculated","traced","inspected","confirmed","custom"],"custom_tickmark_catalogue":{"format":"nxt-custom-text-tickmarks/v1","maximum_definitions":50,"code_maximum_ascii_bytes":12,"code_characters":"ASCII uppercase letters, digits, underscores and hyphens","reserved_codes":["NOTE","AG","RC","TR","IN","CF"],"label_maximum_utf8_bytes":128,"description_maximum_utf8_bytes":1024,"definition_text":"nonempty single-line text without control characters","annotation_definition":"immutable copied definition for an existing annotation ID; no live catalogue lookup","rollforward":"catalogue retained; active annotations cleared","scope":"Original NXT text marks only; no glyph/image marks or verified source parity"},"annotation_scope":"Text body SHA-256 anchors and copied custom definitions; existing 50 annotations per workpaper and 500 per engagement bounds apply; operator labels are unverified metadata; no PDF/image annotations or Caseware compatibility","limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text workpapers with bounded opaque file versions; no CaseView or Office editing, proprietary format interpretation, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
     }
     pub async fn get(&self, record_id: &str) -> EResult<EngagementRecord> {
         self.load()
@@ -269,6 +283,7 @@ impl Engagements {
                 check_revision(&r, expected.unwrap())?;
                 editable(&r)?;
                 attachments::preserve_versions(&r.document, &input)?;
+                preserve_custom_tickmarks(&r.document,&input)?;
                 r.document = input.clone();
                 r.input_revision += 1;
                 invalidate(&mut r);
@@ -543,6 +558,10 @@ impl Engagements {
             let copied_at = now();
             let mut target = record(document, &new_id, &copied_at);
             target.rollforward_from = Some(old.id.clone());
+            let mut copy_policy=RollforwardCopyPolicy::adjusted_comparatives();
+            if !old.document.tickmark_catalogue.is_empty() {
+                copy_policy.preserved_fields.push("tickmark_catalogue".into());
+            }
             target.rollforward_origin = Some(RollforwardOrigin {
                 source_engagement_id: old.id.clone(),
                 source_snapshot_id: snapshot.id.clone(),
@@ -554,7 +573,7 @@ impl Engagements {
                 target_period_start: target.document.period_start.clone(),
                 target_period_end: target.document.period_end.clone(),
                 copied_at,
-                copy_policy: RollforwardCopyPolicy::adjusted_comparatives(),
+                copy_policy,
                 source_snapshot: snapshot.clone(),
             });
             // The embedded archive is subject to mutate's existing 1 MiB record

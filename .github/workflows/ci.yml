@@ -38,6 +38,7 @@ jobs:
           node --test tests/qb_navigation.test.mjs
           node --test tests/signatures_navigation.test.mjs
           node --test tests/engagement_annotations.test.mjs
+          node --test tests/engagement_tickmarks.test.mjs
           node --test tests/engagement_preview.test.mjs
           node --test tests/engagement_files.test.mjs
           node --test tests/migrations_company_books.test.mjs

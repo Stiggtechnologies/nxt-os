@@ -248,6 +248,13 @@ async fn print(State(e): S, Path(id): Path<String>) -> EResult<Response> {
             "Prior financial summary",
         ));
     }
+    if !r.document.tickmark_catalogue.is_empty() {
+        html.push_str("<h2>Current custom text tickmark catalogue</h2><p>Saved annotations keep their copied definitions when this catalogue changes. Text marks do not establish assurance or authenticated identity.</p><table><tr><th>ID</th><th>Code</th><th>Label</th><th>Description</th></tr>");
+        for mark in &r.document.tickmark_catalogue {
+            html.push_str(&format!("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",esc(&mark.id),esc(&mark.code),esc(&mark.label),esc(&mark.description)));
+        }
+        html.push_str("</table>");
+    }
     for p in &r.document.workpapers {
         html.push_str(&format!(
             "<h2>{} · {}</h2><p>{}</p><pre>{}</pre>",
@@ -257,11 +264,13 @@ async fn print(State(e): S, Path(id): Path<String>) -> EResult<Response> {
             esc(&p.body)
         ));
         if !p.annotations.is_empty() {
-            html.push_str("<h3>Text-version tickmarks and notes</h3><p>Operator labels are unverified metadata. Check calculation diagnostics for stale text anchors.</p><table><tr><th>Kind</th><th>Note</th><th>Operator label</th><th>Text SHA-256</th></tr>");
+            html.push_str("<h3>Text-version tickmarks and notes</h3><p>Operator labels are unverified metadata. Check calculation diagnostics for stale text anchors. Custom meanings below are saved copies, independent of the current catalogue.</p><table><tr><th>Kind</th><th>Saved custom definition</th><th>Note</th><th>Operator label</th><th>Text SHA-256</th></tr>");
             for annotation in &p.annotations {
+                let saved=annotation.custom_mark.as_ref().map(|mark|format!("{} · {} · {} · {}",mark.id,mark.code,mark.label,mark.description)).unwrap_or_default();
                 html.push_str(&format!(
-                    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
                     esc(&annotation.kind),
+                    esc(&saved),
                     esc(&annotation.note),
                     esc(&annotation.operator_label),
                     esc(&annotation.body_sha256)

@@ -71,6 +71,16 @@ pub struct Adjustment {
     pub lines: Vec<AdjustmentLine>,
 }
 
+/// Original NXT single-line text definition, copied into each custom annotation.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TickmarkDefinition {
+    pub id: String,
+    pub code: String,
+    pub label: String,
+    pub description: String,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Annotation {
@@ -79,6 +89,9 @@ pub struct Annotation {
     pub note: String,
     pub operator_label: String,
     pub body_sha256: String,
+    // Appended/omitted to keep legacy signed annotation preimages unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_mark: Option<TickmarkDefinition>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -157,11 +170,15 @@ pub struct EngagementInput {
     pub notes: String,
     #[serde(default)]
     pub expected_revision: Option<u64>,
+    // Appended/omitted to preserve legacy engagement input and snapshot hashes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tickmark_catalogue: Vec<TickmarkDefinition>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::Digest;
 
     #[test]
     fn empty_annotations_preserve_legacy_workpaper_preimage() {
@@ -173,5 +190,26 @@ mod tests {
         explicit_empty["annotations"] = serde_json::json!([]);
         let decoded_empty: Workpaper = serde_json::from_value(explicit_empty).unwrap();
         assert_eq!(serde_json::to_string(&decoded_empty).unwrap(), legacy);
+    }
+
+    #[test]
+    fn absent_or_empty_catalogue_preserves_legacy_input_preimage() {
+        let legacy=r#"{"name":"Legacy","client_ref":"","kind":"internal","period_start":"2025-01-01","period_end":"2025-12-31","prior_period_start":null,"prior_period_end":null,"currency":"CAD","accounts":[],"groups":[],"adjustments":[],"workpapers":[],"issues":[],"notes":"","expected_revision":null}"#;
+        let decoded:EngagementInput=serde_json::from_str(legacy).unwrap();
+        assert!(decoded.tickmark_catalogue.is_empty());
+        assert_eq!(serde_json::to_string(&decoded).unwrap(),legacy);
+        assert_eq!(super::super::hash(&decoded).map_err(|e|e.1).unwrap(),hex::encode(sha2::Sha256::digest(legacy.as_bytes())));
+        let mut explicit=serde_json::to_value(&decoded).unwrap();explicit["tickmark_catalogue"]=serde_json::json!([]);
+        assert_eq!(serde_json::to_string(&serde_json::from_value::<EngagementInput>(explicit).unwrap()).unwrap(),legacy);
+    }
+
+    #[test]
+    fn absent_or_null_custom_snapshot_preserves_legacy_annotation_preimage() {
+        let legacy=format!("{{\"id\":\"a1\",\"kind\":\"note\",\"note\":\"Legacy note\",\"operator_label\":\"Unverified label\",\"body_sha256\":\"{}\"}}","a".repeat(64));
+        let decoded:Annotation=serde_json::from_str(&legacy).unwrap();assert!(decoded.custom_mark.is_none());
+        assert_eq!(serde_json::to_string(&decoded).unwrap(),legacy);
+        assert_eq!(super::super::hash(&decoded).map_err(|e|e.1).unwrap(),hex::encode(sha2::Sha256::digest(legacy.as_bytes())));
+        let mut explicit=serde_json::to_value(decoded).unwrap();explicit["custom_mark"]=serde_json::Value::Null;
+        assert_eq!(serde_json::to_string(&serde_json::from_value::<Annotation>(explicit).unwrap()).unwrap(),legacy);
     }
 }

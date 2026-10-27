@@ -47,6 +47,23 @@ fn id(value: &str, label: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn tickmark_definition(mark: &TickmarkDefinition) -> Result<(), String> {
+    id(&mark.id, "Tickmark definition ID")?;
+    if mark.code.is_empty() || mark.code.len() > 12
+        || !mark.code.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || matches!(c,b'_'|b'-')) {
+        return Err("Custom tickmark code must contain 1..12 ASCII uppercase letters, digits, underscores or hyphens".into());
+    }
+    if ["NOTE","AG","RC","TR","IN","CF"].contains(&mark.code.as_str()) {
+        return Err("Custom tickmark code is reserved for a builtin annotation".into());
+    }
+    text(&mark.label,"Tickmark label",128,true,false)?;
+    text(&mark.description,"Tickmark description",1024,true,false)?;
+    if mark.label.chars().chain(mark.description.chars()).any(|c| matches!(c,'\u{2028}'|'\u{2029}')) {
+        return Err("Custom tickmark label and description must be single-line text".into());
+    }
+    Ok(())
+}
+
 fn code(value: &str, label: &str) -> Result<(), String> {
     text(value, label, 64, true, false)?;
     if value != value.trim() {
@@ -171,6 +188,16 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
         return Err(
             "This ruleset supports CAD only; no foreign-exchange conversion is implemented".into(),
         );
+    }
+    if input.tickmark_catalogue.len() > 50 {
+        return Err("Custom tickmark catalogue exceeds 50 definitions".into());
+    }
+    let mut tickmark_ids=BTreeSet::new();
+    let mut tickmark_codes=BTreeSet::new();
+    for mark in &input.tickmark_catalogue {
+        tickmark_definition(mark)?;
+        if !tickmark_ids.insert(&mark.id) {return Err("Duplicate tickmark definition ID".into());}
+        if !tickmark_codes.insert(mark.code.to_ascii_uppercase()) {return Err("Duplicate case-insensitive tickmark code".into());}
     }
     let (start, end) = annual(&input.period_start, &input.period_end, "Current period")?;
     match (&input.prior_period_start, &input.prior_period_end) {
@@ -339,9 +366,15 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
             }
             if !matches!(
                 annotation.kind.as_str(),
-                "note" | "agreed" | "recalculated" | "traced" | "inspected" | "confirmed"
+                "note" | "agreed" | "recalculated" | "traced" | "inspected" | "confirmed" | "custom"
             ) {
                 return Err("Unknown native annotation kind".into());
+            }
+            match (annotation.kind.as_str(),&annotation.custom_mark) {
+                ("custom",Some(mark))=>tickmark_definition(mark)?,
+                ("custom",None)=>return Err("Custom annotation requires a copied tickmark definition".into()),
+                (_,Some(_))=>return Err("Builtin annotations cannot carry a custom tickmark snapshot".into()),
+                (_,None)=>{}
             }
             text(&annotation.note, "Annotation note", 4096, true, true)?;
             text(
@@ -800,6 +833,7 @@ mod tests {
             issues: vec![],
             notes: String::new(),
             expected_revision: None,
+            tickmark_catalogue: vec![],
         }
     }
 
