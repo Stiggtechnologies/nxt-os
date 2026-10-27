@@ -40,6 +40,7 @@ jobs:
           node --test tests/engagement_annotations.test.mjs
           node --test tests/engagement_tickmarks.test.mjs
           node --test tests/engagement_document_types.test.mjs
+          node --test tests/engagement_document_navigation.test.mjs
           node --test tests/engagement_account_annotations.test.mjs
           node --test tests/engagement_text_ranges.test.mjs
           node --test tests/engagement_preview.test.mjs
