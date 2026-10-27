@@ -3,6 +3,7 @@ mod adjustments;
 pub mod models;
 mod roster;
 mod routes;
+pub mod source_lists;
 #[cfg(test)]
 mod tests;
 use crate::{referral::routes::ApiError, store::Store};
