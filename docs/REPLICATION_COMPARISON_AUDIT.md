@@ -174,3 +174,8 @@ Earlier validation-release checkpoint: [RELEASE_EVIDENCE.json](RELEASE_EVIDENCE.
 The protected [Firm Clients workspace](https://os.nxtcorporation.ca/#/firm/clients) provides the verified source-review entry cards. The [Parallel testing workspace](https://os.nxtcorporation.ca/#/migrations/worklist) exposes immutable review snapshots. Access requires the existing NXT workspace authentication.
 
 There are two verified review copies. The latest release retained their exact original archives, checked 24 targeted source rows and preserved all four identified verification flags for the reviewer. The other 152 cohort clients remain to be copied/reviewed. This is not full migration, imported transaction/subledger books, reconciliation sign-off or live cutover. QuickBooks and the other original applications remain the sources of truth throughout the parallel test period.
+
+
+## Opaque file versions
+
+The Caseware Document Manager comparison remains `partial`. An original bounded NXT file/version preservation slice now has native regression, isolated Supabase restart, rendered synthetic upload and independent ZIP/original-byte acceptance. It preserves bytes without interpreting vendor formats; [the native contract](NXT_ENGAGEMENTS.md#opaque-file-versions) states capacity, review, download, package and rollback boundaries. Source version semantics, CaseView/Office behavior, importer schemas, verified authority and paired runtime cases remain unverified or missing. No full duplication, vendor-format compatibility, financial migration, certification or source retirement follows.

@@ -79,6 +79,7 @@ impl RollforwardCopyPolicy {
                 "local_adjustments",
                 "workpaper_bodies",
                 "workpaper_annotations",
+                "workpaper_attachment_versions",
                 "workpaper_adjustment_references",
                 "notes",
                 "active_calculation",
@@ -167,6 +168,8 @@ pub struct EngagementState {
     pub engagements: Vec<EngagementRecord>,
     pub previews: Vec<ImportPreview>,
     pub audit: Vec<AuditEvent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachment_blobs: Vec<super::attachment_models::AttachmentBlob>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

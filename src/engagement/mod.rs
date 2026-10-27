@@ -1,5 +1,7 @@
 //! Original, bounded NXT engagement workpapers; no Caseware runtime dependency.
 pub mod analysis;
+pub mod attachment_models;
+mod attachments;
 pub mod bridges;
 pub mod models;
 mod preview_binding;
@@ -177,8 +179,13 @@ impl Engagements {
     }
     async fn load(&self) -> EResult<EngagementState> {
         match self.store.get(STATE_KEY).await? {
-            Some(raw) => serde_json::from_str(&raw)
-                .map_err(|_| conflict("engagement state is corrupt; recovery required")),
+            Some(raw) => {
+                if raw.len()>8*1024*1024 {return Err(conflict("engagement workspace exceeds its read bound"));}
+                let state=serde_json::from_str(&raw)
+                    .map_err(|_| conflict("engagement state is corrupt; recovery required"))?;
+                attachments::validate_state(&state)?;
+                Ok(state)
+            },
             None => Ok(EngagementState::default()),
         }
     }
@@ -190,7 +197,9 @@ impl Engagements {
                     .map_err(|_| conflict("engagement state is corrupt; recovery required"))?,
                 None => EngagementState::default(),
             };
+            attachments::validate_state(&s)?;
             let out = f(&mut s)?;
+            attachments::validate_state(&s)?;
             for r in &s.engagements {
                 if serde_json::to_vec(r)
                     .map_err(|_| bad("cannot encode engagement"))?
@@ -218,7 +227,7 @@ impl Engagements {
         Err(conflict("workspace changed repeatedly; reload and retry"))
     }
     pub fn catalog() -> Value {
-        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html"],"import_preview_binding":"nxt-engagement-preview-binding/v1","legacy_uncommitted_preview":"regenerate","annotation_kinds":["note","agreed","recalculated","traced","inspected","confirmed"],"annotation_scope":"Text body SHA-256 anchors; operator labels are unverified metadata; no PDF/image annotations or Caseware compatibility","limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text documents only; no CaseView, Office embedding, proprietary files, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
+        json!({"engine":"Independent NXT engagement workpapers","ruleset":"nxt-engagement-workpapers-v1","currency":"CAD","status":"validation_only","kinds":["internal","compilation","review","audit"],"account_kinds":["asset","liability","equity","revenue","expense"],"exports":["nxt-engagement-json","internal-html","nxt-engagement-file-bundle-zip"],"attachment_contract":{"format":"nxt-engagement-files/v1","per_file_bytes":262144,"per_workpaper_versions":16,"workspace_versions":128,"workspace_binary_bytes":2097152,"bundle_max_bytes":4194304,"processing":"opaque bytes only; no rendering, execution, editing or malware scan","storage":"existing atomic EngagementState KV; original-byte SHA-256 and version metadata bindings","identity":"unverified operator labels under shared workspace access"},"import_preview_binding":"nxt-engagement-preview-binding/v1","legacy_uncommitted_preview":"regenerate","annotation_kinds":["note","agreed","recalculated","traced","inspected","confirmed"],"annotation_scope":"Text body SHA-256 anchors; operator labels are unverified metadata; no PDF/image annotations or Caseware compatibility","limitations":["Original bounded workpapers; full Caseware parity is not verified.","Text workpapers with bounded opaque file versions; no CaseView or Office editing, proprietary format interpretation, SmartSync or consolidation.","Local working adjustments do not post to Ledger.","Shared workspace credential; operator labels are not verified identities.","No assurance report or certified tax filing is generated."]})
     }
     pub async fn get(&self, record_id: &str) -> EResult<EngagementRecord> {
         self.load()
@@ -259,12 +268,16 @@ impl Engagements {
                 let mut r = old.ok_or_else(missing)?;
                 check_revision(&r, expected.unwrap())?;
                 editable(&r)?;
+                attachments::preserve_versions(&r.document, &input)?;
                 r.document = input.clone();
                 r.input_revision += 1;
                 invalidate(&mut r);
                 touch(&mut r);
                 r
             } else {
+                if input.workpapers.iter().any(|p| !p.attachment_versions.is_empty()) {
+                    return Err(bad("upload file versions through the attachment endpoint after creating the workpaper"));
+                }
                 if s.engagements.len() >= 200 {
                     return Err(conflict("engagement capacity reached (200)"));
                 }
@@ -522,6 +535,7 @@ impl Engagements {
                 paper.body.clear();
                 paper.adjustment_ids.clear();
                 paper.annotations.clear();
+                paper.attachment_versions.clear();
             }
             document.issues.retain(|issue| issue.carry_forward && issue.status == "open");
             document.notes.clear();
@@ -669,9 +683,10 @@ impl Engagements {
         .await
     }
     pub async fn package(&self, rid: &str) -> EResult<Value> {
-        Ok(
-            json!({"format":"nxt-engagement/v1","scope":"Internal NXT workpaper archive; not a Caseware native file or assurance report","engagement":self.get(rid).await?}),
-        )
+        let state=self.load().await?;
+        let record=state.engagements.iter().find(|r|r.id==rid).ok_or_else(missing)?;
+        let files=attachments::files_for_record(&state,record)?;
+        Ok(attachments::package_value(record,&files))
     }
 }
 fn preview_value(p: &ImportPreview) -> Value {

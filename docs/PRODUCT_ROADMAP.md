@@ -26,6 +26,8 @@ At the 2026-10-26 UTC development checkpoint the release owner reports **42 pass
 
 The user requested full Caseware Working Papers replication. [The reconstruction evidence](CASEWARE_RECONSTRUCTION.md) and [Caseware parity audit](CASEWARE_PARITY_AUDIT.md) keep that larger requirement open: full journal/balance bases, mapping hierarchy, consolidation/FX, physical attachments/versions, CaseView/report formulas, tickmarks, complete role/issue/lockdown/year-close behavior, proprietary formats and SmartSync/Cloud/Connector remain missing, partial or unverified. The signed installer resource tree is static setup evidence; no installed main implementation or paired source golden engagement has been recovered. Licensed assets, professional assurance and certification are not inherited.
 
+The native small-file preservation slice now supports bounded append-only opaque versions, reviewed history/origin references and exact file-bundle ZIPs, with isolated synthetic Supabase/browser/restart and independent ZIP checks. This narrows the physical attachment gap; scalable retention, native vendor document semantics and paired source behavior remain open. See [the file contract](NXT_ENGAGEMENTS.md#opaque-file-versions).
+
 Next engagement acceptance depends on individual authority/company isolation, explicit capacity/archive/recovery policy, authorized synthetic source exports/golden cases and independently specified missing capabilities. A separately accepted low-risk workpaper slice may progress under its own gates while unsupported capabilities remain on the source; the initial module does not authorize Caseware retirement or financial cutover.
 
 ## Immediate priority: safe migration and cutover readiness

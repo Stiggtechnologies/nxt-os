@@ -327,6 +327,7 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
             "workpaper adjustment reference",
         )?;
         references(&paper.depends_on, &papers, 100, "workpaper dependency")?;
+        super::attachments::validate_paper_shape(paper).map_err(|_| "Invalid workpaper file-version metadata".to_string())?;
         annotation_count += paper.annotations.len();
         if paper.annotations.len() > 50 || annotation_count > 500 {
             return Err("Annotations exceed 50 per workpaper or 500 per engagement".into());

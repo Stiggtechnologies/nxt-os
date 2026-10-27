@@ -29,6 +29,9 @@ pub fn router(state: Arc<Engagements>) -> Router {
         .route("/api/engagements/{id}/tax/preview", post(tax_preview))
         .route("/api/engagements/{id}/firm-proposal", post(firm_proposal))
         .route("/api/engagements/{id}/package", get(package))
+        .route("/api/engagements/{id}/attachments/package", get(file_package))
+        .route("/api/engagements/{id}/workpapers/{paper}/attachments", post(file_upload))
+        .route("/api/engagements/{id}/workpapers/{paper}/attachments/{version}", get(file_download))
         .route("/api/engagements/{id}/print", get(print))
         .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
@@ -146,6 +149,25 @@ async fn package(State(e): S, Path(id): Path<String>) -> EResult<Response> {
         bytes,
     )
         .into_response())
+}
+async fn file_upload(State(e):S,Path((id,paper)):Path<(String,String)>,Json(input):Json<attachment_models::AttachmentUpload>)->R {
+    ok(e.upload_attachment(&id,&paper,input).await?)
+}
+async fn file_download(State(e):S,Path((id,paper,version)):Path<(String,String,String)>)->EResult<Response> {
+    let (metadata,bytes)=e.attachment(&id,&paper,&version).await?;
+    let encoded=metadata.file_name.as_bytes().iter().map(|byte|{
+        if byte.is_ascii_alphanumeric()||b"-_.~".contains(byte){(*byte as char).to_string()}else{format!("%{byte:02X}")}
+    }).collect::<String>();
+    Ok(([(header::CONTENT_TYPE,"application/octet-stream".to_string()),
+        (header::CONTENT_DISPOSITION,format!("attachment; filename=\"nxt-{}.bin\"; filename*=UTF-8''{encoded}",metadata.id)),
+        (header::CONTENT_SECURITY_POLICY,"sandbox; default-src 'none'; frame-ancestors 'none'".into()),
+        (header::CONTENT_LENGTH,bytes.len().to_string())],bytes).into_response())
+}
+async fn file_package(State(e):S,Path(id):Path<String>)->EResult<Response> {
+    let bytes=e.attachment_package(&id).await?;
+    Ok(([(header::CONTENT_TYPE,"application/zip".to_string()),
+        (header::CONTENT_DISPOSITION,format!("attachment; filename=\"nxt-engagement-{id}-files.zip\"")),
+        (header::CONTENT_SECURITY_POLICY,"sandbox; default-src 'none'; frame-ancestors 'none'".into())],bytes).into_response())
 }
 fn esc(v: &str) -> String {
     v.replace('&', "&amp;")

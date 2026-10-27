@@ -590,7 +590,7 @@ async fn engagement_rollforward_origin_acceptance() {
         "workpaper_account_references"
     ]));
     assert_eq!(policy["cleared_fields"],json!([
-        "current_account_balances","local_adjustments","workpaper_bodies","workpaper_annotations","workpaper_adjustment_references",
+        "current_account_balances","local_adjustments","workpaper_bodies","workpaper_annotations","workpaper_attachment_versions","workpaper_adjustment_references",
         "notes","active_calculation","calculation_history","signoffs","signoff_history","lock_history","import_history"
     ]));
 

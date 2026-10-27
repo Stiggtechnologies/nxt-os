@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use super::attachment_models::AttachmentVersion;
 
 fn cad() -> String {
     "CAD".into()
@@ -101,6 +102,8 @@ pub struct Workpaper {
     // Empty values are omitted to preserve existing signed input preimages.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub annotations: Vec<Annotation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachment_versions: Vec<AttachmentVersion>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
