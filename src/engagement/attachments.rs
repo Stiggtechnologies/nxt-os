@@ -59,6 +59,9 @@ fn metadata_hash(version: &AttachmentVersion) -> EResult<String> {
     hash(&json!({"format":"nxt-file-version/v1","version":copy}))
 }
 pub(super) fn validate_paper_shape(paper: &Workpaper) -> EResult<()> {
+    for annotation in &paper.annotations {
+        super::text_ranges::validate(paper, annotation).map_err(bad)?;
+    }
     if paper.document_type == WorkpaperType::Placeholder
         && (!paper.body.is_empty() || !paper.annotations.is_empty() || !paper.attachment_versions.is_empty())
     {

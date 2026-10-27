@@ -111,6 +111,34 @@ fn present_account_anchor<'de, D: serde::Deserializer<'de>>(deserializer: D) -> 
     AccountAnchor::deserialize(deserializer).map(Some)
 }
 
+/// Exact recorded UTF-8 selection, retained even when the current body is stale.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct TextRangeAnchor {
+    pub engagement_id: String,
+    pub start_utf8_byte: u32,
+    pub end_utf8_byte: u32,
+    pub selection_sha256: String,
+    pub selected_text: String,
+}
+impl<'de> Deserialize<'de> for TextRangeAnchor {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ObjectOnly;
+        impl<'de> serde::de::Visitor<'de> for ObjectOnly {
+            type Value = TextRangeAnchor;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { f.write_str("a text range anchor object") }
+            fn visit_map<M: serde::de::MapAccess<'de>>(self, map: M) -> Result<TextRangeAnchor, M::Error> {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Fields { engagement_id: String, start_utf8_byte: u32, end_utf8_byte: u32, selection_sha256: String, selected_text: String }
+                let v=Fields::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(TextRangeAnchor{engagement_id:v.engagement_id,start_utf8_byte:v.start_utf8_byte,end_utf8_byte:v.end_utf8_byte,selection_sha256:v.selection_sha256,selected_text:v.selected_text})
+            }
+        }
+        deserializer.deserialize_map(ObjectOnly)
+    }
+}
+fn present_text_range_anchor<'de,D:serde::Deserializer<'de>>(d:D)->Result<Option<TextRangeAnchor>,D::Error>{TextRangeAnchor::deserialize(d).map(Some)}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Annotation {
@@ -125,6 +153,8 @@ pub struct Annotation {
     // Missing is legacy body-only scope; a present anchor must be an object, not null.
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present_account_anchor")]
     pub account_anchor: Option<AccountAnchor>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present_text_range_anchor")]
+    pub text_range_anchor: Option<TextRangeAnchor>,
 }
 
 /// Original NXT planning/evidence distinction; no proprietary document format.

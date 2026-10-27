@@ -122,6 +122,8 @@ pub struct AnnotationBindingReceipt {
     /// legacy editable text. Some pins the complete immutable account binding.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_binding_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_range_binding_sha256: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EngagementRecord {

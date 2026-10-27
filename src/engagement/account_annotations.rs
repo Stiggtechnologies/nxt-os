@@ -34,6 +34,19 @@ fn owned_documents(record: &EngagementRecord) -> Vec<&EngagementInput> {
     // An origin is owned by its source engagement, not this target registry.
     docs
 }
+fn scoped_binding(
+    owner: &str,
+    paper: &Workpaper,
+    annotation: &Annotation,
+) -> Result<(Option<String>, Option<String>), String> {
+    if annotation.account_anchor.is_some() && annotation.text_range_anchor.is_some() {
+        return Err("Account and text range scopes are mutually exclusive".into());
+    }
+    Ok((
+        account_binding(owner, paper, annotation)?,
+        super::text_ranges::binding(owner, paper, annotation)?,
+    ))
+}
 fn identifier(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 64
@@ -58,10 +71,19 @@ pub(super) fn validate_registry(record: &EngagementRecord) -> Result<(), String>
                 .account_binding_sha256
                 .as_ref()
                 .is_some_and(|h| !digest(h))
+            || receipt
+                .text_range_binding_sha256
+                .as_ref()
+                .is_some_and(|h| !digest(h))
+            || (receipt.account_binding_sha256.is_some()
+                && receipt.text_range_binding_sha256.is_some())
             || known
                 .insert(
                     receipt.annotation_id.as_str(),
-                    receipt.account_binding_sha256.as_ref(),
+                    (
+                        receipt.account_binding_sha256.as_ref(),
+                        receipt.text_range_binding_sha256.as_ref(),
+                    ),
                 )
                 .is_some()
         {
@@ -71,10 +93,10 @@ pub(super) fn validate_registry(record: &EngagementRecord) -> Result<(), String>
     for doc in owned_documents(record) {
         for paper in &doc.workpapers {
             for annotation in &paper.annotations {
-                let binding = account_binding(&record.id, paper, annotation)?;
+                let binding = scoped_binding(&record.id, paper, annotation)?;
                 match known.get(annotation.id.as_str()) {
-                    Some(known) if *known != binding.as_ref() => return Err("Annotation ID differs from its lifetime account binding or body-only reservation".into()),
-                    None if binding.is_some() => return Err("Account annotation is missing its lifetime binding receipt".into()),
+                    Some(known) if *known != (binding.0.as_ref(),binding.1.as_ref()) => return Err("Annotation ID differs from its lifetime scoped binding or body-only reservation".into()),
+                    None if binding.0.is_some()||binding.1.is_some() => return Err("Scoped annotation is missing its lifetime binding receipt".into()),
                     _ => {}, // Registry-less body-only marks remain loadable legacy inputs.
                 }
             }
@@ -85,14 +107,15 @@ pub(super) fn validate_registry(record: &EngagementRecord) -> Result<(), String>
 fn remember(
     record: &mut EngagementRecord,
     annotation_id: &str,
-    binding: Option<String>,
+    binding: (Option<String>, Option<String>),
 ) -> Result<(), String> {
     if let Some(prior) = record
         .annotation_bindings
         .iter()
         .find(|r| r.annotation_id == annotation_id)
     {
-        if prior.account_binding_sha256 != binding {
+        if prior.account_binding_sha256 != binding.0 || prior.text_range_binding_sha256 != binding.1
+        {
             return Err("Annotation ID has a lifetime account binding or body-only reservation; use a new ID to change scope, text binding, target, owner, paper, kind or custom meaning".into());
         }
         return Ok(());
@@ -102,7 +125,8 @@ fn remember(
     }
     record.annotation_bindings.push(AnnotationBindingReceipt {
         annotation_id: annotation_id.into(),
-        account_binding_sha256: binding,
+        account_binding_sha256: binding.0,
+        text_range_binding_sha256: binding.1,
     });
     Ok(())
 }
@@ -113,11 +137,11 @@ pub(super) fn seed_legacy_body_only(record: &mut EngagementRecord) -> Result<(),
         .iter()
         .flat_map(|d| &d.workpapers)
         .flat_map(|p| &p.annotations)
-        .filter(|a| a.account_anchor.is_none())
+        .filter(|a| a.account_anchor.is_none() && a.text_range_anchor.is_none())
         .map(|a| a.id.clone())
         .collect();
     for id in ids {
-        remember(record, &id, None)?;
+        remember(record, &id, (None, None))?;
     }
     Ok(())
 }
@@ -127,7 +151,7 @@ pub(super) fn register_saved_document(record: &mut EngagementRecord) -> Result<(
         .workpapers
         .iter()
         .flat_map(|p| p.annotations.iter().map(move |a| (p, a)))
-        .map(|(p, a)| Ok((a.id.clone(), account_binding(&record.id, p, a)?)))
+        .map(|(p, a)| Ok((a.id.clone(), scoped_binding(&record.id, p, a)?)))
         .collect::<Result<Vec<_>, String>>()?;
     for (id, binding) in bindings {
         remember(record, &id, binding)?;
@@ -140,8 +164,14 @@ pub(super) fn validate_owners(owner: &str, document: &EngagementInput) -> Result
         .workpapers
         .iter()
         .flat_map(|p| &p.annotations)
-        .filter_map(|a| a.account_anchor.as_ref())
-        .any(|a| a.engagement_id != owner)
+        .any(|a| {
+            a.account_anchor
+                .as_ref()
+                .is_some_and(|v| v.engagement_id != owner)
+                || a.text_range_anchor
+                    .as_ref()
+                    .is_some_and(|v| v.engagement_id != owner)
+        })
     {
         return Err("Account annotation owner differs from its engagement; acquire new saved options for this engagement".into());
     }

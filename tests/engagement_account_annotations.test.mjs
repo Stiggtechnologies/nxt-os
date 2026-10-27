@@ -71,6 +71,15 @@ test('full preimage and body guards still hold while SHA-256 is pending',async()
  for(const change of [h=>h.api.S.draft.workpapers[0].body='Changed text',h=>h.api.S.draft.accounts[1].name='Changed account',h=>h.api.S.draft.tickmark_catalogue[0].description='Changed meaning',h=>h.api.S.draft.workpapers.shift()]){const h=harness(),gate=deferred(),entered=deferred(),old=h.api.S.draft.workpapers[0];h.sandbox.crypto.subtle={digest:()=>{entered.resolve();return gate.promise;}};const pending=h.api.addAccountAnnotation();await entered.promise;change(h);gate.resolve(new Uint8Array(32).buffer);await assert.rejects(pending,/changed/);assert.equal(old.annotations,undefined);}
 });
 
+test('the primitive saved owner cannot change in-place before reading, hashing or applying account options',async()=>{
+ for(const phase of ['before-read','hash','final-dialog']){const h=harness(),old=h.api.S.draft,gate=deferred(),entered=deferred();
+  if(phase==='hash')h.sandbox.crypto.subtle={digest:()=>{entered.resolve();return gate.promise;}};
+  h.setDialog(async(title,_html,save)=>{if(phase==='before-read'&&title==='Choose account-mark workpaper'||phase==='final-dialog'&&title==='Add account tickmark or note')h.api.S.record.id='eng_foreign';return save(h.fields);});
+  if(phase==='before-read')h.setRequest(async()=>({...h.options(),engagement_id:'eng_foreign'}));
+  const pending=h.api.addAccountAnnotation();if(phase==='hash'){await entered.promise;h.api.S.record.id='eng_foreign';gate.resolve(new Uint8Array(32).buffer);}await assert.rejects(pending,/saved inputs changed/);assert.equal(old.workpapers[0].annotations,undefined);assert.equal(h.api.S.dirty,false);if(phase==='before-read')assert.equal(h.requests.length,0);
+ }
+});
+
 test('changing the live paper selection during GET/hash cannot bind an old response to a new target',async()=>{
  for(const phase of ['get','hash']){const h=harness(),gate=deferred(),entered=deferred(),value=h.options();let selected='p1';const form={isConnected:true,querySelector:()=>({get value(){return selected;}})};h.setDialog(async(_t,_html,save)=>save(h.fields,form));if(phase==='get')h.setRequest(()=>{entered.resolve();return gate.promise;});else h.sandbox.crypto.subtle={digest:()=>{entered.resolve();return gate.promise;}};const pending=h.api.addAccountAnnotation();await entered.promise;selected='p2';gate.resolve(phase==='get'?value:new Uint8Array(32).buffer);await assert.rejects(pending,/selected workpaper changed/);assert.equal(h.api.S.draft.workpapers[0].annotations,undefined);assert.equal(h.api.S.draft.workpapers[1].annotations,undefined);}
 });

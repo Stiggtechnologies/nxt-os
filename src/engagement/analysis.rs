@@ -365,6 +365,7 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
             return Err("Annotations exceed 50 per workpaper or 500 per engagement".into());
         }
         for annotation in &paper.annotations {
+            super::text_ranges::validate(paper, annotation)?;
             id(&annotation.id, "Annotation ID")?;
             if !annotation_ids.insert(&annotation.id) {
                 return Err("Duplicate annotation ID".into());

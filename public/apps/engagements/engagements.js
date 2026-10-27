@@ -190,8 +190,34 @@
     for(const [key,max] of [['label',128],['description',1024]])if(!mark[key].trim()||new TextEncoder().encode(mark[key]).length>max||/[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(mark[key]))throw Error(`Tickmark ${key} must be nonempty single-line text, at most ${max} UTF-8 bytes.`);
     if(catalogue.some(m=>m.id!==mark.id&&m.code.toUpperCase()===mark.code))throw Error('Another catalogue definition already uses that code.');
   }
+  function normalizedSavedText(original){
+    checkedText(original,'Saved workpaper body',16384,false,true);
+    let value='';const originalOffsets=[0];
+    for(let index=0;index<original.length;){
+      const code=original.charCodeAt(index);
+      if(code>=0xd800&&code<=0xdbff){const low=original.charCodeAt(index+1);if(!(low>=0xdc00&&low<=0xdfff))throw Error('Saved text contains an invalid Unicode scalar. Reload the workpaper.');value+=original.slice(index,index+2);originalOffsets.push(null,index+2);index+=2;}
+      else if(code>=0xdc00&&code<=0xdfff)throw Error('Saved text contains an invalid Unicode scalar. Reload the workpaper.');
+      else if(code===13){index+=original.charCodeAt(index+1)===10?2:1;value+='\n';originalOffsets.push(index);}
+      else{value+=original[index];index++;originalOffsets.push(index);}
+    }
+    return {value,originalOffsets};
+  }
+  function captureTextRange(original,nativeValue,start,end){
+    const model=normalizedSavedText(original);
+    if(nativeValue!==model.value)throw Error('The readonly selection text changed; reopen the saved workpaper.');
+    if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||start>=end||end>model.value.length)throw Error('Select a nonempty range in the readonly workpaper text.');
+    const from=model.originalOffsets[start],to=model.originalOffsets[end];
+    if(!Number.isInteger(from)||!Number.isInteger(to))throw Error('Selection must start and end on Unicode scalar boundaries, not inside a surrogate pair.');
+    const selected=original.slice(from,to),encoder=new TextEncoder(),bytes=encoder.encode(selected).length,startByte=encoder.encode(original.slice(0,from)).length,endByte=encoder.encode(original.slice(0,to)).length;
+    if(bytes<1||bytes>4096||endByte>16384||endByte-startByte!==bytes)throw Error('Select 1–4,096 UTF-8 bytes within the saved workpaper.');
+    return {start_utf8_byte:startByte,end_utf8_byte:endByte,selected_text:selected};
+  }
   function annotationAnchorMarkup(annotation){
     const body=`<div class="help">Workpaper text SHA-256</div><code title="${esc(annotation.body_sha256)}">${esc(annotation.body_sha256.slice(0,12))}…</code>`;
+    if(annotation.text_range_anchor){
+      const anchor=annotation.text_range_anchor,recorded=esc(anchor.selected_text).replace(/\r/g,'&#13;');
+      return body+`<div class="help">Recorded selected text copy · not reconstructed from current text</div><pre class="paper-preview"><span>${recorded}</span></pre><div class="help">Recorded engagement ID</div><code>${esc(anchor.engagement_id)}</code><div class="help">Recorded original UTF-8 byte range [start, end)</div><code>[${esc(anchor.start_utf8_byte)}, ${esc(anchor.end_utf8_byte)})</code><div class="help">Recorded selection SHA-256</div><code>${esc(anchor.selection_sha256)}</code><div class="help">This retained copy records stated work, not an independently verified operator or completed procedure. Check current calculation diagnostics for stale text.</div>`;
+    }
     if(!annotation.account_anchor)return body+'<div class="help">Workpaper text only · check calculated results</div>';
     const anchor=annotation.account_anchor,account=list(S.draft.accounts).find(row=>row.id===anchor.account_id);
     return body+`<div class="help">Recorded account target ID</div><code>${esc(anchor.account_id)}</code><div class="help">Recorded engagement ID</div><code>${esc(anchor.engagement_id)}</code>${account?`<p class="help">Current identity label: ${esc(account.code)} · ${esc(account.name)}. This current label does not attest earlier values.</p>`:'<p class="help">The target is not in the current account list; the recorded stable ID remains above.</p>'}<div class="help">Recorded native account context SHA-256</div><code>${esc(anchor.context_sha256)}</code><div class="help">Earlier periods, currency, linked group and touching local adjustments are bound by this digest. No historical amounts are inferred from the current name/code; this is not a Ledger mark.</div>`;
@@ -199,10 +225,10 @@
   function renderAnnotations(){
     const rows=S.draft.workpapers.flatMap(p=>list(p.annotations).map(a=>({paper:p,annotation:a})));
     const catalogue=list(S.draft.tickmark_catalogue);
-    $('#editor').innerHTML=title('Tickmarks & notes',mutatingButton('+ Custom definition','edit-tickmark')+(S.draft.workpapers.some(manualTextPaper)?mutatingButton('+ Add tickmark or note','annotation','','primary'):pill('Manual text required for marks','warning'))+mutatingButton('+ Account tickmark or note','account-annotation'))+
+    $('#editor').innerHTML=title('Tickmarks & notes',mutatingButton('+ Custom definition','edit-tickmark')+(S.draft.workpapers.some(manualTextPaper)?mutatingButton('+ Add tickmark or note','annotation','','primary'):pill('Manual text required for marks','warning'))+mutatingButton('+ Account tickmark or note','account-annotation')+mutatingButton('+ Selected text tickmark or note','text-range-annotation'))+
       '<p class="form-note">Each mark records a stated procedure or note against an exact workpaper text version. Save and calculate to check its anchor. Changed text blocks completion until affected marks are reviewed and replaced or removed. Account marks additionally require a saved manual text workpaper with referenced accounts: link them in Document manager and save first. These are original NXT local-account policies, not Caseware equivalence or Ledger actions. Operator labels are unverified metadata.</p>'+
       `<div class="card"><h3>Custom text catalogue</h3><p class="help">Up to 50 original definitions for this engagement. Each applied mark retains its own definition copy. Editing or removing a catalogue item affects future marks; existing marks keep their recorded meaning.</p>${catalogue.length?table(['Code / label','Procedure description',''],catalogue,m=>`<tr><td><strong>${esc(m.code)}</strong> · ${esc(m.label)}</td><td>${esc(m.description)}</td><td>${mutatingButton('Edit','edit-tickmark',m.id,'sm ghost')}${mutatingButton('Remove','remove-tickmark',m.id,'sm ghost danger')}</td></tr>`):'<p class="help">No custom definitions. The six built-in marks remain available.</p>'}</div>`+
-      `<div class="card">${table(['Workpaper','Mark / note','Operator label','Text / account anchors',''],rows,({paper:p,annotation:a})=>`<tr><td>${esc(p.reference)} · ${esc(p.title)}</td><td><strong>${esc(markLabel(a))}</strong>${a.custom_mark?`<p class="help">${esc(a.custom_mark.description)} · Recorded definition</p>`:''}<pre>${esc(a.note)}</pre></td><td>${esc(a.operator_label)}</td><td>${annotationAnchorMarkup(a)}</td><td>${mutatingButton('Remove','remove-annotation',a.id,'sm ghost danger')}</td></tr>`)}</div>`;
+      `<div class="card">${table(['Workpaper','Mark / note','Operator label','Text / target anchors',''],rows,({paper:p,annotation:a})=>`<tr><td>${esc(p.reference)} · ${esc(p.title)}</td><td><strong>${esc(markLabel(a))}</strong>${a.custom_mark?`<p class="help">${esc(a.custom_mark.description)} · Recorded definition</p>`:''}<pre>${esc(a.note)}</pre></td><td>${esc(a.operator_label)}</td><td>${annotationAnchorMarkup(a)}</td><td>${mutatingButton('Remove','remove-annotation',a.id,'sm ghost danger')}</td></tr>`)}</div>`;
   }
   async function editTickmark(definitionId){
     if(!editable())return;
@@ -289,10 +315,10 @@
   }
   async function addAccountAnnotation(){
     requireSaved();if(!editable())throw Error('Reopen the engagement before adding an account mark.');
-    const record=S.record,draft=S.draft,version=S.version,revision=record.revision,inputRevision=record.input_revision;
+    const record=S.record,ownerId=record.id,draft=S.draft,version=S.version,revision=record.revision,inputRevision=record.input_revision;
     const preimage=JSON.stringify(draft),savedPreimage=JSON.stringify(record.document);
-    if(!Number.isSafeInteger(revision)||revision<1||!Number.isSafeInteger(inputRevision)||inputRevision<1||inputRevision>revision||preimage!==savedPreimage)throw Error('Save and reload the exact engagement inputs before adding an account mark.');
-    const current=()=>S.record===record&&S.draft===draft&&S.version===version&&record.revision===revision&&record.input_revision===inputRevision&&editable()&&!S.dirty&&JSON.stringify(draft)===preimage&&JSON.stringify(record.document)===savedPreimage;
+    if(typeof ownerId!=='string'||!/^[A-Za-z0-9_-]{1,96}$/.test(ownerId)||!Number.isSafeInteger(revision)||revision<1||!Number.isSafeInteger(inputRevision)||inputRevision<1||inputRevision>revision||preimage!==savedPreimage)throw Error('Save and reload the exact engagement inputs before adding an account mark.');
+    const current=()=>S.record===record&&record.id===ownerId&&S.draft===draft&&S.version===version&&record.revision===revision&&record.input_revision===inputRevision&&editable()&&!S.dirty&&JSON.stringify(draft)===preimage&&JSON.stringify(record.document)===savedPreimage;
     function assertCurrent(){if(!current())throw Error('Engagement, account context or saved inputs changed; reopen the account-mark dialog.');}
     const offeredPapers=accountAnnotationPapers(draft);
     if(!offeredPapers.length)throw Error('Link accounts to a manual text workpaper in Document manager and SAVE first. Placeholders cannot receive account marks.');
@@ -304,7 +330,7 @@
       const body=checkedText(paper.body??'','Workpaper body',16384,false,true),selected=fd.get('workpaper_id');
       function formCurrent(){if(form&&(form.isConnected===false||form.querySelector('[name="workpaper_id"]')?.value!==selected))throw Error('The selected workpaper changed while loading account anchors; review the target and retry.');}
       capacity(paper);formCurrent();
-      const options=await request('/'+enc(record.id)+'/workpapers/'+enc(paper.id)+'/account-anchors');
+      const options=await request('/'+enc(ownerId)+'/workpapers/'+enc(paper.id)+'/account-anchors');
       assertCurrent();formCurrent();
       const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body));
       assertCurrent();formCurrent();capacity(paper);
@@ -314,7 +340,7 @@
     },'Load referenced accounts');
     if(!prepared)return;
     assertCurrent();const paper=prepared.paper;
-    if(!offeredPapers.includes(paper)||!draft.workpapers.includes(paper)||!manualTextPaper(paper)||prepared.engagementId!==record.id)throw Error('The chosen workpaper changed before account selection.');
+    if(!offeredPapers.includes(paper)||!draft.workpapers.includes(paper)||!manualTextPaper(paper)||prepared.engagementId!==ownerId)throw Error('The chosen workpaper changed before account selection.');
     const accounts=paper.account_ids.map(ref=>draft.accounts.find(account=>account.id===ref));
     const saved=await dialog('Add account tickmark or note',`<p class="form-note">Workpaper ${esc(paper.reference)} · ${esc(paper.title)}. Select one of its complete referenced accounts. The mark binds exact text plus native engagement periods/currency, account, linked group and touching local adjustments. Current code/name identify the target; they are not historical-value evidence. Save and calculate to check anchors. To change an existing target or anchor, remove it, save, review and add a new mark.</p><div class="form">${field('Referenced account',select('account_id',accounts.map(account=>[account.id,account.code+' · '+account.name+' · ID '+account.id]),accounts[0].id))}${field('Mark',select('kind',available,'note'))}${field('Operator label (unverified)',input('operator_label','','text','required maxlength="128"'))}${field('Evidence note',text('note','','required maxlength="4096"'),'Describe the stated work against this specific native account context.',true)}</div>`,fd=>{
       assertCurrent();capacity(paper);
@@ -331,7 +357,54 @@
       if(customMark)annotation.custom_mark=customMark;
       return {account,annotation};
     },'Add to draft');
-    if(saved){assertCurrent();const {account,annotation}=saved;if(!accounts.includes(account)||!draft.workpapers.includes(paper)||!manualTextPaper(paper)||!draft.accounts.includes(account)||!paper.account_ids.includes(account.id)||annotation.account_anchor.engagement_id!==record.id||annotation.account_anchor.account_id!==account.id)throw Error('The chosen account context changed before the mark was applied.');capacity(paper);paper.annotations=[...list(paper.annotations),annotation];dirty();renderEditor();}
+    if(saved){assertCurrent();const {account,annotation}=saved;if(!accounts.includes(account)||!draft.workpapers.includes(paper)||!manualTextPaper(paper)||!draft.accounts.includes(account)||!paper.account_ids.includes(account.id)||annotation.account_anchor.engagement_id!==ownerId||annotation.account_anchor.account_id!==account.id)throw Error('The chosen account context changed before the mark was applied.');capacity(paper);paper.annotations=[...list(paper.annotations),annotation];dirty();renderEditor();}
+  }
+  async function addTextRangeAnnotation(){
+    requireSaved();if(!editable())throw Error('Reopen the engagement before adding a selected-text mark.');
+    const record=S.record,ownerId=record.id,draft=S.draft,version=S.version,revision=record.revision,inputRevision=record.input_revision,preimage=JSON.stringify(draft),savedPreimage=JSON.stringify(record.document);
+    if(typeof ownerId!=='string'||!/^[A-Za-z0-9_-]{1,96}$/.test(ownerId)||!Number.isSafeInteger(revision)||revision<1||!Number.isSafeInteger(inputRevision)||inputRevision<1||inputRevision>revision||preimage!==savedPreimage)throw Error('Save and reload the exact engagement inputs before selecting text.');
+    const current=()=>S.record===record&&record.id===ownerId&&S.draft===draft&&S.version===version&&record.revision===revision&&record.input_revision===inputRevision&&editable()&&!S.dirty&&JSON.stringify(draft)===preimage&&JSON.stringify(record.document)===savedPreimage;
+    function assertCurrent(){if(!current())throw Error('Engagement, workpaper or saved inputs changed; reopen the selected-text dialog.');}
+    if(!Array.isArray(draft.workpapers)||draft.workpapers.length>100)throw Error('Saved workpapers exceed their supported bounds. Reload the engagement.');
+    const ids=new Set(),papers=[];
+    for(const paper of draft.workpapers){if(typeof paper.id!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(paper.id)||ids.has(paper.id))throw Error('Saved workpaper identities are invalid or duplicated. Reload the engagement.');ids.add(paper.id);if(manualTextPaper(paper)){if(typeof paper.body!=='string')throw Error('Saved workpaper text is unavailable. Reload the engagement.');if(paper.body.length)papers.push(paper);}}
+    if(!papers.length)throw Error('Add nonempty manual text and SAVE the workpaper first. Empty papers and planning placeholders cannot receive selected-text marks.');
+    const definitions=clone(list(draft.tickmark_catalogue)),available=[...annotationKinds,...definitions.map(mark=>['custom:'+mark.id,mark.code+' · '+mark.label])];
+    function capacity(paper){if(list(paper.annotations).length>=50||draft.workpapers.reduce((n,row)=>n+list(row.annotations).length,0)>=500)throw Error('Maximum 50 annotations per workpaper and 500 per engagement.');}
+    function inputLimit(paper,annotation){const projected={...draft,workpapers:draft.workpapers.map(row=>row===paper?{...row,annotations:[...list(row.annotations),annotation]}:row)};if(new TextEncoder().encode(JSON.stringify(projected)).length>512*1024)throw Error('The copied range would exceed the native engagement 512 KiB input limit. Choose a smaller selection or reduce other draft content.');}
+    const prepared=await dialog('Choose saved text workpaper',`<p class="form-note">Choose saved, nonempty manual text. This original NXT workflow records a copied text range; it does not perform the stated procedure or reproduce verified Caseware behavior.</p><div class="form">${field('Saved manual text workpaper',select('workpaper_id',papers.map(paper=>[paper.id,paper.reference+' · '+paper.title]),papers[0].id))}</div>`,fd=>{
+      assertCurrent();const paper=papers.find(row=>row.id===fd.get('workpaper_id'));if(!paper||!draft.workpapers.includes(paper)||!manualTextPaper(paper)||!paper.body.length)throw Error('Choose a current saved nonempty manual text workpaper.');capacity(paper);
+      return {paper,body:paper.body,model:normalizedSavedText(paper.body)};
+    },'Select text');
+    if(!prepared)return;
+    assertCurrent();const {paper,body,model}=prepared;
+    if(!papers.includes(paper)||!draft.workpapers.includes(paper)||!manualTextPaper(paper)||paper.body!==body)throw Error('The selected workpaper changed before text selection.');
+    const saved=await dialog('Add selected text tickmark or note',`<p class="form-note">${esc(paper.reference)} · ${esc(paper.title)}. Select text directly in the readonly saved body using the mouse or keyboard. NXT maps displayed line endings back to the exact original UTF-8 byte range and retains that copied text. Choose 1–4,096 copied UTF-8 bytes on whole Unicode scalar boundaries. Operator labels are unverified; changed text requires renewed review and a new mark.</p><div class="form">${field('Saved text · select a range',text('selection_body',model.value,'data-range-body readonly rows="14" spellcheck="false"'),'This view does not edit the workpaper. The mark retains original CR/LF bytes even when the browser displays normalized newlines.',true)}${field('Mark',select('kind',available,'note'))}${field('Operator label (unverified)',input('operator_label','','text','required maxlength="128"'))}${field('Evidence note',text('note','','required maxlength="4096"'),'Describe the stated work supporting this selected text.',true)}</div>`,async(fd,form)=>{
+      assertCurrent();capacity(paper);
+      const control=form?.querySelector('[data-range-body]');
+      if(!control||control.readOnly!==true)throw Error('Use the readonly workpaper text and its native selection. Reopen this dialog.');
+      const start=control.selectionStart,end=control.selectionEnd,range=captureTextRange(body,control.value,start,end);
+      const note=checkedText(String(fd.get('note')??'').trim(),'Evidence note',4096,true,true),operator=checkedText(String(fd.get('operator_label')??'').trim(),'Operator label',128,true),selected=String(fd.get('kind')||''),customId=selected.startsWith('custom:')?selected.slice(7):null,definition=customId?definitions.find(mark=>mark.id===customId):null;
+      if(customId&&!definition)throw Error('Choose a current custom definition.');if(!definition&&!annotationKinds.some(([kind])=>kind===selected))throw Error('Choose a supported mark.');if(definition)validateTickmarkDefinition(definition,definitions);
+      const customMark=definition?clone(definition):null,fields=['kind','operator_label','note'],submitted=fields.map(name=>fd.get(name));
+      function assertLive(){if(form.isConnected===false||form.querySelector('[data-range-body]')!==control||control.readOnly!==true||control.value!==model.value||control.selectionStart!==start||control.selectionEnd!==end||fields.some((name,index)=>form.querySelector('[name="'+name+'"]')?.value!==submitted[index]))throw Error('The readonly text, selection or evidence fields changed while anchoring; review the current selection and retry.');}
+      assertLive();
+      const bodyDigest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body));
+      assertCurrent();assertLive();capacity(paper);
+      const selectionDigest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(range.selected_text));
+      assertCurrent();assertLive();capacity(paper);
+      const toHex=digest=>Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,'0')).join('');
+      const annotation={id:id('annotation'),kind:customMark?'custom':selected,note,operator_label:operator,body_sha256:toHex(bodyDigest),text_range_anchor:{engagement_id:ownerId,...range,selection_sha256:toHex(selectionDigest)}};
+      if(customMark)annotation.custom_mark=customMark;
+      inputLimit(paper,annotation);
+      return {annotation};
+    },'Add selected text to draft',form=>{
+      const control=form.querySelector('[data-range-body]');if(!control)throw Error('The readonly text view could not be initialized.');
+      // Textarea HTML parsing drops an initial LF. Assign the normalized value
+      // after construction so leading LF/CRLF and native UTF-16 offsets survive.
+      control.value=model.value;control.readOnly=true;control.rows=14;control.setSelectionRange?.(0,0);
+    });
+    if(saved){assertCurrent();if(!draft.workpapers.includes(paper)||!manualTextPaper(paper)||paper.body!==body||saved.annotation.text_range_anchor.engagement_id!==ownerId||saved.annotation.account_anchor)throw Error('The selected text owner or workpaper changed before applying the mark.');capacity(paper);inputLimit(paper,saved.annotation);paper.annotations=[...list(paper.annotations),saved.annotation];dirty();renderEditor();}
   }
   async function removeAnnotation(annotationId){
     if(!editable())return;
@@ -394,7 +467,7 @@
     throw Error('File version unavailable. Reload the saved engagement.');
   }
   function hasFiles(){const r=S.record;return [r?.document,...list(r?.snapshots).map(s=>s.input_document),r?.rollforward_origin?.source_snapshot?.input_document].some(d=>list(d?.workpapers).some(p=>list(p.attachment_versions).length));}
-  const actions={new:createEngagement,open:value=>go('engagement/'+value),refresh:async()=>{if(!await discard())return;await route(true);},section:value=>{S.section=value;renderEditor();},save,calculate,paper:editPaper,account:editAccount,group:editGroup,adjustment:editAdjustment,issue:editIssue,annotation:addAnnotation,'account-annotation':addAccountAnnotation,'edit-tickmark':editTickmark,'remove-tickmark':removeTickmark,'upload-file':uploadFile,'download-file':downloadFile,'file-bundle':()=>download('attachments/package'),'remove-annotation':removeAnnotation,'view-paper':viewPaper,'remove-paper':v=>remove('paper',v),'remove-account':v=>remove('account',v),'remove-group':v=>remove('group',v),'remove-adjustment':v=>remove('adjustment',v),'remove-issue':v=>remove('issue',v),signoff,transition,rollforward,package:()=>download('package'),print:()=>download('print'),'preview-import':previewImport,'commit-import':commitImport,'ledger-preview':ledgerPreview,'tax-preview':taxPreview,'firm-proposal':firmProposal,'open-firm-approvals':()=>openApp('firm','approvals'),ask:()=>{if(parent!==window)parent.postMessage({nxt:'ask'},location.origin);}};
+  const actions={new:createEngagement,open:value=>go('engagement/'+value),refresh:async()=>{if(!await discard())return;await route(true);},section:value=>{S.section=value;renderEditor();},save,calculate,paper:editPaper,account:editAccount,group:editGroup,adjustment:editAdjustment,issue:editIssue,annotation:addAnnotation,'account-annotation':addAccountAnnotation,'text-range-annotation':addTextRangeAnnotation,'edit-tickmark':editTickmark,'remove-tickmark':removeTickmark,'upload-file':uploadFile,'download-file':downloadFile,'file-bundle':()=>download('attachments/package'),'remove-annotation':removeAnnotation,'view-paper':viewPaper,'remove-paper':v=>remove('paper',v),'remove-account':v=>remove('account',v),'remove-group':v=>remove('group',v),'remove-adjustment':v=>remove('adjustment',v),'remove-issue':v=>remove('issue',v),signoff,transition,rollforward,package:()=>download('package'),print:()=>download('print'),'preview-import':previewImport,'commit-import':commitImport,'ledger-preview':ledgerPreview,'tax-preview':taxPreview,'firm-proposal':firmProposal,'open-firm-approvals':()=>openApp('firm','approvals'),ask:()=>{if(parent!==window)parent.postMessage({nxt:'ask'},location.origin);}};
   async function invoke(name,value){if(S.busy)return;const action=actions[name];if(!action)return;S.busy=true;setBusy();try{await action(value);}catch(e){toast(e.message+(e.status===409?' Reload before resolving a stale revision.':''),true);}finally{S.busy=false;setBusy();}}
   document.addEventListener('click',async event=>{const os=event.target.closest('[data-os]');if(os){if(!await discard())return;if(parent!==window)parent.postMessage({nxt:'open-app',app:os.dataset.os,view:''},location.origin);else location.href='/#/'+os.dataset.os;return;}const section=event.target.closest('[data-section]');if(section){S.section=section.dataset.section;renderEditor();return;}const folder=event.target.closest('[data-folder]');if(folder){S.folder=folder.dataset.folder;renderEditor();return;}const button=event.target.closest('[data-action]');if(button&&!button.disabled)invoke(button.dataset.action,button.dataset.id);});
   document.addEventListener('input',event=>{const el=event.target;if(el.hasAttribute('data-filter')){S[el.name]=el.value;renderWorklist();return;}if(el.hasAttribute('data-import-json')){S.preview=null;const host=$('#import-preview');if(host)host.innerHTML='<p class="form-note">The source changed. Preview again before committing.</p>';return;}if(el.hasAttribute('data-document')&&editable()&&!S.busy){S.draft[el.name]=el.value||(['prior_period_start','prior_period_end'].includes(el.name)?null:'');dirty();}});
