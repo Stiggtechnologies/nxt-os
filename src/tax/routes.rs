@@ -22,6 +22,9 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/package",get(package))
         .route("/api/tax/returns/{id}/print",get(print))
         .route("/api/tax/returns/{id}/filing",post(filing))
+        .route("/api/tax/returns/{id}/parallel-compare",post(parallel_compare))
+        .route("/api/tax/families",post(create_family))
+        .route("/api/tax/families/{id}",get(family))
         .route("/api/tax/import/preview",post(preview))
         .route("/api/tax/import/previews/{id}",get(import_preview))
         .route("/api/tax/import/commit",post(commit))
@@ -62,6 +65,14 @@ async fn filing(State(t):S,Path(id):Path<String>) -> R {
     t.get(&id).await?;
     Err(conflict("Electronic filing is disabled. NXT is not certified and cannot transmit tax returns or mark them filed/accepted."))
 }
+async fn parallel_compare(State(t):S,Path(id):Path<String>,Json(source):Json<super::parallel::ParallelSource>) -> R {
+    ok(t.compare_parallel(&id, source).await?)
+}
+#[derive(Deserialize)] #[serde(deny_unknown_fields)] struct FamilyInput { label: String, primary_return_id: String, spouse_return_id: String }
+async fn create_family(State(t):S,Json(input):Json<FamilyInput>) -> R {
+    ok(t.link_family(&input.label, &input.primary_return_id, &input.spouse_return_id).await?)
+}
+async fn family(State(t):S,Path(id):Path<String>) -> R { ok(t.family(&id).await?) }
 
 async fn package(State(t):S,Path(id):Path<String>) -> TResult<Response> {
     let value=t.package(&id).await?;

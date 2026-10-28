@@ -159,7 +159,7 @@ JavaScript evidence: parent `ev_3deb2236bdd90583e633e925a1ea3fc9dab2aba54839b672
 
 ## DT Max to Tax
 
-Fidelity: **30%** (0 copied & tested, 6 partial, 4 missing, 0 wrong; 10 rows).
+Fidelity: **36%** after the parallel-compare closure (was **30%**). Now 0 copied & tested, 8 partial, 3 missing, 0 wrong; 11 rows. `(0.5×8) / 11`. The previous 10-row score was `(0.5×6) / 10`.
 
 Public 29.30 page `ev_ddbee565a24e632b00519b95f8ce51210593d0ea319ca40e8afbc6ea146076b7` (accessibility headings only; the page body was not copied here). Headings name T1, T2, T3, and T5013; several provinces; Quebec; a 2026 planner caveat; prescribed-form printing; new and deleted keywords; T2 program certification; federal Web Access Code; charity T3010; provincial small-business schedules; and T5013 CCA measures from Bill C-15. That is vendor documentation, not an executed return.
 
@@ -167,20 +167,21 @@ NXT tests that passed: `t1_alberta_2025_workpaper_uses_new_rates_and_verified_cl
 
 | Original feature | NXT status | Evidence |
 | --- | --- | --- |
-| T1 for 2015–2026, planner, and the provinces named on the 29.30 page | partial | NXT catalog is 2025 Alberta, full-year, employment and interest, verified RRSP and CPP/EI only. Other provinces and the planner are rejected by `invalid_and_unsupported_cases_fail_closed`. |
-| T1 keyword entry, family compare, and prior-year columns | missing | The public page has "New keywords" under T1. NXT is a fixed schema, not a keyword engine. No keyword list was recovered. |
+| T1 for 2015–2026, planner, and the provinces named on the 29.30 page | partial | 2025 Alberta remains. 2025 Ontario now follows published ON428 brackets, the 5.05% credit rate, surtax, the basic reduction, and the health-premium chart (`t1_ontario_2025_uses_on428_brackets_surtax_reduction_and_health_premium`). Other provinces, Quebec, and the planner are still outside scope. |
+| T1 keyword entry, family compare, and prior-year columns | partial | Family view shows two calculated T1 totals side by side and does not transfer credits (`parallel_source_lines_and_ontario_family_do_not_file_or_transfer_credits`). Keywords and prior-year columns are still missing. |
 | T2 calculation, certification, CO-17, AT1, and the provincial schedules named on the page | partial | Federal 15%/9% and Alberta 8%/2%, plus a short-year business limit, are unit-tested. Certification, Web Access Code, T3010, and Schedules 33/307/500/508 are not generated. Filing stays false. |
-| T2 GIFI and book-to-tax | partial | Corporate tests require totals 2599/3499/3620 and 8299/9368/9999 and block a silent taxable-income inference. Full GIFI and Schedule 1 are not produced. |
+| T2 GIFI and book-to-tax | partial | Corporate tests require totals 2599/3499/3620 and 8299/9368/9999 and block a silent taxable-income inference. Optional detail rollup requires rows 8000–8298 and 8521–9367 to add to those totals (`requested_gifi_detail_rows_must_add_to_the_total_without_inventing_subtotals`). Full GIFI and Schedule 1 are not produced. |
 | T3 forms, provincial tax, and beneficiary slips | partial | Federal ordinary income and GRE/QDT rates are tested. The 29.30 heading says 2026 federal and provincial calculation forms. Slips and provincial tax are not implemented. |
 | T5013 allocation, CCA, and filing | partial | Ordinary basis-point allocation reconciles cents. Bill C-15 CCA, slips, and filing XML are not implemented. |
 | EFILE, Web Access Code, and prescribed-form print | missing | Page headings name them. `catalog_defaults_match_engine_inputs_and_never_claim_filing` and `dtmax_vendor_backup_and_filing_stay_blocked` keep filing off. |
 | Keyword catalog (new, revised, deleted) | missing | Headings only. No keyword table was extracted from a binary. |
 | Desktop client database and year engines `dt1w3_*` … `dt4w3_*` | missing | Not on this VM. Historical PE resource IDs did not yield a calculation. |
 | Preserve a large account list without opening DT Max | partial | `dtmax_six_thousand_accounts_resume_and_reconcile` commits a synthetic `nxt-dtmax-preservation-batch/v1`. Vendor backups and SDK XML are refused. This is not a DT Max company file. |
+| Paired line comparison against a supplied DT Max or WebTax result | partial | `POST /api/tax/returns/{id}/parallel-compare` diffs integer-cent lines, leaves the source authoritative, and keeps filing off. Tests use operator-supplied synthetic lines. No DT Max or WebTax output file was on this machine, so `paired_to_vendor_bytes` stays false until an operator supplies that file's SHA-256. |
 
 ## WebTaxT2 to Tax
 
-Fidelity: **20%** (0 copied & tested, 2 partial, 3 missing, 0 wrong; 5 rows).
+Fidelity: **25%** after the same parallel-compare closure (was **20%**). Now 0 copied & tested, 3 partial, 3 missing, 0 wrong; 6 rows. `(0.5×3) / 6`. The previous 5-row score was `(0.5×2) / 5`.
 
 This run's only WebTax evidence is the public login document `ev_ff52839e2bf2cf3b42fb5e8b20d3a33a33340080994fbe786e7c5aa18b947d1c`: Login, Forgot Username, Forgot Password, New User Register, final URL `taxOnline.jsp?` with no query secrets. The authenticated topic strip and identification codes in [WEBTAX_RECONSTRUCTION.md](WEBTAX_RECONSTRUCTION.md) were **not** re-captured. Those rows stay at the earlier bound and are not upgraded.
 
@@ -191,6 +192,7 @@ This run's only WebTax evidence is the public login document `ev_ff52839e2bf2cf3
 | Topic navigator: information, tax, provinces, calculation, output, GIFI | partial | NXT tax UI has its own topics and a coverage page that says filing is disabled. The authenticated WebTax navigator was not opened in this run. |
 | Save, calculate, and show GIFI detail | missing | Not activated on the live site. NXT calculation tests do not call WebTax. |
 | Years 2004–2027 and certified filing / auto-fill | missing | Not re-observed. NXT years are `[2025]` and `filing_supported` is false. |
+| Supplied WebTax line comparison | partial | The same parallel-compare route accepts `source_system: webtax`. It checks lines the operator supplies. It does not open the authenticated workspace or file. |
 
 ## Top gaps for a parallel run
 
@@ -198,7 +200,7 @@ Impact is how badly a side-by-side period would diverge or be unsafe if someone 
 
 | Rank | Gap | Why it dominates a parallel run |
 | --- | --- | --- |
-| 1 | No paired DT Max or WebTaxT2 calculation | T1/T2/T3/T5013 tests prove NXT's own 2025 rules. The 29.30 page names other provinces, keywords, schedules, CCA, and certified forms. A parallel tax file cannot be tied out. Filing is correctly blocked, so NXT also cannot complete the original filing step. |
+| 1 | No vendor-byte DT Max or WebTaxT2 tie-out | A parallel line diff now exists, and 2025 Ontario plus GIFI detail rollup are tested. A real DT Max or WebTax output file is still not on this machine, so no row is a copied vendor match. Keywords, year engines, and filing remain blocked. Filing stays disabled. |
 | 2 | QuickBooks subledgers, payroll, classes, and sync | Journal balance is copied. Invoices, bills, and reports are a tested subset. Employees, payroll, classes, items, budgets, attachments, sparse update, delete-by-SyncToken, and OAuth are missing. A parallel close will not match QuickBooks outside the imported journal. |
 | 3 | Caseware engines and file format | Engagements can hold a cent-exact trial balance, local adjustments, text workpapers, and opaque bytes. CaseView, automatic documents, Word/Excel, SmartSync, GIFI-to-TaxCycle, Xero transfer, and the 2025 program binaries are missing. Reviewers still need Working Papers for the file the client already has. |
 | 4 | DocuSign send and sign | Preparation drafts are tested and explicitly non-signing. Twelve of the sixteen inventoried API areas have no NXT route. A parallel signature cycle cannot be executed in NXT. |

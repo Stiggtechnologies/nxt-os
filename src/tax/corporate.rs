@@ -31,6 +31,9 @@ pub struct CorporateProfile {
     pub adjustments: Vec<Adjustment>,
     pub reconciliation_confirmed: bool,
     pub notes: String,
+    /// When true, non-total revenue rows 8000–8298 and expense rows 8521–9367 must add to 8299 and 9368. Subtotal rows must not be included.
+    #[serde(default)]
+    pub detail_rollup: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -140,6 +143,17 @@ fn sources() -> Vec<Source> { vec![
     source("CRA corporation classification", "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/corporations/type-corporation.html"),
 ] }
 
+fn rollup(profile: &CorporateProfile, from: &str, to: &str, total_code: &str, diagnostics: &mut Vec<Diagnostic>) {
+    let details: Vec<&GifiRow> = profile.gifi.iter().filter(|row| row.section == "income_statement" && row.code.as_str() >= from && row.code.as_str() <= to).collect();
+    if details.is_empty() { return; }
+    let current: i128 = details.iter().map(|row| i128::from(row.current_cents)).sum();
+    let prior: i128 = details.iter().map(|row| i128::from(row.prior_cents)).sum();
+    match pair(profile, "income_statement", total_code) {
+        None => diagnostic(diagnostics, "gifi_detail_total_missing", format!("Detail rollup for {from}–{to} requires GIFI {total_code}."), Some(format!("corporate_profile.gifi.income_statement.{total_code}")), true),
+        Some(total) if i128::from(total.0) != current || i128::from(total.1) != prior => diagnostic(diagnostics, "gifi_detail_mismatch", format!("Supplied GIFI rows {from}–{to} do not add to {total_code}. Do not include subtotal rows in a detail rollup."), Some(format!("corporate_profile.gifi.income_statement.{total_code}")), true),
+        Some(_) => (),
+    }
+}
 fn pair(profile: &CorporateProfile, section: &str, code: &str) -> Option<(i64, i64)> {
     profile.gifi.iter().find(|r| r.section == section && r.code == code).map(|r| (r.current_cents, r.prior_cents))
 }
@@ -250,8 +264,12 @@ pub fn analyze(profile: &CorporateProfile, taxable_income: i64, jurisdiction: &s
     }
     let provided = !profile.gifi.is_empty(); let mut sheets = Vec::new(); let mut income = Value::Null; let mut bridge = Value::Null;
     total(&mut totals, "declared_taxable_income", Some(taxable_income));
+    if provided && profile.detail_rollup {
+        rollup(profile, "8000", "8298", "8299", &mut diagnostics);
+        rollup(profile, "8521", "9367", "9368", &mut diagnostics);
+    }
     if provided {
-        diagnostic(&mut diagnostics, "gifi_selected_checks_only", "Only selected GIFI total relationships and a manual book-to-tax bridge are checked. Detail codes, full financial-statement completeness, multiple income statements, Schedule 1 and Division C calculations are not certified or generated.", Some("corporate_profile.gifi".into()), false);
+        diagnostic(&mut diagnostics, "gifi_selected_checks_only", "Only selected GIFI total relationships and a manual book-to-tax bridge are checked. Optional detail rollup checks supplied non-total rows against 8299 and 9368. Full financial-statement completeness, multiple income statements, Schedule 1 and Division C calculations are not certified or generated.", Some("corporate_profile.gifi".into()), false);
         sheets.push(balance_sheet(profile, "balance_sheet", &mut diagnostics, &mut totals));
         if profile.gifi.iter().any(|r| r.section == "opening_balance_sheet") { sheets.push(balance_sheet(profile, "opening_balance_sheet", &mut diagnostics, &mut totals)); }
         income = income_statement(profile, &mut diagnostics, &mut totals);
@@ -324,5 +342,19 @@ mod tests {
         p.gifi.push(p.gifi[0].clone());assert!(validate(&p).is_err());p.gifi.pop();p.gifi[0].current_cents=i64::MIN;assert!(validate(&p).is_err());
         let mut p=complete();p.classification_changed_on=Some("2025-02-30".into());assert!(validate(&p).is_err());p.classification_changed_on=Some("2025-02-28".into());validate(&p).unwrap();
         let mut p=complete();p.gifi=vec![row("balance_sheet","2599",0,0);201];assert!(validate(&p).is_err());
+    }
+    #[test]
+    fn requested_gifi_detail_rows_must_add_to_the_total_without_inventing_subtotals() {
+        let mut p=complete();
+        p.detail_rollup=true;
+        p.gifi.push(row("income_statement","8000",12_000_000,9_000_000));
+        p.gifi.push(row("income_statement","8120",8_000_000,6_000_000));
+        p.gifi.push(row("income_statement","8521",10_000_000,8_000_000));
+        assert_eq!(analyze(&p,10_000_000,"AB",true)["supported"],true);
+        p.gifi.iter_mut().find(|r|r.code=="8120").unwrap().current_cents+=1;
+        assert!(has(&analyze(&p,10_000_000,"AB",true),"gifi_detail_mismatch"));
+        let mut quiet=complete();
+        quiet.gifi.push(row("income_statement","8000",1,0));
+        assert_eq!(analyze(&quiet,10_000_000,"AB",true)["supported"],true);
     }
 }

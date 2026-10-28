@@ -210,7 +210,7 @@ async fn independent_tax_workpaper_lifecycle() {
     // review approval merely because the arithmetic endpoint returned HTTP 200.
     let unsupported = [
         input("T1", "AB", json!({"employment_income_cents":100})),
-        input("T1", "ON", json!({"scope_confirmed":true,"full_year_resident":true})),
+        input("T1", "ON", json!({"scope_confirmed":true,"full_year_resident":true,"other_tax_situations":true})),
         input("T3", "CA-FED", json!({"scope_confirmed":true,"other_tax_situations":true})),
         json!({"program":"T1","tax_year":2026,"jurisdiction":"AB","name":"Unsupported future scope","inputs":{}}),
         json!({"program":"T2","tax_year":2025,"jurisdiction":"AB","name":"Missing corporate fiscal dates","inputs":{"scope_confirmed":true}}),
@@ -409,4 +409,47 @@ async fn corporate_profile_lifecycle(router: &axum::Router) {
     assert_eq!(next["calculations"], json!([]));
     let listed = ok(router, "GET", "/api/tax/returns?program=T2", None).await;
     assert!(listed.as_array().unwrap().iter().all(|r| r.get("corporate").is_none() && r.get("inputs").is_none() && r.get("calculations").is_none()));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn parallel_source_lines_and_ontario_family_do_not_file_or_transfer_credits() {
+    unsafe { std::env::set_var("ADMIN_API_KEY", "k") };
+    let router = app_with(Store::memory);
+    let inputs = json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":4_000_000});
+    let created = ok(&router, "POST", "/api/tax/returns", Some(input("T1", "ON", inputs.clone()))).await;
+    let calculated = calculate(&router, &created, "on-base").await;
+    assert_eq!(calculated["calculation"]["result"]["supported"], true);
+    assert_eq!(calculated["calculation"]["result"]["totals"]["provincial_tax"], 182_628);
+    let compare = ok(&router, "POST", &endpoint(&calculated, "/parallel-compare"), Some(json!({
+        "source_system": "webtax",
+        "program": "T1",
+        "tax_year": 2025,
+        "jurisdiction": "ON",
+        "lines": [
+            {"code":"26000","amount_cents":4_000_000},
+            {"code":"42800","amount_cents":182_628},
+            {"code":"VENDOR_ONLY","amount_cents":1}
+        ]
+    }))).await;
+    assert_eq!(compare["authoritative_system"], "webtax");
+    assert_eq!(compare["filing_enabled"], false);
+    assert_eq!(compare["certification"], "not_claimed");
+    assert_eq!(compare["write_back"], false);
+    assert_eq!(compare["paired_to_vendor_bytes"], false);
+    assert_eq!(compare["matches"], 2);
+    assert!(compare["rows"].as_array().unwrap().iter().any(|row| row["code"]=="VENDOR_ONLY" && row["status"]=="only_source"));
+    fails(&router, "POST", &endpoint(&calculated, "/filing"), None, 409).await;
+    let spouse = ok(&router, "POST", "/api/tax/returns", Some(input("T1", "AB", inputs))).await;
+    let spouse = calculate(&router, &spouse, "ab-spouse").await;
+    let family = ok(&router, "POST", "/api/tax/families", Some(json!({
+        "label": "Synthetic pair",
+        "primary_return_id": id(&calculated),
+        "spouse_return_id": id(&spouse)
+    }))).await;
+    assert_eq!(family["credit_transfer"], false);
+    assert_eq!(family["optimization"], "not_performed");
+    assert_eq!(family["filing_enabled"], false);
+    assert!(family["primary"]["totals"]["provincial_tax"].as_i64().unwrap() != family["spouse"]["totals"]["provincial_tax"].as_i64().unwrap());
+    let again = ok(&router, "GET", &format!("/api/tax/families/{}", family["id"].as_str().unwrap()), None).await;
+    assert_eq!(again["id"], family["id"]);
 }

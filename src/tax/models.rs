@@ -60,6 +60,9 @@ pub struct TaxReturn {
     pub rollforward_from: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// Prior parallel comparisons. Absent on records saved before this field existed.
+    #[serde(default)]
+    pub parallel_comparisons: Vec<Value>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -130,9 +133,21 @@ pub struct ImportPreview {
     pub document: ReturnInput,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FamilyLink {
+    pub id: String,
+    pub label: String,
+    pub primary_return_id: String,
+    pub spouse_return_id: String,
+    pub created_at: String,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct TaxState {
     pub returns: Vec<TaxReturn>,
     pub audit: Vec<AuditEvent>,
     pub imports: Vec<ImportPreview>,
+    #[serde(default)]
+    pub families: Vec<FamilyLink>,
 }
