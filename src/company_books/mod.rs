@@ -1,5 +1,6 @@
 //! Company-isolated, source-bound journal books. One CAS publishes the book and receipt.
 mod adjustments;
+mod daily;
 mod subledger;
 pub mod models;
 mod roster;
