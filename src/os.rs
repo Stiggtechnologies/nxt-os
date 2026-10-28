@@ -62,6 +62,7 @@ async fn status(State(os): State<Os>) -> Json<Value> {
             { "id": "migrations", "name": "Parallel testing", "path": "/apps/migrations/" },
             { "id": "signatures", "name": "Prepare signatures", "path": "/apps/signatures/" },
             { "id": "referrals", "name": "NXT Referrals", "path": "/apps/referrals/" },
+            { "id": "nixon", "name": "Nixon", "path": "/apps/nixon/" },
         ],
     }))
 }
@@ -124,6 +125,17 @@ async fn insights(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
             );
         }
     }
+    if let Ok(items) = crate::nixon_finance::service::attention(&os.ledger).await {
+        for item in items {
+            push(
+                "warn",
+                item["title"].as_str().unwrap_or("Nixon has something to review").to_string(),
+                item["body"].as_str().unwrap_or("Open Nixon to see the evidence.").to_string(),
+                "nixon",
+                "",
+            );
+        }
+    }
     let rev = r["totals"]["referred_revenue"].as_f64().unwrap_or(0.0);
     if rev > 0.0 {
         push(
@@ -144,7 +156,7 @@ Seven apps are installed: NXT Ledger (double-entry accounting: invoices, bills, 
 Firm Operations (projects, templates, automated internal work, human approvals, reports and books close), \
 NXT Tax (independent scoped T1, T2, T3 and T5013 workpapers), NXT Engagements (working papers and internal review), \
 Parallel testing (read-only source snapshots), Prepare signatures (internal agreement preparation), \
-and NXT Referrals (customer referral and loyalty programs).
+and NXT Referrals (customer referral and loyalty programs). Nixon is the read-only finance review over the ledger.
 
 How you work:
 - Answer from the user's live data. Use the tools to look things up; never estimate or invent figures.
@@ -153,6 +165,8 @@ How you work:
 That tool queues an immutable proposal for human approval; it does not execute it. Use a unique idempotency_key per intended action and reuse it for retries. \
 Never say a proposal was executed or approved. Open Firm Operations at approvals for the user to review it. \
 For accounting changes (send an invoice, record a payment, categorize a transaction), call open_app to take the user to the right screen.
+- Nixon reviews are also read-only. Use nixon_review to read the latest one. You cannot approve a Nixon proposal, \
+post a journal, or file a tax return. If the user wants to decide, call open_app for Nixon and say a named person has to do it there.
 - Dates are ISO (YYYY-MM-DD). If the user gives a relative period like \"last quarter\", resolve it against today's date from get_dashboard.
 - GST/HST figures are working papers, not filed returns; say so when asked about filing.
 - Tax calculations are scoped internal workpapers. Read their ruleset and diagnostics; never claim complete DT Max parity, CRA certification, approval or filing. Open the Tax workspace for editing or review. You cannot approve, calculate, import or transmit returns through assistant tools.
@@ -256,15 +270,20 @@ fn tools() -> Value {
         },
         {
             "name": "open_app",
-            "description": "Opens an NXT OS app at a screen so the user can act. Ledger views: dashboard, invoices, invoices/new, bills, bills/new, customers, vendors, banking, accounts, journal, reports/profit-loss, reports/balance-sheet, reports/trial-balance, reports/ar-aging, reports/ap-aging, reports/sales-tax, reports/general-ledger, settings. Referrals views: overview, advocates, conversions, rewards, loyalty, settings.",
+            "description": "Opens an NXT OS app at a screen so the user can act. Ledger views: dashboard, invoices, invoices/new, bills, bills/new, customers, vendors, banking, accounts, journal, reports/profit-loss, reports/balance-sheet, reports/trial-balance, reports/ar-aging, reports/ap-aging, reports/sales-tax, reports/general-ledger, settings. Referrals views: overview, advocates, conversions, rewards, loyalty, settings. Nixon views: review.",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "app": { "type": "string", "enum": ["ledger", "firm", "tax", "engagements", "migrations", "signatures", "referrals"] },
+                    "app": { "type": "string", "enum": ["ledger", "firm", "tax", "engagements", "migrations", "signatures", "referrals", "nixon"] },
                     "view": { "type": "string" }
                 },
                 "required": ["app"]
             }
+        },
+        {
+            "name": "nixon_review",
+            "description": "Reads the latest Nixon finance review: findings, evidence references, hypotheses, and whether a person still has to decide. Nixon does not post or file. If no review has been run, say so. Do not invent findings.",
+            "input_schema": { "type": "object", "properties": {} }
         }
     ])
 }
@@ -374,10 +393,46 @@ async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) 
                 .collect();
             Ok(json!({ "analytics": a, "top_advocates": top, "note": "Referral amounts are in dollars, not cents." }))
         }
+        "nixon_review" => {
+            let reviews = crate::nixon_finance::service::list_reviews(l).await.map_err(|e| e.message)?;
+            let Some(latest) = reviews.first() else {
+                return Ok(json!({ "review": null, "note": "No Nixon review has been run. Do not invent findings." }));
+            };
+            let id = latest["id"].as_str().unwrap_or("");
+            let review = crate::nixon_finance::service::get_review(l, id).await.map_err(|e| e.message)?;
+            let findings: Vec<Value> = review
+                .findings
+                .iter()
+                .take(12)
+                .map(|f| {
+                    json!({
+                        "id": f.id,
+                        "capability": f.capability,
+                        "risk_level": f.risk_level,
+                        "title": f.title,
+                        "summary": f.summary,
+                        "requires_human_review": f.requires_human_review,
+                        "evidence": f.evidence.iter().take(8).map(|e| json!({ "reference": e.reference, "note": e.note, "level": e.level })).collect::<Vec<_>>(),
+                        "hypotheses": f.hypotheses.iter().map(|h| json!({ "label": h.label, "statement": h.statement, "confidence": h.confidence, "confidence_refusal": h.confidence_refusal })).collect::<Vec<_>>(),
+                        "gaps": f.gaps.iter().map(|g| g.note.clone()).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            Ok(json!({
+                "review_id": review.id,
+                "correlation_id": review.correlation_id,
+                "as_of": review.as_of,
+                "summary": review.summary,
+                "posting": "disabled",
+                "filing": "disabled",
+                "findings": findings,
+                "note": "Read-only. You cannot approve, post, or file.",
+            }))
+        }
         "open_app" => {
             let app = s(input, "app").ok_or("app is required")?;
-            if !["ledger","firm","tax","engagements","migrations","signatures","referrals"].contains(&app.as_str()) {
-                return Err("app must be ledger, firm, tax, engagements, migrations, signatures or referrals".into());
+            if !["ledger","firm","tax","engagements","migrations","signatures","referrals","nixon"].contains(&app.as_str()) {
+                return Err("app must be ledger, firm, tax, engagements, migrations, signatures, referrals, or nixon".into());
             }
             actions.push(json!({ "type": "open_app", "app": app, "view": s(input, "view") }));
             Ok(json!({ "opened": true }))

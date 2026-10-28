@@ -1,0 +1,117 @@
+# Nixon for finance
+
+Nixon is NXT OS's finance intelligence layer. It reviews the books. It does not post journals, file taxes, or add a regulatory module.
+
+The pattern comes from SyncAI (`Stiggtechnologies/ai-maintenance-system`, `main` as of 2026-10-28). The upstream design is named Sync Context. SyncAI did not copy a separate source tree into the repository. `docs/sync-context/` is the contract, and later work uses SyncAI's own governed operating loop.
+
+This document maps those pieces onto Nixon. It also says what is on `main` today and what is still open.
+
+## What was found
+
+Sync Context is a contract in SyncAI, not a vendored tree.
+
+| SyncAI location | What it is |
+| --- | --- |
+| `docs/sync-context/README.md` | The Sync Context contract. It says no upstream source is copied. Context is a projection over canonical records. |
+| `docs/sync-context/capability-ledger.json` | 132 requirements, provenance back to the original discussion, and the rule that completion needs evidence. The design name is Sync Context. |
+| `docs/architecture/governed-capability-pattern.md` | The lifecycle every AI capability must follow: input, intelligence, structured result, decision, approval, optional execution. One `correlation_id` ties the chain. Autonomy can be lowered, not raised. |
+| `src/types/sir-contracts.ts` | The typed envelope: risk level, evidence, confidence, `requires_human_review`, autonomy `advisory` / `conditional` / `controlled`. |
+| `docs/recommendation-evidence-provenance.md` | Evidence class versus basis. `ai_hypothesis` is a basis, not verified evidence. Missing evidence is a gap, not a made-up row. |
+| `docs/syncai-guard.md` and `src/services/operatingLoopService.ts` | Anomaly findings become pending recommendations with evidence and a named human. Approval is not outcome verification. The function does not insert work orders on its own. |
+| `supabase/functions/_shared/sync-realtime-core.ts` | The same conversational bar for Sync voice: do not invent plant data, and do not approve emergency work. |
+
+The Sync Context constraints that Nixon keeps:
+
+1. Read and project. Do not create a second ledger, evidence store, or audit log.
+2. Source class is explicit. Nixon will not guess whether a packet is live, simulated, or the customer's own books.
+3. Missing, conflicting, or unsupplied evidence stays visible.
+4. Nixon may observe, summarize, flag, and recommend. A named person decides.
+5. A hypothesis is not a cause. The screens do not say "root cause".
+6. Deterministic screens are separate from Ask NXT's language model. Ask NXT can read a review. It cannot approve or post.
+
+Industrial, map, camera, and safety-verdict material discussed around Sync Context is not part of this finance port.
+
+## Component map
+
+| Sync Context piece | SyncAI home | Nixon on NXT OS |
+| --- | --- | --- |
+| Data ingestion and context | Sync Context projection. Source classes `LIVE EXTERNAL`, `SIMULATED INDUSTRIAL`, `CUSTOMER OPERATIONAL`. Read adapters, not a second asset model. | `FinanceContext` in `src/nixon_finance/analyze.rs`, loaded by `load_context` from the existing ledger: chart, journals, documents, payments, bank feed, reconciliations, closing date. Class `workspace_books`. Cutover and firm/tax packets must declare `live_external`, `simulated`, or `customer_operational`. |
+| Reasoning and agents | Governed capability pattern. OpenClaw (`ai-agent-processor`) returns a structured result. Policy can downgrade autonomy only. | Deterministic screens: balanced journals, trial balance, document links, pending and future bank rows, reconciliation tie-out, bank-cash movement, `expense-shift-v1`, possible duplicate journals, cutover match, firm/tax checklist. `POST /api/nixon/actions` with `controlled` is stored as `advisory`. |
+| Evidence and hypotheses | `evidence_items`, recommendation evidence levels including `ai_hypothesis`, gaps as `missing_evidence`. | Each finding has evidence references (`entry:`, `feed:`, `account:`, `recon:`, `cutover:`, `firm:`, `tax:`), gaps, and hypotheses. Hypothesis confidence is null, with a written refusal. References that do not resolve are rejected before the review is saved. |
+| Human-approval gates | Named human, separation of duties, approval row, no client bypass. | `POST /api/nixon/reviews/{id}/proposals/{pid}/decide`. The actor must be a person's name. `Nixon`, `system`, `ai`, and role words are refused. The person who prepared a packet cannot approve it. Blocked actions (post, void, categorize, lock, remit, file) cannot be approved into execution. |
+| Verification | Verification obligations are distinct from approval. SyncAI Guard says approval is not outcome verification. | Every review stores verification rows: `passed`, `failed`, `not_run`, or `refused`. A decision is stamped `verification_state: not_verification`. |
+| Audit trail | Append-only audit, `correlation_id`, canonical trail in the control plane rather than a side log. | Nixon appends to the existing ledger audit (`gl:audit`) via `Ledger::audit`. Actions: `nixon.review`, `nixon.decision`, `nixon.execution_refused`, `nixon.action_blocked`. The detail carries the correlation id. There is no second audit log. |
+| UI surfaces | Recommendation card with risk, evidence, confidence, approval, correlation id. Copilot can open the work and cannot approve it. | `/apps/nixon/` shows the review, evidence, hypotheses, verification, and a name field for approve or reject. The shell dock, home, and command bar open it. Ask NXT has `nixon_review` and can `open_app` to Nixon. Ask NXT has no approve or post tool. |
+
+## What a review covers
+
+On the ledger that is already on `main`:
+
+- Journals that do not balance, and lines that carry both a debit and a credit.
+- Trial balance at the review date.
+- Invoices, bills, and payments whose journal is missing or void while the document is not.
+- Pending bank-feed rows, rows dated after the review date, and rows that do not point at a bank or card.
+- Stored reconciliations versus cleared lines. A difference is reported. Nixon does not draft a plug.
+- Ending cash on bank accounts versus the prior month-end, only when bank activity exists. This is not a full cash-flow statement.
+- Month-to-month income and expense shifts using screen `expense-shift-v1` (at least $500.00 and 50% versus the prior month, or a new amount of at least $500.00). The constants are a screen, not a budget.
+- Two journals with the same date, memo, source, and lines. That is a hypothesis, not a void.
+
+When the caller supplies a packet:
+
+- **Cutover.** Source trial balance versus the books, in cents, in CAD. Unknown source accounts are reported and not created. A period lock is compared with the company closing date and not written. Omitted source accounts that have a book balance are reported.
+- **Firm.** Open, blocked, unreviewed, or unrecognized checklist items. Completing the Nixon proposal does not complete a Firm task.
+- **Tax.** The same checklist treatment. `filing_requested: true` stores a `file_return` proposal with status `blocked`. Nothing is filed.
+
+`POST /api/nixon/reviews/{id}/proposals/{pid}/execute` always returns 403 and writes `nixon.execution_refused`.
+
+## API
+
+All routes use the workspace key, the same `require_admin` check as the ledger.
+
+| Method | Path | Effect |
+| --- | --- | --- |
+| `GET` | `/api/nixon/status` | Capability card. Posting and filing are `disabled`. |
+| `POST` | `/api/nixon/reviews` | Read the books, optionally accept `cutover` and `surfaces`, store the review. |
+| `GET` | `/api/nixon/reviews` | Summaries, newest first. |
+| `GET` | `/api/nixon/reviews/{id}` | Full review. |
+| `POST` | `/api/nixon/reviews/{id}/proposals/{pid}/decide` | Named approve or reject. Does not apply the proposal. |
+| `POST` | `/api/nixon/reviews/{id}/proposals/{pid}/execute` | Always refused. |
+| `POST` | `/api/nixon/actions` | Records `post_journal`, `void_entry`, `file_return`, `remit_tax`, `categorize_feed`, or `lock_period` as blocked. |
+
+An optional `idempotency_key` returns the same review when the snapshot digest matches, and returns 409 when the books or the packet changed.
+
+## Firm, Tax, and migration on main
+
+Pull request **#5** is squash-merged to `main` as `8bb0df0`. Firm Operations, NXT Tax, NXT Engagements, signatures, and the migration/company-book modules stay in this tree. Nixon does not replace their stores or their approval queues.
+
+- Firm keeps its own proposal approval. A Nixon `surface: "firm"` packet is a review input. Approving it does not complete a Firm task.
+- Tax filing stays disabled in NXT Tax. Nixon's `file_return` proposal stays `blocked`. Nixon does not calculate a T1, T2, T3, or T5013 return.
+- Migration and company books keep their receipts and compare-and-exchange. Nixon's cutover packet is a read-only check. Nixon does not publish a receipt or post a migration journal.
+
+Draft PR **#4** (`cursor/guardvoice-2109`, GuardVoice) is untouched. It uses the name Nixon for the phone engine in `src/nixon/`. Finance Nixon lives in `src/nixon_finance` and under `/api/nixon/`. GuardVoice routes stay under `/api/guardvoice/`. When both exist, the phone engine may call these read APIs. It must not gain a path that posts or files.
+
+Workspace auth is still one shared key. The name on a decision is operational metadata, the same limit Firm's PR already calls out. Individual accounts are separate work.
+
+## Done and remaining
+
+Done in this change:
+
+- Read-only context from the ledger on `main`.
+- Screens for anomalies, reconciliation gaps, bank-cash movement, the shift hypothesis, and cutover, firm, and tax packets.
+- Evidence links checked against the snapshot.
+- Named-person approval, preparer separation, and a hard execute refusal.
+- Audit lines on the existing ledger audit, with a correlation id.
+- Ask NXT tool `nixon_review` and an `open_app` path to Nixon.
+- Shell entry and the Nixon review screen.
+- Unit tests and `tests/nixon_finance.rs`.
+
+Still open:
+
+- Nixon does not scan Firm, Tax, or migration tables unless the caller supplies a packet. Those modules are installed; their own screens remain the place to do their work.
+- No live bank feed or external source-ledger connector. A packet is not a connection.
+- No budget or forecast, so shift results are not variances to a plan.
+- No statement of cash flows. The cash screen is ending bank cash versus the prior month-end.
+- Decisions are not tied to a user account. The workspace key is the only authentication.
+- Ask NXT will not run a review for you. Running a review writes the case file and an audit row, so it stays on the Nixon screen.
+- GuardVoice's phone Nixon is a different branch. Wiring that voice path at these read APIs waits until PR #4 is in play.
+- Nothing here deploys to Vercel production or touches a production database.

@@ -1,6 +1,6 @@
 # NXT OS
 
-An AI-native operating system for running a Canadian business. One Rust function on Vercel hosts the OS shell and five business modules:
+An AI-native operating system for running a Canadian business. One Rust function on Vercel hosts the OS shell, the business modules, and Nixon:
 
 | App | What it does |
 |---|---|
@@ -10,6 +10,7 @@ An AI-native operating system for running a Canadian business. One Rust function
 | **NXT Engagements** (`/apps/engagements/`) | Original CAD trial-balance and text workpapers with bounded opaque file versions, group mappings, local adjustments, issues, internal sign-offs/locks and comparative rollforward. Reviewed Ledger copies, Tax draft previews and human-approved Firm task proposals connect to existing modules. Full Caseware parity is unverified. |
 | **NXT Ledger** (`/apps/ledger/`) | Double-entry accounting: chart of accounts, journal entries, invoices and bills with per-line GST/HST, payments (auto-applied to the oldest open documents), expenses, deposits, transfers, GST/HST remittances, bank CSV import with learned categorization rules, reconciliation, period close, audit log. |
 | **NXT Referrals** (`/apps/referrals/`) | Referral and loyalty programs: advocate links, friend incentives, attribution, fraud checks, points, signed webhooks, an embeddable widget (`/widget.js`) and a friend landing page (`/welcome.html`). |
+| **Nixon** (`/apps/nixon/`) | Read-only finance review over the ledger, bank feed, and trial balance. Findings carry evidence and hypotheses. A named person can approve or reject; Nixon does not post journals or file taxes. |
 
 Ledger reports: profit and loss, balance sheet (with retained earnings roll-forward by fiscal year), trial balance, AR and AP aging, a GST/HST return working paper (CRA lines 101/105/108/109) and the general ledger. Each one prints and exports to CSV.
 
@@ -35,7 +36,9 @@ One click above, or import manually at https://vercel.com/new. Then:
 
 ## Ask NXT
 
-Ask NXT calls the Claude Messages API with lookup tools for dashboard, reports, invoice and bill lists, accounts, contacts, referral performance, firm operations and bounded Tax summaries. Tax tools exclude raw input documents and cannot edit, calculate, approve or file a workpaper. Ask NXT can prepare an internal task or report proposal for the human approval queue; it cannot approve or execute that proposal. Accounting changes still open the relevant Ledger screen. It never edits the books. Refusal fallbacks (`fallbacks: "default"`) are enabled.
+Ask NXT calls the Claude Messages API with lookup tools for dashboard, reports, invoice and bill lists, accounts, contacts, referral performance, firm operations, bounded Tax summaries, and the latest Nixon review. Tax tools exclude raw input documents and cannot edit, calculate, approve or file a workpaper. Ask NXT can prepare an internal task or report proposal for the human approval queue; it cannot approve or execute that proposal, and it cannot approve a Nixon finding. Accounting changes still open the relevant Ledger screen. It never edits the books. Refusal fallbacks (`fallbacks: "default"`) are enabled.
+
+Nixon's design is mapped in [docs/NIXON_FINANCE.md](docs/NIXON_FINANCE.md). Firm, Tax, Engagements, and migration are on `main`. Nixon can review the ledger and an optional firm, tax, or cutover packet. Approving a Nixon finding does not complete a Firm task, publish a migration receipt, or file a return.
 
 ## Firm Operations
 

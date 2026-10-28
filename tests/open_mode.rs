@@ -30,6 +30,7 @@ async fn missing_workspace_key_fails_closed_across_modules() {
         .merge(nxt_os::engagement::router(engagements.clone()))
         .merge(nxt_os::migrations::router(Arc::new(nxt_os::migrations::Migrations::new(Store::memory()))))
         .merge(nxt_os::signatures::router(signatures.clone()))
+        .merge(nxt_os::nixon_finance::routes::router(ledger.clone()))
         .merge(nxt_os::os::router(nxt_os::os::Os {
             ledger: ledger.clone(), referrals: referrals.clone(), firm: firm.clone(), tax: tax.clone(), engagements: engagements.clone(),
         }))
@@ -52,6 +53,10 @@ async fn missing_workspace_key_fails_closed_across_modules() {
             ("GET", "/api/engagements/summary"),
             ("GET", "/api/migrations"),
             ("GET", "/api/migrations/unavailable/archive"),
+            ("GET", "/api/nixon/status"),
+            ("GET", "/api/nixon/reviews"),
+            ("POST", "/api/nixon/reviews"),
+            ("POST", "/api/nixon/actions"),
             ("GET", "/api/signatures"),
             ("GET", "/api/signatures/catalog"),
             ("GET", "/api/signatures/audit?path=signatures%2Faudit&offset=0&limit=1"),
@@ -101,6 +106,8 @@ async fn missing_workspace_key_fails_closed_across_modules() {
     for supplied in [None, Some("Bearer wrong-key"), Some("Basic configured-test-key")] {
         for (method, uri) in [
             ("GET", "/api/os/status"),
+            ("GET", "/api/nixon/status"),
+            ("POST", "/api/nixon/reviews"),
             ("GET", "/api/signatures"),
             ("GET", "/api/signatures/catalog"),
             ("GET", "/api/signatures/audit"),
@@ -124,8 +131,9 @@ async fn missing_workspace_key_fails_closed_across_modules() {
     let bytes = axum::body::to_bytes(response.into_body(), 8192).await.unwrap();
     let status: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(status["auth_required"], true);
-    assert_eq!(status["apps"].as_array().unwrap().len(), 7);
+    assert_eq!(status["apps"].as_array().unwrap().len(), 8);
     assert!(status["apps"].as_array().unwrap().iter().any(|app| app["id"] == "signatures" && app["path"] == "/apps/signatures/"));
+    assert!(status["apps"].as_array().unwrap().iter().any(|app| app["id"] == "nixon" && app["path"] == "/apps/nixon/"));
     unsafe { std::env::remove_var("ADMIN_API_KEY") };
     assert_eq!(call(&router, "GET", "/api/os/status", Some("Bearer configured-test-key")).await.status().as_u16(), 503);
 }

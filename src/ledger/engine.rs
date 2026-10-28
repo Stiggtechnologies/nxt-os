@@ -262,7 +262,7 @@ impl Ledger {
             .collect())
     }
 
-    async fn audit(&self, action: &str, detail: String) -> LResult<()> {
+    pub async fn audit(&self, action: &str, detail: String) -> LResult<()> {
         let ev = AuditEvent { at: now(), action: action.into(), detail };
         self.store.lpush_capped("gl:audit", &serde_json::to_string(&ev).unwrap(), 2000).await?;
         Ok(())
