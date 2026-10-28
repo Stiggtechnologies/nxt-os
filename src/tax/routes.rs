@@ -23,6 +23,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/print",get(print))
         .route("/api/tax/returns/{id}/filing",post(filing))
         .route("/api/tax/returns/{id}/parallel-compare",post(parallel_compare))
+        .route("/api/tax/returns/{id}/prior-lines",post(prior_lines))
         .route("/api/tax/families",post(create_family))
         .route("/api/tax/families/{id}",get(family))
         .route("/api/tax/import/preview",post(preview))
@@ -73,6 +74,10 @@ async fn create_family(State(t):S,Json(input):Json<FamilyInput>) -> R {
     ok(t.link_family(&input.label, &input.primary_return_id, &input.spouse_return_id).await?)
 }
 async fn family(State(t):S,Path(id):Path<String>) -> R { ok(t.family(&id).await?) }
+#[derive(Deserialize)] #[serde(deny_unknown_fields)] struct PriorInput { expected_revision: u64, lines: Vec<super::models::PriorLine> }
+async fn prior_lines(State(t):S,Path(id):Path<String>,Json(input):Json<PriorInput>) -> R {
+    ok(t.set_prior_lines(&id, input.expected_revision, input.lines).await?)
+}
 
 async fn package(State(t):S,Path(id):Path<String>) -> TResult<Response> {
     let value=t.package(&id).await?;
