@@ -34,6 +34,7 @@ jobs:
           node --check public/apps/migrations/source-contact-lists.js
           node --check public/apps/signatures/signatures.js
           node --check public/apps/ledger/qb-navigation.js
+          node --check public/apps/ledger/company-books-bridge.js
           node --check public/apps/nixon/nixon.js
           node --check scripts/publish-shadow-snapshot.mjs
           node --check scripts/backup-nxt-store.mjs
@@ -43,6 +44,7 @@ jobs:
           node --test tests/migration_preflight.test.mjs
           node --test tests/shadow_publisher.test.mjs
           node --test tests/qb_navigation.test.mjs
+          node --test tests/ledger_company_bridge.test.mjs
           node --test tests/signatures_navigation.test.mjs
           node --test tests/engagement_annotations.test.mjs
           node --test tests/engagement_tickmarks.test.mjs
