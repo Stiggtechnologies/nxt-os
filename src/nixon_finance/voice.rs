@@ -1,10 +1,10 @@
 //! Nixon voice commands.
 //!
-//! The shape follows Sync Context voice (SCX-VOICE) and the Meet Sync booth:
-//! hear a turn, classify it, speak a short answer, and leave approval on the
-//! screen. Speech here is a transcript in and a sentence out. The browser
-//! supplies recognition and speech synthesis. This module does not post,
-//! file, or approve.
+//! The shape follows Sync Context voice (SCX-VOICE): hear a turn, classify
+//! it, speak a short answer, and leave approval on the screen. Live speech
+//! is OpenAI Realtime when configured, otherwise browser recognition and
+//! speech synthesis. The legacy Meet Sync booth is not this surface. This
+//! module does not post, file, or approve.
 //!
 //! The scripted gate matches the idea in draft PR #4's `src/nixon` phone
 //! engine: a read can be answered immediately, and a consequential act is
@@ -29,7 +29,7 @@ pub struct Scope {
     pub referrals: Arc<crate::referral::engine::Engine>,
 }
 
-/// Same spoken-budget as Meet Sync `stripForSpeech`.
+/// Same spoken-budget Sync still uses in `stripForSpeech`.
 pub const SPEECH_MAX_CHARS: usize = 420;
 
 #[derive(Debug, Deserialize)]
@@ -78,7 +78,6 @@ pub enum VoiceIntent {
     RefuseApprove,
     RefusePost,
     RefuseFile,
-    Recap,
     Navigate,
     Help,
 }
@@ -149,8 +148,8 @@ fn dollars_in_speech(text: &str) -> String {
 }
 
 pub fn classify(transcript: &str, channel: &str) -> Result<VoiceIntent, String> {
-    if channel != "push_to_talk" && channel != "open_mic" && channel != "meet" {
-        return Err("channel must be push_to_talk, open_mic, or meet".into());
+    if channel != "push_to_talk" && channel != "open_mic" {
+        return Err("channel must be push_to_talk or open_mic".into());
     }
     let heard = normalize_heard(transcript);
     if heard.is_empty() {
@@ -186,21 +185,14 @@ pub fn classify(transcript: &str, channel: &str) -> Result<VoiceIntent, String> 
     if is_cash(&heard) {
         return Ok(VoiceIntent::Cash);
     }
-    if is_recap(&heard) {
-        return Ok(VoiceIntent::Recap);
-    }
     if is_navigation(&heard) {
         return Ok(VoiceIntent::Navigate);
     }
     let addressed = heard.split(' ').any(|w| w == "nixon");
-    if (channel == "open_mic" || channel == "meet") && !addressed {
+    if channel == "open_mic" && !addressed {
         return Ok(VoiceIntent::Hold);
     }
     Ok(VoiceIntent::Help)
-}
-
-fn is_recap(heard: &str) -> bool {
-    heard.contains("recap") || heard.contains("what did we decide") || heard.contains("wrap up")
 }
 
 fn is_navigation(heard: &str) -> bool {
@@ -379,7 +371,6 @@ pub async fn handle(scope: &Scope, turn: VoiceTurn) -> Result<VoiceAnswer, Nixon
             None,
             "none",
         ),
-        VoiceIntent::Recap => recap(ledger).await?,
         VoiceIntent::Navigate => open_records(scope, &heard).await?,
         VoiceIntent::Help => answer_shell(
             "help",
@@ -472,19 +463,6 @@ async fn speak_live(ledger: &Ledger, kind: &str) -> Result<VoiceAnswer, NixonErr
         }
     };
     Ok(answer_shell(kind, say, None, "none"))
-}
-
-async fn recap(ledger: &Ledger) -> Result<VoiceAnswer, NixonError> {
-    let reviews = service::list_reviews(ledger).await?;
-    let Some(latest) = reviews.first() else {
-        return Ok(answer_shell("recap", "There is no review to recap. I did not treat silence as a decision.".into(), None, "none"));
-    };
-    Ok(answer_shell(
-        "recap",
-        format!("Latest review. {} Voice did not record a decision.", latest["summary"].as_str().unwrap_or("No summary.")),
-        latest["id"].as_str().map(str::to_string),
-        "none",
-    ))
 }
 
 async fn open_records(scope: &Scope, heard: &str) -> Result<VoiceAnswer, NixonError> {
@@ -717,6 +695,7 @@ mod tests {
         assert_eq!(classify("file the tax return", "push_to_talk").unwrap(), VoiceIntent::RefuseFile);
         assert_eq!(classify("can you hear me", "open_mic").unwrap(), VoiceIntent::Presence);
         assert_eq!(classify("hey nixon", "open_mic").unwrap(), VoiceIntent::Greeting);
+        assert!(classify("what did we decide", "meet").is_err());
     }
 
     #[test]
