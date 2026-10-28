@@ -6,6 +6,7 @@
 <title>NXT Ledger</title>
 <link rel="stylesheet" href="/nxt/brand.css">
 <link rel="stylesheet" href="qb-navigation.css">
+<link rel="stylesheet" href="company-books-bridge.css">
 <style>
   .app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
   .side { border-right: 1px solid var(--line); background: var(--panel); padding: 18px 10px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
@@ -51,6 +52,7 @@
 <div class="app">
   <nav class="side" id="side" aria-label="Ledger">
     <div class="brand"><span class="nxt-mark" id="mark"></span></div>
+    <section id="ledger-company-bridge" class="ledger-company-bridge" aria-label="Company books navigation"></section>
     <section id="qb-navigation" class="qb-navigation" aria-label="Observed QuickBooks navigation"><p class="qb-nav-help">Loading the observed menu inventory…</p></section>
     <details class="nxt-native-menu" open><summary>NXT native workspace</summary>
     <a href="#dashboard">Dashboard</a>
@@ -77,6 +79,7 @@
 </div>
 <script src="/nxt/ui.js"></script>
 <script src="qb-navigation.js"></script>
+<script src="company-books-bridge.js"></script>
 <script src="ledger.js"></script>
 </body>
 </html>
