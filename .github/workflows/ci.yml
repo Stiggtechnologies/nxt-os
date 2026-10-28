@@ -33,6 +33,7 @@ jobs:
           node --check public/apps/migrations/company-coverage.js
           node --check public/apps/signatures/signatures.js
           node --check public/apps/ledger/qb-navigation.js
+          node --check public/apps/nixon/nixon.js
           node --check scripts/publish-shadow-snapshot.mjs
           node --check scripts/backup-nxt-store.mjs
           node --check scripts/cutover-rehearsal.mjs

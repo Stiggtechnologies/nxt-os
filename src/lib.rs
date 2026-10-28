@@ -4,6 +4,7 @@
 
 pub mod ledger;
 pub mod firm;
+pub mod nixon_finance;
 pub mod os;
 pub mod referral;
 pub mod store;
@@ -46,6 +47,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         .merge(signatures::router(signatures))
         .merge(company_books::router(company_books))
         .merge(company_books::source_lists::router(source_lists))
+        .merge(crate::nixon_finance::routes::router(ledger.clone()))
         .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
 }

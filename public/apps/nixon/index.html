@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nixon</title>
+<link rel="stylesheet" href="/nxt/brand.css">
+<style>
+  main { max-width: 980px; margin: 0 auto; padding: 28px 16px 64px; }
+  .banner { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
+  .banner p { margin: 6px 0 0; color: var(--muted); }
+  .finding { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 14px 16px; margin-top: 10px; }
+  .finding h3 { font-size: 16px; margin: 0; }
+  .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .evidence { margin: 8px 0 0; padding-left: 18px; color: var(--text); }
+  .evidence li { margin: 4px 0; }
+  .ref { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  details.packet { margin-top: 14px; }
+  details.packet summary { cursor: pointer; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <div class="page-head">
+    <div>
+      <div class="eyebrow" style="font:600 12px var(--ui);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)">Nixon</div>
+      <h1>Finance review</h1>
+      <p>Read-only analysis of the ledger, bank feed, trial balance, and any firm, tax, or cutover packet you supply.</p>
+    </div>
+    <button class="btn primary" id="run">Run review</button>
+  </div>
+  <div class="banner" id="banner">Loading…</div>
+  <details class="packet">
+    <summary>Add a cutover, firm, or tax packet</summary>
+    <div class="card" style="margin-top:10px">
+      <p class="muted">Packets are evidence you provide. Nixon does not connect to Firm, Tax, or a source ledger, and it does not post what you paste here.</p>
+      <div class="form" style="margin-top:12px">
+        <label class="f">Source class
+          <select id="sourceClass">
+            <option value="customer_operational">Customer operational</option>
+            <option value="live_external">Live external</option>
+            <option value="simulated">Simulated</option>
+          </select>
+        </label>
+        <label class="f">Prepared by<input id="preparedBy" placeholder="Casey Quinn"></label>
+        <label class="f">As of<input id="asOf" placeholder="YYYY-MM-DD"></label>
+        <label class="f">Period lock<input id="periodLock" placeholder="optional"></label>
+      </div>
+      <label class="f" style="margin-top:12px">Source trial balance (code, debit cents, credit cents)
+        <textarea id="tb" rows="4" placeholder="1000, 100000, 0"></textarea>
+      </label>
+      <label class="f" style="margin-top:12px">Firm or tax items (surface, id, label, state)
+        <textarea id="items" rows="3" placeholder="firm, close-bank, Bank reconciliation, open"></textarea>
+      </label>
+      <label class="check" style="margin-top:10px"><input type="checkbox" id="filing"> This packet asks to file a return (Nixon will refuse)</label>
+    </div>
+  </details>
+  <div id="review"></div>
+</main>
+<script src="/nxt/ui.js"></script>
+<script src="nixon.js"></script>
+</body>
+</html>
