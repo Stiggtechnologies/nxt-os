@@ -21,7 +21,12 @@ When no Supabase setting is supplied, existing Redis or local-memory selection r
 
 ## Database deployment
 
-The migration is `supabase/migrations/20261025051013_nxt_store.sql`. It adds:
+Migrations, in order:
+
+- `supabase/migrations/20261025051013_nxt_store.sql`
+- `supabase/migrations/20261026033000_nxt_backup_reader.sql` (read-only `nxt_backup_reader` role; no client data)
+
+The store migration adds:
 
 - Private `nxt_private.kv_values`, `set_members`, and `list_values` tables.
 - Row Level Security on all three tables, with no ordinary-role policies and no direct table/schema grants to API roles.

@@ -15,7 +15,10 @@ from unittest.mock import patch
 
 import sys
 sys.dont_write_bytecode = True
-WORK = Path(__file__).resolve().parents[2]
+# Outside the checkout. parents[2] is "/" when the repo lives at /workspace,
+# and this process cannot create directories there.
+WORK = Path(tempfile.gettempdir()) / ".nxt-opaque-preservation-tests"
+WORK.mkdir(exist_ok=True)
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'prepare-tax-source.py'
 spec = importlib.util.spec_from_file_location('synthetic_opaque_tax_source', SCRIPT)
 prep = importlib.util.module_from_spec(spec)

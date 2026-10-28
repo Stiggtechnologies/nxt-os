@@ -22,7 +22,7 @@ An interrupted readback directory is partial evidence. Start verification again 
 
 The transport allows at most two extra GET attempts across one run for a timeout, connection reset or aborted connection. These reuse the exact request. POST, HTTP/authentication, schema, protocol and certificate failures are not automatically retried. Every successful response still passes the original source and head checks. Receipt and readback output paths inside a Git checkout are rejected, including nested repositories under the private root.
 
-The strict verifier checks the initial imported generation without native changes. `--allow-native-adjustments` is rejected until independent native-delta recomputation is implemented. Native journals, exact reversals and forward-only period locks have separate server-side receipts and tests; they do not synchronize to the source.
+The strict verifier checks the initial imported generation without native changes. `--allow-native-adjustments` reads the same committed source prefix, then recomputes each account's native debit and credit from entries whose provenance is `native_adjustment` and whose source row is 0. Server delta fields that disagree with that recomputation fail the verify. The flag does not post, does not accept a changed source prefix, and does not authorize live cutover. Native journals, exact reversals and forward-only period locks have separate server-side receipts and tests; they do not synchronize to the source.
 
 ## Admission and operational limits
 

@@ -8,8 +8,10 @@ After an ambiguous write failure, rerun the write
 with the exact command and request ID against its immutable intent. For an
 interrupted verify, preserve its partial output and use a NEW readback directory
 and verification receipt path with the same immutable commit receipt. Partial
-files are not acceptance evidence. Native-adjustment verification is not yet
-implemented. Original systems remain authoritative.
+files are not acceptance evidence. `--allow-native-adjustments` recomputes
+native deltas from returned entries and does not trust the server's delta
+fields. It still cannot authorize live cutover. Original systems remain
+authoritative.
 """
 import argparse
 import copy
@@ -633,19 +635,48 @@ class Runner:
             return self._receipt(args.receipt, original, same_ok=True)
         return self._receipt(args.receipt, result)
 
+    def _native_suffix(self, rows):
+        source = self.bundle.entries
+        need(len(rows) >= len(source), "TARGET_ENTRY_COUNT_MISMATCH")
+        for index, entry in enumerate(source):
+            need(dump(rows[index]) == dump(entry), "TARGET_SOURCE_ROW_OR_METADATA_MISMATCH")
+        extra = rows[len(source):]
+        totals = {key: [0, 0] for key in self.bundle.accounts}
+        seen = {entry["id"] for entry in source}
+        lines = 0
+        for entry in extra:
+            meta = entry.get("source_metadata")
+            need(isinstance(meta, dict) and meta.get("origin") == "native_adjustment", "NATIVE_ENTRY_PROVENANCE_MISSING")
+            need(entry.get("id") not in seen and isinstance(entry.get("lines"), list) and len(entry["lines"]) >= 2, "NATIVE_ENTRY_LINES_INVALID")
+            seen.add(entry["id"])
+            debit = credit = 0
+            for line in entry["lines"]:
+                line_meta = line.get("source_metadata")
+                need(line.get("source_row") == 0 and isinstance(line_meta, dict) and line_meta.get("origin") == "native_adjustment", "NATIVE_LINE_PROVENANCE_MISSING")
+                key = line.get("account_id")
+                need(key in totals, "NATIVE_LINE_UNKNOWN_ACCOUNT")
+                amount_debit, amount_credit = cents(line["debit_cents"]), cents(line["credit_cents"])
+                need((amount_debit > 0) ^ (amount_credit > 0), "NATIVE_LINE_SIDE_INVALID")
+                totals[key][0] += amount_debit
+                totals[key][1] += amount_credit
+                debit += amount_debit
+                credit += amount_credit
+                lines += 1
+            need(debit == credit and debit > 0, "NATIVE_ENTRY_UNBALANCED")
+        return extra, totals, lines
+
     def verify(self, args):
-        need(not args.allow_native_adjustments, "NATIVE_ADJUSTMENT_VERIFICATION_NOT_IMPLEMENTED_USE_STRICT_INITIAL_IMPORT")
         self.bundle.files.output_path(args.receipt)
         self.bundle.files.output_path(args.readback_dir)
         try:
-            return self._verify_initial_import(args)
+            return self._verify_initial_import(args, allow_native=args.allow_native_adjustments)
         except OperatorError as exc:
             if str(exc).startswith("NETWORK_UNCERTAIN"):
                 budget = "GET_RETRY_BUDGET_EXHAUSTED_" if "GET_RETRY_BUDGET_EXHAUSTED" in str(exc) else ""
                 raise OperatorError("VERIFY_NETWORK_UNCERTAIN_" + budget + "PARTIAL_OUTPUT_IS_NOT_ACCEPTANCE_USE_NEW_DIRECTORY_AND_RECEIPT") from None
             raise
 
-    def _verify_initial_import(self, args):
+    def _verify_initial_import(self, args, allow_native=False):
         self.preflight()
         committed = self.bundle.files.json(args.commit_receipt, args.commit_receipt_sha256, 1024 * 1024)
         need(committed.get("format") == "nxt-company-book-operator-commit/v1" and committed.get("seed") == self.bundle.seed and committed.get("origin") == self.client.origin and
@@ -669,48 +700,94 @@ class Runner:
         need(isinstance(head, dict) and detail.get("company_id") == self.bundle.company and
              head.get("company_id") == self.bundle.company and head.get("preview_id") == committed["preview_id"] and
              SHA.fullmatch(detail.get("head_sha256", "")), "TARGET_HEAD_MISMATCH")
-        need(detail["head_sha256"] == committed["head_sha256"] and
-             dump(head) == dump(committed["head"]) and
-             sha(initial_head_bytes(head)) == detail["head_sha256"], "TARGET_FULL_INITIAL_HEAD_RECEIPT_MISMATCH")
+        if not allow_native:
+            need(detail["head_sha256"] == committed["head_sha256"] and
+                 dump(head) == dump(committed["head"]) and
+                 sha(initial_head_bytes(head)) == detail["head_sha256"], "TARGET_FULL_INITIAL_HEAD_RECEIPT_MISMATCH")
         save("head.json", detail); save("preview.json", preview)
-        offset, seen = 0, 0
+        offset, collected, declared = 0, [], None
         for number in range(10000):
             page = self.client.request("GET", self.base + "/entries?" + urllib.parse.urlencode({"offset": offset, "limit": 200, "max_bytes": 1048576}))
             controls(page)
             need(page.get("company_id") == self.bundle.company and page.get("company") == self.bundle.input["company"] and
                  page.get("head") == head and page.get("offset") == offset and page.get("max_bytes") == 1048576, "ENTRY_SNAPSHOT_CHANGED")
-            need(page.get("total") == len(self.bundle.entries), "TARGET_ENTRY_COUNT_MISMATCH")
+            total = page.get("total")
+            need(type(total) is int and total >= 0, "TARGET_ENTRY_COUNT_MISMATCH")
+            if not allow_native:
+                need(total == len(self.bundle.entries), "TARGET_ENTRY_COUNT_MISMATCH")
+            if declared is None:
+                declared = total
+            need(total == declared, "TARGET_ENTRY_COUNT_MISMATCH")
             rows = page["rows"]
-            for e in rows:
-                need(seen < len(self.bundle.entries) and dump(e) == dump(self.bundle.entries[seen]), "TARGET_SOURCE_ROW_OR_METADATA_MISMATCH")
-                seen += 1
+            need(isinstance(rows, list), "TARGET_ENTRY_COUNT_MISMATCH")
+            if not allow_native:
+                for entry in rows:
+                    need(len(collected) < len(self.bundle.entries) and dump(entry) == dump(self.bundle.entries[len(collected)]), "TARGET_SOURCE_ROW_OR_METADATA_MISMATCH")
+                    collected.append(entry)
+            else:
+                collected.extend(rows)
             save("entries-%05d.json" % number, page)
             if not page["has_more"]:
-                need(page.get("next_offset") is None and seen == page["total"], "ENTRY_CONTINUATION_MISMATCH")
+                need(page.get("next_offset") is None and len(collected) == total, "ENTRY_CONTINUATION_MISMATCH")
                 break
             need(rows and page.get("next_offset") == offset + len(rows), "ENTRY_CONTINUATION_MISMATCH")
             offset = page["next_offset"]
         else:
             raise OperatorError("ENTRY_PAGE_BOUND")
+        if allow_native:
+            extra, native_totals, native_lines = self._native_suffix(collected)
+            if not extra:
+                need(detail["head_sha256"] == committed["head_sha256"] and dump(head) == dump(committed["head"]) and
+                     sha(initial_head_bytes(head)) == detail["head_sha256"], "TARGET_FULL_INITIAL_HEAD_RECEIPT_MISMATCH")
+            else:
+                need(detail["head_sha256"] != committed["head_sha256"], "NATIVE_HEAD_STILL_INITIAL")
+        else:
+            extra, native_totals, native_lines = [], {key: [0, 0] for key in self.bundle.accounts}, 0
+        seen = len(collected)
         balances, offset = [], 0
         baseline = {k: v for k, v in self.bundle.expected_analysis.items() if k != "balances"}
+        native_debit = sum(pair[0] for pair in native_totals.values())
+        native_credit = sum(pair[1] for pair in native_totals.values())
+        unchanged = all(pair[0] == pair[1] for pair in native_totals.values())
+        expected_delta = {"entries": len(extra), "lines": native_lines, "total_debit_cents": str(native_debit), "total_credit_cents": str(native_credit)}
         for number in range(1000):
             page = self.client.request("GET", self.base + "/trial-balance?" + urllib.parse.urlencode({"offset": offset, "limit": 200, "max_bytes": 1048576}))
             controls(page)
             need(page.get("company_id") == self.bundle.company and page.get("company") == self.bundle.input["company"] and
                  page.get("head") == head and page.get("source") == self.bundle.input["source"] and
-                 page.get("source_baseline_analysis") == baseline and page.get("analysis") == baseline and
+                 page.get("source_baseline_analysis") == baseline and
                  page.get("offset") == offset and page.get("total") == len(self.bundle.accounts), "TARGET_BALANCE_SNAPSHOT_MISMATCH")
-            need(page.get("native_delta") == {"entries": 0, "lines": 0, "total_debit_cents": "0", "total_credit_cents": "0"} and
-                 page.get("reconciliation") == {"source_baseline_unchanged": True, "source_controls_passed": True, "combined_balances_match_source": True}, "TARGET_INITIAL_IMPORT_RECONCILIATION_MISMATCH")
+            if not extra:
+                need(page.get("analysis") == baseline, "TARGET_BALANCE_SNAPSHOT_MISMATCH")
+                need(page.get("native_delta") == {"entries": 0, "lines": 0, "total_debit_cents": "0", "total_credit_cents": "0"} and
+                     page.get("reconciliation") == {"source_baseline_unchanged": True, "source_controls_passed": True, "combined_balances_match_source": True}, "TARGET_INITIAL_IMPORT_RECONCILIATION_MISMATCH")
+            else:
+                analysis = page.get("analysis")
+                need(isinstance(analysis, dict) and analysis.get("entries") == baseline["entries"] + len(extra) and
+                     analysis.get("lines") == baseline["lines"] + native_lines and
+                     analysis.get("total_debit_cents") == str(int(baseline["total_debit_cents"]) + native_debit) and
+                     analysis.get("total_credit_cents") == str(int(baseline["total_credit_cents"]) + native_credit), "TARGET_NATIVE_ANALYSIS_MISMATCH")
+                reconciliation = page.get("reconciliation")
+                need(page.get("native_delta") == expected_delta and isinstance(reconciliation, dict) and
+                     reconciliation.get("source_baseline_unchanged") is True and reconciliation.get("source_controls_passed") is True and
+                     reconciliation.get("combined_balances_match_source") is unchanged, "TARGET_NATIVE_DELTA_MISMATCH")
             for row in page["balances"]:
                 index = len(balances)
                 need(index < len(self.bundle.expected_analysis["balances"]), "EXTRA_TARGET_ACCOUNT")
                 expected = self.bundle.expected_analysis["balances"][index]
                 need(all(row.get(k) == expected[k] for k in ("account_id", "name", "kind", "source_control_basis")) and
                      all(row.get("source_" + k) == expected[k] for k in ("debit_cents", "credit_cents", "journal_debit_cents", "journal_credit_cents")), "TARGET_SOURCE_ACCOUNT_BALANCE_MISMATCH")
-                need(all(row.get(k) == expected[k] for k in expected), "TARGET_ACCOUNT_BALANCE_MISMATCH")
-                need(row.get("native_delta_debit_cents") == "0" and row.get("native_delta_credit_cents") == "0", "UNEXPECTED_NATIVE_BALANCE_DELTA")
+                added = native_totals[expected["account_id"]]
+                journal_debit = cents(expected["journal_debit_cents"], True) + added[0]
+                journal_credit = cents(expected["journal_credit_cents"], True) + added[1]
+                net = journal_debit - journal_credit
+                need(row.get("native_delta_debit_cents") == str(added[0]) and row.get("native_delta_credit_cents") == str(added[1]), "TARGET_NATIVE_DELTA_MISMATCH")
+                if not extra:
+                    need(all(row.get(k) == expected[k] for k in expected), "TARGET_ACCOUNT_BALANCE_MISMATCH")
+                    need(added == [0, 0], "UNEXPECTED_NATIVE_BALANCE_DELTA")
+                else:
+                    need(row.get("journal_debit_cents") == str(journal_debit) and row.get("journal_credit_cents") == str(journal_credit) and
+                         row.get("debit_cents") == str(max(net, 0)) and row.get("credit_cents") == str(max(-net, 0)), "TARGET_NATIVE_BALANCE_MISMATCH")
                 balances.append(row)
             save("trial-balance-%05d.json" % number, page)
             if not page["has_more"]:
@@ -728,16 +805,24 @@ class Runner:
                     "source_preview_id": committed["preview_id"], "head_sha256": detail["head_sha256"], "files": saved,
                     "source_entries_exact": len(self.bundle.entries), "source_lines_exact": self.bundle.expected_analysis["lines"],
                     "source_accounts_exact": len(balances), "target_entries_checked": seen,
-                    "verification_policy": "strict_initial_import_no_native_adjustments",
+                    "native_entries_recomputed": len(extra), "native_lines_recomputed": native_lines,
+                    "verification_policy": "independent_native_delta" if extra else "strict_initial_import_no_native_adjustments",
                     "source_authoritative": True, "live_cutover_allowed": False}
+        if not extra:
+            manifest.pop("native_entries_recomputed")
+            manifest.pop("native_lines_recomputed")
         digest = self.bundle.files.write(output / "manifest.json", manifest)
-        return self._receipt(args.receipt, {"format": "nxt-company-book-operator-verification/v1", "origin": self.client.origin,
+        receipt = {"format": "nxt-company-book-operator-verification/v1", "origin": self.client.origin,
                             "seed": self.bundle.seed, "commit_receipt_sha256": args.commit_receipt_sha256,
                             "head_sha256": detail["head_sha256"], "readback_manifest_sha256": digest,
                             "source_entries_exact": len(self.bundle.entries), "source_lines_exact": self.bundle.expected_analysis["lines"],
                             "source_accounts_exact": len(balances), "target_entries_checked": seen,
-                            "verification_policy": "strict_initial_import_no_native_adjustments",
-                            "source_authoritative": True, "live_cutover_allowed": False, "financial_posts_requested": 0})
+                            "verification_policy": manifest["verification_policy"],
+                            "source_authoritative": True, "live_cutover_allowed": False, "financial_posts_requested": 0}
+        if extra:
+            receipt.update(native_entries_recomputed=len(extra), native_lines_recomputed=native_lines,
+                           native_debit_cents=str(native_debit), native_credit_cents=str(native_credit))
+        return self._receipt(args.receipt, receipt)
 
     def _receipt(self, path, value, same_ok=False):
         digest = self.bundle.files.write(path, value, same_ok=same_ok)

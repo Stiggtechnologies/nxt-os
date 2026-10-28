@@ -200,7 +200,9 @@ class OperatorTests(unittest.TestCase):
     def setUp(self):
         # Financial/readback artifacts must not live in the source checkout,
         # including synthetic fixtures that exercise the real output guard.
-        base = (Path(__file__).parents[2] / ".test-company-books-operator").resolve()
+        # Outside the checkout. A repo checked out two levels under / makes
+        # parents[2] the filesystem root, which is not a writable private root.
+        base = (Path(tempfile.gettempdir()) / ".test-company-books-operator").resolve()
         base.mkdir(exist_ok=True)
         self.tmp = tempfile.TemporaryDirectory(dir=base)
         def cleanup():
@@ -296,14 +298,59 @@ class OperatorTests(unittest.TestCase):
             runner.verify(self.args)
         self.assertFalse((self.root / "verification.json").exists())
 
-    def test_native_adjustment_mode_is_rejected_before_any_network_or_output(self):
+    def test_native_adjustment_verification_recomputes_deltas_and_rejects_a_lie(self):
         runner, api = self.committed()
+        posts = api.posts
         self.args.allow_native_adjustments = True
-        count = len(api.calls)
-        with self.assertRaisesRegex(op.OperatorError, "NATIVE_ADJUSTMENT_VERIFICATION_NOT_IMPLEMENTED"):
+        runner.verify(self.args)
+        self.assertEqual(op.parse((self.root / "verification.json").read_bytes())["verification_policy"], "strict_initial_import_no_native_adjustments")
+        native = {"id": "native1", "date": "2026-02-01", "source_id": "nxt-native:native1", "memo": "Synthetic adjustment",
+                  "source_metadata": {"origin": "native_adjustment", "request_id": "adjust-1", "reversal_of": None},
+                  "lines": [
+                      {"account_id": "cash", "debit_cents": "0", "credit_cents": "10", "source_row": 0, "memo": "move", "source_metadata": {"origin": "native_adjustment", "request_id": "adjust-1"}},
+                      {"account_id": "equity", "debit_cents": "10", "credit_cents": "0", "source_row": 0, "memo": "move", "source_metadata": {"origin": "native_adjustment", "request_id": "adjust-1"}}]}
+        api.head = {**api.head, "format": "nxt-company-book-head/v2", "revision": 2, "previous_head": api.head_sha}
+        api.head_sha = "b" * 64
+        source_row = copy.deepcopy(runner.bundle.entries[0])
+        original = api.request
+
+        def respond(method, route, body=None, lie=False):
+            result = original(method, route, body)
+            if "/entries?" in route and "offset=0" in route:
+                result = copy.deepcopy(result)
+                result.update(total=2, rows=[source_row, native], has_more=False, next_offset=None, head=copy.deepcopy(api.head))
+            elif "/trial-balance?" in route:
+                result = copy.deepcopy(result)
+                row = result["balances"][0]
+                added = (0, 10) if row["account_id"] == "cash" else (10, 0)
+                if lie and row["account_id"] == "cash":
+                    added = (1, 10)
+                journal_debit = int(row["journal_debit_cents"]) + added[0]
+                journal_credit = int(row["journal_credit_cents"]) + added[1]
+                net = journal_debit - journal_credit
+                row.update(journal_debit_cents=str(journal_debit), journal_credit_cents=str(journal_credit),
+                           debit_cents=str(max(net, 0)), credit_cents=str(max(-net, 0)),
+                           native_delta_debit_cents=str(added[0]), native_delta_credit_cents=str(added[1]))
+                result["analysis"] = {**result["analysis"], "entries": 2, "lines": 5, "total_debit_cents": "135", "total_credit_cents": "135"}
+                result["native_delta"] = {"entries": 1, "lines": 2, "total_debit_cents": "10", "total_credit_cents": "10"}
+                result["reconciliation"] = {"source_baseline_unchanged": True, "source_controls_passed": True, "combined_balances_match_source": False}
+                result["head"] = copy.deepcopy(api.head)
+            return result
+
+        api.request = lambda method, route, body=None: respond(method, route, body)
+        self.args.readback_dir, self.args.receipt = "readback-native", "verification-native.json"
+        verified = runner.verify(self.args)
+        receipt = op.parse((self.root / "verification-native.json").read_bytes())
+        self.assertEqual(receipt["verification_policy"], "independent_native_delta")
+        self.assertEqual(receipt["native_debit_cents"], "10")
+        self.assertFalse(receipt["live_cutover_allowed"])
+        self.assertEqual(verified["source_authoritative"], True)
+        self.assertEqual(api.posts, posts)
+        api.request = lambda method, route, body=None: respond(method, route, body, lie=True)
+        self.args.readback_dir, self.args.receipt = "readback-lie", "verification-lie.json"
+        with self.assertRaisesRegex(op.OperatorError, "TARGET_NATIVE_DELTA_MISMATCH"):
             runner.verify(self.args)
-        self.assertEqual(len(api.calls), count)
-        self.assertFalse((self.root / "readback").exists())
+        self.assertEqual(api.posts, posts)
 
     def test_partial_verify_retry_requires_fresh_outputs_and_never_posts(self):
         runner, api = self.committed()

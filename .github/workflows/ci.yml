@@ -1,7 +1,7 @@
 name: NXT validation
 on:
   pull_request:
-    branches: [main, feature/dtmax-tax-suite]
+    branches: [main]
   push:
     branches: [main]
 permissions:
@@ -9,14 +9,19 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
+      - name: Build the application and local server
+        run: cargo build --locked --bins --examples
       - name: Verify native application contracts
         run: cargo test --locked
       - name: Verify browser and operational scripts
@@ -49,9 +54,40 @@ jobs:
           node --test tests/company_coverage.test.mjs
       - name: Verify bounded QuickBooks financial report assessment
         run: python3 -B -m unittest discover -s tests -p test_qbo_export.py
+      - name: Verify QuickBooks journal staging
+        run: python3 -B -m unittest discover -s tests -p test_stage_qbo_journal.py
       - name: Verify source-preserving parallel test preparation
         run: python3 -B -m unittest discover -s tests -p test_shadow_snapshot.py
       - name: Verify source-bound company journal operator
         run: python3 -B -m unittest discover -s tests -p test_company_books_operator.py
       - name: Verify offline opaque source preservation
         run: python3 -B -m unittest discover -s tests -p test_tax_source_preservation.py
+      - name: Rehearse the synthetic journal import on loopback
+        run: python3 -B scripts/rehearse-fixture-migration.py target/debug/examples/dev
+  migrations:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: nxt-ci-only
+          POSTGRES_DB: nxt_migration_check
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nxt_migration_check"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install a local PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install --yes --no-install-recommends postgresql-client
+      - name: Apply store migrations and the rolled-back contract on loopback
+        env:
+          DATABASE_URL: postgres://postgres:nxt-ci-only@127.0.0.1:5432/nxt_migration_check
+        run: bash scripts/check-store-migrations.sh

@@ -340,6 +340,16 @@ def nonempty_columns(book, row):
     return {col for col, address in book.rows.get(row, {}).items() if book.cells[address]['value'] != '' or book.cells[address]['formula'] is not None}
 
 
+def optional_text(book, address):
+    """Header metadata only. Never evaluates a formula or invents a blank amount."""
+    cell = book.cells.get(address)
+    if not cell or (cell['value'] == '' and cell['formula'] is None):
+        return ''
+    if cell['formula'] is not None:
+        return ''
+    return cell['value'].strip() if cell['type'] in ('s', 'inlineStr', 'str') else cell['value']
+
+
 def trial_balance(book):
     require(book.text('B5') == 'Debit' and book.text('C5') == 'Credit', 'tb_header_mismatch')
     accounts, seen, total_row, footer_count = [], set(), None, 0
@@ -416,7 +426,21 @@ def parse_date(book, address, order):
         raise AssessmentError('invalid_journal_date') from exc
 
 
-def journal(book, choice):
+def _raw_cells(book, row, cols):
+    raw = []
+    for col in sorted(cols):
+        cell = book.cells.get(f'{col}{row}')
+        if cell:
+            raw.append([col, True, cell['type'], cell['value'], cell['formula']])
+    return raw
+
+
+def journal_postings(book, choice):
+    """Same journal controls as `journal`, plus the valued lines a stager must keep.
+
+    The public assessment omits line payloads. Names, memos and supplied numbers
+    are retained here as original cell text. They are not durable source IDs.
+    """
     expected = {'B': 'Date', 'C': 'Transaction Type', 'D': '#', 'E': 'Name', 'F': 'Memo/Description', 'G': 'Account', 'H': 'Debit', 'I': 'Credit'}
     require(all(book.text(f'{c}5') == text for c, text in expected.items()), 'journal_header_mismatch')
     order, basis = date_order(book, choice)
@@ -444,7 +468,8 @@ def journal(book, choice):
         if 'B' in cols:
             require(active is None, 'source_control_missing_amount_or_subtotal', {'group_start_row': active['source_start_row'], 'boundary_row': row} if active else None)
             require('C' in cols, 'journal_transaction_type_required', {'row': row})
-            active = {'source_start_row': row, 'date': parse_date(book, f'B{row}', order), 'line_count': 0, 'debit': 0, 'credit': 0}
+            active = {'source_start_row': row, 'date': parse_date(book, f'B{row}', order), 'line_count': 0, 'debit': 0, 'credit': 0, 'lines': [],
+                      'transaction_type': book.text(f'C{row}'), 'number': optional_text(book, f'D{row}'), 'name': optional_text(book, f'E{row}'), 'memo': optional_text(book, f'F{row}')}
             if 'G' not in cols and not cols & {'H', 'I'}:
                 # A dated header may precede its first actual account line.
                 # No monetary value is assigned to the header.
@@ -460,6 +485,7 @@ def journal(book, choice):
             active['line_count'] += 1
             active['debit'] += debit
             active['credit'] += credit
+            active['lines'].append({'row': row, 'label': label, 'debit': debit, 'credit': credit, 'raw_cells': _raw_cells(book, row, cols)})
             old = accounts.setdefault(label, {'debit': 0, 'credit': 0, 'line_count': 0})
             old['debit'] += debit
             old['credit'] += credit
@@ -469,7 +495,8 @@ def journal(book, choice):
             subtotal = (book.amount(f'H{row}'), book.amount(f'I{row}'))
             require(active['line_count'] >= 2 and subtotal == (active['debit'], active['credit']), 'journal_group_subtotal_mismatch')
             require(active['debit'] == active['credit'], 'unbalanced_journal_group')
-            groups.append({'source_start_row': active['source_start_row'], 'source_subtotal_row': row, 'date': active['date'], 'line_count': active['line_count'], 'debit_cents': str(active['debit']), 'credit_cents': str(active['credit'])})
+            groups.append({'source_start_row': active['source_start_row'], 'source_subtotal_row': row, 'date': active['date'], 'line_count': active['line_count'], 'debit_cents': str(active['debit']), 'credit_cents': str(active['credit']),
+                           'transaction_type': active['transaction_type'], 'number': active['number'], 'name': active['name'], 'memo': active['memo'], 'lines': active['lines']})
             active = None
     require(active is None, 'source_control_missing_amount_or_subtotal', {'group_start_row': active['source_start_row'], 'boundary': 'end_of_sheet'} if active else None)
     require(groups and total_row is not None, 'journal_groups_and_total_required')
@@ -477,6 +504,30 @@ def journal(book, choice):
     require(total == grand, 'journal_grand_total_mismatch')
     dates = [g['date'] for g in groups]
     return {'status': 'supported_controls_passed', 'group_count': len(groups), 'line_count': sum(g['line_count'] for g in groups), 'date_start': min(dates), 'date_end': max(dates), 'date_order': order, 'date_order_basis': basis, 'total_row': total_row, 'debit_cents': str(total[0]), 'credit_cents': str(total[1]), 'groups': groups, 'accounts': [{'label': label, 'label_ref': sha(label.encode('utf-8')), 'line_count': v['line_count'], 'debit_cents': str(v['debit']), 'credit_cents': str(v['credit']), 'net_debit_cents': str(v['debit'] - v['credit'])} for label, v in sorted(accounts.items())], 'footer_rows': footer_count, 'durable_source_transaction_ids_available': False, 'identity_basis': 'Source workbook hash and report row locators only; no durable source transaction identity.'}
+
+
+def journal(book, choice):
+    detail = journal_postings(book, choice)
+    detail['groups'] = [{k: g[k] for k in ('source_start_row', 'source_subtotal_row', 'date', 'line_count', 'debit_cents', 'credit_cents')} for g in detail['groups']]
+    return detail
+
+
+def selected_workbooks(data):
+    """Re-open the trial balance and journal after a separate assessment pass."""
+    books, names = {}, {}
+    with archive(data) as outer:
+        selected = {}
+        for item in outer.infolist():
+            kind = classify(item.filename)
+            if kind:
+                require(kind not in selected, 'duplicate_financial_report_kind')
+                selected[kind] = item.filename
+        for required in ('trial_balance', 'journal'):
+            require(required in selected, 'trial_balance_and_journal_required')
+        for kind in ('trial_balance', 'journal'):
+            books[kind] = Workbook(member(outer, selected[kind]), kind)
+            names[kind] = selected[kind]
+    return books, names
 
 
 def classify(name):
