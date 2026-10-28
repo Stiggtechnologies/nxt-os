@@ -98,7 +98,7 @@ Fidelity: **40%** after directory export, chart apply, and internal playbooks (w
 
 ## Caseware Working Papers to Engagements
 
-Fidelity: **25%** after document labels (was **22%**). Now 0 copied & tested, 8 partial, 8 missing, 0 wrong; 16 rows. `(0.5×8) / 16`. The previous score was `(0.5×7) / 16`.
+Fidelity: **34.375%** after lockdown spacing, GIFI lines, and file metadata (was **25%**). Now 0 copied & tested, 11 partial, 5 missing, 0 wrong; 16 rows. `(0.5×11) / 16`. Recounting the previous table gives 9 partial and 7 missing; the published 8/8 split was one row low on partial. This change moves GIFI export and image/PDF metadata from missing to partial.
 This run's REA evidence is public documentation, current-site copyright 2026, reached from the 2025 Working Papers path:
 
 | Page | Evidence | What the snapshot shows |
@@ -115,15 +115,15 @@ Document Manager topics observed: columns, filters, automatic documents, CaseVie
 | --- | --- | --- |
 | Trial balance, mapping, and local adjusting entries that do not post to the books | partial | `engagement_workpaper_lifecycle` and `exact_local_adjustments_and_statements_reconcile` use exact cents. Ledger capture is a reviewed copy. The account-worksheet page itself was not re-read. |
 | Multi-year prior-year trial balance | partial | Comparative rollforward keeps an origin snapshot (`engagement_rollforward_origin_acceptance`). The vendor's prior-year calculation fix was not replayed. |
-| GIFI export into TaxCycle | missing | Named on the 2025 page. Engagement tax preview commits an unconfirmed NXT draft and does not emit TaxCycle GIFI. |
+| GIFI export into TaxCycle | partial | `gifi_lines` lists group GIFI codes and cents as `nxt-gifi-lines/v1` and sets `taxcycle_file` false (`lockdown_gifi_export_and_file_metadata_do_not_fetch_vendor_files`). It is not a TaxCycle file. |
 | Xero-compatible journal export and Xero TB import | missing | Named on the 2025 page. No Xero adapter test. |
-| Lockdown, including 14- and 45-day US-public spacing | partial | Native lock/reopen is in the engagement lifecycle tests. The 14/45-day rule and Cloud pending-lockdown flag were not implemented. |
+| Lockdown, including 14- and 45-day US-public spacing | partial | A draft or in-review engagement can store 14- or 45-day spacing from a reference date, and lock is refused until that date (`lockdown_gifi_export_and_file_metadata_do_not_fetch_vendor_files`). The Cloud pending-lockdown flag was not implemented. |
 | Document Manager filters and columns | partial | `engagement_document_navigation.test.mjs` is in the 187 passing Node tests. Source column set was not paired. |
 | Manual, link, and placeholder documents | partial | `engagement_document_types` (5 tests) covers manual text and placeholders. Link, Word, and Excel properties from the topic list are not engines. |
 | Automatic documents and CaseView | missing | Topic links and the CaseView ampersand fix name the engine. NXT HTML is not CaseView. |
-| Images, PDFs, scan, and the internal viewer | missing | `opaque_file_versions_preserve_bytes_review_and_origin_without_financial_writes` stores bytes and does not render or scan them. |
+| Images, PDFs, scan, and the internal viewer | partial | Describe returns PDF page count or PNG width and height from the stored bytes, and a tickmark can name a page. `rendered`, `scanned`, and `executed` stay false (`lockdown_gifi_export_and_file_metadata_do_not_fetch_vendor_files`). There is no scan and no pixel viewer. |
 | Document library, renumber, tags, PPC content | partial | Tags and a non-URL link label are stored text and are not fetched (`tags_and_link_labels_are_stored_text_and_references_can_be_renumbered`). Changing a workpaper reference is rejected when it duplicates another. A document library and PPC content still need vendor material that is not on this machine. |
-| Text tickmarks and account/text anchors | partial | Custom tickmark, account-annotation, and text-range suites passed. Graphics and PDF/image targets are still absent. |
+| Text tickmarks and account/text anchors | partial | Custom tickmark, account-annotation, and text-range suites passed. A file tickmark can name an attachment id and page without drawing on it. Graphics targets are still absent. |
 | Sign-off and issues | partial | Lifecycle tests cover prepared/reviewed gates and blocking issues. Caseware role protection modes were not observed in this run. |
 | Year-end rollforward | partial | Origin archive and cleared target approvals are tested. Retained-earnings close options from the vendor docs were not executed. |
 | SmartSync / Cloud conflict sync | missing | Named in the 2025 fixes. NXT has no SmartSync client. |
@@ -197,7 +197,7 @@ Impact is how badly a side-by-side period would diverge or be unsafe if someone 
 | --- | --- | --- |
 | 1 | No vendor-byte DT Max or WebTaxT2 tie-out | A parallel line diff now exists, and 2025 Ontario plus GIFI detail rollup are tested. A real DT Max or WebTax output file is still not on this machine, so no row is a copied vendor match. Keywords, year engines, and filing remain blocked. Filing stays disabled. |
 | 2 | QuickBooks payroll and live sync | Parallel invoices, payments, classes, items, budgets, employees, and sales-tax preference now exist and do not write back. Payroll calculation and OAuth sync are still missing, so a parallel close still will not match a live QuickBooks company. |
-| 3 | Caseware engines and file format | Engagements can hold a cent-exact trial balance, local adjustments, text workpapers, and opaque bytes. CaseView, automatic documents, Word/Excel, SmartSync, GIFI-to-TaxCycle, Xero transfer, and the 2025 program binaries are missing. Reviewers still need Working Papers for the file the client already has. |
+| 3 | Caseware engines and file format | Engagements can hold a cent-exact trial balance, local adjustments, text workpapers, 14/45-day lockdown spacing, a non-TaxCycle GIFI list, and file metadata. CaseView, automatic documents, Word/Excel, SmartSync, Xero transfer, iXBRL, and the 2025 program binaries are missing. Reviewers still need Working Papers for the file the client already has. |
 | 4 | DocuSign external send and sign | NXT can rehearse send and sign inside the workspace, with no delivery and no legal effect. External send, recipient authentication, certificates, and Connect are still missing. |
 | 5 | Firm client operations | Templates, close, report export, an NXT directory export, chart apply, and internal playbooks are tested. Live QuickBooks firm clients, the Excel add-in, and spreadsheet write-back are still missing. The 154-snapshot roster is a read-only review copy. |
 | 6 | WebTax workspace not re-observed | This VM saw only the login gate. Identification codes, GIFI detail, and save/calc behavior remain unverified against the live product. |

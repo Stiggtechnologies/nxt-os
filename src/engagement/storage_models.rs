@@ -147,6 +147,48 @@ pub struct EngagementRecord {
     // Server-owned lifetime reservations; omitted for unchanged legacy records.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub annotation_bindings: Vec<AnnotationBindingReceipt>,
+    /// 14- or 45-day spacing named on the public 2025 page. Absent on older records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lockdown: Option<LockdownPolicy>,
+    /// Page anchors on stored files. Empty is omitted. Nothing is rendered.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_tickmarks: Vec<FileTickmark>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LockdownPolicy {
+    pub spacing_days: u16,
+    pub reference_date: String,
+    pub earliest_lock_date: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileTickmark {
+    pub id: String,
+    pub workpaper_id: String,
+    pub attachment_id: String,
+    pub page: u32,
+    pub code: String,
+    pub note: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LockdownInput {
+    pub expected_revision: u64,
+    pub spacing_days: u16,
+    pub reference_date: String,
+    pub operator: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileTickmarkInput {
+    pub expected_revision: u64,
+    pub workpaper_id: String,
+    pub attachment_id: String,
+    pub page: u32,
+    pub code: String,
+    #[serde(default)]
+    pub note: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuditEvent {

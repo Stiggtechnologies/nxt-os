@@ -22,6 +22,9 @@ pub fn router(state: Arc<Engagements>) -> Router {
         .route("/api/engagements/{id}/calculate", post(calculate))
         .route("/api/engagements/{id}/signoffs", post(signoff))
         .route("/api/engagements/{id}/transition", post(transition))
+        .route("/api/engagements/{id}/lockdown", post(lockdown))
+        .route("/api/engagements/{id}/gifi", get(gifi))
+        .route("/api/engagements/{id}/file-tickmarks", post(file_tickmark))
         .route("/api/engagements/{id}/rollforward", post(rollforward))
         .route("/api/engagements/{id}/import/preview", post(preview))
         .route("/api/engagements/{id}/import/commit", post(commit))
@@ -33,6 +36,7 @@ pub fn router(state: Arc<Engagements>) -> Router {
         .route("/api/engagements/{id}/workpapers/{paper}/attachments", post(file_upload))
         .route("/api/engagements/{id}/workpapers/{paper}/account-anchors", get(account_anchor_options))
         .route("/api/engagements/{id}/workpapers/{paper}/attachments/{version}", get(file_download))
+        .route("/api/engagements/{id}/workpapers/{paper}/attachments/{version}/describe", get(file_describe))
         .route("/api/engagements/{id}/print", get(print))
         .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
@@ -156,6 +160,16 @@ async fn package(State(e): S, Path(id): Path<String>) -> EResult<Response> {
 }
 async fn file_upload(State(e):S,Path((id,paper)):Path<(String,String)>,Json(input):Json<attachment_models::AttachmentUpload>)->R {
     ok(e.upload_attachment(&id,&paper,input).await?)
+}
+async fn lockdown(State(e): S, Path(id): Path<String>, Json(input): Json<LockdownInput>) -> R {
+    ok(e.set_lockdown(&id, input).await?)
+}
+async fn gifi(State(e): S, Path(id): Path<String>) -> R { ok(e.gifi_lines(&id).await?) }
+async fn file_tickmark(State(e): S, Path(id): Path<String>, Json(input): Json<FileTickmarkInput>) -> R {
+    ok(e.add_file_tickmark(&id, input).await?)
+}
+async fn file_describe(State(e): S, Path((id, paper, version)): Path<(String, String, String)>) -> R {
+    ok(e.describe_attachment(&id, &paper, &version).await?)
 }
 async fn file_download(State(e):S,Path((id,paper,version)):Path<(String,String,String)>)->EResult<Response> {
     let (metadata,bytes)=e.attachment(&id,&paper,&version).await?;
