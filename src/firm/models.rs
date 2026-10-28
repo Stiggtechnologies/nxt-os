@@ -37,6 +37,8 @@ pub struct InstantiateInput {
     pub name: Option<String>,
     #[serde(default)] pub owner: String,
     pub due_date: Option<String>,
+    /// NXT client label. It is not a QuickBooks customer id.
+    #[serde(default)] pub client_ref: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -78,6 +80,9 @@ pub struct Project {
     pub status: String,
     pub created_at: String,
     pub updated_at: String,
+    /// NXT client label. Empty on older projects. Not a live QuickBooks client.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub client_ref: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -88,6 +93,7 @@ pub struct ProjectInput {
     #[serde(default)] pub owner: String,
     pub due_date: Option<String>,
     #[serde(default)] pub tasks: Vec<TaskInput>,
+    #[serde(default)] pub client_ref: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -322,4 +328,56 @@ pub struct FirmState {
     pub account_templates: Vec<AccountTemplate>,
     pub exports: Vec<StoredExport>,
     pub audit: Vec<AuditEvent>,
+    #[serde(default)] pub directory: Vec<DirectoryEntry>,
+    #[serde(default)] pub applied_charts: Vec<AppliedChart>,
+    #[serde(default)] pub playbooks: Vec<Playbook>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DirectoryEntry {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DirectoryInput {
+    pub kind: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AppliedChart {
+    pub id: String,
+    pub company_label: String,
+    pub template_id: String,
+    pub version: u32,
+    pub account_count: usize,
+    pub applied_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApplyChartInput {
+    pub company_label: String,
+    pub version: Option<u32>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Playbook {
+    pub id: String,
+    pub name: String,
+    pub template_id: String,
+    pub client_refs: Vec<String>,
+    pub project_ids: Vec<String>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlaybookInput {
+    pub name: String,
+    pub template_id: String,
+    pub client_refs: Vec<String>,
 }

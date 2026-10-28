@@ -81,19 +81,19 @@ SDK evidence: parent `ev_c6d077c18411971abee54760eba97daebb074995bf8a14e5c201932
 
 Firm is the NXT stand-in for QuickBooks firm operations (projects, workflows, close, templates), not a second accounting product. The Apache SDK above is the company accounting API. It does not inventory QBO Accountant project or books-close screens. The public `quickbooks.intuit.com/accountants/` capture failed before a snapshot, so this table does not add a new firm-UI inventory. NXT behavior is from `firm_operations_lifecycle`, `firm_xlsx`, and `firm_roster_can_publish_154_separately_bound_read_only_snapshots`, all passed in this run.
 
-Fidelity: **25%** (0 copied & tested, 5 partial, 5 missing, 0 wrong; 10 rows).
+Fidelity: **40%** after directory export, chart apply, and internal playbooks (was **25%**). Now 0 copied & tested, 8 partial, 2 missing, 0 wrong; 10 rows. `(0.5×8) / 10`. The previous score was `(0.5×5) / 10`.
 
 | Original feature | NXT status | Evidence |
 | --- | --- | --- |
-| Projects, tasks, and reusable templates | partial | `firm_operations_lifecycle` instantiates templates and completes tasks. Client association is still deferred in `src/firm`. |
+| Projects, tasks, and reusable templates | partial | `firm_operations_lifecycle` instantiates templates and completes tasks. A project can store an NXT client label (`firm_parallel_ops_stay_inside_nxt`). That label is not a live QuickBooks client. |
 | Workflow catalogue, triggers, and approval history | partial | Same test covers propose, approve, and replay. Actions stay internal. QBO reminder, send, and transaction triggers were not executed. |
 | Ledger report export to CSV/XLSX | partial | `firm_xlsx` checks CSV escaping and a formula-free workbook. Exports read NXT Ledger, not QuickBooks. |
-| Customer, employee, and supplier list export | missing | No firm export contract for those lists. Contact preservation is read-only source evidence, not an operational list export. |
+| Customer, employee, and supplier list export | partial | `contact-list` exports those three kinds as CSV sourced `nxt_parallel_not_quickbooks` (`firm_parallel_ops_stay_inside_nxt`). It does not read a QuickBooks list. |
 | Integration manager and provider connections | missing | `GET /api/firm/integrations` reports external providers unconfigured. |
 | Spreadsheet Sync add-in, including write-back | missing | `/api/firm/spreadsheet-sync` is a read-only CSV feed. No Excel add-in was installed or captured. |
 | Books-close checklist and reopen | partial | Firm close routes require the checklist and record a reopen reason. This does not post journals or file returns. |
-| Chart template applied onto a company | missing | Account-template preview is tested as non-mutating. Applying a blueprint to a company is not implemented. |
-| Cross-client playbooks | missing | Project templates and account templates stay separate. No publisher was tested. |
+| Chart template applied onto a company | partial | Preview stays non-mutating (`can_apply` false). A separate apply stores the blueprint against an NXT company label and does not change Ledger accounts or QuickBooks (`firm_parallel_ops_stay_inside_nxt`). |
+| Cross-client playbooks | partial | Publishing a playbook copies one project template onto 1–20 NXT client labels. `external_publish` is false and nothing is sent outside the workspace (`firm_parallel_ops_stay_inside_nxt`). |
 | Firm client roster as live QuickBooks clients | partial | The roster test publishes 154 read-only snapshot bindings. The UI still says QuickBooks remains authoritative and cutover is not executed. |
 
 ## Caseware Working Papers to Engagements
@@ -199,7 +199,7 @@ Impact is how badly a side-by-side period would diverge or be unsafe if someone 
 | 2 | QuickBooks payroll and live sync | Parallel invoices, payments, classes, items, budgets, employees, and sales-tax preference now exist and do not write back. Payroll calculation and OAuth sync are still missing, so a parallel close still will not match a live QuickBooks company. |
 | 3 | Caseware engines and file format | Engagements can hold a cent-exact trial balance, local adjustments, text workpapers, and opaque bytes. CaseView, automatic documents, Word/Excel, SmartSync, GIFI-to-TaxCycle, Xero transfer, and the 2025 program binaries are missing. Reviewers still need Working Papers for the file the client already has. |
 | 4 | DocuSign external send and sign | NXT can rehearse send and sign inside the workspace, with no delivery and no legal effect. External send, recipient authentication, certificates, and Connect are still missing. |
-| 5 | Firm client operations | Templates, close, and report export are partial and tested against NXT Ledger. Live QuickBooks firm clients, list exports, the Excel add-in, and playbook publishing are missing. The 154-snapshot roster is a read-only review copy. |
+| 5 | Firm client operations | Templates, close, report export, an NXT directory export, chart apply, and internal playbooks are tested. Live QuickBooks firm clients, the Excel add-in, and spreadsheet write-back are still missing. The 154-snapshot roster is a read-only review copy. |
 | 6 | WebTax workspace not re-observed | This VM saw only the login gate. Identification codes, GIFI detail, and save/calc behavior remain unverified against the live product. |
 | 7 | DT Max binaries not decompiled | See below. Until that Windows run exists, keyword catalogs and year-engine math stay unknown rather than "matched." |
 
