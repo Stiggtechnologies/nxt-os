@@ -92,6 +92,31 @@ Draft PR **#4** (`cursor/guardvoice-2109`, GuardVoice) is untouched. It uses the
 
 Workspace auth is still one shared key. The name on a decision is operational metadata, the same limit Firm's PR already calls out. Individual accounts are separate work.
 
+## Sync Context voice
+
+Sync Context voice is slice SC-08 in `docs/sync-context/`. The contract is `supabase/functions/_shared/sync-realtime-core.ts`, the browser session is `src/hooks/useSyncRealtimeVoice.ts`, Meet Sync presence is `src/lib/presence/`, and short speech output is `stripForSpeech` in `supabase/functions/_shared/sync-tts-core.ts`. Draft PR #4's phone Nixon (`src/nixon` on `cursor/guardvoice-2109`) is a separate transport. This branch does not change that PR. It reuses the gate idea: a spoken read is answered, and a consequential act is not performed by the voice.
+
+| Sync Context voice piece | SyncAI home | Nixon finance |
+| --- | --- | --- |
+| Voice input | Browser `SpeechRecognition` in `src/hooks/useDictation.ts` for Meet Sync, and WebRTC microphone audio for Realtime. | Hold to talk and an optional open microphone on `/apps/nixon/`, using the browser speech engine. A typed line uses the same command path when the browser has no recognizer. |
+| Speech to intent | Realtime model plus Meet Sync fast path (`src/lib/presence/boothFastPath.ts`) for presence, greeting, and short social turns. | Deterministic classifier in `src/nixon_finance/voice.rs`. Finance commands are explicit. Presence, greeting, and thanks do not read or invent books. |
+| Command routing | Allowlisted tools `ask_sync` and `open_sync_page` in `useSyncRealtimeVoice.ts`. Any other tool name is an error. | Allowlisted intents: run a review, explain a finding, show reconciliation gaps, cash position, and help. Open microphone ignores chatter that does not address Nixon or name a finance command. |
+| Spoken response | `stripForSpeech` caps a turn at 420 characters. Cloud TTS is preferred and browser `speechSynthesis` is the fallback (`src/lib/speech/speechOutput.ts`). | The same 420-character cap. Amounts that the review stored as cents are spoken as dollars. The page speaks with browser speech synthesis. |
+| Wake and presence | Meet Sync answers "can you hear me", "are you there", and an address to Sync (`meetingRunner.ts`, `boothFastPath.ts`). Recognition pauses while Sync is speaking, plus a short settle, so playback is not a new turn (`boothListen.ts`). | "Nixon", "hey Nixon", and "can you hear me" get a presence or greeting line. The page does not send audio while it is speaking, and the server drops a transcript that matches the last spoken line. |
+| Meet Sync pieces reused | Booth fast path, listen-versus-hold, echo settle, and "recommend is not authorize" (`booth.ts`). | Those rules, retargeted at the ledger. A multi-party meeting room, vault notes, and speaker identity are not part of this page. |
+| Human confirmation | SCX-VOICE-005: voice may propose and must report the tool result. It cannot call approval or execution. | Voice can request a review and explain what is already on the review. Approve, reject, post, categorize, and file are spoken refusals. No proposal decision is written. |
+| Audit | SCX-VOICE-007: tool calls are tenant-audited. | Each turn appends `nixon.voice` on the existing ledger audit with the intent, channel, and `approval=not_by_voice`. |
+| Push to talk | SCX-VOICE-004: push to talk is the default. Open microphone is an explicit opt-in with a visible stop. | Hold to talk is the default. Open microphone is a checkbox that stays off until selected. Stop is always on the page. |
+
+### Not ported from Sync Context voice
+
+- Server-mediated OpenAI Realtime (`gpt-realtime-2.1`, voice `marin`, WebRTC SDP). NXT OS does not hold that provider key, so the browser speech engine is the input and output. A cloud session would be a separate credential and quota change.
+- Cloud TTS (`gpt-4o-mini-tts` / `tts-1`), the per-tenant character quota, and the ElevenLabs overlay.
+- Map tools: focus an asset, toggle a layer, fly to a preset, change display mode. Those belong to the spatial operating picture, not the finance books.
+- Meet Sync room facilitation, silence-as-consensus, speaker identity, and the durable vault of meeting notes.
+- The GuardVoice phone transport on draft PR #4: Twilio, ConversationRelay, and outbound dial. The scripted gate is the part reused. The phone branch was not edited.
+- Safety-verdict and emergency-work abstention beyond the finance boundary. Nixon already refuses posting and filing. It does not speak plant or permit decisions because those records are not in NXT OS.
+
 ## Done and remaining
 
 Done in this change:
@@ -103,6 +128,7 @@ Done in this change:
 - Audit lines on the existing ledger audit, with a correlation id.
 - Ask NXT tool `nixon_review` and an `open_app` path to Nixon.
 - Shell entry and the Nixon review screen.
+- Spoken commands for a review, an explanation, reconciliation gaps, and cash, with browser speech in and out.
 - Unit tests and `tests/nixon_finance.rs`.
 
 Still open:
@@ -113,5 +139,5 @@ Still open:
 - No statement of cash flows. The cash screen is ending bank cash versus the prior month-end.
 - Decisions are not tied to a user account. The workspace key is the only authentication.
 - Ask NXT will not run a review for you. Running a review writes the case file and an audit row, so it stays on the Nixon screen.
-- GuardVoice's phone Nixon is a different branch. Wiring that voice path at these read APIs waits until PR #4 is in play.
+- Cloud realtime speech, cloud TTS, map navigation commands, and the GuardVoice phone line are not in this tree. See the voice section above.
 - Nothing here deploys to Vercel production or touches a production database.

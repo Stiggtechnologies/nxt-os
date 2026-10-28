@@ -18,7 +18,7 @@ pub struct NixonError {
 }
 
 impl NixonError {
-    fn new(status: u16, message: impl Into<String>) -> Self {
+    pub(crate) fn new(status: u16, message: impl Into<String>) -> Self {
         NixonError {
             status,
             message: message.into(),

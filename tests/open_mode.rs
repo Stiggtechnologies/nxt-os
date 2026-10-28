@@ -57,6 +57,7 @@ async fn missing_workspace_key_fails_closed_across_modules() {
             ("GET", "/api/nixon/reviews"),
             ("POST", "/api/nixon/reviews"),
             ("POST", "/api/nixon/actions"),
+            ("POST", "/api/nixon/voice"),
             ("GET", "/api/signatures"),
             ("GET", "/api/signatures/catalog"),
             ("GET", "/api/signatures/audit?path=signatures%2Faudit&offset=0&limit=1"),

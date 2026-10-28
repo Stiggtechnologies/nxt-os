@@ -330,3 +330,51 @@ async fn nixon_reviews_the_books_and_does_not_change_them() {
                 .contains("autonomy_downgraded=true")
     }));
 }
+
+#[tokio::test]
+async fn voice_can_ask_and_cannot_approve_or_post() {
+    unsafe { std::env::set_var("ADMIN_API_KEY", "k") };
+    let r = app_with(Store::memory);
+    ok(&r, "POST", "/api/ledger/entries", Some(json!({"date":"2026-10-02","memo":"Owner investment","lines":[{"account_id":"acc_1000","debit":500000},{"account_id":"acc_3000","credit":500000}]}))).await;
+    let before = ok(&r, "GET", "/api/ledger/entries", None).await.as_array().unwrap().len();
+
+    let cash = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"what is our cash position","channel":"push_to_talk"}))).await;
+    assert_eq!(cash["intent"], "cash");
+    assert_eq!(cash["posting"], "disabled");
+    assert_eq!(cash["approval"], "not_by_voice");
+    assert!(cash["say"].as_str().unwrap().contains('$'));
+    assert!(!cash["say"].as_str().unwrap().to_lowercase().contains("root cause"));
+
+    let gaps = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"show reconciliation gaps","channel":"open_mic"}))).await;
+    assert_eq!(gaps["intent"], "reconciliation");
+    assert!(gaps["say"].as_str().unwrap().to_lowercase().contains("invent") || gaps["say"].as_str().unwrap().to_lowercase().contains("gap") || gaps["say"].as_str().unwrap().to_lowercase().contains("reconcil"));
+
+    let review = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"Nixon, run a review","channel":"push_to_talk"}))).await;
+    assert_eq!(review["intent"], "run_review");
+    assert_eq!(review["effect"], "review_recorded");
+    assert!(review["review_id"].is_string());
+    assert_eq!(ok(&r, "GET", "/api/ledger/entries", None).await.as_array().unwrap().len(), before);
+
+    let explained = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"explain the finding","channel":"push_to_talk"}))).await;
+    assert_eq!(explained["intent"], "explain");
+    assert!(!explained["say"].as_str().unwrap().is_empty());
+
+    let approve = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"approve the finding","channel":"push_to_talk"}))).await;
+    assert_eq!(approve["intent"], "refuse_approve");
+    assert_eq!(approve["effect"], "none");
+    let stored = ok(&r, "GET", &format!("/api/nixon/reviews/{}", review["review_id"].as_str().unwrap()), None).await;
+    assert!(stored["decisions"].as_array().unwrap().is_empty());
+
+    let post = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"post a journal for the difference","channel":"push_to_talk"}))).await;
+    assert_eq!(post["intent"], "refuse_post");
+    let file = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"file the tax return","channel":"push_to_talk"}))).await;
+    assert_eq!(file["intent"], "refuse_file");
+    assert_eq!(ok(&r, "GET", "/api/ledger/entries", None).await.as_array().unwrap().len(), before);
+
+    let echo = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript": review["say"], "channel":"open_mic", "last_spoken": review["say"]}))).await;
+    assert_eq!(echo["action"], "hold");
+    assert_eq!(echo["intent"], "echo");
+
+    let audit = ok(&r, "GET", "/api/ledger/audit", None).await;
+    assert!(audit.as_array().unwrap().iter().any(|e| e["action"] == "nixon.voice" && e["detail"].as_str().unwrap().contains("approval=not_by_voice")));
+}

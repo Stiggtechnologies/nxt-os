@@ -44,6 +44,7 @@ pub fn router(ledger: Arc<Ledger>) -> Router {
             post(execute),
         )
         .route("/api/nixon/actions", post(action))
+        .route("/api/nixon/voice", post(voice))
         .layer(middleware::from_fn(require_admin))
         .with_state(ledger)
 }
@@ -98,4 +99,11 @@ async fn action(
     Json(body): Json<ActionRequest>,
 ) -> Result<Json<Value>, ApiError> {
     ok(service::block_action(&ledger, body).await)
+}
+
+async fn voice(
+    State(ledger): S,
+    Json(body): Json<super::voice::VoiceTurn>,
+) -> Result<Json<Value>, ApiError> {
+    ok(super::voice::handle(&ledger, body).await)
 }

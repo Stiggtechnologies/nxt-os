@@ -99,3 +99,103 @@ loadStatus().then(() => api("/api/nixon/reviews")).then((list) => {
   if (list[0]) return api("/api/nixon/reviews/" + list[0].id).then(render);
 }).catch((e) => { if (e.status !== 401) toast(e.message, true); });
 tell("");
+
+const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+let lastSpoken = "";
+let speaking = false;
+let recognition = null;
+const SETTLE_MS = 450;
+
+function setVoiceState(text) { $("#voiceState").textContent = text; }
+
+function stopSpeaking() {
+  speaking = false;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+function speak(text) {
+  lastSpoken = text;
+  stopSpeaking();
+  if (!text || !window.speechSynthesis) return;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "en-CA";
+  utterance.onstart = () => { speaking = true; setVoiceState("Speaking"); };
+  utterance.onend = () => { setTimeout(() => { speaking = false; setVoiceState($("#openMic").checked ? "Open microphone" : "Push to talk"); }, SETTLE_MS); };
+  window.speechSynthesis.speak(utterance);
+}
+
+async function sendVoice(transcript, channel) {
+  const heard = (transcript || "").trim();
+  if (!heard || speaking) return;
+  setVoiceState("Checking");
+  try {
+    const result = await api("/api/nixon/voice", { body: { transcript: heard, channel, last_spoken: lastSpoken } });
+    $("#voiceSay").textContent = result.say || (result.action === "hold" ? "Listening." : "");
+    if (result.action === "speak" && result.say) speak(result.say);
+    else setVoiceState($("#openMic").checked ? "Open microphone" : "Push to talk");
+    if (result.review_id) render(await api("/api/nixon/reviews/" + result.review_id));
+  } catch (e) {
+    setVoiceState("Voice error");
+    toast(e.message, true);
+  }
+}
+
+function ensureRecognition() {
+  if (!Speech) {
+    $("#voiceHint").textContent = "This browser has no speech recognition. Type a command, or use Chrome, Edge, or Safari.";
+    return null;
+  }
+  if (recognition) return recognition;
+  recognition = new Speech();
+  recognition.lang = "en-CA";
+  recognition.interimResults = false;
+  recognition.continuous = false;
+  recognition.onresult = (event) => {
+    const text = event.results[event.results.length - 1][0].transcript;
+    sendVoice(text, $("#openMic").checked ? "open_mic" : "push_to_talk");
+  };
+  recognition.onerror = () => {
+    $("#voiceHint").textContent = "Microphone access is blocked. Type a command, or allow the microphone in the browser site settings.";
+    setVoiceState("Microphone blocked");
+  };
+  recognition.onend = () => {
+    if ($("#openMic").checked && !speaking) {
+      try { recognition.start(); } catch { /* already started */ }
+    }
+  };
+  return recognition;
+}
+
+const talk = $("#talk");
+talk.onpointerdown = (event) => {
+  event.preventDefault();
+  const engine = ensureRecognition();
+  if (!engine) return;
+  $("#openMic").checked = false;
+  setVoiceState("Listening");
+  try { engine.start(); } catch { /* a second press while live */ }
+};
+talk.onpointerup = talk.onpointerleave = () => {
+  if (recognition && !$("#openMic").checked) {
+    try { recognition.stop(); } catch { /* not started */ }
+  }
+};
+$("#stopTalk").onclick = () => { stopSpeaking(); if (recognition) { try { recognition.stop(); } catch { /* idle */ } } setVoiceState("Push to talk"); };
+$("#openMic").onchange = () => {
+  const engine = ensureRecognition();
+  if (!$("#openMic").checked) {
+    setVoiceState("Push to talk");
+    if (engine) { try { engine.stop(); } catch { /* idle */ } }
+    return;
+  }
+  if (!engine) { $("#openMic").checked = false; return; }
+  setVoiceState("Open microphone");
+  try { engine.start(); } catch { /* already started */ }
+};
+$("#voiceType").onsubmit = (event) => {
+  event.preventDefault();
+  const text = $("#voiceText").value;
+  $("#voiceText").value = "";
+  sendVoice(text, "push_to_talk");
+};
+ensureRecognition();
