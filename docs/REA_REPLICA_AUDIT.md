@@ -132,7 +132,7 @@ Document Manager topics observed: columns, filters, automatic documents, CaseVie
 
 ## DocuSign to Signatures
 
-Fidelity: **12.5%** (0 copied & tested, 4 partial, 12 missing, 0 wrong; 16 rows). `(0.5×4) / 16`.
+Fidelity: **18.75%** after the parallel rehearsal (was **12.5%**). Now 0 copied & tested, 6 partial, 10 missing, 0 wrong; 16 rows. `(0.5×6) / 16`. The previous score was `(0.5×4) / 16`.
 
 JavaScript evidence: parent `ev_3deb2236bdd90583e633e925a1ea3fc9dab2aba54839b672d925f883db32e5c3`, summary view `ev_c8c672db242d9c82224e0998db4da2525d9712e659044e37d5aa7582e1950ac5`. Twenty-six API modules parsed, 78,721 AST nodes, 0 parse failures, 0 recovered routes. Module names include `EnvelopesApi`, `TemplatesApi`, `BulkEnvelopesApi`, `ConnectApi`, `PowerFormsApi`, `NotaryApi`, `SignatureApi`, `FoldersApi`, `UsersApi`, `GroupsApi`, `OrganizationsApi`, `CloudStorageApi`, `EmailArchiveApi`. Recovered property names include `envelopeDefinition`, `tabs`, `recipients`, `resendEnvelope`, `lockRequest`, `powerForm`, `scheduledSending`, `notaryJurisdiction`. Concept page: `ev_fab94f6fb3d56f5bad80675e16460acd1d3abaa920d288bcfb281e9e81f738a4` (search, locks, bulk send, folders, status codes, sharing).
 
@@ -142,8 +142,8 @@ JavaScript evidence: parent `ev_3deb2236bdd90583e633e925a1ea3fc9dab2aba54839b672
 | Tabs / fields on a document | partial | Unfilled page-relative placeholders are tested. Anchor tabs, calculated tabs, and recipient-entered values are in the unsupported catalog. |
 | Templates | partial | Role-only immutable templates strip identities and instantiate a new draft. No DocuSign template import, share, or favorite model. |
 | Envelope status search (sent, delivered, completed, and the rest of the status list) | partial | NXT worklists cover draft, internal review, prepared, and cancelled. The concept page's external status codes are not stored. |
-| Send, resend, and correct | missing | `resendEnvelope` is a recovered SDK property. Catalog flags `external_send_enabled: false`. The lifecycle test blocks signature claims. |
-| Recipient signing and Signature API | missing | `SignatureApi` was parsed. No recipient session exists. |
+| Send, resend, and correct | partial | `parallel_send` moves an approved preparation to `parallel_sent` inside NXT. No email is sent and DocuSign is not called (`parallel_send_and_sign_stay_inside_nxt_and_do_not_create_a_certificate`). Resend and correct are still missing. |
+| Recipient signing and Signature API | partial | `parallel_sign` records `parallel_signed` with `signing_enabled: false`, `legal_effect: false`, and no completion certificate. The preparation package stays unavailable. This is not a DocuSign signature. |
 | Bulk send | missing | `BulkEnvelopesApi` and the concept-page "Bulk sending envelopes" link. No NXT bulk route. |
 | Folders and mailbox sharing | missing | `FoldersApi` and the concept page. NXT has no folder model. |
 | Envelope lock API | missing | `lockRequest` was recovered. NXT review freeze is an internal hash gate, not the DocuSign lock resource. |
@@ -198,7 +198,7 @@ Impact is how badly a side-by-side period would diverge or be unsafe if someone 
 | 1 | No vendor-byte DT Max or WebTaxT2 tie-out | A parallel line diff now exists, and 2025 Ontario plus GIFI detail rollup are tested. A real DT Max or WebTax output file is still not on this machine, so no row is a copied vendor match. Keywords, year engines, and filing remain blocked. Filing stays disabled. |
 | 2 | QuickBooks payroll and live sync | Parallel invoices, payments, classes, attachments, sparse memo/class updates, and native deletes now exist and do not write back. Payroll, items, budgets, and OAuth sync are still missing, so a parallel close still will not match a live QuickBooks company. |
 | 3 | Caseware engines and file format | Engagements can hold a cent-exact trial balance, local adjustments, text workpapers, and opaque bytes. CaseView, automatic documents, Word/Excel, SmartSync, GIFI-to-TaxCycle, Xero transfer, and the 2025 program binaries are missing. Reviewers still need Working Papers for the file the client already has. |
-| 4 | DocuSign send and sign | Preparation drafts are tested and explicitly non-signing. Twelve of the sixteen inventoried API areas have no NXT route. A parallel signature cycle cannot be executed in NXT. |
+| 4 | DocuSign external send and sign | NXT can rehearse send and sign inside the workspace, with no delivery and no legal effect. External send, recipient authentication, certificates, and Connect are still missing. |
 | 5 | Firm client operations | Templates, close, and report export are partial and tested against NXT Ledger. Live QuickBooks firm clients, list exports, the Excel add-in, and playbook publishing are missing. The 154-snapshot roster is a read-only review copy. |
 | 6 | WebTax workspace not re-observed | This VM saw only the login gate. Identification codes, GIFI detail, and save/calc behavior remain unverified against the live product. |
 | 7 | DT Max binaries not decompiled | See below. Until that Windows run exists, keyword catalogs and year-engine math stay unknown rather than "matched." |

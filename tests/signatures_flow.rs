@@ -635,3 +635,25 @@ async fn preparation_lifecycle_blocks_signature_claims_and_stale_changes() {
     assert_eq!(summary["templates"][0]["roles"][0]["email"], "");
     assert_eq!(summary["audit_events"], 9);
 }
+
+#[tokio::test]
+async fn parallel_send_and_sign_stay_inside_nxt_and_do_not_create_a_certificate() {
+    unsafe { std::env::set_var("ADMIN_API_KEY", "k"); }
+    let state = Arc::new(Signatures::new(Store::memory()));
+    let router = signatures::router(state);
+    let created = call(&router, "POST", "/api/signatures", Some(json!({"operator_label":"Synthetic author","draft":fixture()})), 200).await;
+    let id = created["envelope"]["id"].as_str().unwrap();
+    let path = format!("/api/signatures/{id}");
+    let reviewed = call(&router, "POST", &format!("{path}/transition"), Some(transition(&created, "submit_review")), 200).await;
+    let approved = call(&router, "POST", &format!("{path}/transition"), Some(transition(&reviewed, "approve")), 200).await;
+    let sent = call(&router, "POST", &format!("{path}/transition"), Some(transition(&approved, "parallel_send")), 200).await;
+    assert_eq!(sent["envelope"]["status"], "parallel_sent");
+    assert_eq!(sent["external_send_enabled"], false);
+    assert_eq!(sent["external_delivery"], false);
+    assert_eq!(sent["legal_effect"], false);
+    let signed = call(&router, "POST", &format!("{path}/transition"), Some(transition(&sent, "parallel_sign")), 200).await;
+    assert_eq!(signed["envelope"]["status"], "parallel_signed");
+    assert_eq!(signed["signing_enabled"], false);
+    assert_eq!(signed["completion_certificate"], false);
+    call(&router, "GET", &format!("{path}/package"), None, 409).await;
+}

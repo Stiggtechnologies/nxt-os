@@ -90,7 +90,7 @@ fn email(value: &str) -> bool {
         })
 }
 fn controls() -> Value {
-    json!({"preparation_only":true,"external_send_enabled":false,"signing_enabled":false,"connector":{"provider":"docusign","status":"unconfigured"},"identity_limit":IDENTITY_LIMIT,"source_parity":"unverified","context_links":"user-supplied metadata, not verified source bridges"})
+    json!({"preparation_only":true,"external_send_enabled":false,"signing_enabled":false,"external_delivery":false,"legal_effect":false,"completion_certificate":false,"connector":{"provider":"docusign","status":"unconfigured"},"identity_limit":IDENTITY_LIMIT,"source_parity":"unverified","context_links":"user-supplied metadata, not verified source bridges"})
 }
 fn controlled(mut value: Value) -> Value {
     value
@@ -298,14 +298,14 @@ fn validate_state(state: &SignatureState) -> SResult<()> {
             resource_id(&record.id, "sig_")
                 && record_ids.insert(record.id.as_str())
                 && (1..=2000).contains(&record.revision)
-                && ["draft", "in_review", "approved", "cancelled"]
+                && ["draft", "in_review", "approved", "parallel_sent", "parallel_signed", "cancelled"]
                     .contains(&record.status.as_str())
                 && nonempty(&record.created_by_label, 120)
                 && timestamp(&record.created_at)
                 && timestamp(&record.updated_at)
                 && record.content_hash == hash(&record.draft)?,
         )?;
-        if record.status == "approved" {
+        if ["approved", "parallel_sent", "parallel_signed"].contains(&record.status.as_str()) {
             invariant(
                 record.reviewed_content_hash.as_deref() == Some(record.content_hash.as_str())
                     && record
@@ -318,7 +318,7 @@ fn validate_state(state: &SignatureState) -> SResult<()> {
                 record.reviewed_content_hash.is_none() && record.reviewed_by_label.is_none(),
             )?;
         }
-        if ["in_review", "approved"].contains(&record.status.as_str()) {
+        if ["in_review", "approved", "parallel_sent", "parallel_signed"].contains(&record.status.as_str()) {
             invariant(readiness(&record.draft).is_empty())?;
         }
         if let Some(template_id) = &record.template_id {
@@ -398,14 +398,19 @@ fn validate_state(state: &SignatureState) -> SResult<()> {
                 ("draft", "draft_updated") => "draft",
                 ("draft", "submit_review") => "in_review",
                 ("in_review", "approve") => "approved",
-                ("in_review" | "approved", "return_to_draft") => "draft",
-                ("draft" | "in_review" | "approved", "cancel") => "cancelled",
+                ("approved", "parallel_send") => "parallel_sent",
+                ("parallel_sent", "parallel_sign") => "parallel_signed",
+                ("in_review" | "approved" | "parallel_sent" | "parallel_signed", "return_to_draft") => "draft",
+                ("draft" | "in_review" | "approved" | "parallel_sent" | "parallel_signed", "cancel") => "cancelled",
                 _ => return Err(bad("inconsistent preparation state")),
             };
             projection.revision = event.revision;
             projection.content_hash = &event.content_hash;
-            projection.reviewed_by =
-                (projection.status == "approved").then_some(event.operator_label.as_str());
+            if event.action == "approve" {
+                projection.reviewed_by = Some(event.operator_label.as_str());
+            } else if !matches!(projection.status, "approved" | "parallel_sent" | "parallel_signed") {
+                projection.reviewed_by = None;
+            }
         } else {
             invariant(
                 event.revision == 1
@@ -487,7 +492,7 @@ impl Signatures {
     }
     pub fn catalog() -> Value {
         controlled(
-            json!({"module":"NXT Signatures","native_scope":["original text document pages","recipient roles and routing order","page-relative placeholders","internal review","role-only templates","audit and preparation export"],"views":["home","drafts","review","approved","templates","audit","connector"],"limits":{"envelopes":100,"templates":30,"audit_events":2000,"document_pages":20,"documents":10,"recipients":30,"fields":200,"draft_bytes":ENVELOPE_MAX,"state_bytes":STATE_MAX},"unsupported":["PDF upload/rendering","external send","recipient authentication","signature execution","signed-document evidence","completion certificates","webhooks","external envelope import","bulk send","reminders","payments","conditional routing","independent user identities"]}),
+            json!({"module":"NXT Signatures","native_scope":["original text document pages","recipient roles and routing order","page-relative placeholders","internal review","role-only templates","parallel send rehearsal","parallel sign rehearsal","audit and preparation export"],"views":["home","drafts","review","approved","templates","audit","connector"],"limits":{"envelopes":100,"templates":30,"audit_events":2000,"document_pages":20,"documents":10,"recipients":30,"fields":200,"draft_bytes":ENVELOPE_MAX,"state_bytes":STATE_MAX},"parallel_rehearsal":"parallel_sent and parallel_signed stay inside NXT. No email, DocuSign API call, legal effect, or completion certificate.","unsupported":["PDF upload/rendering","external send","recipient authentication","signature execution","signed-document evidence","completion certificates","webhooks","external envelope import","bulk send","reminders","payments","conditional routing","independent user identities"]}),
         )
     }
     pub async fn list(&self) -> SResult<Value> {
@@ -614,12 +619,18 @@ impl Signatures {
                     record.reviewed_content_hash = Some(record.content_hash.clone());
                     record.reviewed_by_label = Some(input.operator_label.clone());
                 }
-                ("in_review" | "approved", "return_to_draft") => {
+                ("approved", "parallel_send") => {
+                    record.status = "parallel_sent".into();
+                }
+                ("parallel_sent", "parallel_sign") => {
+                    record.status = "parallel_signed".into();
+                }
+                ("in_review" | "approved" | "parallel_sent" | "parallel_signed", "return_to_draft") => {
                     record.status = "draft".into();
                     record.reviewed_content_hash = None;
                     record.reviewed_by_label = None;
                 }
-                ("draft" | "in_review" | "approved", "cancel") => {
+                ("draft" | "in_review" | "approved" | "parallel_sent" | "parallel_signed", "cancel") => {
                     record.status = "cancelled".into();
                     record.reviewed_content_hash = None;
                     record.reviewed_by_label = None;
