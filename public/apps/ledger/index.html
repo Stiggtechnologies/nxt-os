@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NXT Ledger</title>
 <link rel="stylesheet" href="/nxt/brand.css">
+<link rel="stylesheet" href="qb-navigation.css">
 <style>
   .app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
   .side { border-right: 1px solid var(--line); background: var(--panel); padding: 18px 10px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
@@ -50,6 +51,8 @@
 <div class="app">
   <nav class="side" id="side" aria-label="Ledger">
     <div class="brand"><span class="nxt-mark" id="mark"></span></div>
+    <section id="qb-navigation" class="qb-navigation" aria-label="Observed QuickBooks navigation"><p class="qb-nav-help">Loading the observed menu inventory…</p></section>
+    <details class="nxt-native-menu" open><summary>NXT native workspace</summary>
     <a href="#dashboard">Dashboard</a>
     <div class="group">Sales</div>
     <a href="#invoices">Invoices</a>
@@ -68,10 +71,12 @@
     <div class="group">Company</div>
     <a href="#settings">Settings</a>
     <a href="#audit">Audit log</a>
+    </details>
   </nav>
   <main id="main"><div class="empty">Loading…</div></main>
 </div>
 <script src="/nxt/ui.js"></script>
+<script src="qb-navigation.js"></script>
 <script src="ledger.js"></script>
 </body>
 </html>

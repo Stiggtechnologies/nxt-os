@@ -2,3 +2,5 @@ target/
 .vercel/
 nxt-os.tar.gz
 screenshots/
+__pycache__/
+*.py[cod]

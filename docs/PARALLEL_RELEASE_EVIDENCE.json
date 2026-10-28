@@ -1,0 +1,85 @@
+{
+  "format": "nxt-parallel-release-evidence/v1",
+  "recorded_at": "2026-10-26T18:40:42.969Z",
+  "scope": "Protected read-only source review; full source parity and financial cutover remain incomplete",
+  "deployment": {
+    "id": "dpl_AL9mQLoaA5JivTW76w9awTttTbYd",
+    "source_commit": "db5514034d78e6f29c5cd86cd62887196a26d8a8",
+    "url": "https://os.nxtcorporation.ca",
+    "alias_verified": true,
+    "previous_fully_verified_deployment": "dpl_7JzqVX1YSmiyNBTGP8BPuSQ8i7fh"
+  },
+  "linux_ci": {
+    "id": 40376798102,
+    "conclusion": "success",
+    "url": "https://github.com/Stiggtechnologies/nxt-os/actions/runs/40376798102"
+  },
+  "local_tests": {
+    "rust": 47,
+    "node": 32,
+    "python": 27,
+    "source_parity_verified": false
+  },
+  "production_smoke": {
+    "engagement_module": true,
+    "engagement_anonymous_status": 401,
+    "engagements": 0,
+    "url": "https://os.nxtcorporation.ca",
+    "authenticated": true,
+    "anonymous_status": 401,
+    "tax_anonymous_status": 401,
+    "storage": "supabase",
+    "firm_module": true,
+    "tax_module": true,
+    "programs": 4,
+    "filing_disabled": true,
+    "static_assets": true,
+    "projects": 0,
+    "closes": 0,
+    "tax_returns": 0,
+    "ai_enabled": false,
+    "migration_module": true,
+    "migration_anonymous_status": 401,
+    "snapshots": 2,
+    "source_authoritative": true,
+    "live_cutover_allowed": false,
+    "apps": 6
+  },
+  "source_publication": {
+    "verified_read_only_snapshots": 2,
+    "financial_imports": 0,
+    "exact_original_archives_verified": 2,
+    "targeted_source_rows_verified": 24,
+    "preserved_blank_amount_flags": 4,
+    "full_source_completeness_verified": false,
+    "live_sync": false,
+    "receipts": "Retained privately outside the public repository"
+  },
+  "navigation": {
+    "observed_quickbooks_entries": 174,
+    "full_menu_coverage_verified": false,
+    "full_functional_parity_verified": false
+  },
+  "backup": {
+    "run_id": "40377505194",
+    "artifact_id": "12677095592",
+    "artifact_url": "https://github.com/Stiggtechnologies/nxt-os-backups/actions/runs/40377505194/artifacts/12677095592",
+    "source_commit": "db5514034d78e6f29c5cd86cd62887196a26d8a8",
+    "encrypted_artifact_bytes": 3958966,
+    "workflow_isolated_restore_passed": true,
+    "local_age_decryption_verified": true,
+    "inner_checksums_verified": true,
+    "plaintext_removed": true,
+    "new_local_database_restore_performed": false,
+    "scheduled_trigger_observed": false,
+    "notification_drill_complete": false,
+    "independent_off_device_key_custody_verified": false,
+    "scope": "Three NXT Store tables and included recovery sources, not all Supabase services or credentials"
+  },
+  "authority": {
+    "source_systems_authoritative": true,
+    "live_cutover_allowed": false,
+    "reviewer_label_is_verified_approval": false,
+    "company_iam_complete": false
+  }
+}

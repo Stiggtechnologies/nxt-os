@@ -1,8 +1,9 @@
-//! Key-value storage. Uses Upstash Redis over its REST API when
-//! `KV_REST_API_URL` / `KV_REST_API_TOKEN` (or the `UPSTASH_REDIS_REST_*`
-//! equivalents) are set, which is what the Vercel Marketplace Upstash
-//! integration injects. Otherwise falls back to process memory, which is fine
-//! for local development and tests but is NOT durable on serverless.
+//! Durable storage via Supabase PostgreSQL RPC or Upstash Redis REST.
+//! Supabase requires a project origin, server secret, and deployment namespace;
+//! partial configuration fails closed. Without Supabase settings, Redis is used
+//! when the `KV_REST_API_*` or `UPSTASH_REDIS_REST_*` pair is configured.
+//! Otherwise process memory supports local development and tests, but is not
+//! durable on serverless.
 
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -25,6 +26,13 @@ pub enum Store {
         token: String,
         http: reqwest::Client,
     },
+    Supabase {
+        url: String,
+        token: String,
+        namespace: String,
+        http: reqwest::Client,
+    },
+    Unavailable { reason: String },
 }
 
 const PREFIX: &str = "nxt:";
@@ -35,6 +43,17 @@ impl Store {
     }
 
     pub fn from_env() -> Self {
+        let supabase_url = std::env::var("SUPABASE_URL").ok();
+        let secret = std::env::var("SUPABASE_SECRET_KEY").ok()
+            .or_else(|| std::env::var("SUPABASE_SERVICE_ROLE_KEY").ok());
+        let namespace = std::env::var("NXT_STORE_NAMESPACE").ok();
+        if supabase_url.is_some() || secret.is_some() || namespace.is_some() {
+            return match (supabase_url, secret, namespace) {
+                (Some(url), Some(token), Some(namespace)) => Self::supabase(&url, &token, &namespace)
+                    .unwrap_or_else(|reason| Store::Unavailable { reason }),
+                _ => Store::Unavailable { reason: "Supabase storage requires SUPABASE_URL, a server secret, and NXT_STORE_NAMESPACE".into() },
+            };
+        }
         let url = std::env::var("KV_REST_API_URL")
             .or_else(|_| std::env::var("UPSTASH_REDIS_REST_URL"))
             .ok();
@@ -51,16 +70,59 @@ impl Store {
         }
     }
 
+    pub fn supabase(url: &str, token: &str, namespace: &str) -> StoreResult<Self> {
+        let parsed = url::Url::parse(url).map_err(|_| "Supabase URL must be a valid project origin".to_string())?;
+        let loopback = matches!(parsed.host_str(), Some("localhost" | "127.0.0.1" | "[::1]" | "::1"));
+        if !(parsed.scheme() == "https" || (parsed.scheme() == "http" && loopback))
+            || parsed.host_str().is_none() || !parsed.username().is_empty() || parsed.password().is_some()
+            || !matches!(parsed.path(), "" | "/") || parsed.query().is_some() || parsed.fragment().is_some() {
+            return Err("Supabase URL must be an HTTPS origin without credentials, path, query, or fragment".into());
+        }
+        let valid_namespace = !namespace.is_empty() && namespace.len() <= 64
+            && namespace.as_bytes()[0].is_ascii_alphanumeric()
+            && namespace.bytes().all(|c| c.is_ascii_alphanumeric() || b"_.:-".contains(&c));
+        if !valid_namespace { return Err("NXT_STORE_NAMESPACE must be 1–64 letters, digits, dots, underscores, colons or hyphens, starting with a letter or digit".into()); }
+        if token.trim().is_empty() || token != token.trim() || token.chars().any(char::is_control)
+            || token.starts_with("sb_publishable_") {
+            return Err("Supabase storage requires a nonempty server secret key".into());
+        }
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15))
+            .redirect(reqwest::redirect::Policy::none()).build()
+            .map_err(|_| "Supabase HTTP client could not be initialized".to_string())?;
+        Ok(Store::Supabase { url: parsed.as_str().trim_end_matches('/').into(), token: token.into(), namespace: namespace.into(), http })
+    }
+
     pub fn backend_name(&self) -> &'static str {
         match self {
             Store::Memory(_) => "memory",
             Store::Redis { .. } => "redis",
+            Store::Supabase { .. } => "supabase",
+            Store::Unavailable { .. } => "unavailable",
         }
     }
 
-    async fn redis(&self, cmd: Vec<Value>) -> StoreResult<Value> {
+    async fn remote(&self, cmd: Vec<Value>) -> StoreResult<Value> {
+        if let Store::Unavailable { reason } = self { return Err(reason.clone()); }
+        if let Store::Supabase { url, token, namespace, http } = self {
+            let mut request = http.post(format!("{url}/rest/v1/rpc/nxt_store_command"))
+                .header("apikey", token).json(&json!({"p_namespace": namespace, "p_command": cmd}));
+            // Modern secret keys are API keys, not JWT bearer tokens.
+            if !token.starts_with("sb_secret_") { request = request.bearer_auth(token); }
+            let mut response = request.send().await.map_err(|_| "Supabase storage request failed".to_string())?;
+            if !response.status().is_success() { return Err(format!("Supabase storage request returned HTTP {}", response.status().as_u16())); }
+            const MAX_RESPONSE: usize = 24 * 1024 * 1024;
+            if response.content_length().is_some_and(|n| n > MAX_RESPONSE as u64) { return Err("Supabase storage response exceeded its limit".into()); }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(|_| "Supabase storage response could not be read".to_string())? {
+                if bytes.len().saturating_add(chunk.len()) > MAX_RESPONSE { return Err("Supabase storage response exceeded its limit".into()); }
+                bytes.extend_from_slice(&chunk);
+            }
+            let body: Value = serde_json::from_slice(&bytes).map_err(|_| "Supabase storage returned invalid JSON".to_string())?;
+            return body.get("result").cloned().ok_or_else(|| "Supabase storage response is missing result".into());
+        }
         let Store::Redis { url, token, http } = self else {
-            unreachable!("redis command on memory store");
+            return Err("remote storage is unavailable".into());
         };
         let resp = http
             .post(url)
@@ -83,11 +145,7 @@ impl Store {
         let key = format!("{PREFIX}{key}");
         match self {
             Store::Memory(m) => Ok(m.lock().unwrap().strings.get(&key).cloned()),
-            Store::Redis { .. } => Ok(self
-                .redis(vec![json!("GET"), json!(key)])
-                .await?
-                .as_str()
-                .map(str::to_string)),
+            _ => optional_string(self.remote(vec![json!("GET"), json!(key)]).await?),
         }
     }
 
@@ -98,10 +156,10 @@ impl Store {
                 m.lock().unwrap().strings.insert(key, value.to_string());
                 Ok(())
             }
-            Store::Redis { .. } => self
-                .redis(vec![json!("SET"), json!(key), json!(value)])
-                .await
-                .map(|_| ()),
+            _ => {
+                let result = self.remote(vec![json!("SET"), json!(key), json!(value)]).await?;
+                if result == json!("OK") { Ok(()) } else { Err("storage SET response was invalid".into()) }
+            },
         }
     }
 
@@ -117,10 +175,35 @@ impl Store {
                 m.strings.insert(key, value.to_string());
                 Ok(true)
             }
-            Store::Redis { .. } => Ok(!self
-                .redis(vec![json!("SET"), json!(key), json!(value), json!("NX")])
-                .await?
-                .is_null()),
+            _ => match self.remote(vec![json!("SET"), json!(key), json!(value), json!("NX")]).await? {
+                Value::Null => Ok(false),
+                value if value == json!("OK") => Ok(true),
+                _ => Err("storage conditional SET response was invalid".into()),
+            },
+        }
+    }
+
+    /// Atomically publish an update only while the previously read value still
+    /// matches. Used by Firm Operations to commit approvals and their effects
+    /// together, including when several serverless instances handle requests.
+    pub async fn compare_exchange(&self, key: &str, expected: Option<&str>, value: &str) -> StoreResult<bool> {
+        let key = format!("{PREFIX}{key}");
+        match self {
+            Store::Memory(m) => {
+                let mut m = m.lock().map_err(|_| "storage lock poisoned".to_string())?;
+                if m.strings.get(&key).map(String::as_str) != expected {
+                    return Ok(false);
+                }
+                m.strings.insert(key, value.to_string());
+                Ok(true)
+            }
+            Store::Redis { .. } => {
+                let script = "local current = redis.call('GET', KEYS[1]); if (ARGV[1] == 'missing' and not current) or (ARGV[1] == 'present' and current == ARGV[2]) then redis.call('SET', KEYS[1], ARGV[3]); return 1; end; return 0;";
+                let result = self.remote(vec![json!("EVAL"), json!(script), json!(1), json!(key), json!(if expected.is_some() { "present" } else { "missing" }), json!(expected.unwrap_or("")), json!(value)]).await?;
+                decision(result)
+            }
+            Store::Supabase { .. } => decision(self.remote(vec![json!("COMPARE_EXCHANGE"), json!(key), json!(expected), json!(value)]).await?),
+            Store::Unavailable { reason } => Err(reason.clone()),
         }
     }
 
@@ -130,14 +213,11 @@ impl Store {
             Store::Memory(m) => {
                 let mut m = m.lock().unwrap();
                 let cur: i64 = m.strings.get(&key).and_then(|v| v.parse().ok()).unwrap_or(0);
-                m.strings.insert(key, (cur + by).to_string());
-                Ok(cur + by)
+                let next = cur.checked_add(by).ok_or_else(|| "storage counter overflow".to_string())?;
+                m.strings.insert(key, next.to_string());
+                Ok(next)
             }
-            Store::Redis { .. } => Ok(self
-                .redis(vec![json!("INCRBY"), json!(key), json!(by)])
-                .await?
-                .as_i64()
-                .unwrap_or(0)),
+            _ => self.remote(vec![json!("INCRBY"), json!(key), json!(by)]).await?.as_i64().ok_or_else(|| "storage counter response was invalid".into()),
         }
     }
 
@@ -148,10 +228,10 @@ impl Store {
                 m.lock().unwrap().sets.entry(key).or_default().insert(member.to_string());
                 Ok(())
             }
-            Store::Redis { .. } => self
-                .redis(vec![json!("SADD"), json!(key), json!(member)])
-                .await
-                .map(|_| ()),
+            _ => {
+                let result = self.remote(vec![json!("SADD"), json!(key), json!(member)]).await?;
+                if result.as_i64().is_some_and(|n| n >= 0) { Ok(()) } else { Err("storage set response was invalid".into()) }
+            },
         }
     }
 
@@ -165,7 +245,7 @@ impl Store {
                 .get(&key)
                 .map(|s| s.iter().cloned().collect())
                 .unwrap_or_default()),
-            Store::Redis { .. } => Ok(strings(self.redis(vec![json!("SMEMBERS"), json!(key)]).await?)),
+            _ => strings(self.remote(vec![json!("SMEMBERS"), json!(key)]).await?),
         }
     }
 
@@ -181,15 +261,21 @@ impl Store {
                 Ok(())
             }
             Store::Redis { .. } => {
-                self.redis(vec![json!("LPUSH"), json!(key), json!(value)]).await?;
-                self.redis(vec![json!("LTRIM"), json!(key), json!(0), json!(cap as i64 - 1)])
+                self.remote(vec![json!("LPUSH"), json!(key), json!(value)]).await?;
+                self.remote(vec![json!("LTRIM"), json!(key), json!(0), json!(cap as i64 - 1)])
                     .await
                     .map(|_| ())
             }
+            Store::Supabase { .. } => {
+                let value = self.remote(vec![json!("LPUSH_CAPPED"), json!(key), json!(value), json!(cap)]).await?;
+                if value.as_i64().is_some_and(|n| n >= 0) { Ok(()) } else { Err("storage list response was invalid".into()) }
+            },
+            Store::Unavailable { reason } => Err(reason.clone()),
         }
     }
 
     pub async fn lrange(&self, key: &str, limit: usize) -> StoreResult<Vec<String>> {
+        if limit == 0 { return Ok(Vec::new()); }
         let key = format!("{PREFIX}{key}");
         match self {
             Store::Memory(m) => Ok(m
@@ -199,10 +285,10 @@ impl Store {
                 .get(&key)
                 .map(|l| l.iter().take(limit).cloned().collect())
                 .unwrap_or_default()),
-            Store::Redis { .. } => Ok(strings(
-                self.redis(vec![json!("LRANGE"), json!(key), json!(0), json!(limit as i64 - 1)])
+            _ => strings(
+                self.remote(vec![json!("LRANGE"), json!(key), json!(0), json!(limit as i64 - 1)])
                     .await?,
-            )),
+            ),
         }
     }
 
@@ -216,14 +302,15 @@ impl Store {
                 let m = m.lock().unwrap();
                 Ok(full.iter().map(|k| m.strings.get(k).cloned()).collect())
             }
-            Store::Redis { .. } => {
+            _ => {
                 let mut out = Vec::with_capacity(full.len());
                 for chunk in full.chunks(500) {
                     let mut cmd = vec![json!("MGET")];
                     cmd.extend(chunk.iter().map(|k| json!(k)));
-                    let v = self.redis(cmd).await?;
-                    let arr = v.as_array().cloned().unwrap_or_default();
-                    out.extend(arr.into_iter().map(|x| x.as_str().map(str::to_string)));
+                    let v = self.remote(cmd).await?;
+                    let arr = v.as_array().ok_or_else(|| "storage MGET response was invalid".to_string())?;
+                    if arr.len() != chunk.len() { return Err("storage MGET response length was invalid".into()); }
+                    for value in arr { out.push(optional_string(value.clone())?); }
                 }
                 Ok(out)
             }
@@ -253,8 +340,44 @@ impl Store {
     }
 }
 
-fn strings(v: Value) -> Vec<String> {
-    v.as_array()
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
-        .unwrap_or_default()
+fn strings(v: Value) -> StoreResult<Vec<String>> {
+    let values = v.as_array().ok_or_else(|| "storage list response was invalid".to_string())?;
+    values.iter().map(|v| v.as_str().map(str::to_string).ok_or_else(|| "storage list item was invalid".into())).collect()
+}
+
+fn optional_string(value: Value) -> StoreResult<Option<String>> {
+    match value { Value::Null => Ok(None), Value::String(s) => Ok(Some(s)), _ => Err("storage value response was invalid".into()) }
+}
+
+fn decision(value: Value) -> StoreResult<bool> {
+    match value.as_i64() { Some(0) => Ok(false), Some(1) => Ok(true), _ => Err("storage comparison response was invalid".into()) }
+}
+
+#[cfg(test)]
+mod compare_exchange_tests {
+    use super::Store;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn missing_empty_and_stale_values_are_distinct() {
+        let store = Store::memory();
+        assert!(store.compare_exchange("firm", None, "").await.unwrap());
+        assert!(!store.compare_exchange("firm", None, "lost").await.unwrap());
+        assert!(store.compare_exchange("firm", Some(""), "approved").await.unwrap());
+        assert!(!store.compare_exchange("firm", Some(""), "rejected").await.unwrap());
+        assert_eq!(store.get("firm").await.unwrap().as_deref(), Some("approved"));
+    }
+
+    #[tokio::test]
+    async fn only_one_concurrent_approval_can_publish() {
+        let store = Arc::new(Store::memory());
+        store.set("proposal", "pending").await.unwrap();
+        let a = store.clone();
+        let b = store.clone();
+        let (a, b) = tokio::join!(
+            async move { a.compare_exchange("proposal", Some("pending"), "approved").await.unwrap() },
+            async move { b.compare_exchange("proposal", Some("pending"), "rejected").await.unwrap() }
+        );
+        assert_ne!(a, b, "one decision must win without overwriting it");
+    }
 }
