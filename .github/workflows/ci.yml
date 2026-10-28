@@ -31,6 +31,7 @@ jobs:
           node --check public/apps/engagements/engagements.js
           node --check public/apps/migrations/migrations.js
           node --check public/apps/migrations/company-coverage.js
+          node --check public/apps/migrations/source-contact-lists.js
           node --check public/apps/signatures/signatures.js
           node --check public/apps/ledger/qb-navigation.js
           node --check public/apps/nixon/nixon.js
@@ -53,6 +54,8 @@ jobs:
           node --test tests/engagement_files.test.mjs
           node --test tests/migrations_company_books.test.mjs
           node --test tests/company_coverage.test.mjs
+          node --test tests/contact_navigation.test.mjs
+          node --test tests/source_contact_lists.test.mjs
       - name: Verify bounded QuickBooks financial report assessment
         run: python3 -B -m unittest discover -s tests -p test_qbo_export.py
       - name: Verify QuickBooks journal staging

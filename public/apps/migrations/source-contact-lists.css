@@ -1,0 +1,4 @@
+.source-contacts article{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 0;border-bottom:1px solid var(--line,#dce3e7)}
+.source-contacts article button{margin-left:auto}.source-contacts pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.78rem;max-height:22rem;overflow:auto;background:#f3f6f8;padding:12px;border-radius:6px}
+.source-contact-scroll{overflow:auto;margin:16px 0}.source-contact-scroll table{width:100%;border-collapse:collapse;min-width:780px}.source-contact-scroll th,.source-contact-scroll td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid #dce3e7;white-space:pre-wrap;overflow-wrap:anywhere;max-width:260px}
+.source-contact-muted{color:#5a6872;font-size:.88rem}.source-contact-error{padding:12px;background:#fff0ee;color:#8b2e22;border-left:3px solid #b34734}.source-contacts details{margin:8px 0}.source-contacts .row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:14px 0}
