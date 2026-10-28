@@ -5,6 +5,7 @@
 #[derive(Clone, Copy)]
 pub struct Lane {
     pub id: &'static str,
+    pub route: Option<&'static str>,
     pub module: &'static str,
     pub legacy_source: Option<&'static str>,
     pub status: &'static str,
@@ -19,6 +20,7 @@ pub struct Lane {
 pub const LANES: &[Lane] = &[
     Lane {
         id: "quickbooks_journal",
+        route: None,
         module: "NXT Ledger",
         legacy_source: Some("QuickBooks Online report ZIP"),
         status: "implemented_report_profile",
@@ -35,9 +37,10 @@ pub const LANES: &[Lane] = &[
     },
     Lane {
         id: "quickbooks_ledger",
+        route: Some("quickbooks"),
         module: "NXT Ledger",
         legacy_source: Some("QuickBooks Online"),
-        status: "staged_contract_vendor_sample_missing",
+        status: "bulk_preservation_staged_vendor_sample_missing",
         vendor_format_observed: false,
         required_types: &["invoice", "bill", "payment", "attachment"],
         money_types: &["invoice", "bill", "payment"],
@@ -51,6 +54,7 @@ pub const LANES: &[Lane] = &[
     },
     Lane {
         id: "quickbooks_payroll",
+        route: Some("quickbooks"),
         module: "NXT Ledger",
         legacy_source: Some("QuickBooks payroll or another payroll provider"),
         status: "staged_contract_vendor_sample_missing",
@@ -80,9 +84,10 @@ pub const LANES: &[Lane] = &[
     },
     Lane {
         id: "quickbooks_firm",
+        route: Some("firm"),
         module: "Firm Operations",
         legacy_source: Some("QuickBooks Online firm UI"),
-        status: "staged_contract_vendor_sample_missing",
+        status: "bulk_preservation_staged_vendor_sample_missing",
         vendor_format_observed: false,
         required_types: &["project", "workflow", "close"],
         money_types: &[],
@@ -95,9 +100,10 @@ pub const LANES: &[Lane] = &[
     },
     Lane {
         id: "caseware_engagements",
+        route: Some("caseware"),
         module: "NXT Engagements",
         legacy_source: Some("Caseware"),
-        status: "staged_contract_vendor_sample_missing",
+        status: "bulk_preservation_staged_vendor_sample_missing",
         vendor_format_observed: false,
         required_types: &["workpaper", "adjustment", "engagement_file"],
         money_types: &["adjustment"],
@@ -110,9 +116,10 @@ pub const LANES: &[Lane] = &[
     },
     Lane {
         id: "docusign_signatures",
+        route: Some("docusign"),
         module: "Prepare signatures",
         legacy_source: Some("DocuSign"),
-        status: "staged_contract_vendor_sample_missing",
+        status: "bulk_preservation_staged_vendor_sample_missing",
         vendor_format_observed: false,
         required_types: &["envelope", "document", "recipient"],
         money_types: &[],
@@ -125,6 +132,7 @@ pub const LANES: &[Lane] = &[
     },
     Lane {
         id: "dtmax_tax",
+        route: Some("dtmax"),
         module: "NXT Tax",
         legacy_source: Some("DT Max"),
         status: "bulk_preservation_staged_vendor_sample_missing",
@@ -141,9 +149,10 @@ pub const LANES: &[Lane] = &[
     },
     Lane {
         id: "webtax_t2",
+        route: Some("webtax"),
         module: "NXT Tax",
         legacy_source: Some("WebTaxT2"),
-        status: "preservation_only_vendor_sample_missing",
+        status: "bulk_preservation_staged_vendor_sample_missing",
         vendor_format_observed: false,
         required_types: &["opaque_pack"],
         money_types: &[],
@@ -156,6 +165,7 @@ pub const LANES: &[Lane] = &[
     },
     Lane {
         id: "referrals",
+        route: None,
         module: "NXT Referrals",
         legacy_source: None,
         status: "no_legacy_source",
@@ -167,4 +177,115 @@ pub const LANES: &[Lane] = &[
         blockers: &["No legacy source to import. A declared batch is refused."],
     },
 ];
+
+#[derive(Clone, Copy)]
+pub struct Profile {
+    pub id: &'static str,
+    pub format: &'static str,
+    pub source_kind: &'static str,
+    pub blocked: &'static str,
+    pub fields: &'static [&'static str],
+    pub kinds: &'static [&'static str],
+    pub implicit_kind: &'static str,
+    pub money_kinds: &'static [&'static str],
+    pub hash_kinds: &'static [&'static str],
+    pub require_code: bool,
+    pub require_all_kinds: bool,
+    pub receipt_format: &'static str,
+}
+
+const DTMAX_FIELDS: &[&str] = &["source_key", "code", "name", "amount_state", "amount_cents"];
+const TYPED_FIELDS: &[&str] = &["source_key", "record_type", "name", "amount_state", "amount_cents", "content_sha256"];
+const FILE_FIELDS: &[&str] = &["source_key", "record_type", "name", "amount_state", "amount_cents", "content_sha256"];
+
+pub const PROFILES: &[Profile] = &[
+    Profile {
+        id: "dtmax",
+        format: "nxt-dtmax-preservation-batch/v1",
+        source_kind: "declared_accounts",
+        blocked: "blocked_pending_sample: DT Max backups, databases, keyword files, and SDK XML are not parsed. Open a declared_accounts batch or pin a real export sample.",
+        fields: DTMAX_FIELDS,
+        kinds: &[],
+        implicit_kind: "account",
+        money_kinds: &[],
+        hash_kinds: &[],
+        require_code: true,
+        require_all_kinds: false,
+        receipt_format: "nxt-dtmax-preservation-receipt/v1",
+    },
+    Profile {
+        id: "quickbooks",
+        format: "nxt-quickbooks-preservation-batch/v1",
+        source_kind: "declared_documents",
+        blocked: "blocked_pending_sample: QuickBooks invoice, bill, payment, payroll, and attachment exports are not pinned. Report ZIPs stay on the journal importer. Open a declared_documents batch or pin a real sample.",
+        fields: TYPED_FIELDS,
+        kinds: &["invoice", "bill", "payment", "payroll_item", "attachment"],
+        implicit_kind: "",
+        money_kinds: &["invoice", "bill", "payment", "payroll_item"],
+        hash_kinds: &["attachment"],
+        require_code: false,
+        require_all_kinds: true,
+        receipt_format: "nxt-quickbooks-preservation-receipt/v1",
+    },
+    Profile {
+        id: "caseware",
+        format: "nxt-caseware-preservation-batch/v1",
+        source_kind: "declared_files",
+        blocked: "blocked_pending_sample: Caseware engagement packages are not pinned. Native nxt-engagement-tb/v1 is not a Caseware file. Open a declared_files batch or pin a real sample.",
+        fields: FILE_FIELDS,
+        kinds: &["engagement_file"],
+        implicit_kind: "engagement_file",
+        money_kinds: &[],
+        hash_kinds: &["engagement_file"],
+        require_code: false,
+        require_all_kinds: true,
+        receipt_format: "nxt-caseware-preservation-receipt/v1",
+    },
+    Profile {
+        id: "webtax",
+        format: "nxt-webtax-preservation-batch/v1",
+        source_kind: "declared_archive",
+        blocked: "blocked_pending_sample: No WebTax export or restore file is pinned. Open a declared_archive batch or pin a real sample.",
+        fields: FILE_FIELDS,
+        kinds: &["archive_member"],
+        implicit_kind: "archive_member",
+        money_kinds: &[],
+        hash_kinds: &["archive_member"],
+        require_code: false,
+        require_all_kinds: true,
+        receipt_format: "nxt-webtax-preservation-receipt/v1",
+    },
+    Profile {
+        id: "docusign",
+        format: "nxt-docusign-preservation-batch/v1",
+        source_kind: "declared_archive",
+        blocked: "blocked_pending_sample: No DocuSign signed-document or audit-trail archive is pinned. This lane does not send or sign. Open a declared_archive batch or pin a real sample.",
+        fields: TYPED_FIELDS,
+        kinds: &["signed_document", "audit_trail"],
+        implicit_kind: "",
+        money_kinds: &[],
+        hash_kinds: &["signed_document", "audit_trail"],
+        require_code: false,
+        require_all_kinds: true,
+        receipt_format: "nxt-docusign-preservation-receipt/v1",
+    },
+    Profile {
+        id: "firm",
+        format: "nxt-firm-preservation-batch/v1",
+        source_kind: "declared_firm",
+        blocked: "blocked_pending_sample: QuickBooks firm screens were inspected, but no project, workflow, or close export file is pinned. Open a declared_firm batch or pin a real sample.",
+        fields: &["source_key", "record_type", "name", "amount_state", "amount_cents"],
+        kinds: &["project", "workflow", "close"],
+        implicit_kind: "",
+        money_kinds: &[],
+        hash_kinds: &[],
+        require_code: false,
+        require_all_kinds: true,
+        receipt_format: "nxt-firm-preservation-receipt/v1",
+    },
+];
+
+pub fn profile(id: &str) -> Option<&'static Profile> {
+    PROFILES.iter().find(|profile| profile.id == id)
+}
 

@@ -1,17 +1,16 @@
 # Source import coverage
 
-DT Max is the bulk lane. The other rows say what already exists and what is still blocked on a real sample. None of these set `live_cutover_allowed`. Filing stays off.
+Old systems stay the source of truth. NXT holds read-only copies. `decommission_allowed` stays false until Orville decides. See [PARALLEL_IMPORT_CONTRACTS.md](PARALLEL_IMPORT_CONTRACTS.md) and [DTMAX_EXPORT_CONTRACT.md](DTMAX_EXPORT_CONTRACT.md).
 
 | Module | Source | Importer status | Blockers |
 | --- | --- | --- | --- |
-| NXT Ledger | QuickBooks trial balance and journal | Implemented for the observed All Dates report profile (`scripts/stage-qbo-journal.py`, company-books operator) | Not a full backup. Label-hash account ids are not QuickBooks ids. |
-| NXT Ledger | QuickBooks invoices, bills, payments, attachments | No vendor sample | Export columns are not in the repo. Do not infer them from a journal memo. |
-| NXT Ledger | QuickBooks or other payroll | Contact list only (`Employees.xlsx` preservation). No payroll importer | `docs/EMPLOYEE_PAYROLL_MIGRATION.md`. A contact row is not a paycheque. |
-| Firm Operations | QuickBooks firm UI | No export file | Projects, workflows, and closes were seen as screens, not as a file contract. |
-| NXT Engagements | Caseware | Native `nxt-engagement-tb/v1` only | Caseware schema was not verified. That native package is not a Caseware file. |
-| Prepare signatures | DocuSign | No export | No envelope export or Connect payload is pinned. This module does not send or sign. |
-| NXT Tax | DT Max | Bulk preservation of declared accounts. Vendor files refused | No account export is pinned. Orville's 5,800-account figure is not a counted file here. 6,000 synthetic rows reconciled in 300 ms. See `docs/DTMAX_EXPORT_CONTRACT.md`. |
-| NXT Tax | WebTaxT2 | Opaque preservation only | No WebTax export or restore file is established. |
-| NXT Referrals | None found | No importer | Referrals were built in this repository. No cloned export was found. |
+| NXT Ledger | QuickBooks trial balance and journal | Observed report profile on main | Not a full backup. Not the document importer. |
+| NXT Ledger | QuickBooks invoices, bills, payments, payroll, attachments | Bulk declared copy. Vendor files blocked | No real export is pinned. 6,000 rows in 350 ms. No write-back. |
+| Firm Operations | QuickBooks firm UI | Bulk declared copy. Vendor files blocked | Screens were seen. No export file. 6,000 rows in 295 ms. |
+| NXT Engagements | Caseware | Bulk declared file copy. Vendor files blocked | Caseware schema is not verified. 6,000 rows in 350 ms. |
+| Prepare signatures | DocuSign signed document and audit trail | Bulk declared archive. Vendor files blocked | No Connect payload or envelope export. Does not send or sign. 6,000 rows in 358 ms. |
+| NXT Tax | DT Max | Bulk declared accounts | Vendor backup, database, keyword file, and SDK XML are blocked. 6,000 rows in 311 ms on the re-run. |
+| NXT Tax | WebTaxT2 | Bulk declared archive members | No WebTax export is pinned. Not decoded. Not filed. 6,000 rows in 352 ms. |
+| NXT Referrals | None found | No importer | No cloned export in this repository. |
 
-`GET /api/source-imports/coverage` returns the same lane list. Only `dtmax_tax` has the checkpoint API.
+`GET /api/source-imports/coverage` returns the lane list. Parallel reports are `POST /api/source-imports/{lane}/batches/{batch}/parallel`.
