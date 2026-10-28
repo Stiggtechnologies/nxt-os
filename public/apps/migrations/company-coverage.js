@@ -32,7 +32,7 @@
     return [
       ['Financial journal',head?'Journal committed · '+count(p?.entries)+' source entries represented':'No committed company journal recorded','Journal import does not create payroll or subledger documents.'],
       ['Full chart of accounts','Not established','Journal/TB represented accounts do not establish unused or inactive account coverage.'],
-      ['Customer source lists / operational customers','PENDING operational import','A preserved ZIP or journal contact label does not create customer profiles. Source-list projection is not published by this employee-only view.'],
+      ['Customer source lists / operational customers','PENDING operational import','Published source contact exports can be reviewed in the company Customers tab. Preserved source rows do not create operational customer profiles.'],
       ['Supplier source lists / operational suppliers','PENDING operational import','Source supplier lists and operational supplier records have separate coverage.'],
       ['Employee source contact list',!available?'Unknown · source contact service unavailable':contacts.length?'Preserved read-only export(s) · '+contacts.map(c=>c.records_total).join(', ')+' contact rows':'Source contact projection not published','A validated zero means 0 rows in that frozen export; it does not mean no employees or payroll.'],
       ['Operational employees','PENDING source profiles and identity mapping','Contact rows contain name/phone/email/address, not payroll-ready employee identities or employment status.'],
