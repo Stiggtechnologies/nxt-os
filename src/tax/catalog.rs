@@ -52,7 +52,10 @@ pub fn catalog()->Value {
         scope_fields(T5013_SCOPE),section("income","Income reconciliation",vec![money("revenue_cents","Ordinary business revenue","Domestic general partnership only; no SIFT, limited/at-risk, resource, foreign or special income categories."),money("expenses_cents","Book expenses","Book net income/loss = revenue less expenses."),money("addbacks_cents","Verified non-deductible expense addbacks","Verified ordinary-income tax reconciliation amounts, such as non-deductible book expenses."),money("deductions_cents","Verified additional tax deductions","Verified ordinary deductions only. CCA, loss restrictions, ACB and special allocations are not calculated.")]),
         section("partners","Partner agreement",vec![partners,yes("allocation_verified","General-partner status, agreement shares and tax adjustments verified","No limited partnership, at-risk, non-resident or special allocation rules. Tax is calculated on partners' own returns, not as ordinary partnership tax here.")]),
     ]);
-    json!({"ruleset":RULESET,"engine":"independent_nxt","money_unit":"CAD cents","rounding":"integer arithmetic; nearest cent, half away from zero; partnership largest-remainder allocation","filing_supported":false,"certified":false,"sdk_runtime_required":false,"programs":[t1,t2,t3,t5013]})
+    let mut doc=json!({"ruleset":RULESET,"engine":"independent_nxt","money_unit":"CAD cents","rounding":"integer arithmetic; nearest cent, half away from zero; partnership largest-remainder allocation","filing_supported":false,"certified":false,"sdk_runtime_required":false,"programs":[t1,t2,t3,t5013]});
+    doc["programs"][0]["jurisdictions"]=json!(["AB","ON"]);
+    doc["programs"][0]["ontario_scope"]=json!(super::calculations::T1_ON_SCOPE);
+    doc
 }
 
 #[cfg(test)]mod tests {

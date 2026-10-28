@@ -3,6 +3,7 @@ pub mod calculations;
 pub mod catalog;
 pub mod corporate;
 pub mod models;
+pub mod parallel;
 mod routes;
 pub use routes::router;
 
@@ -97,7 +98,7 @@ fn audit(s: &mut TaxState, return_id: &str, action: &str, detail: impl Into<Stri
     s.audit.insert(0,AuditEvent { id:id("taxaudit"), return_id:return_id.into(), at:now(), action:action.into(), detail:detail.into() }); s.audit.truncate(1000);
 }
 fn record(input: &ReturnInput, record_id: &str, at: &str) -> TaxReturn {
-    TaxReturn { id:record_id.into(), program:input.program.clone(), tax_year:input.tax_year, jurisdiction:input.jurisdiction.clone(), name:input.name.clone(), client_ref:input.client_ref.clone(), period_start:input.period_start.clone(), period_end:input.period_end.clone(), inputs:input.inputs.clone(), parties:input.parties.clone(), corporate:input.corporate.clone(), notes:input.notes.clone(), revision:1, input_revision:1, status:"draft".into(), calculation:None, calculations:Vec::new(), review:None, reviews:Vec::new(), rollforward_from:None, created_at:at.into(), updated_at:at.into() }
+    TaxReturn { id:record_id.into(), program:input.program.clone(), tax_year:input.tax_year, jurisdiction:input.jurisdiction.clone(), name:input.name.clone(), client_ref:input.client_ref.clone(), period_start:input.period_start.clone(), period_end:input.period_end.clone(), inputs:input.inputs.clone(), parties:input.parties.clone(), corporate:input.corporate.clone(), notes:input.notes.clone(), revision:1, input_revision:1, status:"draft".into(), calculation:None, calculations:Vec::new(), review:None, reviews:Vec::new(), rollforward_from:None, created_at:at.into(), updated_at:at.into(), parallel_comparisons:Vec::new() }
 }
 
 impl Tax {
@@ -131,7 +132,7 @@ impl Tax {
         Ok(json!({"returns":s.returns.len(),"total":s.returns.len(),"drafts":n("draft"),"calculated":n("calculated"),"in_review":n("in_review"),"approved":n("approved"),"archived":n("archived"),"by_program":by_program,"storage":self.store.backend_name(),"auth_required":crate::referral::routes::auth_required(),"filing_enabled":false,"calculation_years":[2025],"engine":"Independent NXT engine","access_model":"shared workspace credential; labels are not verified individual identities"}))
     }
     pub fn capabilities() -> Value {
-        json!({"engine":"independent","filing_enabled":false,"certification":"not_certified","sdk":{"mode":"reference_only","connected":false},"exports":["nxt-tax-json","printable-workpaper-html"],"programs":catalog::catalog()["programs"],"limitations":["Native calculations cover only the explicit ruleset cases in the catalog, not every DT Max form, province, year or election.","Output is an internal workpaper, not a CRA/Revenu Québec filing or certified form.","Related parties are metadata; use calculation input fields for supported allocations.","Client/company isolation and individual approval authority are not implemented by the shared workspace credential.","No DT Max client database, SDK runtime, license secret or filing credential is accessed."]})
+        json!({"engine":"independent","filing_enabled":false,"certification":"not_certified","parallel_compare":"supplied dtmax or webtax lines only; vendor file bytes are not fetched","sdk":{"mode":"reference_only","connected":false},"exports":["nxt-tax-json","printable-workpaper-html"],"programs":catalog::catalog()["programs"],"limitations":["Native calculations cover only the explicit ruleset cases in the catalog, not every DT Max form, province, year or election.","Output is an internal workpaper, not a CRA/Revenu Québec filing or certified form.","A parallel comparison does not replace the old system and does not file.","Related parties are metadata; use calculation input fields for supported allocations.","Client/company isolation and individual approval authority are not implemented by the shared workspace credential.","No DT Max client database, SDK runtime, license secret or filing credential is accessed."]})
     }
     pub async fn save(&self, existing: Option<&str>, input: ReturnInput) -> TResult<TaxReturn> {
         let input = validate(input)?; let record_id = existing.map(str::to_owned).unwrap_or_else(||id("tax")); let at=now();
@@ -146,7 +147,7 @@ impl Tax {
                 assert_revision(&previous,input.expected_revision.unwrap())?;
                 if ["approved","archived"].contains(&previous.status.as_str()) { return Err(conflict("reopen the return to draft before editing")); }
                 if previous.program != input.program || previous.tax_year != input.tax_year { return Err(bad("program and year are immutable; create or roll forward a return")); }
-                r.revision=previous.revision+1; r.input_revision=previous.input_revision+1; r.created_at=previous.created_at; r.rollforward_from=previous.rollforward_from; r.calculations=previous.calculations; r.reviews=previous.reviews;
+                r.revision=previous.revision+1; r.input_revision=previous.input_revision+1; r.created_at=previous.created_at; r.rollforward_from=previous.rollforward_from; r.calculations=previous.calculations; r.reviews=previous.reviews; r.parallel_comparisons=previous.parallel_comparisons;
             }
             s.returns.retain(|x|x.id!=record_id); s.returns.push(r.clone()); audit(s,&record_id,if existing.is_some(){"edited"}else{"created"},"Input revision saved; prior calculation/review invalidated"); Ok(r)
         }).await
@@ -295,4 +296,89 @@ impl Tax {
             let r=record(&p.document,&new_id,&at); s.returns.push(r.clone()); s.imports.iter_mut().find(|p|p.id==preview_id).unwrap().committed_return_id=Some(new_id.clone());audit(s,&new_id,"imported",format!("Reviewed import preview {}",preview_id));Ok(r)
         }).await
     }
+    /// Diff the saved workpaper against operator-supplied DT Max or WebTax lines.
+    /// A missing artifact hash means the lines are not tied to a vendor file.
+    pub async fn compare_parallel(&self, record_id: &str, mut source: parallel::ParallelSource) -> TResult<Value> {
+        source.program = program(&source.program)?;
+        source.jurisdiction = source.jurisdiction.to_ascii_uppercase();
+        let current = self.get(record_id).await?;
+        if current.program != source.program || current.tax_year != source.tax_year || current.jurisdiction != source.jurisdiction {
+            return Err(bad("source program, year and jurisdiction must match this workpaper"));
+        }
+        let calculation = current.calculation.as_ref().ok_or_else(|| conflict("calculate the workpaper before comparing it"))?;
+        let lines = calculation.result["lines"].as_array().ok_or_else(|| conflict("calculation has no lines"))?;
+        let mut nxt = std::collections::BTreeMap::new();
+        for line in lines {
+            let code = line["code"].as_str().ok_or_else(|| bad("calculation line code is missing"))?;
+            let amount = line["amount"].as_i64().ok_or_else(|| bad("calculation line is not integer cents"))?;
+            nxt.insert(code.to_string(), amount);
+        }
+        let mut report = parallel::compare(&nxt, &source).map_err(bad)?;
+        report["return_id"] = json!(record_id);
+        report["calculation_id"] = json!(calculation.id);
+        report["output_hash"] = json!(calculation.output_hash);
+        let stored = report.clone();
+        self.mutate(|s| {
+            let r = s.returns.iter_mut().find(|r| r.id == record_id).ok_or_else(missing)?;
+            let calc = r.calculation.as_ref().ok_or_else(|| conflict("calculate the workpaper before comparing it"))?;
+            if calc.id != stored["calculation_id"].as_str().unwrap_or("") { return Err(conflict("calculation changed; compare again")); }
+            if r.parallel_comparisons.len() >= 20 { return Err(conflict("parallel comparison history is full")); }
+            r.parallel_comparisons.push(stored.clone());
+            r.revision += 1;
+            r.updated_at = now();
+            audit(s, record_id, "parallel_compare", "Compared supplied source lines. The source stays authoritative. Nothing was filed or written back.");
+            Ok(stored.clone())
+        }).await
+    }
+    pub async fn link_family(&self, label: &str, primary: &str, spouse: &str) -> TResult<Value> {
+        text(label, "family label", 160, false)?;
+        if label.trim().is_empty() { return Err(bad("family label is required")); }
+        if primary == spouse { return Err(bad("a family needs two different T1 workpapers")); }
+        let new_id = id("family");
+        let at = now();
+        self.mutate(|s| {
+            let a = s.returns.iter().find(|r| r.id == primary).ok_or_else(missing)?;
+            let b = s.returns.iter().find(|r| r.id == spouse).ok_or_else(missing)?;
+            if a.program != "T1" || b.program != "T1" { return Err(bad("family comparison is limited to two T1 workpapers")); }
+            if let Some(existing) = s.families.iter().find(|f| f.primary_return_id == primary && f.spouse_return_id == spouse).cloned() {
+                return family_view(s, &existing);
+            }
+            if s.families.len() >= 100 { return Err(conflict("family link capacity reached")); }
+            let link = FamilyLink { id: new_id.clone(), label: label.trim().into(), primary_return_id: primary.into(), spouse_return_id: spouse.into(), created_at: at.clone() };
+            s.families.push(link.clone());
+            audit(s, primary, "family_link", "Side-by-side T1 totals. No spouse credit was transferred and nothing was filed.");
+            family_view(s, &link)
+        }).await
+    }
+    pub async fn family(&self, family_id: &str) -> TResult<Value> {
+        let state = self.load().await?;
+        let link = state.families.iter().find(|f| f.id == family_id).ok_or_else(|| bad("family link not found"))?;
+        family_view(&state, link)
+    }
+}
+
+fn family_view(state: &TaxState, link: &FamilyLink) -> TResult<Value> {
+    let primary = state.returns.iter().find(|r| r.id == link.primary_return_id).ok_or_else(missing)?;
+    let spouse = state.returns.iter().find(|r| r.id == link.spouse_return_id).ok_or_else(missing)?;
+    Ok(json!({
+        "id": link.id,
+        "label": link.label,
+        "optimization": "not_performed",
+        "credit_transfer": false,
+        "filing_enabled": false,
+        "write_back": false,
+        "note": "Side-by-side totals only. Spouse amount on an Ontario return is not filled from the other workpaper.",
+        "primary": family_side(primary),
+        "spouse": family_side(spouse),
+    }))
+}
+fn family_side(r: &TaxReturn) -> Value {
+    json!({
+        "id": r.id,
+        "jurisdiction": r.jurisdiction,
+        "tax_year": r.tax_year,
+        "status": r.status,
+        "supported": r.calculation.as_ref().map(|c| c.result["supported"].clone()),
+        "totals": r.calculation.as_ref().and_then(|c| c.result.get("totals").cloned()),
+    })
 }
