@@ -17,6 +17,11 @@ pub fn router(state: Arc<Signatures>) -> Router {
         .route("/api/signatures/audit", get(audit))
         .route("/api/signatures/{id}", get(detail).put(update))
         .route("/api/signatures/{id}/transition", post(transition))
+        .route("/api/signatures/{id}/folder", post(assign_folder))
+        .route("/api/signatures/{id}/lock", post(lock_envelope))
+        .route("/api/signatures/{id}/unlock", post(unlock_envelope))
+        .route("/api/signatures/{id}/bulk-rehearsal", post(bulk))
+        .route("/api/signatures/folders", post(create_folder))
         .route("/api/signatures/{id}/template", post(create_template))
         .route("/api/signatures/{id}/package", get(package))
         .route("/api/signatures/templates/{id}", get(template))
@@ -24,6 +29,7 @@ pub fn router(state: Arc<Signatures>) -> Router {
             "/api/signatures/templates/{id}/instantiate",
             post(instantiate),
         )
+        .route("/api/signatures/templates/{id}/favorite", post(favorite))
         .layer(DefaultBodyLimit::max(256 * 1024))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|mut r: Response| async move {
@@ -64,6 +70,24 @@ async fn instantiate(State(s): S, Path(id): Path<String>, Json(v): Json<Instanti
 }
 async fn package(State(s): S, Path(id): Path<String>) -> R {
     Ok(Json(s.package(&id).await?))
+}
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FolderName { name: String }
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FavoriteInput { favorite: bool }
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BulkInput { expected_revision: u64, expected_content_hash: String, operator_label: String, note: String, copies: u8 }
+async fn create_folder(State(s): S, Json(v): Json<FolderName>) -> R { Ok(Json(s.create_folder(&v.name).await?)) }
+async fn assign_folder(State(s): S, Path(id): Path<String>, Json(v): Json<models::TransitionInput>) -> R { Ok(Json(s.assign_folder(&id, v).await?)) }
+async fn lock_envelope(State(s): S, Path(id): Path<String>, Json(v): Json<models::TransitionInput>) -> R { Ok(Json(s.set_lock(&id, v, true).await?)) }
+async fn unlock_envelope(State(s): S, Path(id): Path<String>, Json(v): Json<models::TransitionInput>) -> R { Ok(Json(s.set_lock(&id, v, false).await?)) }
+async fn favorite(State(s): S, Path(id): Path<String>, Json(v): Json<FavoriteInput>) -> R { Ok(Json(s.favorite_template(&id, v.favorite).await?)) }
+async fn bulk(State(s): S, Path(id): Path<String>, Json(v): Json<BulkInput>) -> R {
+    let input = models::TransitionInput { expected_revision: v.expected_revision, expected_content_hash: v.expected_content_hash, operator_label: v.operator_label, action: "parallel_bulk".into(), note: v.note, field_values: Vec::new() };
+    Ok(Json(s.bulk_rehearse(&id, input, v.copies).await?))
 }
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]

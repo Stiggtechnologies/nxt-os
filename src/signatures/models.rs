@@ -45,6 +45,14 @@ pub struct Field {
     pub height: u16,
 }
 
+/// Text captured during an internal rehearsal. Not a signature.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldValue {
+    pub field_id: String,
+    pub value: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Draft {
@@ -73,6 +81,8 @@ pub struct TransitionInput {
     pub operator_label: String,
     pub action: String,
     pub note: String,
+    #[serde(default)]
+    pub field_values: Vec<FieldValue>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -115,6 +125,22 @@ pub struct Envelope {
     pub reviewed_by_label: Option<String>,
     pub template_id: Option<String>,
     pub draft: Draft,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock_token: Option<String>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub resend_count: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub field_values: Vec<FieldValue>,
+}
+fn is_zero(value: &u32) -> bool { *value == 0 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Folder {
+    pub id: String,
+    pub name: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -127,7 +153,10 @@ pub struct Template {
     pub created_by_label: String,
     pub content_hash: String,
     pub draft: Draft,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub favorite: bool,
 }
+fn is_false(value: &bool) -> bool { !*value }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -150,4 +179,6 @@ pub struct SignatureState {
     pub envelopes: Vec<Envelope>,
     pub templates: Vec<Template>,
     pub events: Vec<AuditEvent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folders: Vec<Folder>,
 }
