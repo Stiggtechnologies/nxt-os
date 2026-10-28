@@ -207,6 +207,12 @@ pub struct Workpaper {
     // Appended/omitted so legacy manual documents retain exact signed preimages.
     #[serde(default, skip_serializing_if = "WorkpaperType::is_manual")]
     pub document_type: WorkpaperType,
+    /// Labels only. Empty is omitted so older workpaper hashes stay stable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// A text reference. It is not a URL and nothing is fetched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_label: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
