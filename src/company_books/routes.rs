@@ -36,6 +36,13 @@ pub fn router(state: Arc<CompanyBooks>) -> Router {
             "/api/company-books/{company}/period-lock",
             post(lock_period),
         )
+        .route("/api/company-books/{company}/parallel/classes", post(add_class))
+        .route("/api/company-books/{company}/parallel/documents", post(open_document))
+        .route("/api/company-books/{company}/parallel/payments", post(apply_payment))
+        .route("/api/company-books/{company}/parallel/subledger", get(subledger))
+        .route("/api/company-books/{company}/parallel/journals/{entry}/sparse", post(sparse_native))
+        .route("/api/company-books/{company}/parallel/journals/{entry}/delete", post(delete_native))
+        .route("/api/company-books/{company}/parallel/attachments", post(attach))
         .route(
             "/api/company-books/{company}/register/{account}",
             get(register),
@@ -168,4 +175,23 @@ async fn reverse(
 }
 async fn lock_period(State(s): S, Path(c): Path<String>, Json(v): Json<LockInput>) -> R {
     Ok(Json(s.lock_period(&c, v).await?))
+}
+async fn add_class(State(s): S, Path(c): Path<String>, Json(v): Json<super::subledger::ClassInput>) -> R {
+    Ok(Json(s.add_class(&c, v).await?))
+}
+async fn open_document(State(s): S, Path(c): Path<String>, Json(v): Json<super::subledger::DocumentInput>) -> R {
+    Ok(Json(s.open_document(&c, v).await?))
+}
+async fn apply_payment(State(s): S, Path(c): Path<String>, Json(v): Json<super::subledger::PaymentInput>) -> R {
+    Ok(Json(s.apply_payment(&c, v).await?))
+}
+async fn subledger(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.subledger(&c).await?)) }
+async fn sparse_native(State(s): S, Path((c, e)): Path<(String, String)>, Json(v): Json<super::subledger::SparseInput>) -> R {
+    Ok(Json(s.sparse_native(&c, &e, v).await?))
+}
+async fn delete_native(State(s): S, Path((c, e)): Path<(String, String)>, Json(v): Json<super::subledger::DeleteInput>) -> R {
+    Ok(Json(s.delete_native(&c, &e, v).await?))
+}
+async fn attach(State(s): S, Path(c): Path<String>, Json(v): Json<super::subledger::AttachmentInput>) -> R {
+    Ok(Json(s.attach(&c, v).await?))
 }

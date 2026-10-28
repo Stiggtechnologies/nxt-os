@@ -53,19 +53,19 @@ NXT checks on this machine, rustc **1.99.1**:
 
 ## QuickBooks to Ledger and company books
 
-Fidelity: **36%** (1 copied & tested, 11 partial, 6 missing, 0 wrong; 18 rows). `(1 + 0.5×11) / 18`.
+Fidelity: **47%** after the parallel subledger closure (was **36%**). Now 1 copied & tested, 15 partial, 2 missing, 0 wrong; 18 rows. `(1 + 0.5×15) / 18`. The previous score was `(1 + 0.5×11) / 18`.
 
 SDK evidence: parent `ev_c6d077c18411971abee54760eba97daebb074995bf8a14e5c20193201abb87a2` (317 files, 96 `*Enum` names, 221 other class files, directory digest `f58246ab93e6ba9b08e514be0062214f4f320624a13fcac41ecd22f6ca7a3133`). Names present include `IPPAccount`, `IPPInvoice`, `IPPBill`, `IPPPayment`, `IPPJournalEntry`, `IPPCustomer`, `IPPVendor`, `IPPEmployee`, `IPPClass`, `IPPDepartment`, `IPPItem`, `IPPBudget`, `IPPAttachable`, `IPPCurrency`, `IPPPurchaseOrder`, `IPPTimeActivity`. JournalEntry page: `ev_5871143c120cf57851bf580e1362c502a255de6bdd0d3d408799f72af49878b5`.
 
 | Original feature | NXT status | Evidence |
 | --- | --- | --- |
 | Journal distribution lines must balance: debit total equals credit total, and a mismatch is an error | copied & tested | Public JournalEntry rules on that page. `tests/ledger_flow.rs` `books_tie_out` rejects 100/99 and posts a balanced entry. `company_books` recomputes entry balance before commit (9 tests passed). |
-| Delete a JournalEntry by Id and SyncToken | missing | Same page documents `operation=delete`. No NXT delete-by-sync-token. Ledger can void an entry; that is a different operation. |
-| Sparse JournalEntry update | missing | Same page documents sparse update. NXT company journals are append-only receipts, not sparse QBO updates. |
+| Delete a JournalEntry by Id and SyncToken | partial | Parallel delete uses the entry id and the current company head as the sync token, posts the reversing entry, and leaves source bytes unchanged (`parallel_subledger_posts_open_items_without_changing_source_rows`). Imported QuickBooks rows are refused. This does not call QuickBooks. |
+| Sparse JournalEntry update | partial | Memo and class can be overlaid on a parallel NXT journal when the head and sparse sync match. Amounts stay immutable. A stale sync returns 409. Imported rows are refused. |
 | Chart of accounts, including QBO account type and subtype enums | partial | Ledger ships a seeded chart and `books_tie_out` reads at least 30 accounts. Company-books imports account rows. `IPPAccountTypeEnum` / `IPPAccountSubTypeEnum` were not read (0 bytes probed) and are not an NXT subtype system. |
-| Invoices with tax and document numbers | partial | `books_tie_out` posts INV-1001, HST 13%, total 226000 cents, rejects an expense account on an invoice line. That is not the `IPPInvoice` object, payment link, or custom-field model. |
-| Bills and customer/vendor payments | partial | Same test: bill total 45200 cents, partial receipt, overpayment rejected, bill payment 45200 cents. Not `IPPBill` / `IPPBillPayment` sync. |
-| Customers and vendors | partial | Same test creates both contact kinds. `source_lists_flow` (6 tests) keeps source contact cells read-only. Company books does not allocate open AR/AP from journal text. |
+| Invoices with tax and document numbers | partial | Ledger `books_tie_out` still covers HST invoices. Company books can now post a parallel invoice that debits a control account, credits income, and keeps an open balance. It is not the `IPPInvoice` object or a QuickBooks sync. |
+| Bills and customer/vendor payments | partial | Ledger bill and payment tests remain. Company-book payments cannot exceed the open document balance and do not write back. Not `IPPBill` / `IPPBillPayment` sync. |
+| Customers and vendors | partial | Ledger contacts and read-only source lists remain. Open AR/AP is now an explicit document balance, not an inference from journal text. |
 | Employees and payroll | missing | `IPPEmployee` is in the SDK inventory. The migrations UI still lists payroll families as pending. No payroll engine is tested. |
 | Bank-feed import and categorization rules | partial | `books_tie_out` imports CSV, dedupes, and applies a rule. There is no bank or QBO feed connection. |
 | Statement reconciliation against a stated ending balance | partial | Same test: 500000 cents returns 409 and 600000 cents reconciles the selected lines. Not a paired QBO reconcile session. |
@@ -74,8 +74,8 @@ SDK evidence: parent `ev_c6d077c18411971abee54760eba97daebb074995bf8a14e5c201932
 | Customer balance / AR aging | partial | `books_tie_out` puts 126000 cents in the 31–60 bucket. `CustomerBalance` on the QBO nav was not paired. |
 | Closing date blocks earlier postings | partial | Same test sets `closing_date` 2026-01-31 and a 2026-01-15 journal returns 409. QBO close-books password, exceptions, and reopen were not observed. Company-books period lock advances only; that route has no unlock. |
 | Company-scoped journal and trial-balance import | partial | Nine `company_books_flow` tests plus the Python assessor/staging/operator tests. Import preserves source cents and blocks live cutover. It is not a QBO company sync. |
-| Classes, departments, items, estimates, purchase orders, time, budgets, multi-currency | missing | Those `IPP*` files are in the 317-file inventory. Ledger has no class or department field. |
-| Transaction attachments | missing | `IPPAttachable` is inventoried. Ledger does not store QBO attachables. Engagement opaque files are a different module. |
+| Classes, departments, items, estimates, purchase orders, time, budgets, multi-currency | partial | A company class list can be applied to a parallel invoice line and to a sparse journal overlay. Departments, items, estimates, purchase orders, time, budgets, and multi-currency are still absent. |
+| Transaction attachments | partial | A parallel attachment stores the hex bytes, SHA-256, and owner id, and does not execute the bytes or write them back. It is not an `IPPAttachable` sync. |
 | OAuth and realm synchronization | missing | Firm integrations report QuickBooks as not configured. No token exchange was run. |
 
 ## Firm
@@ -201,7 +201,7 @@ Impact is how badly a side-by-side period would diverge or be unsafe if someone 
 | Rank | Gap | Why it dominates a parallel run |
 | --- | --- | --- |
 | 1 | No vendor-byte DT Max or WebTaxT2 tie-out | A parallel line diff now exists, and 2025 Ontario plus GIFI detail rollup are tested. A real DT Max or WebTax output file is still not on this machine, so no row is a copied vendor match. Keywords, year engines, and filing remain blocked. Filing stays disabled. |
-| 2 | QuickBooks subledgers, payroll, classes, and sync | Journal balance is copied. Invoices, bills, and reports are a tested subset. Employees, payroll, classes, items, budgets, attachments, sparse update, delete-by-SyncToken, and OAuth are missing. A parallel close will not match QuickBooks outside the imported journal. |
+| 2 | QuickBooks payroll and live sync | Parallel invoices, payments, classes, attachments, sparse memo/class updates, and native deletes now exist and do not write back. Payroll, items, budgets, and OAuth sync are still missing, so a parallel close still will not match a live QuickBooks company. |
 | 3 | Caseware engines and file format | Engagements can hold a cent-exact trial balance, local adjustments, text workpapers, and opaque bytes. CaseView, automatic documents, Word/Excel, SmartSync, GIFI-to-TaxCycle, Xero transfer, and the 2025 program binaries are missing. Reviewers still need Working Papers for the file the client already has. |
 | 4 | DocuSign send and sign | Preparation drafts are tested and explicitly non-signing. Twelve of the sixteen inventoried API areas have no NXT route. A parallel signature cycle cannot be executed in NXT. |
 | 5 | Firm client operations | Templates, close, and report export are partial and tested against NXT Ledger. Live QuickBooks firm clients, list exports, the Excel add-in, and playbook publishing are missing. The 154-snapshot roster is a read-only review copy. |
