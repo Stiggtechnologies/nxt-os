@@ -330,3 +330,99 @@ async fn nixon_reviews_the_books_and_does_not_change_them() {
                 .contains("autonomy_downgraded=true")
     }));
 }
+
+#[tokio::test]
+async fn voice_can_ask_and_cannot_approve_or_post() {
+    unsafe { std::env::set_var("ADMIN_API_KEY", "k") };
+    let r = app_with(Store::memory);
+    ok(&r, "POST", "/api/ledger/entries", Some(json!({"date":"2026-10-02","memo":"Owner investment","lines":[{"account_id":"acc_1000","debit":500000},{"account_id":"acc_3000","credit":500000}]}))).await;
+    let before = ok(&r, "GET", "/api/ledger/entries", None).await.as_array().unwrap().len();
+
+    let cash = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"what is our cash position","channel":"push_to_talk"}))).await;
+    assert_eq!(cash["intent"], "cash");
+    assert_eq!(cash["posting"], "disabled");
+    assert_eq!(cash["approval"], "not_by_voice");
+    assert!(cash["say"].as_str().unwrap().contains('$'));
+    assert!(!cash["say"].as_str().unwrap().to_lowercase().contains("root cause"));
+
+    let gaps = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"show reconciliation gaps","channel":"open_mic"}))).await;
+    assert_eq!(gaps["intent"], "reconciliation");
+    assert!(gaps["say"].as_str().unwrap().to_lowercase().contains("invent") || gaps["say"].as_str().unwrap().to_lowercase().contains("gap") || gaps["say"].as_str().unwrap().to_lowercase().contains("reconcil"));
+
+    let review = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"Nixon, run a review","channel":"push_to_talk"}))).await;
+    assert_eq!(review["intent"], "run_review");
+    assert_eq!(review["effect"], "review_recorded");
+    assert!(review["review_id"].is_string());
+    assert_eq!(ok(&r, "GET", "/api/ledger/entries", None).await.as_array().unwrap().len(), before);
+
+    let explained = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"explain the finding","channel":"push_to_talk"}))).await;
+    assert_eq!(explained["intent"], "explain");
+    assert!(!explained["say"].as_str().unwrap().is_empty());
+
+    let approve = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"approve the finding","channel":"push_to_talk"}))).await;
+    assert_eq!(approve["intent"], "refuse_approve");
+    assert_eq!(approve["effect"], "none");
+    let stored = ok(&r, "GET", &format!("/api/nixon/reviews/{}", review["review_id"].as_str().unwrap()), None).await;
+    assert!(stored["decisions"].as_array().unwrap().is_empty());
+
+    let post = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"post a journal for the difference","channel":"push_to_talk"}))).await;
+    assert_eq!(post["intent"], "refuse_post");
+    let file = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"file the tax return","channel":"push_to_talk"}))).await;
+    assert_eq!(file["intent"], "refuse_file");
+    assert_eq!(ok(&r, "GET", "/api/ledger/entries", None).await.as_array().unwrap().len(), before);
+
+    let echo = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript": review["say"], "channel":"open_mic", "last_spoken": review["say"]}))).await;
+    assert_eq!(echo["action"], "hold");
+    assert_eq!(echo["intent"], "echo");
+
+    let audit = ok(&r, "GET", "/api/ledger/audit", None).await;
+    assert!(audit.as_array().unwrap().iter().any(|e| e["action"] == "nixon.voice" && e["detail"].as_str().unwrap().contains("approval=not_by_voice")));
+}
+
+#[tokio::test]
+async fn voice_opens_records_and_falls_back_without_a_provider_key() {
+    unsafe { std::env::set_var("ADMIN_API_KEY", "k") };
+    let r = app_with(Store::memory);
+    let invoice = ok(&r, "POST", "/api/ledger/invoices", Some(json!({
+        "contact_id": ok(&r, "POST", "/api/ledger/contacts", Some(json!({"kind":"customer","name":"Smith Studio"}))).await["id"],
+        "date": "2026-10-02",
+        "lines": [{"description":"Work","rate":10000,"account_id":"acc_4100","tax_code":"NONE"}]
+    }))).await;
+    ok(&r, "POST", "/api/ledger/contacts", Some(json!({"kind":"customer","name":"Smith Dental"}))).await;
+    let before = ok(&r, "GET", "/api/ledger/entries", None).await.as_array().unwrap().len();
+
+    let opened = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"open invoice INV-1001","channel":"push_to_talk"}))).await;
+    assert_eq!(opened["intent"], "navigate");
+    assert_eq!(opened["open"]["app"], "ledger");
+    assert!(opened["open"]["view"].as_str().unwrap().starts_with("invoices/"));
+    assert!(opened["say"].as_str().unwrap().contains("INV-1001"));
+
+    let account = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"show account 1200","channel":"push_to_talk"}))).await;
+    assert_eq!(account["open"]["view"], "registers/acc_1200");
+
+    let ledger = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"open the Ledger","channel":"push_to_talk"}))).await;
+    assert_eq!(ledger["open"]["app"], "ledger");
+    assert_eq!(ledger["open"]["view"], "dashboard");
+
+    let choices = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"pull up client smith","channel":"push_to_talk"}))).await;
+    assert!(choices["choices"].as_array().unwrap().len() >= 2);
+    let picked = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"the first one","channel":"push_to_talk","choices": choices["choices"]}))).await;
+    assert_eq!(picked["intent"], "navigate");
+    assert!(picked["open"]["app"].is_string());
+
+    let month = ok(&r, "POST", "/api/nixon/voice", Some(json!({"transcript":"show this month's journal entries","channel":"push_to_talk"}))).await;
+    assert_eq!(month["open"]["view"], "journal");
+    assert_eq!(ok(&r, "GET", "/api/ledger/entries", None).await.as_array().unwrap().len(), before);
+
+    let (status, body) = call(&r, "POST", "/api/nixon/voice/realtime", Some(json!({"sdp":"v=0"}))).await;
+    if std::env::var("OPENAI_API_KEY").ok().filter(|k| !k.is_empty()).is_none() {
+        assert_eq!(status, 200, "{body}");
+        assert_eq!(body["fallback"], "browser");
+    }
+    let (speech, spoken) = call(&r, "POST", "/api/nixon/voice/speak", Some(json!({"text":"Cash is unchanged."}))).await;
+    if std::env::var("OPENAI_API_KEY").ok().filter(|k| !k.is_empty()).is_none() {
+        assert_eq!(speech, 200, "{spoken}");
+        assert_eq!(spoken["fallback"], "browser");
+    }
+    let _ = invoice;
+}

@@ -55,6 +55,22 @@
       <label class="check" style="margin-top:10px"><input type="checkbox" id="filing"> This packet asks to file a return (Nixon will refuse)</label>
     </div>
   </details>
+  <div class="card" id="voiceCard" style="margin-top:16px">
+    <div class="card-head"><h2 style="font-size:18px">Voice</h2><span class="pill" id="voiceState">Push to talk</span></div>
+    <p class="muted">Nixon can run a review, explain a finding, show reconciliation gaps, or give the cash position. Speaking does not approve, post, or file. Open microphone is off until you turn it on.</p>
+    <div class="row" style="margin-top:12px">
+      <button class="btn primary" id="talk" type="button">Hold to talk</button>
+      <button class="btn" id="liveVoice" type="button">Live voice</button>
+      <button class="btn" id="stopTalk" type="button">Stop</button>
+      <label class="check"><input type="checkbox" id="openMic"> Open microphone</label>
+    </div>
+    <p class="meta" id="voiceHint"></p>
+    <form id="voiceType" class="row" style="margin-top:10px">
+      <input id="voiceText" placeholder="Or type a command" aria-label="Typed voice command" style="flex:1">
+      <button class="btn" type="submit">Send</button>
+    </form>
+    <p id="voiceSay" style="margin-top:12px"></p>
+  </div>
   <div id="review"></div>
 </main>
 <script src="/nxt/ui.js"></script>

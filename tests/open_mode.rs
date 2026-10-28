@@ -30,7 +30,16 @@ async fn missing_workspace_key_fails_closed_across_modules() {
         .merge(nxt_os::engagement::router(engagements.clone()))
         .merge(nxt_os::migrations::router(Arc::new(nxt_os::migrations::Migrations::new(Store::memory()))))
         .merge(nxt_os::signatures::router(signatures.clone()))
-        .merge(nxt_os::nixon_finance::routes::router(ledger.clone()))
+        .merge(nxt_os::nixon_finance::routes::router(nxt_os::nixon_finance::voice::Scope {
+            ledger: ledger.clone(),
+            firm: firm.clone(),
+            tax: tax.clone(),
+            engagements: engagements.clone(),
+            signatures: signatures.clone(),
+            migrations: Arc::new(nxt_os::migrations::Migrations::new(Store::memory())),
+            company_books: Arc::new(nxt_os::company_books::CompanyBooks::new(Store::memory())),
+            referrals: referrals.clone(),
+        }))
         .merge(nxt_os::os::router(nxt_os::os::Os {
             ledger: ledger.clone(), referrals: referrals.clone(), firm: firm.clone(), tax: tax.clone(), engagements: engagements.clone(),
         }))
@@ -57,6 +66,7 @@ async fn missing_workspace_key_fails_closed_across_modules() {
             ("GET", "/api/nixon/reviews"),
             ("POST", "/api/nixon/reviews"),
             ("POST", "/api/nixon/actions"),
+            ("POST", "/api/nixon/voice"),
             ("GET", "/api/signatures"),
             ("GET", "/api/signatures/catalog"),
             ("GET", "/api/signatures/audit?path=signatures%2Faudit&offset=0&limit=1"),

@@ -99,3 +99,173 @@ loadStatus().then(() => api("/api/nixon/reviews")).then((list) => {
   if (list[0]) return api("/api/nixon/reviews/" + list[0].id).then(render);
 }).catch((e) => { if (e.status !== 401) toast(e.message, true); });
 tell("");
+
+const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+let lastSpoken = "";
+let speaking = false;
+let recognition = null;
+const SETTLE_MS = 450;
+
+function setVoiceState(text) { $("#voiceState").textContent = text; }
+
+function stopSpeaking() {
+  speaking = false;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+function browserSpeak(text) {
+  if (!text || !window.speechSynthesis) return;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "en-CA";
+  utterance.onstart = () => { speaking = true; setVoiceState("Speaking"); };
+  utterance.onend = () => { setTimeout(() => { speaking = false; setVoiceState($("#openMic").checked ? "Open microphone" : "Push to talk"); }, SETTLE_MS); };
+  window.speechSynthesis.speak(utterance);
+}
+
+async function speak(text) {
+  lastSpoken = text;
+  stopSpeaking();
+  speaking = true;
+  try {
+    const response = await fetch("/api/nixon/voice/speak", { method: "POST", headers: { authorization: "Bearer " + NXT.key.get(), "content-type": "application/json" }, body: JSON.stringify({ text }) });
+    if (response.headers.get("content-type")?.includes("audio")) {
+      const blob = await response.blob();
+      const audio = new Audio(URL.createObjectURL(blob));
+      audio.onended = () => { speaking = false; };
+      await audio.play();
+      return;
+    }
+  } catch { /* browser speech is the fallback */ }
+  speaking = false;
+  browserSpeak(text);
+}
+
+async function sendVoice(transcript, channel) {
+  const heard = (transcript || "").trim();
+  if (!heard || speaking) return;
+  setVoiceState("Checking");
+  try {
+    const result = await api("/api/nixon/voice", { body: { transcript: heard, channel, last_spoken: lastSpoken, choices: window.__nixonChoices || [] } });
+    $("#voiceSay").textContent = result.say || (result.action === "hold" ? "Listening." : "");
+    if (result.action === "speak" && result.say) speak(result.say);
+    else setVoiceState($("#openMic").checked ? "Open microphone" : "Push to talk");
+    if (result.open) {
+      const hash = "#/" + result.open.app + (result.open.view ? "/" + result.open.view : "");
+      if (window.parent !== window) window.parent.location.hash = hash;
+      else window.location.assign("/" + hash);
+    }
+    window.__nixonChoices = result.choices || [];
+    if (result.review_id) render(await api("/api/nixon/reviews/" + result.review_id));
+    return result;
+  } catch (e) {
+    setVoiceState("Voice error");
+    toast(e.message, true);
+  }
+}
+
+function ensureRecognition() {
+  if (!Speech) {
+    $("#voiceHint").textContent = "This browser has no speech recognition. Type a command, or use Chrome, Edge, or Safari.";
+    return null;
+  }
+  if (recognition) return recognition;
+  recognition = new Speech();
+  recognition.lang = "en-CA";
+  recognition.interimResults = false;
+  recognition.continuous = false;
+  recognition.onresult = (event) => {
+    const text = event.results[event.results.length - 1][0].transcript;
+    sendVoice(text, $("#openMic").checked ? "open_mic" : "push_to_talk");
+  };
+  recognition.onerror = () => {
+    $("#voiceHint").textContent = "Microphone access is blocked. Type a command, or allow the microphone in the browser site settings.";
+    setVoiceState("Microphone blocked");
+  };
+  recognition.onend = () => {
+    if ($("#openMic").checked && !speaking) {
+      try { recognition.start(); } catch { /* already started */ }
+    }
+  };
+  return recognition;
+}
+
+const talk = $("#talk");
+talk.onpointerdown = (event) => {
+  event.preventDefault();
+  const engine = ensureRecognition();
+  if (!engine) return;
+  $("#openMic").checked = false;
+  setVoiceState("Listening");
+  try { engine.start(); } catch { /* a second press while live */ }
+};
+talk.onpointerup = talk.onpointerleave = () => {
+  if (recognition && !$("#openMic").checked) {
+    try { recognition.stop(); } catch { /* not started */ }
+  }
+};
+$("#stopTalk").onclick = () => { stopSpeaking(); if (recognition) { try { recognition.stop(); } catch { /* idle */ } } setVoiceState("Push to talk"); };
+$("#openMic").onchange = () => {
+  const engine = ensureRecognition();
+  if (!$("#openMic").checked) {
+    setVoiceState("Push to talk");
+    if (engine) { try { engine.stop(); } catch { /* idle */ } }
+    return;
+  }
+  if (!engine) { $("#openMic").checked = false; return; }
+  setVoiceState("Open microphone");
+  try { engine.start(); } catch { /* already started */ }
+};
+let liveConnection = null;
+$("#liveVoice").onclick = async () => {
+  if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
+    $("#voiceHint").textContent = "This browser cannot start a live voice session. Type a command instead.";
+    return;
+  }
+  setVoiceState("Connecting");
+  try {
+    const connection = new RTCPeerConnection();
+    liveConnection = connection;
+    const audio = new Audio();
+    audio.autoplay = true;
+    connection.ontrack = (event) => { audio.srcObject = event.streams[0]; };
+    const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mic.getTracks().forEach((track) => connection.addTrack(track, mic));
+    const channel = connection.createDataChannel("oai-events");
+    channel.onmessage = async (event) => {
+      let payload; try { payload = JSON.parse(event.data); } catch { return; }
+      const calls = (payload.response?.output || []).filter((item) => item.type === "function_call" && item.name === "nixon_command");
+      for (const call of calls) {
+        const args = JSON.parse(call.arguments || "{}");
+        const result = await sendVoice(args.transcript || "", "push_to_talk");
+        if (channel.readyState === "open") {
+          channel.send(JSON.stringify({ type: "conversation.item.create", item: { type: "function_call_output", call_id: call.call_id, output: JSON.stringify(result || { say: "" }) } }));
+          channel.send(JSON.stringify({ type: "response.create" }));
+        }
+      }
+    };
+    const offer = await connection.createOffer();
+    await connection.setLocalDescription(offer);
+    const response = await fetch("/api/nixon/voice/realtime", { method: "POST", headers: { authorization: "Bearer " + NXT.key.get(), "content-type": "application/json" }, body: JSON.stringify({ sdp: offer.sdp }) });
+    const body = await response.json();
+    if (body.fallback === "browser" || !body.transport?.sdp) {
+      connection.close();
+      mic.getTracks().forEach((track) => track.stop());
+      setVoiceState("Browser speech");
+      $("#voiceHint").textContent = "Live voice is not configured. Hold to talk uses this browser.";
+      return;
+    }
+    await connection.setRemoteDescription({ type: "answer", sdp: body.transport.sdp });
+    setVoiceState("Live voice");
+  } catch (error) {
+    if (liveConnection) liveConnection.close();
+    setVoiceState("Browser speech");
+    $("#voiceHint").textContent = "Live voice is unavailable. Hold to talk still works.";
+  }
+};
+$("#voiceType").onsubmit = (event) => {
+  event.preventDefault();
+  const text = $("#voiceText").value;
+  $("#voiceText").value = "";
+  sendVoice(text, "push_to_talk");
+};
+ensureRecognition();
