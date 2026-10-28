@@ -12,6 +12,7 @@ pub mod engagement;
 pub mod migrations;
 pub mod signatures;
 pub mod company_books;
+pub mod company_contact_lists;
 
 use axum::Router;
 use std::sync::Arc;
@@ -33,10 +34,11 @@ fn app_modules_with_tax(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<refe
     let signatures = Arc::new(signatures::Signatures::new(Store::from_env()));
     let company_books = Arc::new(company_books::CompanyBooks::new(Store::from_env()));
     let source_lists = Arc::new(company_books::source_lists::SourceLists::new(Store::from_env(), migrations.clone()));
-    app_all(ledger,referrals,firm,tax,engagements,migrations,signatures,company_books,source_lists)
+    let contact_lists = Arc::new(company_contact_lists::ContactLists::new(Store::from_env(), migrations.clone()));
+    app_all(ledger,referrals,firm,tax,engagements,migrations,signatures,company_books,source_lists,contact_lists)
 }
 
-fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>, migrations:Arc<migrations::Migrations>, signatures:Arc<signatures::Signatures>, company_books:Arc<company_books::CompanyBooks>, source_lists:Arc<company_books::source_lists::SourceLists>) -> Router {
+fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>, migrations:Arc<migrations::Migrations>, signatures:Arc<signatures::Signatures>, company_books:Arc<company_books::CompanyBooks>, source_lists:Arc<company_books::source_lists::SourceLists>, contact_lists:Arc<company_contact_lists::ContactLists>) -> Router {
     Router::new()
         .merge(ledger::routes::router(ledger.clone()))
         .merge(firm::router(firm.clone()))
@@ -46,6 +48,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         .merge(signatures::router(signatures))
         .merge(company_books::router(company_books))
         .merge(company_books::source_lists::router(source_lists))
+        .merge(company_contact_lists::routes::router(contact_lists))
         .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
 }
@@ -61,5 +64,6 @@ pub fn app_with(make_store: impl Fn() -> Store) -> Router {
     let signatures = Arc::new(signatures::Signatures::new(make_store()));
     let company_books = Arc::new(company_books::CompanyBooks::new(make_store()));
     let source_lists = Arc::new(company_books::source_lists::SourceLists::new(make_store(), migrations.clone()));
-    app_all(ledger, referrals, firm, tax, engagements,migrations,signatures,company_books,source_lists)
+    let contact_lists = Arc::new(company_contact_lists::ContactLists::new(make_store(), migrations.clone()));
+    app_all(ledger, referrals, firm, tax, engagements,migrations,signatures,company_books,source_lists,contact_lists)
 }

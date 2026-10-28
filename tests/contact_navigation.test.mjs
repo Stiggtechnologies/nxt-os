@@ -1,0 +1,18 @@
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import{webcrypto}from'node:crypto';
+const code=fs.readFileSync(new URL('../public/apps/migrations/migrations.js',import.meta.url),'utf8');
+function harness(){
+ let calls=[],mounted=[],destroyed=0;const nodes=new Map(),node=k=>{if(!nodes.has(k))nodes.set(k,{innerHTML:'',focus(){},querySelector(){return null;},querySelectorAll(){return[];}});return nodes.get(k);};const main=node('#main');main.querySelector=selector=>main.innerHTML.includes(selector.slice(1,-1))?node(selector):null;
+ const location={hash:'#company/synthetic-A/customers',origin:'https://synthetic.invalid'},bound={source_authoritative:true,parallel_test:true,live_cutover_allowed:false};
+ const box={NXT:{api:async path=>{calls.push(path);if(path==='/api/migrations')return{shadow_only:true,source_authoritative:true,live_cutover_allowed:false,snapshots:[]};if(path.endsWith('/roster'))return{count:1,companies:[{company_id:'synthetic-A',company_name:'Synthetic A',source_navigation_ref:'synthetic-selector'}],financial_imports_inferred:false,inventory_complete:false};if(path==='/api/company-books/synthetic-A?offset=0&limit=25'||path==='/api/company-books/synthetic-A')return{company_id:'synthetic-A',controls:bound,head:null,previews:[],previews_total:0,offset:0,total:0,has_more:false};throw Error('Unexpected API '+path);},esc:v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),toast(){},key:{get(){return'synthetic';}}},document:{querySelector:node,addEventListener(){}},window:{parent:null,addEventListener(){}},location,URLSearchParams,crypto:webcrypto,Uint8Array,console,FormData:Map,setTimeout,NXTSourceContactLists:{mount(host,options){mounted.push({host,options});return{destroy(){destroyed++;}};}}};box.window.parent=box.window;
+ const end="  window.addEventListener('hashchange',route);route();\n})();";assert.equal(code.split(end).length,2);vm.runInNewContext(code.replace(end,'globalThis.subject={route,routeInfo,S};})();'),box);
+ return{api:box.subject,main,location,calls,mounted,get destroyed(){return destroyed;}};
+}
+test('Customers and Suppliers company routes open without requiring a journal or native posting controls',async()=>{
+ for(const [section,kind]of[['customers','customer'],['suppliers','supplier']]){const h=harness();h.location.hash='#company/synthetic-A/'+section;await h.api.route();assert.equal(h.mounted.length,1);assert.equal(h.mounted[0].options.company_id,'synthetic-A');assert.equal(h.mounted[0].options.kind,kind);assert.ok(h.main.innerHTML.includes('data-company-source-contacts'));assert.ok(!h.main.innerHTML.includes('data-book-action'));assert.equal(h.calls.some(p=>p.includes('/trial-balance')||p.includes('/api/ledger')),false);}
+});
+test('company navigation retains source contacts, journal and represented accounts links',async()=>{
+ const h=harness();await h.api.route();for(const text of ['Accounts / trial balance','Journal entries','Customers','Suppliers / vendors'])assert.ok(h.main.innerHTML.includes(text),text);assert.ok(h.main.innerHTML.includes('#company/synthetic-A/customers'));assert.ok(h.main.innerHTML.includes('#company/synthetic-A/suppliers'));
+});
+test('navigation disposes the source viewer and invalidates the old company context',async()=>{
+ const h=harness();await h.api.route();const old=h.mounted[0].options;assert.equal(old.isCurrent(),true);h.location.hash='#company/synthetic-A/suppliers';await h.api.route();assert.equal(h.destroyed,1);assert.equal(old.isCurrent(),false);assert.equal(h.mounted[1].options.kind,'supplier');
+});
