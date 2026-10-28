@@ -12,6 +12,7 @@ pub mod engagement;
 pub mod migrations;
 pub mod signatures;
 pub mod company_books;
+pub mod source_import;
 
 use axum::Router;
 use std::sync::Arc;
@@ -33,10 +34,11 @@ fn app_modules_with_tax(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<refe
     let signatures = Arc::new(signatures::Signatures::new(Store::from_env()));
     let company_books = Arc::new(company_books::CompanyBooks::new(Store::from_env()));
     let source_lists = Arc::new(company_books::source_lists::SourceLists::new(Store::from_env(), migrations.clone()));
-    app_all(ledger,referrals,firm,tax,engagements,migrations,signatures,company_books,source_lists)
+    let source_import = Arc::new(source_import::SourceImport::new(Store::from_env()));
+    app_all(ledger,referrals,firm,tax,engagements,migrations,signatures,company_books,source_lists,source_import)
 }
 
-fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>, migrations:Arc<migrations::Migrations>, signatures:Arc<signatures::Signatures>, company_books:Arc<company_books::CompanyBooks>, source_lists:Arc<company_books::source_lists::SourceLists>) -> Router {
+fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>, migrations:Arc<migrations::Migrations>, signatures:Arc<signatures::Signatures>, company_books:Arc<company_books::CompanyBooks>, source_lists:Arc<company_books::source_lists::SourceLists>, source_import: Arc<source_import::SourceImport>) -> Router {
     Router::new()
         .merge(ledger::routes::router(ledger.clone()))
         .merge(firm::router(firm.clone()))
@@ -48,6 +50,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         .merge(company_books::source_lists::router(source_lists))
         .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
+        .merge(source_import::router(source_import))
 }
 
 /// Builds the app with storage chosen per-module by `make_store`.
@@ -61,5 +64,6 @@ pub fn app_with(make_store: impl Fn() -> Store) -> Router {
     let signatures = Arc::new(signatures::Signatures::new(make_store()));
     let company_books = Arc::new(company_books::CompanyBooks::new(make_store()));
     let source_lists = Arc::new(company_books::source_lists::SourceLists::new(make_store(), migrations.clone()));
-    app_all(ledger, referrals, firm, tax, engagements,migrations,signatures,company_books,source_lists)
+    let source_import = Arc::new(source_import::SourceImport::new(make_store()));
+    app_all(ledger, referrals, firm, tax, engagements,migrations,signatures,company_books,source_lists,source_import)
 }
