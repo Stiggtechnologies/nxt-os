@@ -11,9 +11,23 @@
 //! not performed by the voice. That phone engine is not imported here.
 
 use super::analyze::{self, evidence_resolves};
+use super::navigate::{self, Record};
 use super::service::{self, NixonError, ReviewRequest};
 use crate::ledger::engine::{fmt_money, Ledger};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
+#[derive(Clone)]
+pub struct Scope {
+    pub ledger: Arc<Ledger>,
+    pub firm: Arc<crate::firm::Firm>,
+    pub tax: Arc<crate::tax::Tax>,
+    pub engagements: Arc<crate::engagement::Engagements>,
+    pub signatures: Arc<crate::signatures::Signatures>,
+    pub migrations: Arc<crate::migrations::Migrations>,
+    pub company_books: Arc<crate::company_books::CompanyBooks>,
+    pub referrals: Arc<crate::referral::engine::Engine>,
+}
 
 /// Same spoken-budget as Meet Sync `stripForSpeech`.
 pub const SPEECH_MAX_CHARS: usize = 420;
@@ -26,6 +40,8 @@ pub struct VoiceTurn {
     pub channel: String,
     #[serde(default)]
     pub last_spoken: Option<String>,
+    #[serde(default)]
+    pub choices: Vec<navigate::VoiceChoice>,
 }
 
 fn default_channel() -> String {
@@ -42,6 +58,10 @@ pub struct VoiceAnswer {
     pub filing: String,
     pub approval: String,
     pub review_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open: Option<navigate::OpenTarget>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choices: Vec<navigate::VoiceChoice>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +78,8 @@ pub enum VoiceIntent {
     RefuseApprove,
     RefusePost,
     RefuseFile,
+    Recap,
+    Navigate,
     Help,
 }
 
@@ -127,8 +149,8 @@ fn dollars_in_speech(text: &str) -> String {
 }
 
 pub fn classify(transcript: &str, channel: &str) -> Result<VoiceIntent, String> {
-    if channel != "push_to_talk" && channel != "open_mic" {
-        return Err("channel must be push_to_talk or open_mic".into());
+    if channel != "push_to_talk" && channel != "open_mic" && channel != "meet" {
+        return Err("channel must be push_to_talk, open_mic, or meet".into());
     }
     let heard = normalize_heard(transcript);
     if heard.is_empty() {
@@ -164,11 +186,42 @@ pub fn classify(transcript: &str, channel: &str) -> Result<VoiceIntent, String> 
     if is_cash(&heard) {
         return Ok(VoiceIntent::Cash);
     }
+    if is_recap(&heard) {
+        return Ok(VoiceIntent::Recap);
+    }
+    if is_navigation(&heard) {
+        return Ok(VoiceIntent::Navigate);
+    }
     let addressed = heard.split(' ').any(|w| w == "nixon");
-    if channel == "open_mic" && !addressed {
+    if (channel == "open_mic" || channel == "meet") && !addressed {
         return Ok(VoiceIntent::Hold);
     }
     Ok(VoiceIntent::Help)
+}
+
+fn is_recap(heard: &str) -> bool {
+    heard.contains("recap") || heard.contains("what did we decide") || heard.contains("wrap up")
+}
+
+fn is_navigation(heard: &str) -> bool {
+    let verb = heard.contains("open") || heard.contains("show") || heard.contains("pull up") || heard.contains("go to");
+    let noun = heard.contains("ledger")
+        || heard.contains("firm")
+        || heard.contains("tax")
+        || heard.contains("engagement")
+        || heard.contains("signature")
+        || heard.contains("referral")
+        || heard.contains("migration")
+        || heard.contains("parallel")
+        || heard.contains("company book")
+        || heard.contains("nixon")
+        || heard.contains("account")
+        || heard.contains("invoice")
+        || heard.contains("bill")
+        || heard.contains("client")
+        || heard.contains("journal")
+        || heard.contains("advocate");
+    verb && noun
 }
 
 fn is_refusal_file(heard: &str) -> bool {
@@ -245,10 +298,13 @@ fn answer_shell(intent: &str, say: String, review_id: Option<String>, effect: &s
         filing: "disabled".into(),
         approval: "not_by_voice".into(),
         review_id,
+        open: None,
+        choices: vec![],
     }
 }
 
-pub async fn handle(ledger: &Ledger, turn: VoiceTurn) -> Result<VoiceAnswer, NixonError> {
+pub async fn handle(scope: &Scope, turn: VoiceTurn) -> Result<VoiceAnswer, NixonError> {
+    let ledger = scope.ledger.as_ref();
     if turn.transcript.chars().count() > 2_000 {
         return Err(NixonError::new(400, "transcript is too long"));
     }
@@ -263,12 +319,21 @@ pub async fn handle(ledger: &Ledger, turn: VoiceTurn) -> Result<VoiceAnswer, Nix
                 filing: "disabled".into(),
                 approval: "not_by_voice".into(),
                 review_id: None,
+                open: None,
+                choices: vec![],
             };
             audit(ledger, &turn, &answer).await?;
             return Ok(answer);
         }
     }
     let intent = classify(&turn.transcript, &turn.channel).map_err(|m| NixonError::new(400, m))?;
+    if let Some(picked) = navigate::pick_choice(&normalize_heard(&turn.transcript), &turn.choices) {
+        let answer = answer_shell("navigate", format!("Opening {}. {}", picked.label, picked.summary), None, "none");
+        let mut answer = answer;
+        answer.open = Some(navigate::OpenTarget { app: picked.app, view: picked.view });
+        audit(ledger, &turn, &answer).await?;
+        return Ok(answer);
+    }
     let heard = normalize_heard(&turn.transcript);
     let answer = match intent {
         VoiceIntent::Hold => VoiceAnswer {
@@ -284,6 +349,8 @@ pub async fn handle(ledger: &Ledger, turn: VoiceTurn) -> Result<VoiceAnswer, Nix
             filing: "disabled".into(),
             approval: "not_by_voice".into(),
             review_id: None,
+            open: None,
+            choices: vec![],
         },
         VoiceIntent::Echo => unreachable!("echo is handled before classify"),
         VoiceIntent::Presence => answer_shell("presence", presence_line(&heard).into(), None, "none"),
@@ -312,9 +379,11 @@ pub async fn handle(ledger: &Ledger, turn: VoiceTurn) -> Result<VoiceAnswer, Nix
             None,
             "none",
         ),
+        VoiceIntent::Recap => recap(ledger).await?,
+        VoiceIntent::Navigate => open_records(scope, &heard).await?,
         VoiceIntent::Help => answer_shell(
             "help",
-            "I can run a review, explain a finding, show reconciliation gaps, or give the cash position. I can't post, file, or approve.".into(),
+            "I can run a review, explain a finding, show reconciliation gaps, give the cash position, or open a module, account, invoice, client, or engagement. I can't post, file, or approve.".into(),
             None,
             "none",
         ),
@@ -403,6 +472,220 @@ async fn speak_live(ledger: &Ledger, kind: &str) -> Result<VoiceAnswer, NixonErr
         }
     };
     Ok(answer_shell(kind, say, None, "none"))
+}
+
+async fn recap(ledger: &Ledger) -> Result<VoiceAnswer, NixonError> {
+    let reviews = service::list_reviews(ledger).await?;
+    let Some(latest) = reviews.first() else {
+        return Ok(answer_shell("recap", "There is no review to recap. I did not treat silence as a decision.".into(), None, "none"));
+    };
+    Ok(answer_shell(
+        "recap",
+        format!("Latest review. {} Voice did not record a decision.", latest["summary"].as_str().unwrap_or("No summary.")),
+        latest["id"].as_str().map(str::to_string),
+        "none",
+    ))
+}
+
+async fn open_records(scope: &Scope, heard: &str) -> Result<VoiceAnswer, NixonError> {
+    if let Some(module) = navigate::module_target(heard) {
+        let mut answer = answer_shell("navigate", format!("Opening {}. {}", module.label, module.summary), None, "none");
+        answer.open = Some(navigate::OpenTarget { app: module.app, view: module.view });
+        return Ok(answer);
+    }
+    if heard.contains("journal") && heard.contains("month") {
+        return journal_month(scope.ledger.as_ref()).await;
+    }
+    let query = heard
+        .split(' ')
+        .filter(|w| !matches!(*w, "open" | "the" | "show" | "me" | "pull" | "up" | "go" | "to" | "please" | "nixon" | "a" | "an" | "of"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let catalog = catalog(scope).await;
+    let hits = navigate::rank(&query, &catalog);
+    if hits.is_empty() {
+        return Ok(answer_shell("navigate", format!("I couldn't find {query}. I didn't open a guessed record."), None, "none"));
+    }
+    if hits.len() == 1 {
+        let hit = hits[0];
+        let mut answer = answer_shell("navigate", format!("Opening {}. {}", hit.label, hit.summary), None, "none");
+        answer.open = Some(navigate::OpenTarget { app: hit.app.clone(), view: hit.view.clone() });
+        return Ok(answer);
+    }
+    let choices: Vec<_> = hits.iter().map(|h| navigate::choice(h)).collect();
+    let spoken = choices.iter().enumerate().map(|(i, c)| format!("{}. {}", i + 1, c.label)).collect::<Vec<_>>().join(" ");
+    let mut answer = answer_shell("navigate", format!("I found {} matches. {spoken} Say first or second.", choices.len()), None, "none");
+    answer.choices = choices;
+    Ok(answer)
+}
+
+async fn journal_month(ledger: &Ledger) -> Result<VoiceAnswer, NixonError> {
+    let today = crate::ledger::engine::today();
+    let month = &today[..7];
+    let entries = ledger.entries().await?;
+    let matched: Vec<_> = entries.iter().filter(|e| !e.voided && e.date.starts_with(month)).collect();
+    let sample = matched.iter().take(3).map(|e| format!("number {} on {}", e.number, e.date)).collect::<Vec<_>>().join(", ");
+    let say = if matched.is_empty() {
+        format!("There are no journal entries in {month}. I opened the journal and did not invent any.")
+    } else {
+        format!("{} journal entries in {month}. {sample}.", matched.len())
+    };
+    let mut answer = answer_shell("navigate", say, None, "none");
+    answer.open = Some(navigate::OpenTarget { app: "ledger".into(), view: "journal".into() });
+    Ok(answer)
+}
+
+async fn catalog(scope: &Scope) -> Vec<Record> {
+    let mut out = Vec::new();
+    if let Ok(accounts) = scope.ledger.accounts().await {
+        for account in accounts {
+            let mut keys = vec![account.code.clone(), account.name.clone(), account.id.clone()];
+            if matches!(account.role, crate::ledger::models::AccountRole::Bank) {
+                keys.extend(["cash".into(), "bank".into(), "cash at bank".into()]);
+            }
+            out.push(Record {
+                app: "ledger".into(),
+                view: format!("registers/{}", account.id),
+                label: format!("Account {} {}", account.code, account.name),
+                summary: format!("{} is account {}.", account.name, account.code),
+                keys,
+            });
+        }
+    }
+    if let Ok(docs) = scope.ledger.docs(None).await {
+        for doc in docs {
+            let kind = match doc.kind {
+                crate::ledger::models::DocKind::Invoice => "invoices",
+                crate::ledger::models::DocKind::Bill => "bills",
+            };
+            out.push(Record {
+                app: "ledger".into(),
+                view: format!("{kind}/{}", doc.id),
+                label: format!("{} {}", if kind == "invoices" { "Invoice" } else { "Bill" }, doc.number),
+                summary: format!("{} {} totals {}.", if kind == "invoices" { "Invoice" } else { "Bill" }, doc.number, fmt_money(doc.total)),
+                keys: vec![doc.number.clone(), doc.id.clone(), format!("{kind} {}", doc.number)],
+            });
+        }
+    }
+    if let Ok(contacts) = scope.ledger.contacts(None).await {
+        for contact in contacts {
+            out.push(Record {
+                app: "ledger".into(),
+                view: match contact.kind {
+                    crate::ledger::models::ContactKind::Customer => "customers".into(),
+                    crate::ledger::models::ContactKind::Vendor => "vendors".into(),
+                },
+                label: format!("Client {}", contact.name),
+                summary: format!("{} is a {}.", contact.name, if matches!(contact.kind, crate::ledger::models::ContactKind::Customer) { "customer" } else { "vendor" }),
+                keys: vec![contact.name.clone(), format!("client {}", contact.name)],
+            });
+        }
+    }
+    if let Ok(state) = scope.firm.snapshot().await {
+        for project in state.projects {
+            let open = project.tasks.iter().filter(|t| !t.completed).count();
+            out.push(Record {
+                app: "firm".into(),
+                view: "projects".into(),
+                label: format!("Project {}", project.name),
+                summary: format!("{} has {open} open tasks. Opening it does not approve them.", project.name),
+                keys: vec![project.name.clone(), format!("project {}", project.name)],
+            });
+        }
+    }
+    if let Ok(returns) = scope.tax.list(None).await {
+        for record in returns {
+            let name = record["name"].as_str().unwrap_or("workpaper");
+            let client = record["client_ref"].as_str().unwrap_or("");
+            let id = record["id"].as_str().unwrap_or("");
+            out.push(Record {
+                app: "tax".into(),
+                view: format!("return/{id}"),
+                label: format!("Tax {name}"),
+                summary: format!("{name} is a {} workpaper. Filing is off.", record["program"].as_str().unwrap_or("tax")),
+                keys: vec![name.into(), client.into(), format!("client {client}")],
+            });
+        }
+    }
+    if let Ok(rows) = scope.engagements.list().await {
+        for record in rows {
+            let name = record["name"].as_str().unwrap_or("engagement");
+            let client = record["client_ref"].as_str().unwrap_or("");
+            let id = record["id"].as_str().unwrap_or("");
+            out.push(Record {
+                app: "engagements".into(),
+                view: format!("engagement/{id}"),
+                label: format!("Engagement {name}"),
+                summary: format!("{name} is {}.", record["status"].as_str().unwrap_or("an engagement")),
+                keys: vec![name.into(), client.into(), format!("engagement {name}"), format!("client {client}")],
+            });
+        }
+    }
+    if let Ok(page) = scope.signatures.list().await {
+        if let Some(rows) = page["envelopes"].as_array() {
+            for record in rows {
+                let title = record["title"].as_str().unwrap_or("preparation");
+                let id = record["id"].as_str().unwrap_or("");
+                out.push(Record {
+                    app: "signatures".into(),
+                    view: format!("envelope/{id}"),
+                    label: format!("Signature {title}"),
+                    summary: format!("{title} is {}. Nothing has been sent or signed.", record["status"].as_str().unwrap_or("a draft")),
+                    keys: vec![title.into()],
+                });
+            }
+        }
+    }
+    if let Ok(page) = scope.migrations.list().await {
+        if let Some(rows) = page["snapshots"].as_array() {
+            for record in rows {
+                let name = record["company_name"].as_str().unwrap_or("snapshot");
+                let id = record["id"].as_str().unwrap_or("");
+                out.push(Record {
+                    app: "migrations".into(),
+                    view: format!("snapshot/{id}"),
+                    label: format!("Snapshot {name}"),
+                    summary: format!("{name} is a read-only source snapshot."),
+                    keys: vec![name.into(), record["cohort_ref"].as_str().unwrap_or("").into()],
+                });
+            }
+        }
+    }
+    if let Ok(Some(head)) = scope.company_books.store.get("company-books:roster:head:v1").await {
+        if let Ok(Some(raw)) = scope.company_books.store.get(&format!("company-books:roster:capture:{head}")).await {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) {
+                if let Some(rows) = value["companies"].as_array() {
+                    for row in rows {
+                        let name = row["company_name"].as_str().unwrap_or("");
+                        let id = row["company_id"].as_str().unwrap_or("");
+                        if id.is_empty() {
+                            continue;
+                        }
+                        out.push(Record {
+                            app: "migrations".into(),
+                            view: format!("company/{id}"),
+                            label: format!("Company {name}"),
+                            summary: format!("{name} is an observed company. Opening it does not import journals."),
+                            keys: vec![name.into(), id.into(), format!("client {name}")],
+                        });
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(advocates) = scope.referrals.list_advocates().await {
+        for advocate in advocates {
+            out.push(Record {
+                app: "referrals".into(),
+                view: "advocates".into(),
+                label: format!("Advocate {}", advocate.name),
+                summary: format!("{} has {} referrals.", advocate.name, advocate.referrals),
+                keys: vec![advocate.name.clone(), advocate.code.clone(), format!("client {}", advocate.name)],
+            });
+        }
+    }
+    out.truncate(400);
+    out
 }
 
 async fn audit(ledger: &Ledger, turn: &VoiceTurn, answer: &VoiceAnswer) -> Result<(), NixonError> {

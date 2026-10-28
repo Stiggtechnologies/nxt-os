@@ -108,14 +108,31 @@ Sync Context voice is slice SC-08 in `docs/sync-context/`. The contract is `supa
 | Audit | SCX-VOICE-007: tool calls are tenant-audited. | Each turn appends `nixon.voice` on the existing ledger audit with the intent, channel, and `approval=not_by_voice`. |
 | Push to talk | SCX-VOICE-004: push to talk is the default. Open microphone is an explicit opt-in with a visible stop. | Hold to talk is the default. Open microphone is a checkbox that stays off until selected. Stop is always on the page. |
 
-### Not ported from Sync Context voice
+### Voice capability checklist
 
-- Server-mediated OpenAI Realtime (`gpt-realtime-2.1`, voice `marin`, WebRTC SDP). NXT OS does not hold that provider key, so the browser speech engine is the input and output. A cloud session would be a separate credential and quota change.
-- Cloud TTS (`gpt-4o-mini-tts` / `tts-1`), the per-tenant character quota, and the ElevenLabs overlay.
-- Map tools: focus an asset, toggle a layer, fly to a preset, change display mode. Those belong to the spatial operating picture, not the finance books.
-- Meet Sync room facilitation, silence-as-consensus, speaker identity, and the durable vault of meeting notes.
-- The GuardVoice phone transport on draft PR #4: Twilio, ConversationRelay, and outbound dial. The scripted gate is the part reused. The phone branch was not edited.
-- Safety-verdict and emergency-work abstention beyond the finance boundary. Nixon already refuses posting and filing. It does not speak plant or permit decisions because those records are not in NXT OS.
+Every Sync Context voice item found in `ai-maintenance-system` is listed once. "Ported" means the Nixon behaviour exists and a test or the Nixon page exercises it.
+
+| Capability | Where it lives in SyncAI | Nixon |
+| --- | --- | --- |
+| SCX-VOICE-001 Server-mediated speech-to-speech. The browser never receives the provider key. | `supabase/functions/sync-realtime-session`, `sync-realtime-core.ts` | Ported behind `OPENAI_API_KEY` as `POST /api/nixon/voice/realtime`. Tested: with no key the response is `fallback: browser` and the key is not returned. A live provider call is not part of CI. |
+| SCX-VOICE-002 Context-grounded answers. Observed, missing, and inferred stay distinct. | `ask_sync` in `sync-realtime-core.ts` | Ported for finance: cash, reconciliation, review explanation, and the summary of an opened record. Tested. Plant and map state are not in NXT OS. |
+| SCX-VOICE-003 Bounded tools. No arbitrary browser, script, network, or shell tool. | `ask_sync`, `open_sync_page`; map focus, layer, fly-to, and display mode were prototype-only | Ported as an allowlist: review, explain, cash, reconciliation, recap, and open a module or record. Map fly-to is the finance equivalent, opening the register, invoice, engagement, or company. Tested. Spatial layers are not ported because NXT OS has no map. |
+| SCX-VOICE-004 Push-to-talk by default and optional open microphone with a visible stop. | `SyncRealtimeVoicePanel.tsx`, `boothListen.ts` | Ported on the Nixon page. Open microphone stays unchecked until selected. Tested by the page and by the `open_mic` hold rule. |
+| SCX-VOICE-005 Voice may propose and must not approve or execute. | `useSyncRealtimeVoice.ts` | Ported. Approve, reject, post, and file are refusals and do not write a decision. Tested. |
+| SCX-VOICE-006 No safety verdict, permit, or emergency authorization. | Realtime instructions | Ported for the books: voice cannot post or file. Plant, permit, and emergency abstention is not ported because those records are not in NXT OS. |
+| SCX-VOICE-007 Tenant audit, quota, and retention. | Realtime quota reservation, canonical audit | Audit of every voice turn is ported and tested. Realtime sessions are capped at 20 a day and cloud TTS at a daily character cap before the provider is called. A per-tenant retention policy is not ported: NXT OS has one workspace, and voice audio is not stored. |
+| Meet Sync presence, greeting, and short social replies. No invented plant state. | `src/lib/presence/boothFastPath.ts` | Ported and unit-tested. |
+| Meet Sync turn-taking. Unaddressed chatter is held. Recap does not invent a decision. | `src/lib/presence/meetingRunner.ts` | Ported as the `meet` and `open_mic` channels, plus a recap that says voice did not record a decision. |
+| Echo gate so playback is not a new command. | `boothListen.ts` | Ported and tested with `last_spoken`. |
+| Browser speech recognition, with an honest typed path when the microphone is missing. | `src/hooks/useDictation.ts` | Ported on the Nixon page. |
+| Cloud TTS, 420-character cap, browser synthesis fallback. Voice `marin` when configured. | `sync-tts-core.ts`, `speechOutput.ts` | Ported. `POST /api/nixon/voice/speak` uses `gpt-4o-mini-tts` and `marin` only when `OPENAI_API_KEY` is set. Otherwise the page uses browser speech. The unconfigured path is tested. |
+| Realtime tool `nixon_command` is the only model tool. | `ask_sync` plus `open_sync_page` | Ported in the session config. The browser runs the tool through `/api/nixon/voice`, which is the same gate as typed speech. |
+| Open a named entity and speak a short summary. Disambiguate when several match. | `open_sync_page`, prototype fly-to | Ported across Ledger, company books, Firm, Tax, Engagements, Signatures, Referrals, Migrations, and Nixon. Tested for an invoice number, account 1200, the Ledger screen, two Smith clients, and this month's journal. |
+| Meet Sync vault and durable meeting notes. | `src/lib/presence/vault.ts` | Not ported. NXT OS has no multi-person meeting record, and a second note store would duplicate the ledger audit. |
+| Speaker identity and silence treated as agreement. | `meetingRunner.ts` explicitly refuses both | Not ported as features. Nixon does not infer who is speaking, and recap says no decision was recorded. |
+| ElevenLabs overlay. | `sync-tts` comments | Not ported. Sync Context treats it as optional and unused. |
+| Field-mode checkpoint speech and map display modes. | Realtime field instructions, SCX-VOICE-003 prototype | Not ported. There is no field or map workspace in NXT OS. |
+| GuardVoice phone transport. | Not part of Sync Context; draft PR #4 | Not modified. In-app voice reuses only the rule that a spoken read is answered and a consequential act is not performed. |
 
 ## Done and remaining
 
@@ -128,16 +145,17 @@ Done in this change:
 - Audit lines on the existing ledger audit, with a correlation id.
 - Ask NXT tool `nixon_review` and an `open_app` path to Nixon.
 - Shell entry and the Nixon review screen.
-- Spoken commands for a review, an explanation, reconciliation gaps, and cash, with browser speech in and out.
+- Spoken commands for a review, an explanation, reconciliation gaps, cash, and opening a module or record by name, code, or number.
+- OpenAI Realtime and cloud TTS behind `OPENAI_API_KEY`, with browser speech when the key is absent.
 - Unit tests and `tests/nixon_finance.rs`.
 
 Still open:
 
-- Nixon does not scan Firm, Tax, or migration tables unless the caller supplies a packet. Those modules are installed; their own screens remain the place to do their work.
+- A Nixon review still does not score Firm or Tax checklists unless a packet is supplied. Voice can open those records and summarize them. It does not complete their work.
 - No live bank feed or external source-ledger connector. A packet is not a connection.
 - No budget or forecast, so shift results are not variances to a plan.
 - No statement of cash flows. The cash screen is ending bank cash versus the prior month-end.
 - Decisions are not tied to a user account. The workspace key is the only authentication.
 - Ask NXT will not run a review for you. Running a review writes the case file and an audit row, so it stays on the Nixon screen.
-- Cloud realtime speech, cloud TTS, map navigation commands, and the GuardVoice phone line are not in this tree. See the voice section above.
+- Items marked not ported in the voice checklist stay out: the meeting vault, spatial map tools, ElevenLabs, and the GuardVoice phone line.
 - Nothing here deploys to Vercel production or touches a production database.

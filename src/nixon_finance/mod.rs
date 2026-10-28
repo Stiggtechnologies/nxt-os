@@ -11,6 +11,8 @@
 
 pub mod analyze;
 pub mod models;
+pub mod navigate;
 pub mod routes;
 pub mod service;
+pub mod speech;
 pub mod voice;
