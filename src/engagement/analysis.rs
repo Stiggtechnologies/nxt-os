@@ -341,6 +341,20 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
         text(&paper.title, "Workpaper title", 256, true, false)?;
         text(&paper.folder, "Workpaper folder", 256, false, false)?;
         text(&paper.body, "Workpaper body", 16 * 1024, false, true)?;
+        if paper.tags.len() > 20 { return Err("A workpaper can carry at most 20 tags".into()); }
+        let mut seen_tags = BTreeSet::new();
+        for tag in &paper.tags {
+            text(tag, "Workpaper tag", 40, true, false)?;
+            if tag.contains("://") || tag.contains('/') || !seen_tags.insert(tag.as_str()) {
+                return Err("Workpaper tags must be unique labels, not URLs".into());
+            }
+        }
+        if let Some(link) = &paper.link_label {
+            text(link, "Workpaper link label", 120, true, false)?;
+            if link.contains("://") || link.contains('/') || link.contains('\\') {
+                return Err("A link label is stored text. It cannot be a URL or path, and it is not fetched.".into());
+            }
+        }
         if paper.document_type == WorkpaperType::Placeholder
             && (!paper.body.is_empty() || !paper.annotations.is_empty() || !paper.attachment_versions.is_empty())
         {
@@ -1155,5 +1169,21 @@ mod tests {
         assert_eq!(output["totals"]["adjusted_difference_cents"], 0);
         input.workpapers[0].required = true;
         assert_eq!(analyze(&input)["supported"], true);
+    }
+
+    #[test]
+    fn tags_and_link_labels_are_stored_text_and_references_can_be_renumbered() {
+        let mut input = fixture();
+        input.workpapers[0].tags = vec!["review".into(), "tax".into()];
+        input.workpapers[0].link_label = Some("Prior year lead".into());
+        assert!(validate(&input).is_ok());
+        input.workpapers[0].link_label = Some("https://example.test/file".into());
+        assert!(validate(&input).is_err());
+        input.workpapers[0].link_label = Some("Prior year lead".into());
+        input.workpapers[0].reference = "A-2".into();
+        assert!(validate(&input).is_ok());
+        input.workpapers.push(input.workpapers[0].clone());
+        input.workpapers[1].id = "wp2".into();
+        assert!(validate(&input).is_err());
     }
 }

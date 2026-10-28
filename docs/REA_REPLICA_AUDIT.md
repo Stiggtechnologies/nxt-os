@@ -54,7 +54,6 @@ NXT checks on this machine, rustc **1.99.1**:
 ## QuickBooks to Ledger and company books
 
 Fidelity: **47%** after the parallel subledger closure (was **36%**). Now 1 copied & tested, 15 partial, 2 missing, 0 wrong; 18 rows. `(1 + 0.5×15) / 18`. The previous score was `(1 + 0.5×11) / 18`.
-
 SDK evidence: parent `ev_c6d077c18411971abee54760eba97daebb074995bf8a14e5c20193201abb87a2` (317 files, 96 `*Enum` names, 221 other class files, directory digest `f58246ab93e6ba9b08e514be0062214f4f320624a13fcac41ecd22f6ca7a3133`). Names present include `IPPAccount`, `IPPInvoice`, `IPPBill`, `IPPPayment`, `IPPJournalEntry`, `IPPCustomer`, `IPPVendor`, `IPPEmployee`, `IPPClass`, `IPPDepartment`, `IPPItem`, `IPPBudget`, `IPPAttachable`, `IPPCurrency`, `IPPPurchaseOrder`, `IPPTimeActivity`. JournalEntry page: `ev_5871143c120cf57851bf580e1362c502a255de6bdd0d3d408799f72af49878b5`.
 
 | Original feature | NXT status | Evidence |
@@ -99,8 +98,7 @@ Fidelity: **25%** (0 copied & tested, 5 partial, 5 missing, 0 wrong; 10 rows).
 
 ## Caseware Working Papers to Engagements
 
-Fidelity: **22%** (0 copied & tested, 7 partial, 9 missing, 0 wrong; 16 rows). `(0.5×7) / 16 = 21.9%`, reported as 22%.
-
+Fidelity: **25%** after document labels (was **22%**). Now 0 copied & tested, 8 partial, 8 missing, 0 wrong; 16 rows. `(0.5×8) / 16`. The previous score was `(0.5×7) / 16`.
 This run's REA evidence is public documentation, current-site copyright 2026, reached from the 2025 Working Papers path:
 
 | Page | Evidence | What the snapshot shows |
@@ -124,7 +122,7 @@ Document Manager topics observed: columns, filters, automatic documents, CaseVie
 | Manual, link, and placeholder documents | partial | `engagement_document_types` (5 tests) covers manual text and placeholders. Link, Word, and Excel properties from the topic list are not engines. |
 | Automatic documents and CaseView | missing | Topic links and the CaseView ampersand fix name the engine. NXT HTML is not CaseView. |
 | Images, PDFs, scan, and the internal viewer | missing | `opaque_file_versions_preserve_bytes_review_and_origin_without_financial_writes` stores bytes and does not render or scan them. |
-| Document library, renumber, tags, PPC content | missing | Those four topic links have no NXT counterpart in the engagement catalog. |
+| Document library, renumber, tags, PPC content | partial | Tags and a non-URL link label are stored text and are not fetched (`tags_and_link_labels_are_stored_text_and_references_can_be_renumbered`). Changing a workpaper reference is rejected when it duplicates another. A document library and PPC content still need vendor material that is not on this machine. |
 | Text tickmarks and account/text anchors | partial | Custom tickmark, account-annotation, and text-range suites passed. Graphics and PDF/image targets are still absent. |
 | Sign-off and issues | partial | Lifecycle tests cover prepared/reviewed gates and blocking issues. Caseware role protection modes were not observed in this run. |
 | Year-end rollforward | partial | Origin archive and cleared target approvals are tested. Retained-earnings close options from the vendor docs were not executed. |
@@ -160,7 +158,6 @@ JavaScript evidence: parent `ev_3deb2236bdd90583e633e925a1ea3fc9dab2aba54839b672
 ## DT Max to Tax
 
 Fidelity: **36%** after the parallel-compare closure (was **30%**). Now 0 copied & tested, 8 partial, 3 missing, 0 wrong; 11 rows. `(0.5×8) / 11`. The previous 10-row score was `(0.5×6) / 10`.
-
 Public 29.30 page `ev_ddbee565a24e632b00519b95f8ce51210593d0ea319ca40e8afbc6ea146076b7` (accessibility headings only; the page body was not copied here). Headings name T1, T2, T3, and T5013; several provinces; Quebec; a 2026 planner caveat; prescribed-form printing; new and deleted keywords; T2 program certification; federal Web Access Code; charity T3010; provincial small-business schedules; and T5013 CCA measures from Bill C-15. That is vendor documentation, not an executed return.
 
 NXT tests that passed: `t1_alberta_2025_workpaper_uses_new_rates_and_verified_claims`, `t2_general_small_and_51week_proration`, `t3_retained_income_and_gre_do_not_claim_personal_exemption`, `partnership_largest_remainders_reconcile_signed_cents_and_stable_ids`, six corporate GIFI/bridge tests, `independent_tax_workpaper_lifecycle`, `dtmax_vendor_backup_and_filing_stay_blocked`, `dtmax_six_thousand_accounts_resume_and_reconcile`.
@@ -182,7 +179,6 @@ NXT tests that passed: `t1_alberta_2025_workpaper_uses_new_rates_and_verified_cl
 ## WebTaxT2 to Tax
 
 Fidelity: **25%** after the same parallel-compare closure (was **20%**). Now 0 copied & tested, 3 partial, 3 missing, 0 wrong; 6 rows. `(0.5×3) / 6`. The previous 5-row score was `(0.5×2) / 5`.
-
 This run's only WebTax evidence is the public login document `ev_ff52839e2bf2cf3b42fb5e8b20d3a33a33340080994fbe786e7c5aa18b947d1c`: Login, Forgot Username, Forgot Password, New User Register, final URL `taxOnline.jsp?` with no query secrets. The authenticated topic strip and identification codes in [WEBTAX_RECONSTRUCTION.md](WEBTAX_RECONSTRUCTION.md) were **not** re-captured. Those rows stay at the earlier bound and are not upgraded.
 
 | Original feature | NXT status | Evidence |
@@ -193,7 +189,6 @@ This run's only WebTax evidence is the public login document `ev_ff52839e2bf2cf3
 | Save, calculate, and show GIFI detail | missing | Not activated on the live site. NXT calculation tests do not call WebTax. |
 | Years 2004–2027 and certified filing / auto-fill | missing | Not re-observed. NXT years are `[2025]` and `filing_supported` is false. |
 | Supplied WebTax line comparison | partial | The same parallel-compare route accepts `source_system: webtax`. It checks lines the operator supplies. It does not open the authenticated workspace or file. |
-
 ## Top gaps for a parallel run
 
 Impact is how badly a side-by-side period would diverge or be unsafe if someone treated NXT as the original. Rank is across modules.
