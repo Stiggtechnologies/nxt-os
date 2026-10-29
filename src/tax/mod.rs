@@ -21,7 +21,7 @@ use std::collections::HashSet;
 const STATE_KEY: &str = "tax:state:v1";
 const MAX_STATE_BYTES: usize = 8 * 1024 * 1024;
 pub type TResult<T> = Result<T, ApiError>;
-pub struct Tax { pub store: Store }
+pub struct Tax { pub store: Store, signatures: std::sync::OnceLock<std::sync::Arc<crate::signatures::Signatures>> }
 fn bad(message: impl Into<String>) -> ApiError { ApiError(StatusCode::BAD_REQUEST, message.into()) }
 fn conflict(message: impl Into<String>) -> ApiError { ApiError(StatusCode::CONFLICT, message.into()) }
 fn missing() -> ApiError { ApiError(StatusCode::NOT_FOUND, "tax return not found".into()) }
@@ -120,7 +120,52 @@ fn record(input: &ReturnInput, record_id: &str, at: &str) -> TaxReturn {
 }
 
 impl Tax {
-    pub fn new(store: Store) -> Self { Self { store } }
+    pub fn new(store: Store) -> Self { Self { store, signatures: std::sync::OnceLock::new() } }
+    pub fn require_signed_t183_from(
+        &self,
+        signatures: std::sync::Arc<crate::signatures::Signatures>,
+    ) {
+        let _ = self.signatures.set(signatures);
+    }
+    async fn verify_signed_t183(&self, record_id: &str, envelope_id: &str) -> TResult<()> {
+        let Some(sig) = self.signatures.get() else {
+            return Ok(());
+        };
+        let program = self
+            .load()
+            .await?
+            .returns
+            .iter()
+            .find(|r| r.id == record_id)
+            .map(|r| r.program.clone())
+            .ok_or_else(missing)?;
+        let expected = if program == "T2" { "t183corp" } else { "t183" };
+        let c = sig
+            .ceremony_record(envelope_id)
+            .await
+            .map_err(|_| conflict("T183 envelope not found in NXT Signatures"))?;
+        if c.template_key.as_deref() != Some(expected) {
+            return Err(conflict(format!(
+                "envelope is not a {} authorization",
+                expected.to_uppercase()
+            )));
+        }
+        if c.status != "completed" || c.completed_at.is_none() || c.signed_pdf_sha256.is_none() {
+            return Err(conflict("T183 envelope is not fully signed"));
+        }
+        if !c.verify_chain() {
+            return Err(conflict("T183 envelope audit trail failed verification"));
+        }
+        let env = sig
+            .get(envelope_id)
+            .await
+            .map_err(|_| conflict("T183 envelope not found in NXT Signatures"))?;
+        let ctx = &env["envelope"]["draft"]["context"];
+        if ctx["module"] != "tax" || ctx["record_id"] != record_id {
+            return Err(conflict("T183 envelope is not linked to this tax return"));
+        }
+        Ok(())
+    }
     async fn load(&self) -> TResult<TaxState> { Ok(self.store.get_json(STATE_KEY).await?.unwrap_or_default()) }
     async fn mutate<T>(&self, mut f: impl FnMut(&mut TaxState) -> TResult<T>) -> TResult<T> {
         for _ in 0..16 {
@@ -249,6 +294,7 @@ impl Tax {
         if !["draft","in_review","approved","filed","archived"].contains(&input.status.as_str()) { return Err(bad("invalid transition status")); }
         text(&input.filing_reference,"filing reference",120,false)?; text(&input.t183_envelope_id,"T183 envelope id",120,false)?;
         let at=now();
+        if input.status=="filed" && !input.t183_envelope_id.trim().is_empty() && !input.filing_reference.trim().is_empty() { self.verify_signed_t183(record_id, input.t183_envelope_id.trim()).await?; }
         self.mutate(|s| {
             let r=s.returns.iter_mut().find(|r|r.id==record_id).ok_or_else(missing)?; assert_revision(r,input.expected_revision)?;
             if input.status==r.status { return Ok(r.clone()); }
