@@ -290,3 +290,17 @@ fn separate_classes_reg_1101() {
     assert!(!d.iter().any(|x| x["blocks_review"] == true), "{d:?}");
     b.cca[0].class = "8".into(); assert!(validate(&b).is_err());
 }
+
+#[test]
+fn class_13_accelerated_in_straddle_year() {
+    let mut i = base();
+    i.tax_year_start = "2023-07-01".into(); i.tax_year_end = "2024-06-30".into();
+    let lh = |later| LeaseholdPart { cost_cents: 10_000_00, periods_12m: 10, incurred_in_year: true, acceleration: "aiip".into(), in_later_calendar_year: later, ..Default::default() };
+    let run = |i: &T2Input| { let mut d = vec![]; let s = schedule8(i, &mut d); (s["classes"][0]["maximum_cca_cents"].as_i64().unwrap(), d.iter().any(|x| x["blocks_review"] == true)) };
+    i.cca = vec![CcaClass { class: "13".into(), additions_cents: 10_000_00, leaseholds: vec![lh(Some(false))], ..Default::default() }];
+    assert_eq!(run(&i), (1_500_00, false)); // 2023: 1100(1)(b)(i)(A) 150%
+    i.cca[0].leaseholds[0].in_later_calendar_year = Some(true);
+    assert_eq!(run(&i), (1_000_00, false)); // 2024: (b)(ii)
+    i.cca[0].leaseholds[0].in_later_calendar_year = None;
+    assert!(run(&i).1);
+}
