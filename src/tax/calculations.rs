@@ -754,6 +754,7 @@ fn partnership(c:&mut Calculation,obj:&Map<String,Value>)->Result<(),String>{
     require(c,obj,"allocation_verified","Verify the partnership agreement, ordinary general-partner status, allocation shares, and tax adjustments. This engine does not determine legal entitlement, at-risk limits or partner tax.")?;
     let revenue=money(obj,"revenue_cents")?;let expenses=money(obj,"expenses_cents")?;let addbacks=money(obj,"addbacks_cents")?;let deductions=money(obj,"deductions_cents")?;
     let book=revenue-expenses;let net=sum(&[book,addbacks,-deductions])?;
+    if obj.get("partners").is_none(){c.diagnostic("partners_missing","Enter the partners and their allocation shares before this workpaper can be calculated.",Some("partners"),true);return Ok(());}
     let mut partners:Vec<Partner>=serde_json::from_value(obj.get("partners").cloned().unwrap_or(Value::Array(vec![]))).map_err(|_|"partners must be an array of {id,name,share_bps} with integer shares".to_string())?;
     if partners.is_empty()||partners.len()>100{return Err("Enter between 1 and 100 partners".into());}
     let mut ids=BTreeSet::new();let mut shares=0_i64;
