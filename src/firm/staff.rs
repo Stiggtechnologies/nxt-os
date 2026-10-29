@@ -87,11 +87,14 @@ pub struct Identity {
     pub clients: Vec<String>,
     pub break_glass: bool,
     pub mfa: bool,
+    /// The account still has its temporary password; only password, MFA, me and logout work.
+    #[serde(default)]
+    pub must_change_password: bool,
 }
 
 impl Identity {
     pub fn break_glass() -> Self {
-        Self { user_id: "break-glass".into(), display_name: "Break-glass admin".into(), role: Role::Admin, clients: vec!["*".into()], break_glass: true, mfa: false }
+        Self { user_id: "break-glass".into(), display_name: "Break-glass admin".into(), role: Role::Admin, clients: vec!["*".into()], break_glass: true, mfa: false, must_change_password: false }
     }
     /// The label written into sign-offs, envelopes and audit logs.
     pub fn label(&self) -> String {
@@ -369,7 +372,7 @@ impl Staff {
     pub async fn identify(&self, bearer: &str) -> Result<Identity, Response> {
         if bearer.starts_with("nxs_") {
             return match self.session(bearer).await {
-                Ok(Some((s, u))) => Ok(Identity { user_id: u.id, display_name: u.display_name, role: u.role, clients: u.clients, break_glass: false, mfa: s.mfa }),
+                Ok(Some((s, u))) => Ok(Identity { user_id: u.id, display_name: u.display_name, role: u.role, clients: u.clients, break_glass: false, mfa: s.mfa, must_change_password: u.must_change_password }),
                 Ok(None) => Err(auth_error(StatusCode::UNAUTHORIZED, "session expired or signed out; sign in again")),
                 Err(e) => Err(auth_error(e.0, &e.1)),
             };
@@ -439,11 +442,17 @@ pub fn stamp_labels(body: &mut Value, id: &Identity) -> bool {
     changed
 }
 
+/// Paths an account may use while it still holds a temporary password.
+const PASSWORD_CHANGE_PATHS: [&str; 5] = ["/api/staff/me", "/api/staff/me/password", "/api/staff/mfa/enroll", "/api/staff/mfa/confirm", "/api/staff/logout"];
+
 /// The shared protected-route middleware.
 pub async fn authorize(req: Request, next: Next) -> Response {
     let staff = registry();
     let bearer = req.headers().get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("").trim().to_string();
     let id = match staff.identify(&bearer).await { Ok(i) => i, Err(r) => return r };
+    if id.must_change_password && !PASSWORD_CHANGE_PATHS.contains(&req.uri().path()) {
+        return auth_error(StatusCode::FORBIDDEN, "change your temporary password first (POST /api/staff/me/password)");
+    }
     let (mut parts, body) = req.into_parts();
     let path = parts.uri.path().to_string();
     let method = parts.method.clone();
@@ -526,6 +535,19 @@ pub fn scoped(req: &Request) -> Option<Identity> {
 /// may still read (catalogs, rates). Everything else that is not a record path is refused.
 pub async fn scope_guard<F, Fut>(req: Request, next: Next, base: &str, open: &[&str], lookup: F) -> Response
 where F: FnOnce(String) -> Fut, Fut: std::future::Future<Output = Option<String>> {
+    scope_guard_reserved(req, next, base, open, &[], lookup).await
+}
+
+/// Client label named in a request body, at the top level or inside `draft`.
+fn body_client(v: &Value) -> Option<String> {
+    v["client_ref"].as_str().or_else(|| v["draft"]["client_ref"].as_str()).map(str::to_string)
+}
+
+/// Like [`scope_guard`], but `reserved` names first path segments under `base` that are
+/// firm-wide collections (templates, folders, bulk), not record ids. Scoped users are refused
+/// there instead of the segment being looked up as a record.
+pub async fn scope_guard_reserved<F, Fut>(req: Request, next: Next, base: &str, open: &[&str], reserved: &[&str], lookup: F) -> Response
+where F: FnOnce(String) -> Fut, Fut: std::future::Future<Output = Option<String>> {
     let Some(id) = scoped(&req) else { return next.run(req).await };
     let path = req.uri().path().to_string();
     if open.iter().any(|p| path == *p) { return next.run(req).await; }
@@ -536,14 +558,24 @@ where F: FnOnce(String) -> Fut, Fut: std::future::Future<Output = Option<String>
         }
         let (parts, body) = req.into_parts();
         let Ok(bytes) = axum::body::to_bytes(body, 8 * 1024 * 1024).await else { return denied("request body too large").into_response() };
-        let cref = serde_json::from_slice::<Value>(&bytes).ok().and_then(|v| v["client_ref"].as_str().map(str::to_string)).unwrap_or_default();
+        let cref = serde_json::from_slice::<Value>(&bytes).ok().as_ref().and_then(body_client).unwrap_or_default();
         if !id.can_client(&cref) { return denied("you are not assigned to this client").into_response(); }
         return next.run(Request::from_parts(parts, Body::from(bytes))).await;
     }
     if let Some(rest) = path.strip_prefix(base).and_then(|r| r.strip_prefix('/')) {
         let rid = rest.split('/').next().unwrap_or("").to_string();
+        if reserved.contains(&rid.as_str()) { return denied("firm-wide views need an account with access to all clients").into_response(); }
         return match lookup(rid).await {
-            Some(c) if id.can_client(&c) => next.run(req).await,
+            Some(c) if id.can_client(&c) => {
+                if matches!(*req.method(), Method::GET | Method::HEAD) { return next.run(req).await; }
+                // A write may not move the record to a client outside the caller's scope.
+                let (parts, body) = req.into_parts();
+                let Ok(bytes) = axum::body::to_bytes(body, 8 * 1024 * 1024).await else { return denied("request body too large").into_response() };
+                if let Some(to) = serde_json::from_slice::<Value>(&bytes).ok().as_ref().and_then(body_client) {
+                    if !id.can_client(&to) { return denied("you are not assigned to this client").into_response(); }
+                }
+                next.run(Request::from_parts(parts, Body::from(bytes))).await
+            }
             Some(_) => denied("you are not assigned to this client").into_response(),
             None => next.run(req).await, // unknown id: let the handler answer 404
         };
@@ -551,12 +583,32 @@ where F: FnOnce(String) -> Fut, Fut: std::future::Future<Output = Option<String>
     denied("firm-wide views need an account with access to all clients").into_response()
 }
 
+/// Refuses client-scoped accounts outright (firm-wide registers such as the company roster).
+pub async fn firm_wide_only(req: Request, next: Next) -> Response {
+    if scoped(&req).is_some() { return denied("firm-wide views need an account with access to all clients").into_response(); }
+    next.run(req).await
+}
+
 async fn filter_list(resp: Response, id: &Identity) -> Response {
     if !resp.status().is_success() { return resp; }
     let (mut parts, body) = resp.into_parts();
     let Ok(bytes) = axum::body::to_bytes(body, 32 * 1024 * 1024).await else { return denied("response too large").into_response() };
-    let Ok(Value::Array(items)) = serde_json::from_slice::<Value>(&bytes) else { return Response::from_parts(parts, Body::from(bytes)) };
-    let kept: Vec<Value> = items.into_iter().filter(|v| id.can_client(v["client_ref"].as_str().unwrap_or(""))).collect();
+    let keep = |v: &Value| id.can_client(v["client_ref"].as_str().unwrap_or(""));
+    let out = match serde_json::from_slice::<Value>(&bytes) {
+        Ok(Value::Array(items)) => Value::Array(items.into_iter().filter(|v| keep(v)).collect()),
+        // Collection envelopes ({"envelopes":[...], ...}): filter every array whose items carry a
+        // client_ref key; drop audit counters that would reveal firm-wide activity.
+        Ok(Value::Object(mut o)) => {
+            for v in o.values_mut() {
+                if let Value::Array(items) = v {
+                    if items.iter().any(|x| x.get("client_ref").is_some()) { items.retain(|x| keep(x)); }
+                }
+            }
+            o.remove("audit_events");
+            Value::Object(o)
+        }
+        _ => return Response::from_parts(parts, Body::from(bytes)),
+    };
     parts.headers.remove(header::CONTENT_LENGTH);
-    Response::from_parts(parts, Body::from(serde_json::to_vec(&kept).unwrap_or_default()))
+    Response::from_parts(parts, Body::from(serde_json::to_vec(&out).unwrap_or_default()))
 }

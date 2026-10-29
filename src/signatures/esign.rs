@@ -270,7 +270,7 @@ impl Signatures {
             let given = input.recipients.iter().find(|g| g.id == r.id).ok_or_else(|| bad(format!("recipient {} is required", r.id)))?;
             r.name = given.name.trim().into(); r.email = given.email.trim().into();
         }
-        let created = self.save(None, SaveInput { expected_revision: None, operator_label: input.operator_label.clone(), draft }).await?;
+        let created = self.save(None, SaveInput { expected_revision: None, operator_label: input.operator_label.clone(), draft, client_ref: None }).await?;
         let id = created["envelope"]["id"].as_str().or_else(|| created["id"].as_str()).ok_or_else(|| storage_error(String::new()))?.to_string();
         let env = self.envelope(&id).await?;
         let mut c = Ceremony { envelope_id: id.clone(), title: env.draft.title.clone(), status: "prepared".into(), template_key: Some(key.into()),

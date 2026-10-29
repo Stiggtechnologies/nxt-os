@@ -61,6 +61,7 @@ pub fn router(state: Arc<CompanyBooks>) -> Router {
         .route("/api/company-books/{company}/general-ledger", get(general_ledger))
         .route("/api/company-books/{company}/payroll", get(payroll_view))
         .layer(DefaultBodyLimit::max(4 * 1024 * 1024))
+        .layer(middleware::from_fn(client_scope))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|mut r: Response| async move {
             r.headers_mut().insert(
@@ -75,6 +76,13 @@ pub fn router(state: Arc<CompanyBooks>) -> Router {
         }))
         .with_state(state)
         .merge(roster)
+}
+/// Client scoping: the company id is the client label. The inventory list is firm-wide.
+async fn client_scope(req: axum::extract::Request, next: middleware::Next) -> Response {
+    if req.uri().path() == "/api/company-books" && crate::firm::staff::scoped(&req).is_some() {
+        return crate::firm::staff::firm_wide_only(req, next).await;
+    }
+    crate::firm::staff::scope_guard_reserved(req, next, "/api/company-books", &[], &["roster"], |c| async move { Some(c) }).await
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

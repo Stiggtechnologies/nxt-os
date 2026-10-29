@@ -41,8 +41,16 @@ pub fn router(firm: Arc<Firm>) -> Router {
         .route("/api/firm/spreadsheet-sync", get(spreadsheet))
         .route("/api/firm/integrations", get(integrations))
         .route("/api/firm/audit", get(audit))
+        .layer(middleware::from_fn_with_state(firm.clone(), client_scope))
         .layer(middleware::from_fn(require_admin))
         .with_state(firm)
+}
+
+/// Client-scoped accounts see only projects for their clients; every other firm view
+/// (templates, workflows, closes, contacts, exports, audit) is firm-wide.
+async fn client_scope(State(f): S, req: axum::extract::Request, next: middleware::Next) -> Response {
+    super::staff::scope_guard(req, next, "/api/firm/projects", &[],
+        |id| async move { f.snapshot().await.ok()?.projects.into_iter().find(|p| p.id == id).map(|p| p.client_ref) }).await
 }
 
 async fn summary(State(f): S) -> R { ok(f.summary().await?) }

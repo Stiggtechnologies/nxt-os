@@ -521,11 +521,16 @@ impl Signatures {
     }
     pub async fn list(&self) -> SResult<Value> {
         let (_, state) = self.read().await?;
-        let envelopes:Vec<Value> = state.envelopes.iter().rev().map(|r| json!({"id":r.id,"title":r.draft.title,"status":r.status,"revision":r.revision,"updated_at":r.updated_at,"recipients":r.draft.recipients.len(),"documents":r.draft.documents.len(),"context":r.draft.context,"readiness_findings":readiness(&r.draft).len()})).collect();
+        let envelopes:Vec<Value> = state.envelopes.iter().rev().map(|r| json!({"id":r.id,"title":r.draft.title,"status":r.status,"revision":r.revision,"updated_at":r.updated_at,"recipients":r.draft.recipients.len(),"documents":r.draft.documents.len(),"context":r.draft.context,"client_ref":r.client_ref,"readiness_findings":readiness(&r.draft).len()})).collect();
         let templates:Vec<Value> = state.templates.iter().map(|t| json!({"id":t.id,"name":t.name,"version":t.version,"content_hash":t.content_hash,"created_at":t.created_at,"roles":t.draft.recipients})).collect();
         Ok(controlled(
             json!({"envelopes":envelopes,"templates":templates,"audit_events":state.events.len(),"storage":self.store.backend_name()}),
         ))
+    }
+    /// The envelope's client label, for staff access scoping. None when the id is unknown.
+    pub async fn client_of(&self, record_id: &str) -> Option<String> {
+        let (_, state) = self.read().await.ok()?;
+        state.envelopes.iter().find(|r| r.id == record_id).map(|r| r.client_ref.clone())
     }
     pub async fn get(&self, record_id: &str) -> SResult<Value> {
         let (_, state) = self.read().await?;
@@ -568,6 +573,7 @@ impl Signatures {
                 }
                 record.revision += 1;
                 record.draft = input.draft.clone();
+                if let Some(c) = &input.client_ref { record.client_ref = c.trim().chars().take(120).collect(); }
                 record.content_hash = hash(&record.draft)?;
                 record.updated_at = now();
                 record.reviewed_content_hash = None;
@@ -595,6 +601,7 @@ impl Signatures {
                     lock_token: None,
                     resend_count: 0,
                     field_values: Vec::new(),
+                    client_ref: input.client_ref.as_deref().unwrap_or("").trim().chars().take(120).collect(),
                 };
                 state.envelopes.push(record.clone());
                 record
@@ -784,6 +791,7 @@ impl Signatures {
                 lock_token: None,
                 resend_count: 0,
                 field_values: Vec::new(),
+                client_ref: String::new(),
             };
             event(
                 state,
@@ -878,6 +886,7 @@ impl Signatures {
                     created_by_label: input.operator_label.clone(), content_hash: source.content_hash.clone(),
                     reviewed_content_hash: Some(source.content_hash.clone()), reviewed_by_label: Some(input.operator_label.clone()),
                     template_id: None, draft: source.draft.clone(), folder_id: None, lock_token: None, resend_count: 0, field_values: Vec::new(),
+                    client_ref: source.client_ref.clone(),
                 };
                 event(state, &record.id, "parallel_bulk_created", &input.operator_label, 1, &record.content_hash, &input.note)?;
                 ids.push(record.id.clone());

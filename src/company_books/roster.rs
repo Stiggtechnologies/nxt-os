@@ -148,6 +148,7 @@ pub(super) fn router(s: Arc<CompanyBooks>) -> Router {
     Router::new()
         .route("/api/company-books/roster", get(list).post(publish))
         .layer(DefaultBodyLimit::max(768 * 1024))
+        .layer(middleware::from_fn(crate::firm::staff::firm_wide_only))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|mut r: Response| async move {
             r.headers_mut().insert(

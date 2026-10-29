@@ -11,7 +11,7 @@ use std::sync::Arc;
 type S = State<Arc<Signatures>>;
 type R = SResult<Json<Value>>;
 pub fn router(state: Arc<Signatures>) -> Router {
-    core_router(state.clone()).merge(esign_staff_router(state.clone())).merge(signer_router(state))
+    core_router(state.clone()).merge(esign_staff_router(state.clone())).merge(cron_router(state.clone())).merge(signer_router(state))
 }
 fn no_store(mut r: Response) -> Response {
     r.headers_mut().insert(header::CACHE_CONTROL, "private, no-store".parse().unwrap());
@@ -40,6 +40,7 @@ fn core_router(state: Arc<Signatures>) -> Router {
         )
         .route("/api/signatures/templates/{id}/favorite", post(favorite))
         .layer(DefaultBodyLimit::max(256 * 1024))
+        .layer(middleware::from_fn_with_state(state.clone(), client_scope))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|mut r: Response| async move {
             r.headers_mut()
@@ -146,9 +147,18 @@ fn esign_staff_router(state: Arc<Signatures>) -> Router {
         .route("/api/signatures/esign/bulk-send", post(es_bulk_send))
         .route("/api/signatures/esign/sweep", post(es_sweep))
         .layer(DefaultBodyLimit::max(4 * 1024 * 1024 + 64 * 1024))
+        .layer(middleware::from_fn_with_state(state.clone(), client_scope))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|r: Response| async move { no_store(r) }))
         .with_state(state)
+}
+/// Client scoping for staff accounts limited to specific clients. Envelopes carry an optional
+/// `client_ref`; envelopes without one, templates, folders, bulk and sweep are firm-wide.
+async fn client_scope(State(s): S, req: axum::extract::Request, next: middleware::Next) -> Response {
+    crate::firm::staff::scope_guard_reserved(req, next, "/api/signatures",
+        &["/api/signatures/catalog", "/api/signatures/esign/catalog"],
+        &["audit", "folders", "templates", "esign"],
+        |id| async move { s.client_of(&id).await }).await
 }
 async fn builtin_new(State(s): S, Path(k): Path<String>, Json(v): Json<esign::BuiltinInput>) -> R { Ok(Json(s.instantiate_builtin(&k, v).await?)) }
 async fn es_status(State(s): S, Path(id): Path<String>) -> R { Ok(Json(s.esign_status(&id).await?)) }
@@ -206,4 +216,35 @@ async fn signer_rate_limit(State(s): S, req: axum::extract::Request, next: middl
         }
     }
     next.run(req).await
+}
+
+/// Scheduled e-sign sweep for Vercel Cron (see vercel.json). Vercel sends
+/// `Authorization: Bearer $CRON_SECRET`; without CRON_SECRET configured the route refuses.
+/// Never reissues expired links. Mode comes from NXT_SWEEP_CRON_MODE: `dry_run` (default)
+/// reports only; `queue` also queues reminder links in the outbox. No email or SMS is sent.
+fn cron_router(state: Arc<Signatures>) -> Router {
+    Router::new()
+        .route("/api/cron/esign-sweep", get(cron_sweep))
+        .layer(middleware::map_response(|r: Response| async move { no_store(r) }))
+        .with_state(state)
+}
+async fn cron_sweep(State(s): S, h: HeaderMap) -> Response {
+    use axum::{http::StatusCode, response::IntoResponse};
+    use sha2::Digest;
+    let secret = std::env::var("CRON_SECRET").ok().filter(|v| v.trim().len() >= 16);
+    let Some(secret) = secret else {
+        return crate::firm::staff::auth_error(StatusCode::SERVICE_UNAVAILABLE, "scheduled sweep is not configured");
+    };
+    let got = h.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
+    let a = sha2::Sha256::digest(got.as_bytes());
+    let b = sha2::Sha256::digest(secret.trim().as_bytes());
+    if a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) != 0 {
+        return crate::firm::staff::auth_error(StatusCode::UNAUTHORIZED, "invalid cron credential");
+    }
+    let queue = std::env::var("NXT_SWEEP_CRON_MODE").is_ok_and(|v| v.trim().eq_ignore_ascii_case("queue"));
+    let input = esign::SweepInput { operator_label: "Scheduled sweep (Vercel Cron)".into(), remind_after_hours: None, reissue_expired: false, dry_run: !queue };
+    match s.sweep(input, meta(&h)).await {
+        Ok(mut v) => { v["mode"] = json!(if queue { "queue" } else { "dry_run" }); Json(v).into_response() }
+        Err(e) => e.into_response(),
+    }
 }
