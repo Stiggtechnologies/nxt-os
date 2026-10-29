@@ -14,12 +14,12 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("T2 Schedule 8, Capital Cost Allowance (t2sch8-26e), columns 10, 17, 19, 20, 21 and notes 12, 14, 15", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch8.html"),
     ("Income Tax Regulations (C.R.C., c. 945) s. 1100(1)(a) rates (incl. (xiv) Class 17, 8%), 1100(1)(b) Class 13, 1100(1)(c) Class 14, 1100(2) factors A/A.1 (incl. A(c.1)–(c.3), A(d), A.1(f)), 1100(2.01)/(2.011) straddle years, 1100(3) years under 12 months, Schedule III, 1100(0.1)–(0.3) immediate expensing", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html"),
     ("Income Tax Regulations (C.R.C., c. 945) s. 1104(3.1) designated immediate expensing property, (3.2) $1,500,000 limit, (3.3)–(3.4) associated allocation, (3.5) multiple and short years", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-19.html"),
-    ("CRA T4002 ch. 4, Schedule 8 columns 4, 9, 10 and 21 (immediate expensing)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/t4002/t4002-6.html"),
+    ("CRA T4002 ch. 4, Schedule 8 columns 4, 9, 10, 14–18 and 21 (immediate expensing; proceeds reducing AIIP then RIIP)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/t4002/t4002-6.html"),
     ("CRA classes of depreciable property and CCA rates", "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/sole-proprietorships-partnerships/report-business-income-expenses/claiming-capital-cost-allowance/classes-depreciable-property.html"),
     ("T2 Schedule 50, Shareholder Information (t2sch50-19e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch50.html"),
     ("CRA GIFI (RC4088): Schedule 100/125 codes 2599, 3499, 3620, 3640, 8299, 8670, 9368, 9990, 9995, 9999", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4088/general-index-financial-information-gifi.html"),
 ];
-pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule and the Reg 1100(3) short-year proration (days/365); the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled, as is CCPC immediate expensing (Reg 1100(0.1), 1104(3.1)–(3.5)) for DIEP available before 2024; separate-class elections, the Class 14.1 pre-2017 additional allowance and per-vehicle cost caps are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
+pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule and the Reg 1100(3) short-year proration (days/365) and the Reg 1100(2) E/E.1 reduction for proceeds (T4002 columns 14–17); the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled, as is CCPC immediate expensing (Reg 1100(0.1), 1104(3.1)–(3.5)) for DIEP available before 2024; separate-class elections, the Class 14.1 pre-2017 additional allowance and per-vehicle cost caps are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
 
 /// Schedule 1 lines copied from t2sch1-25e. Additions: 101–199 on page 1 plus 201–296
 /// (summed to amount D, line 199). Deductions: 401–499 plus 300–3xx (amount E, line 499).
@@ -385,11 +385,22 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
                 let accel = c.aiip_additions_cents + c.riip_additions_cents;
                 let mut adj: i128 = -(i128::from((f - g).max(0)) / 2);
                 if accel > 0 {
-                    if g > f { diag(diagnostics, "cca_proceeds_exceed_regular_additions", format!("Class {}: proceeds exceed regular additions alongside accelerated additions; the E reduction of Reg 1100(2) is not modelled.", c.class), true); }
+                    // Reg 1100(2) E / E.1 = G − F; T4002 columns 14 and 16: the excess reduces AIIP first, then RIIP.
+                    let e = (g - f).max(0);
+                    let mut e_left = e;
+                    if e > 0 {
+                        row["column_14_proceeds_reducing_accelerated_cents"] = json!(e);
+                        if c.half_year_exempt_additions_cents > 0 { diag(diagnostics, "cca_proceeds_exceed_regular_additions", format!("Class {}: proceeds exceed regular additions and some additions are half-year exempt; Reg 1100(2) F and T4002 column 14 differ for those, so the E reduction is not computed.", c.class), true); }
+                        if matches!(years, Some((a, b)) if a != b) { diag(diagnostics, "cca_proceeds_exceed_regular_additions", format!("Class {}: the E reduction in a taxation year spanning two calendar years is not modelled.", c.class), true); }
+                    }
                     if let Some((y1, y2)) = years {
-                        for (amt, second, riip) in [(c.aiip_additions_cents, c.aiip_second_year_cents, false), (c.riip_additions_cents, c.riip_second_year_cents, true)] {
+                        for (full_amt, second, riip) in [(c.aiip_additions_cents, c.aiip_second_year_cents, false), (c.riip_additions_cents, c.riip_second_year_cents, true)] {
+                            let cut = e_left.min(full_amt);
+                            e_left -= cut;
+                            let amt = full_amt - cut;
+                            if cut > 0 { row[if riip { "e1_reduction_cents" } else { "e_reduction_cents" }] = json!(cut); }
                             if amt == 0 { continue; }
-                            let split = if y1 == y2 { vec![(amt, y2)] } else if let Some(s2) = second { vec![(amt - s2, y1), (s2, y2)] } else {
+                            let split = if y1 == y2 { vec![(amt, y2)] } else if let Some(s2) = second { let s2 = s2.min(amt); vec![(amt - s2, y1), (s2, y2)] } else {
                                 diag(diagnostics, "cca_straddle_split", format!("Class {}: the taxation year spans {y1} and {y2}; set {} (the part available for use in {y2}) for the Reg 1100(2.01)/(2.011) blend.", c.class, if riip { "riip_second_year_cents" } else { "aiip_second_year_cents" }), true);
                                 continue;
                             };
