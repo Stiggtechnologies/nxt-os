@@ -99,8 +99,6 @@ fn reg_1100_2_factors_and_zev() {
     i.tax_year_start = "2024-06-01".into(); i.tax_year_end = "2025-05-31".into();
     i.cca[0].class = "8".into();
     assert!(codes(&build(&i).unwrap()).contains(&"cca_straddle_split".to_string()));
-    i.tax_year_start = "2024-06-01".into(); i.tax_year_end = "2024-12-31".into();
-    assert!(codes(&build(&i).unwrap()).contains(&"cca_short_year".to_string()));
 }
 
 #[test]
@@ -153,4 +151,27 @@ fn accelerated_classes_after_2023_and_straddle_years() {
     assert_eq!(out["schedule_8"]["schedule1_line_403_cca_cents"], 260_00, "{out}"); // (1,000 + 300) × 20%
     assert_eq!(out["schedule_8"]["classes"][0]["factor_a"], "2023: 1/2, 2024: 0/1");
     assert!(!codes(&out).iter().any(|c| c.starts_with("cca_tax_year") || c == "cca_straddle_split"));
+}
+
+#[test]
+fn short_year_proration_reg_1100_3() {
+    let mut i = base();
+    // 2024-06-01 to 2024-12-31 = 214 days. Class 8: (20,000 + 10,000 − 5,000) × 20% = 5,000 × 214/365 = 2,931.50
+    i.tax_year_start = "2024-06-01".into(); i.tax_year_end = "2024-12-31".into();
+    let out = build(&i).unwrap();
+    assert_eq!(out["schedule_8"]["schedule1_line_403_cca_cents"], 2_931_50, "{out}");
+    assert_eq!(out["schedule_8"]["classes"][0]["short_year_proration"], "214/365");
+    assert!(codes(&out).contains(&"cca_short_year".to_string()));
+    // Class 14 (Reg 1100(1)(c)) is excluded from 1100(3)
+    i.cca = vec![CcaClass { class: "14".into(), opening_ucc_cents: 3_650_00, limited_life: vec![LimitedLifeProperty { cost_cents: 3_650_00, life_days: 3_650, days_in_year: 214, ..Default::default() }], ..Default::default() }];
+    assert_eq!(build(&i).unwrap()["schedule_8"]["schedule1_line_403_cca_cents"], 214_00);
+    // A full 12-month year (incl. a 366-day leap year) is not short; a 52-53 week year ending a day early is.
+    i.cca = base().cca;
+    i.tax_year_start = "2024-01-01".into(); i.tax_year_end = "2024-12-31".into();
+    assert!(!codes(&build(&i).unwrap()).contains(&"cca_short_year".to_string()));
+    i.tax_year_end = "2024-12-30".into();
+    assert_eq!(build(&i).unwrap()["schedule_8"]["classes"][0]["short_year_proration"], "365/365");
+    // Missing dates block
+    i.tax_year_end = String::new();
+    assert!(codes(&build(&i).unwrap()).contains(&"cca_tax_year".to_string()));
 }

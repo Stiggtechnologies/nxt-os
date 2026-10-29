@@ -12,12 +12,12 @@ use super::corporate::GifiRow;
 pub const SOURCES: &[(&str, &str)] = &[
     ("T2 Schedule 1, Net Income (Loss) for Income Tax Purposes (t2sch1-25e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch1.html"),
     ("T2 Schedule 8, Capital Cost Allowance (t2sch8-26e), columns 10, 17, 19, 20, 21 and notes 12, 14, 15", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch8.html"),
-    ("Income Tax Regulations (C.R.C., c. 945) s. 1100(1)(a) rates (incl. (xiv) Class 17, 8%), 1100(1)(b) Class 13, 1100(1)(c) Class 14, 1100(2) factors A/A.1 (incl. A(c.1)–(c.3), A(d), A.1(f)), 1100(2.01)/(2.011) straddle years, Schedule III", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html"),
+    ("Income Tax Regulations (C.R.C., c. 945) s. 1100(1)(a) rates (incl. (xiv) Class 17, 8%), 1100(1)(b) Class 13, 1100(1)(c) Class 14, 1100(2) factors A/A.1 (incl. A(c.1)–(c.3), A(d), A.1(f)), 1100(2.01)/(2.011) straddle years, 1100(3) years under 12 months, Schedule III", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html"),
     ("CRA classes of depreciable property and CCA rates", "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/sole-proprietorships-partnerships/report-business-income-expenses/claiming-capital-cost-allowance/classes-depreciable-property.html"),
     ("T2 Schedule 50, Shareholder Information (t2sch50-19e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch50.html"),
     ("CRA GIFI (RC4088): Schedule 100/125 codes 2599, 3499, 3620, 3640, 8299, 8670, 9368, 9990, 9995, 9999", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4088/general-index-financial-information-gifi.html"),
 ];
-pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule; the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled; immediate expensing, short years, separate-class elections, the Class 14.1 pre-2017 additional allowance and per-vehicle cost caps are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
+pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule and the Reg 1100(3) short-year proration (days/365); the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled; immediate expensing, separate-class elections, the Class 14.1 pre-2017 additional allowance and per-vehicle cost caps are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
 
 /// Schedule 1 lines copied from t2sch1-25e. Additions: 101–199 on page 1 plus 201–296
 /// (summed to amount D, line 199). Deductions: 401–499 plus 300–3xx (amount E, line 499).
@@ -274,6 +274,19 @@ fn factor_year(input: &T2Input) -> Result<(i32, i32), String> {
     Ok((a.year(), b.year()))
 }
 
+/// Reg 1100(3): Some(days) when the taxation year is less than 12 months.
+fn short_year_days(input: &T2Input) -> Result<Option<i64>, String> {
+    use chrono::{Days, Months, NaiveDate};
+    let p = |s: &str| NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok();
+    let (Some(a), Some(b)) = (p(&input.tax_year_start), p(&input.tax_year_end)) else {
+        return Err("Schedule 8 needs tax_year_start and tax_year_end (YYYY-MM-DD): a year under 12 months is prorated under Reg 1100(3).".into());
+    };
+    if b < a { return Err("tax_year_end is before tax_year_start.".into()); }
+    let twelve = a.checked_add_months(Months::new(12)).ok_or("tax year out of range")?;
+    let next = b.checked_add_days(Days::new(1)).ok_or("tax year out of range")?;
+    Ok(if next < twelve { Some((b - a).num_days() + 1) } else { None })
+}
+
 /// Schedule 8. Declining-balance classes use Reg 1100(1)(a) rates and the Reg 1100(2) formula
 /// A(B) + A.1(B.1) − 0.5(C); Class 13 follows Reg 1100(1)(b) and Schedule III; Class 14 follows
 /// Reg 1100(1)(c). CCA is floored to the cent so it never exceeds the maximum.
@@ -281,9 +294,15 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
     let classes = &input.cca;
     let (mut recapture, mut terminal, mut cca) = (0i64, 0i64, 0i64);
     let mut rows = vec![];
-    if let Some((a, b)) = chrono::NaiveDate::parse_from_str(input.tax_year_start.trim(), "%Y-%m-%d").ok().zip(chrono::NaiveDate::parse_from_str(input.tax_year_end.trim(), "%Y-%m-%d").ok()) {
-        if (b - a).num_days() < 357 && !classes.is_empty() { diag(diagnostics, "cca_short_year", "Short taxation year: the Reg 1100(3) proration is not modelled.", true); }
+    let short = short_year_days(input);
+    if !classes.is_empty() {
+        match &short {
+            Err(m) => diag(diagnostics, "cca_tax_year", m.clone(), true),
+            Ok(Some(d)) => diag(diagnostics, "cca_short_year", format!("Taxation year of {d} days (less than 12 months): Reg 1100(3) limits the maximum to {d}/365 (Class 14 under 1100(1)(c) is not prorated)."), false),
+            Ok(None) => {}
+        }
     }
+    let short = short.ok().flatten();
     let needs_year = classes.iter().any(|c| c.aiip_additions_cents + c.riip_additions_cents > 0
         || c.leaseholds.iter().any(|l| l.incurred_in_year && l.acceleration != "none" && !l.acceleration.is_empty())
         || c.limited_life.iter().any(|l| l.available_in_year && l.acceleration != "none" && !l.acceleration.is_empty()));
@@ -315,7 +334,7 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
             if c.class == "10.1" { diag(diagnostics, "cca_class_10_1_disposed", "Class 10.1 has no terminal loss; the special half-year rule on disposal is not modelled.", true); }
             else { term = col10; }
         } else {
-            let max = if straight {
+            let full = if straight {
                 straight_line_max(c, year, col10, &mut row, diagnostics)
             } else {
                 let r = rate.unwrap();
@@ -350,6 +369,8 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
                 row["column_17_half_year_cents"] = json!((f - g).max(0) / 2);
                 (((i128::from(col10) + adj).max(0) * i128::from(r)) / 100) as i64
             };
+            // Reg 1100(3): days in the year / 365 of the maximum, except 1100(1)(c) (Class 14).
+            let max = match short { Some(d) if c.class != "14" => { row["short_year_proration"] = json!(format!("{d}/365")); (i128::from(full) * i128::from(d) / 365) as i64 } _ => full };
             claim = match c.claim_cents { Some(v) if v > max => { diag(diagnostics, "cca_claim_exceeds_maximum", format!("Class {} claim exceeds the maximum {max} cents.", c.class), true); max } Some(v) => v, None => max };
             row["maximum_cca_cents"] = json!(max);
         }
