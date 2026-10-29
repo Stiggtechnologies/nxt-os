@@ -89,11 +89,12 @@ def build(data, date_order):
                 "debit_cents": cents(line["debit"]),
                 "credit_cents": cents(line["credit"]),
                 "source_row": line["row"],
-                "memo": group["memo"],
+                "memo": line.get("memo") or group["memo"],
                 "source_metadata": {
                     "format": "qbo-report-row-provenance/v2",
                     "raw_cells": line["raw_cells"],
                     "source_row": line["row"],
+                    **({"adjusting_entry": line["adjusting"]} if "adjusting" in line else {}),
                 },
             })
         entries.append({
@@ -113,6 +114,8 @@ def build(data, date_order):
                 "supplied_number": group["number"],
                 "supplied_name": group["name"],
                 "durable_source_id": False,
+                "journal_layout": journal.get("layout", "qbo_legacy"),
+                **({"adjusting_entry": group["adjusting"], "source_group_label": group["source_group_label"]} if "adjusting" in group else {}),
             },
         })
     if len(entries) != journal["group_count"] or len(used_rows) != journal["line_count"]:
@@ -154,6 +157,7 @@ def build(data, date_order):
         "trial_balance_member": names["trial_balance"],
         "period_start": journal["date_start"],
         "period_end": journal["date_end"],
+        "period_profile": report.get("period_profile", {"kind": "all_dates"}),
         "chunks": return_chunks,
         "controls": controls,
         "entries": len(entries),
@@ -221,7 +225,10 @@ def stage(data, out, cohort, date_order, synthetic_evidence):
         "trial_balance_sha256": staged["trial_balance_sha256"],
         "period_start": staged["period_start"],
         "period_end": staged["period_end"],
-        "full_history": True,
+        # Only an All Dates journal spans full history. A period journal paired
+        # with an as-of trial balance is staged as partial history, which the
+        # company-book operator refuses to import (SOURCE_HISTORY_INCOMPLETE).
+        "full_history": staged["period_profile"]["kind"] == "all_dates",
         "record_id_coverage": "archive_row",
     }
     template = {
@@ -249,6 +256,7 @@ def stage(data, out, cohort, date_order, synthetic_evidence):
         "identity_verified_by_stager": False,
         "live_cutover_allowed": False,
         "full_history_means": "All Dates report span only; not a witnessed source freeze",
+        "period_profile": staged["period_profile"],
     }
     summary_sha, _ = write_json(stage_dir / "summary.json", summary)
     acquisition = {"format": "nxt-private-queued-qbo-verification/v1", "results": [{
