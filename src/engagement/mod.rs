@@ -9,6 +9,7 @@ pub mod models;
 mod preview_binding;
 mod routes;
 pub mod storage_models;
+pub mod statements;
 use crate::{referral::routes::ApiError, store::Store};
 use axum::http::StatusCode;
 use chrono::{Duration, NaiveDate, SecondsFormat, Utc};
