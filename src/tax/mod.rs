@@ -7,6 +7,7 @@ pub mod parallel;
 pub mod rates; pub mod t183;
 pub mod slips;
 pub mod gifi_map;
+pub mod t2_schedules;
 mod routes;
 pub use routes::router;
 

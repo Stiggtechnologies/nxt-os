@@ -899,6 +899,7 @@ mod tests {
                 reference: "AJE-1".into(),
                 date: "2025-12-31".into(),
                 kind: "adjusting".into(),
+                schedule1_line: None,
                 description: "Accrual".into(),
                 lines: vec![
                     AdjustmentLine {

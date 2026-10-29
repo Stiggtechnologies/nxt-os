@@ -69,6 +69,9 @@ pub struct Adjustment {
     pub description: String,
     #[serde(default)]
     pub lines: Vec<AdjustmentLine>,
+    /// For `kind == "tax"` entries: the T2 Schedule 1 line the entry reconciles on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule1_line: Option<String>,
 }
 
 /// Original NXT single-line text definition, copied into each custom annotation.

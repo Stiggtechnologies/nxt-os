@@ -24,6 +24,7 @@ pub fn router(state: Arc<Engagements>) -> Router {
         .route("/api/engagements/{id}/transition", post(transition))
         .route("/api/engagements/{id}/lockdown", post(lockdown))
         .route("/api/engagements/{id}/gifi", get(gifi))
+        .route("/api/engagements/{id}/t2-schedule1", get(t2_schedule1))
         .route("/api/engagements/{id}/statements", get(statements))
         .route("/api/engagements/{id}/statements/pdf", get(statements_pdf))
         .route("/api/engagements/{id}/templates/{template}", get(template))
@@ -198,6 +199,47 @@ async fn esign_handoff(State(e): S, Path(id): Path<String>) -> R {
 async fn gifi_handoff(State(e): S, Path(id): Path<String>) -> EResult<Response> {
     let doc = e.get(&id).await?.document;
     Ok(([(header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()), (header::CACHE_CONTROL, "private, no-store".to_string())], super::reports::gifi_csv(&doc)).into_response())
+}
+/// Draft T2 Schedule 1 from the engagement: amount A is the draft statements' net income
+/// (GIFI 9999 basis) and every tax-basis entry must name its Schedule 1 line.
+async fn t2_schedule1(State(e): S, Path(id): Path<String>) -> R {
+    use crate::tax::{corporate::GifiRow, t2_schedules as t2};
+    let doc = e.get(&id).await?.document;
+    let st = super::statements::generate(&doc);
+    let ni = st["current"]["income_statement"]["net_income_cents"].as_i64().unwrap_or(0);
+    let mut gifi = vec![GifiRow { section: "income_statement".into(), code: "9999".into(), label: String::new(), current_cents: ni, prior_cents: 0 }];
+    let lines = e.gifi_lines(&id).await?;
+    for row in lines["rows"].as_array().into_iter().flatten() {
+        let code = row["gifi"].as_str().unwrap_or("");
+        if matches!(code, "8670" | "9990" | "9995") {
+            let net = row["debit_cents"].as_i64().unwrap_or(0) - row["credit_cents"].as_i64().unwrap_or(0);
+            gifi.push(GifiRow { section: "income_statement".into(), code: code.into(), label: String::new(), current_cents: net, prior_cents: 0 });
+        }
+    }
+    let mut unmapped = vec![];
+    let mut items = vec![];
+    for a in doc.adjustments.iter().filter(|a| a.kind == "tax") {
+        let amount: i64 = a.lines.iter().map(|l| l.debit_cents).sum();
+        match a.schedule1_line.as_deref() {
+            Some(line) => items.push(t2::Schedule1Item { line: line.into(), amount_cents: amount, source_ref: a.reference.clone() }),
+            None => unmapped.push(a.reference.clone()),
+        }
+    }
+    let input = t2::T2Input { gifi, schedule1: items, ..Default::default() };
+    t2::validate(&input).map_err(super::bad)?;
+    let mut diagnostics = vec![];
+    for r in &unmapped {
+        diagnostics.push(json!({"code":"tax_entry_unmapped","severity":"error","message":format!("Tax-basis entry {r} has no schedule1_line."),"blocks_review":true}));
+    }
+    let s1 = t2::schedule1(ni, &input.schedule1, &mut diagnostics);
+    let mut cross = vec![];
+    let checks = t2::cross_checks(&input, &s1, &json!({}), &mut cross);
+    // The draft engagement carries only 9999 and the add-back codes; Schedule 125 totals are checked on the full T2 build.
+    diagnostics.extend(cross.into_iter().filter(|d| d["code"] != "s125_required_totals"));
+    let checks: Vec<Value> = checks.as_array().into_iter().flatten().filter(|c| c["check"] != "s125_required_totals").cloned().collect();
+    let supported = !diagnostics.iter().any(|d| d["blocks_review"] == true);
+    ok(json!({"format":"nxt-t2-schedule1/v1","basis":"draft engagement statements","supported":supported,"filed":false,"schedule_1":s1,"cross_checks":checks,"diagnostics":diagnostics,
+        "sources":t2::SOURCES.iter().map(|(t,u)| json!({"title":t,"url":u})).collect::<Vec<_>>()}))
 }
 async fn gifi(State(e): S, Path(id): Path<String>) -> R { ok(e.gifi_lines(&id).await?) }
 async fn file_tickmark(State(e): S, Path(id): Path<String>, Json(input): Json<FileTickmarkInput>) -> R {

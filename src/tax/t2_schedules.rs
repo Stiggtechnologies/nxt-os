@@ -1,0 +1,259 @@
+//! Native T2 schedule workpapers: Schedule 1 (net income for tax purposes), Schedule 8
+//! (capital cost allowance, declining-balance classes only), Schedule 50 (shareholder
+//! information) and Schedule 100/125 cross-checks. Line numbers and rates are copied from
+//! the CRA forms and pages cited in [`SOURCES`]. Nothing here is CRA-certified or filed;
+//! every result is a draft for preparer review.
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::corporate::GifiRow;
+
+pub const SOURCES: &[(&str, &str)] = &[
+    ("T2 Schedule 1, Net Income (Loss) for Income Tax Purposes (t2sch1-25e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch1.html"),
+    ("T2 Schedule 8, Capital Cost Allowance (t2sch8-26e), columns 10, 17, 19, 20, 21 and notes 12, 14, 15", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch8.html"),
+    ("CRA classes of depreciable property and CCA rates", "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/sole-proprietorships-partnerships/report-business-income-expenses/claiming-capital-cost-allowance/classes-depreciable-property.html"),
+    ("T2 Schedule 50, Shareholder Information (t2sch50-19e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch50.html"),
+    ("CRA GIFI (RC4088): Schedule 100/125 codes 2599, 3499, 3620, 3640, 8299, 8670, 9368, 9990, 9995, 9999", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4088/general-index-financial-information-gifi.html"),
+];
+pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule; accelerated investment incentive, immediate expensing, Classes 54 to 56, straight-line classes and short tax years are not modelled. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
+
+/// Schedule 1 lines copied from t2sch1-25e. Additions: 101–199 on page 1 plus 201–296
+/// (summed to amount D, line 199). Deductions: 401–499 plus 300–3xx (amount E, line 499).
+const ADDITIONS: &[(&str, &str)] = &[
+    ("101", "Provision for income taxes – current"), ("102", "Provision for income taxes – deferred"), ("103", "Interest and penalties on taxes"),
+    ("104", "Amortization of tangible assets"), ("105", "Amortization of natural resource assets"), ("106", "Amortization of intangible assets"),
+    ("107", "Recapture of capital cost allowance from Schedule 8"), ("110", "Loss in equity of subsidiaries and affiliates"), ("111", "Loss on disposal of assets"),
+    ("112", "Charitable donations and gifts from Schedule 2"), ("113", "Taxable capital gains from Schedule 6"), ("114", "Political contributions"),
+    ("115", "Holdbacks"), ("116", "Deferred and prepaid expenses"), ("117", "Depreciation in inventory – end of year"),
+    ("118", "Scientific research expenditures deducted per financial statements"), ("119", "Capitalized interest"), ("120", "Non-deductible club dues and fees"),
+    ("121", "Non-deductible meals and entertainment expenses"), ("122", "Non-deductible automobile expenses"), ("123", "Non-deductible life insurance premiums"),
+    ("124", "Non-deductible company pension plans"), ("125", "Other reserves on lines 270 and 275 from Schedule 13"), ("126", "Reserves from financial statements – balance at the end of the year"),
+    ("127", "Soft costs on construction and renovation of buildings"), ("128", "Non-deductible fines and penalties under section 67.6"),
+    ("206", "Capital items expensed"), ("208", "Debt issue expense"), ("216", "Financing fees deducted in books"), ("226", "Non-deductible advertising"),
+    ("227", "Non-deductible interest"), ("228", "Non-deductible legal and accounting fees"), ("230", "Other expenses from financial statements"),
+    ("234", "Sales tax assessments"), ("235", "Share issue expense"), ("236", "Write-down of capital property"),
+];
+const DEDUCTIONS: &[(&str, &str)] = &[
+    ("401", "Gain on disposal of assets per financial statements"), ("402", "Non-taxable dividends under section 83 from Schedule 3"),
+    ("403", "Capital cost allowance from Schedule 8"), ("404", "Terminal loss from Schedule 8"), ("406", "Allowable business investment loss from Schedule 6"),
+    ("408", "Holdbacks"), ("409", "Deferred and prepaid expenses"), ("410", "Depreciation in inventory – end of prior year"),
+    ("413", "Other reserves on line 280 from Schedule 13"), ("414", "Reserves from financial statements – balance at the beginning of the year"),
+    ("418", "Incorporation expenses under paragraph 20(1)(b)"), ("304", "Bad debt"), ("306", "Equity in income from subsidiaries or affiliates"),
+    ("307", "Exempt income under section 81"), ("314", "Other income from financial statements"),
+];
+pub fn line_label(line: &str) -> Option<(&'static str, bool)> {
+    ADDITIONS.iter().find(|(l, _)| *l == line).map(|(_, n)| (*n, true))
+        .or_else(|| DEDUCTIONS.iter().find(|(l, _)| *l == line).map(|(_, n)| (*n, false)))
+}
+
+/// Declining-balance CCA rates (percent) from the CRA classes page.
+const RATES: &[(&str, u32)] = &[
+    ("1", 4), ("3", 5), ("6", 10), ("8", 20), ("10", 30), ("10.1", 30), ("12", 100), ("14.1", 5),
+    ("16", 40), ("17", 8), ("43", 30), ("45", 45), ("46", 30), ("50", 55), ("53", 50),
+];
+pub fn rate(class: &str) -> Option<u32> { RATES.iter().find(|(c, _)| *c == class).map(|(_, r)| *r) }
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Schedule1Item { pub line: String, pub amount_cents: i64, pub source_ref: String }
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CcaClass {
+    pub class: String,
+    pub opening_ucc_cents: i64,
+    pub additions_cents: i64,
+    /// Lesser of proceeds and capital cost of property disposed of (column 7).
+    pub proceeds_cents: i64,
+    /// Signed column 6 adjustments and transfers.
+    pub adjustments_cents: i64,
+    /// Additions that are AIIP, RIIP or otherwise excluded from the 50% rule. Not modelled: blocks.
+    pub accelerated_additions_cents: i64,
+    pub no_property_left: bool,
+    /// Optional lower claim (column 21 "or a lower amount").
+    pub claim_cents: Option<i64>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Shareholder {
+    pub name: String,
+    /// individual | corporation | partnership | trust
+    pub kind: String,
+    /// One of: a BN/partnership account (9 digits, 2 letters, 4 digits) or "NR", a 9-digit SIN, or a trust number (T + 8 digits).
+    pub identifier: String,
+    /// Basis points: 10000 = 100%.
+    pub common_bp: u32,
+    pub preferred_bp: u32,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct T2Input {
+    /// Schedule 100/125 rows (current column used).
+    pub gifi: Vec<GifiRow>,
+    pub schedule1: Vec<Schedule1Item>,
+    pub cca: Vec<CcaClass>,
+    pub shareholders: Vec<Shareholder>,
+    /// ccpc | other_private | public | ... (as in the corporate profile). Private types require Schedule 50.
+    pub corporation_type: String,
+}
+
+const MAX: i64 = 100_000_000_000_000;
+fn diag(out: &mut Vec<Value>, code: &str, msg: impl Into<String>, blocking: bool) {
+    out.push(json!({"code":code,"severity":if blocking {"error"} else {"warning"},"message":msg.into(),"blocks_review":blocking}));
+}
+fn gifi(rows: &[GifiRow], section: &str, code: &str) -> Option<i64> {
+    rows.iter().find(|r| r.section == section && r.code == code).map(|r| r.current_cents)
+}
+
+pub fn validate(input: &T2Input) -> Result<(), String> {
+    if input.schedule1.len() > 300 || input.cca.len() > 60 || input.shareholders.len() > 200 || input.gifi.len() > 400 { return Err("too many rows".into()); }
+    for i in &input.schedule1 {
+        if !(0..=MAX).contains(&i.amount_cents) { return Err(format!("Schedule 1 line {} amount must be 0 to {MAX} cents; the line decides add or deduct", i.line)); }
+        if i.source_ref.len() > 120 { return Err("source_ref is limited to 120 characters".into()); }
+    }
+    for c in &input.cca {
+        for v in [c.opening_ucc_cents, c.additions_cents, c.proceeds_cents, c.accelerated_additions_cents] { if !(0..=MAX).contains(&v) { return Err(format!("Class {} amounts must be 0 to {MAX} cents", c.class)); } }
+        if !(-MAX..=MAX).contains(&c.adjustments_cents) || c.claim_cents.is_some_and(|v| !(0..=MAX).contains(&v)) { return Err(format!("Class {} amounts out of range", c.class)); }
+        if c.accelerated_additions_cents > c.additions_cents { return Err(format!("Class {} accelerated additions exceed additions", c.class)); }
+    }
+    let mut classes = BTreeSet::new();
+    for c in &input.cca { if !classes.insert(c.class.as_str()) { return Err(format!("duplicate CCA class {}", c.class)); } }
+    for s in &input.shareholders {
+        if s.name.trim().is_empty() || s.name.len() > 175 || s.name.chars().any(char::is_control) { return Err("each shareholder needs a name of up to 175 characters".into()); }
+        if s.common_bp > 10_000 || s.preferred_bp > 10_000 { return Err("share percentages cannot exceed 100%".into()); }
+    }
+    Ok(())
+}
+
+/// Schedule 1: A (GIFI 9999) + line 500 − line 510 = C (line 300 of the T2).
+pub fn schedule1(net_income_9999: i64, items: &[Schedule1Item], diagnostics: &mut Vec<Value>) -> Value {
+    let mut lines: BTreeMap<String, i64> = BTreeMap::new();
+    for i in items {
+        match line_label(&i.line) {
+            Some(_) => *lines.entry(i.line.clone()).or_default() += i.amount_cents,
+            None => diag(diagnostics, "schedule1_line_unsupported", format!("Line {} is not one of the Schedule 1 lines this workpaper carries; classify it on a listed line or enter it manually in the return.", i.line), true),
+        }
+    }
+    let sum = |add: bool| lines.iter().filter(|(l, _)| line_label(l).is_some_and(|(_, a)| a == add)).map(|(_, v)| *v).sum::<i64>();
+    let d = lines.iter().filter(|(l, _)| l.starts_with('2')).map(|(_, v)| *v).sum::<i64>();
+    let e = lines.iter().filter(|(l, _)| l.starts_with('3')).map(|(_, v)| *v).sum::<i64>();
+    let (l500, l510) = (sum(true), sum(false));
+    let b = net_income_9999 + l500;
+    let c = b - l510;
+    let rows: Vec<Value> = lines.iter().map(|(l, v)| { let (label, add) = line_label(l).unwrap(); json!({"line":l,"label":label,"addition":add,"amount_cents":v}) }).collect();
+    json!({"amount_a_gifi_9999_cents":net_income_9999,"lines":rows,"amount_d_line_199_cents":d,"amount_e_line_499_cents":e,
+        "line_500_cents":l500,"amount_b_cents":b,"line_510_cents":l510,"amount_c_net_income_for_tax_cents":c,"t2_line_300_cents":c})
+}
+
+/// Schedule 8, declining-balance classes. CCA is floored to the cent so it never exceeds the maximum.
+pub fn schedule8(classes: &[CcaClass], diagnostics: &mut Vec<Value>) -> Value {
+    let (mut recapture, mut terminal, mut cca) = (0i64, 0i64, 0i64);
+    let mut rows = vec![];
+    for c in classes {
+        let Some(r) = rate(&c.class) else {
+            diag(diagnostics, "cca_class_unsupported", format!("Class {} has no sourced declining-balance rate here (straight-line, leasehold and Classes 54–56 are not modelled).", c.class), true);
+            continue;
+        };
+        if c.accelerated_additions_cents > 0 {
+            diag(diagnostics, "cca_accelerated_not_modelled", format!("Class {}: AIIP/RIIP or half-year-exempt additions need the Schedule 8 column 15/16 factors, which are not modelled.", c.class), true);
+        }
+        let col10 = c.opening_ucc_cents + c.additions_cents + c.adjustments_cents - c.proceeds_cents;
+        let col17 = ((c.additions_cents - c.accelerated_additions_cents - c.proceeds_cents).max(0)) / 2;
+        let mut row = json!({"class":c.class,"rate_percent":r,"column_10_ucc_cents":col10,"column_17_half_year_cents":col17});
+        let (mut rec, mut term, mut claim) = (0, 0, 0);
+        if col10 < 0 {
+            if c.class == "10.1" { diag(diagnostics, "cca_class_10_1_negative", "Class 10.1 has no recapture; a negative UCC means the inputs need review.", true); }
+            else { rec = -col10; }
+        } else if c.no_property_left && col10 > 0 {
+            if c.class == "10.1" { diag(diagnostics, "cca_class_10_1_disposed", "Class 10.1 has no terminal loss; the special half-year rule on disposal is not modelled.", true); }
+            else { term = col10; }
+        } else {
+            let max = ((i128::from(col10 - col17) * i128::from(r)) / 100) as i64;
+            claim = match c.claim_cents { Some(v) if v > max => { diag(diagnostics, "cca_claim_exceeds_maximum", format!("Class {} claim exceeds the maximum {max} cents.", c.class), true); max } Some(v) => v, None => max };
+            row["maximum_cca_cents"] = json!(max);
+        }
+        let closing = col10 + rec - term - claim;
+        row["column_19_recapture_cents"] = json!(rec); row["column_20_terminal_loss_cents"] = json!(term);
+        row["column_21_cca_cents"] = json!(claim); row["ucc_end_of_year_cents"] = json!(if rec > 0 || term > 0 { 0 } else { closing });
+        recapture += rec; terminal += term; cca += claim;
+        rows.push(row);
+    }
+    json!({"classes":rows,"schedule1_line_107_recapture_cents":recapture,"schedule1_line_404_terminal_loss_cents":terminal,"schedule1_line_403_cca_cents":cca})
+}
+
+fn identifier_ok(s: &Shareholder) -> bool {
+    let id = s.identifier.trim();
+    let digits = |v: &str| v.bytes().all(|b| b.is_ascii_digit());
+    match s.kind.as_str() {
+        "individual" => id.len() == 9 && digits(id) && luhn(id),
+        "trust" => id.len() == 9 && id.starts_with('T') && digits(&id[1..]),
+        "corporation" | "partnership" => id == "NR" || (id.len() == 15 && digits(&id[..9]) && id[9..11].bytes().all(|b| b.is_ascii_uppercase()) && digits(&id[11..])),
+        _ => false,
+    }
+}
+fn luhn(d: &str) -> bool {
+    let sum: u32 = d.bytes().rev().enumerate().map(|(i, b)| { let n = u32::from(b - b'0'); if i % 2 == 1 { let x = n * 2; x / 10 + x % 10 } else { n } }).sum();
+    sum % 10 == 0
+}
+
+/// Schedule 50. Identifiers are checked but never echoed: only a masked last-three suffix is returned.
+pub fn schedule50(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
+    let private = matches!(input.corporation_type.as_str(), "ccpc" | "other_private");
+    if private && input.shareholders.is_empty() {
+        diag(diagnostics, "schedule50_required", "Private corporations must list every shareholder holding 10% or more of common or preferred shares.", true);
+    }
+    let (mut common, mut preferred) = (0u32, 0u32);
+    let mut rows = vec![];
+    for s in &input.shareholders {
+        common += s.common_bp; preferred += s.preferred_bp;
+        if s.common_bp < 1000 && s.preferred_bp < 1000 { diag(diagnostics, "schedule50_below_threshold", format!("{} holds under 10% of both share types; Schedule 50 lists only holders of 10% or more.", s.name), false); }
+        if !identifier_ok(s) { diag(diagnostics, "schedule50_identifier", format!("{}: enter one identifier matching the shareholder type (SIN for an individual, BN/partnership account or NR, or T + 8 digits for a trust).", s.name), true); }
+        let tail: String = s.identifier.chars().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect();
+        rows.push(json!({"name":s.name,"kind":s.kind,"identifier_masked":format!("***{tail}"),"common_percent":f64::from(s.common_bp)/100.0,"preferred_percent":f64::from(s.preferred_bp)/100.0}));
+    }
+    if common > 10_000 || preferred > 10_000 { diag(diagnostics, "schedule50_over_100", "Listed holdings exceed 100% of a share type.", true); }
+    json!({"required":private,"shareholders":rows,"listed_common_percent":f64::from(common)/100.0,"listed_preferred_percent":f64::from(preferred)/100.0})
+}
+
+/// Schedule 100/125 consistency and the links into Schedule 1.
+pub fn cross_checks(input: &T2Input, s1: &Value, s8: &Value, diagnostics: &mut Vec<Value>) -> Value {
+    let bs = |c| gifi(&input.gifi, "balance_sheet", c);
+    let is = |c| gifi(&input.gifi, "income_statement", c);
+    let mut checks = vec![];
+    let mut check = |name: &str, ok: Option<bool>, blocking: bool, msg: &str, diags: &mut Vec<Value>| {
+        if ok == Some(false) { diag(diags, name, msg, blocking); }
+        checks.push(json!({"check":name,"passed":ok}));
+    };
+    check("s100_assets_equal_liabilities_and_equity", bs("2599").zip(bs("3499")).zip(bs("3620")).map(|((a, l), e)| a == l + e), true, "Schedule 100: GIFI 2599 must equal 3499 plus 3620.", diagnostics);
+    check("s100_total_3640", bs("3640").zip(bs("2599")).map(|(t, a)| t == a), true, "Schedule 100: GIFI 3640 must equal total assets 2599.", diagnostics);
+    check("s125_required_totals", Some(is("8299").is_some() && is("9368").is_some() && is("9999").is_some()), true, "Schedule 125 needs 8299, 9368 and 9999.", diagnostics);
+    check("s1_amount_a_is_gifi_9999", is("9999").map(|v| Some(v) == s1["amount_a_gifi_9999_cents"].as_i64()), true, "Schedule 1 amount A must be GIFI 9999.", diagnostics);
+    let line = |l: &str| s1["lines"].as_array().into_iter().flatten().find(|r| r["line"] == l).and_then(|r| r["amount_cents"].as_i64()).unwrap_or(0);
+    check("s1_101_matches_gifi_9990", is("9990").map(|v| v == line("101")), false, "Line 101 usually adds back current income tax GIFI 9990.", diagnostics);
+    check("s1_102_matches_gifi_9995", is("9995").map(|v| v == line("102")), false, "Line 102 usually adds back deferred income tax GIFI 9995.", diagnostics);
+    check("s1_104_matches_gifi_8670", is("8670").map(|v| v == line("104")), false, "Line 104 usually adds back amortization of tangible assets GIFI 8670.", diagnostics);
+    if !input.cca.is_empty() {
+        for (l, k) in [("403", "schedule1_line_403_cca_cents"), ("404", "schedule1_line_404_terminal_loss_cents"), ("107", "schedule1_line_107_recapture_cents")] {
+            check(&format!("s1_{l}_matches_schedule8"), Some(line(l) == s8[k].as_i64().unwrap_or(0)), true, &format!("Schedule 1 line {l} must equal the Schedule 8 total."), diagnostics);
+        }
+    }
+    check("s50_share_capital_has_holders", bs("3500").map(|v| v == 0 || !input.shareholders.is_empty()), false, "Share capital (GIFI 3500) is reported but no shareholders are listed.", diagnostics);
+    Value::Array(checks)
+}
+
+pub fn build(input: &T2Input) -> Result<Value, String> {
+    validate(input)?;
+    let mut diagnostics = vec![];
+    let ni = gifi(&input.gifi, "income_statement", "9999").unwrap_or(0);
+    let s1 = schedule1(ni, &input.schedule1, &mut diagnostics);
+    let s8 = schedule8(&input.cca, &mut diagnostics);
+    let s50 = schedule50(input, &mut diagnostics);
+    let checks = cross_checks(input, &s1, &s8, &mut diagnostics);
+    let supported = !diagnostics.iter().any(|d| d["blocks_review"] == true);
+    Ok(json!({"format":"nxt-t2-schedules/v1","scope":SCOPE,"supported":supported,"filed":false,
+        "schedule_1":s1,"schedule_8":s8,"schedule_50":s50,"cross_checks":checks,"diagnostics":diagnostics,
+        "sources":SOURCES.iter().map(|(t,u)| json!({"title":t,"url":u})).collect::<Vec<_>>()}))
+}
