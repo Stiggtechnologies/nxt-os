@@ -11,6 +11,7 @@
   async function api(path, opts = {}) {
     const init = { method: opts.method || (opts.body ? "POST" : "GET"), headers: { authorization: "Bearer " + store.get() } };
     if (opts.body !== undefined) { init.headers["content-type"] = "application/json"; init.body = JSON.stringify(opts.body); }
+    if (opts.signal !== undefined) init.signal = opts.signal;
     const r = await fetch(path, init);
     const j = await r.json().catch(() => ({}));
     if (r.status === 401 && window.parent !== window) window.parent.postMessage({ nxt: "signed-out" }, location.origin);

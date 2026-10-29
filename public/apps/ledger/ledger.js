@@ -7,6 +7,12 @@ const { api, esc, money, toCents, today, fmtDate, toast, modal, confirm, csvDown
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const main = $("#main");
+const companyBridgeHost = $("#ledger-company-bridge");
+const companyBridge = companyBridgeHost && window.NXTLedgerCompanyBridge?.mount(companyBridgeHost, {api, esc, openApp(app, view) {
+  if (window.parent !== window) window.parent.postMessage({nxt:"open-app", app, view}, location.origin);
+  else location.href = "/#/" + app + "/" + view;
+}});
+window.addEventListener("pagehide", () => companyBridge?.destroy(), {once:true});
 $("#mark").innerHTML = NXT.MARK + "<span>NXT Ledger</span>";
 try { const t = localStorage.getItem("nxt_theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 
@@ -37,7 +43,7 @@ const taxOptions = (selected) => S.taxCodes.map((t) => `<option value="${t.code}
 
 function page(title, sub, actions, body) {
   main.innerHTML = `<button class="btn sm menu-btn no-print" id="menuBtn">☰ Menu</button>
-    <div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ""}</div><div class="row no-print">${actions || ""}</div></div><section class="qb-native-boundary"><div><strong>Native NXT workspace · separate test books</strong><span>These NXT records are separate from the preserved company source snapshots. Native empty or zero reports do not represent migrated source balances. Original systems remain authoritative during parallel testing.</span></div><button class="btn sm" type="button" data-qb-open-app="migrations" data-qb-open-view="worklist">View source snapshots</button></section>${body}`;
+    <div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ""}</div><div class="row no-print">${actions || ""}</div></div><section class="qb-native-boundary"><div><strong>Firm workspace · NXT native books</strong><span>This screen shows the shared Firm workspace. Choose Company books in the navigation to open an imported company's accounts, journals or saved contacts. Empty or zero workspace reports do not represent that company's source balances. Original systems remain authoritative during parallel testing.</span></div><button class="btn sm" type="button" data-qb-open-app="migrations" data-qb-open-view="companies">Choose company books</button></section>${body}`;
   $("#menuBtn").onclick = () => $("#side").classList.toggle("open");
 }
 function table(cols, rows, { onClick, empty = "Nothing here yet.", foot } = {}) {
