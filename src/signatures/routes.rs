@@ -140,6 +140,10 @@ fn esign_staff_router(state: Arc<Signatures>) -> Router {
         .route("/api/signatures/{id}/esign/link", post(es_link))
         .route("/api/signatures/{id}/esign/void", post(es_void))
         .route("/api/signatures/{id}/esign/document/{which}", get(es_doc))
+        .route("/api/signatures/{id}/esign/outbox", get(es_outbox))
+        .route("/api/signatures/esign/bulk/{key}", post(es_bulk_prepare))
+        .route("/api/signatures/esign/bulk-approve", post(es_bulk_approve))
+        .route("/api/signatures/esign/bulk-send", post(es_bulk_send))
         .layer(DefaultBodyLimit::max(4 * 1024 * 1024 + 64 * 1024))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|r: Response| async move { no_store(r) }))
@@ -179,3 +183,7 @@ async fn sg_adopt(State(s): S, Path(t): Path<String>, h: HeaderMap, Json(v): Jso
 async fn sg_sign(State(s): S, Path(t): Path<String>, h: HeaderMap, Json(v): Json<esign::SignInput>) -> R { Ok(Json(s.sign(&t, v, meta(&h)).await?)) }
 async fn sg_decline(State(s): S, Path(t): Path<String>, h: HeaderMap, Json(v): Json<esign::DeclineInput>) -> R { Ok(Json(s.decline(&t, v, meta(&h)).await?)) }
 async fn sg_doc(State(s): S, Path(t): Path<String>) -> SResult<Response> { Ok(pdf(s.signer_pdf(&t).await?, "document.pdf")) }
+async fn es_outbox(State(s): S, Path(id): Path<String>) -> R { Ok(Json(s.outbox(&id).await?)) }
+async fn es_bulk_prepare(State(s): S, Path(k): Path<String>, h: HeaderMap, Json(v): Json<esign::BulkPrepareInput>) -> R { Ok(Json(s.bulk_prepare(&k, v, meta(&h)).await?)) }
+async fn es_bulk_approve(State(s): S, Json(v): Json<esign::BulkIdsInput>) -> R { Ok(Json(s.bulk_approve(v).await?)) }
+async fn es_bulk_send(State(s): S, h: HeaderMap, Json(v): Json<esign::BulkIdsInput>) -> R { Ok(Json(s.bulk_send(v, meta(&h)).await?)) }

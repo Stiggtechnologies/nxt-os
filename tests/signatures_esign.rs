@@ -168,3 +168,36 @@ async fn refuses_unsafe_inputs() {
     let cat = ok(&r, "GET", "/api/signatures/esign/catalog", None, true).await;
     assert!(cat["templates"].to_string().contains("t183corp"));
 }
+
+#[tokio::test]
+async fn bulk_t183_prepare_review_send_at_volume_and_otp_throttle() {
+    let (s, r) = setup();
+    let good = base64::engine::general_purpose::STANDARD.encode(pdf(2));
+    let mut items: Vec<Value> = (0..4).map(|n| json!({"recipients":[{"id":"taxpayer","name":format!("Synthetic Taxpayer {n}"),"email":format!("tp{n}@example.invalid")}],"pdf_base64":good})).collect();
+    items.push(json!({"recipients":[{"id":"taxpayer","name":"Bad Page Count","email":"bad@example.invalid"}],"pdf_base64":base64::engine::general_purpose::STANDARD.encode(pdf(1))}));
+    let prep = ok(&r, "POST", "/api/signatures/esign/bulk/t183", Some(json!({"operator_label":"Synthetic staff","items":items})), true).await;
+    let res = prep["results"].as_array().unwrap();
+    assert_eq!(res.iter().filter(|x| x["ok"] == true).count(), 4, "{prep}");
+    assert_eq!(res[4]["ok"], false, "1-page PDF refused for a 2-page T183 layout");
+    let ids: Vec<Value> = res.iter().filter(|x| x["ok"] == true).map(|x| x["envelope_id"].clone()).collect();
+    // sending before review is refused per item
+    let early = ok(&r, "POST", "/api/signatures/esign/bulk-send", Some(json!({"operator_label":"Synthetic staff","ids":ids})), true).await;
+    assert!(early["results"].as_array().unwrap().iter().all(|x| x["ok"] == false), "{early}");
+    let appr = ok(&r, "POST", "/api/signatures/esign/bulk-approve", Some(json!({"operator_label":"Synthetic reviewer","ids":ids})), true).await;
+    assert!(appr["results"].as_array().unwrap().iter().all(|x| x["ok"] == true), "{appr}");
+    let sent = ok(&r, "POST", "/api/signatures/esign/bulk-send", Some(json!({"operator_label":"Synthetic staff","ids":ids})), true).await;
+    let sres = sent["results"].as_array().unwrap();
+    assert!(sres.iter().all(|x| x["ok"] == true && x["delivery"]["email_sent"] == false), "{sent}");
+    let t = sres[0]["delivery"]["links"][0]["url"].as_str().unwrap().trim_start_matches("/sign/#").to_string();
+    // throttle: second code within a minute is refused
+    verify(&r, &t).await;
+    assert_eq!(req(&r, "POST", &format!("/api/sign/{t}/otp"), None, false).await.0, 429);
+    let t2 = sres[1]["delivery"]["links"][0]["url"].as_str().unwrap().trim_start_matches("/sign/#").to_string();
+    let done = sign_as(&r, &t2, "Synthetic Taxpayer 1").await;
+    assert_eq!(done["step"], "completed", "{done}");
+    let id1 = sres[1]["envelope_id"].as_str().unwrap();
+    assert!(s.ceremony_record(id1).await.ok().unwrap().verify_chain());
+    // over the per-request cap
+    let many: Vec<Value> = (0..26).map(|_| json!("x")).collect();
+    assert_eq!(req(&r, "POST", "/api/signatures/esign/bulk-send", Some(json!({"operator_label":"S","ids":many})), true).await.0, 400);
+}

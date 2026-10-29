@@ -33,11 +33,19 @@ fn forbidden(m: &str) -> ApiError { ApiError(StatusCode::FORBIDDEN, m.into()) }
 fn b64() -> base64::engine::GeneralPurpose { base64::engine::general_purpose::STANDARD }
 fn secret() -> String { format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple()) }
 
-/// Delivery mode. Only `test` exists; anything else is refused.
+const OTP_COOLDOWN_SECS: i64 = 60;
+const OTP_MAX_SENDS: u8 = 5;
+pub const BULK_MAX: usize = 25;
+fn outbox_key(id: &str) -> String { format!("signatures:esign-outbox:{id}") }
+
+/// Delivery mode. `test` (default) shows links and codes in-app. `outbox`
+/// renders each email into a staff-visible outbox for a provider or a person
+/// to send; NXT itself never transmits. Anything else is refused.
 pub fn delivery_mode() -> SResult<&'static str> {
     match std::env::var("NXT_ESIGN_DELIVERY").ok().as_deref().map(str::trim) {
         None | Some("") | Some("test") => Ok("test"),
-        Some(_) => Err(conflict("external e-sign email delivery is not implemented; NXT_ESIGN_DELIVERY must be unset or 'test'")),
+        Some("outbox") => Ok("outbox"),
+        Some(_) => Err(conflict("NXT does not send e-sign email itself; NXT_ESIGN_DELIVERY must be unset, 'test' or 'outbox'")),
     }
 }
 
@@ -77,6 +85,10 @@ pub struct Signer {
     pub adoption: Option<Adoption>,
     pub status: String, // waiting | active | signed | declined
     pub values: Vec<FieldValue>,
+    #[serde(default)]
+    pub otp_sends: u8,
+    #[serde(default)]
+    pub otp_last_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -305,14 +317,16 @@ impl Signatures {
             self.store.set(&token_key(&th), id).await.map_err(storage_error)?;
             c.signers.push(Signer { recipient_id: r.id.clone(), name: r.name.clone(), email: r.email.clone(), kind: r.kind.clone(), routing_order: r.routing_order,
                 token_hash: th, expires_at: expires.clone(), otp_hash: None, otp_expires_at: None, otp_attempts: 0, verified: false, consented: false, adoption: None,
-                status: "waiting".into(), values: vec![] });
+                status: "waiting".into(), values: vec![], otp_sends: 0, otp_last_at: None });
             links.push(json!({"recipient_id":r.id,"name":r.name,"url":format!("/sign/#{token}")}));
         }
         c.status = "sent".into(); c.delivery_mode = mode.into();
         activate(&mut c);
         c.push("sent", &input.operator_label, &meta, &format!("delivery {mode}; links expire {expires}; no email sent"))?;
         self.put_ceremony(Some(&raw), Some(&old), &c).await?;
-        Ok(json!({"esign":c.public(),"delivery":{"mode":mode,"email_sent":false,"links":links}}))
+        self.queue_links(&c, &links, "").await?;
+        let shown = if mode == "test" { json!(links) } else { json!([]) };
+        Ok(json!({"esign":c.public(),"delivery":{"mode":mode,"email_sent":false,"links":shown,"outbox_messages":if mode == "outbox" { links.len() } else { 0 }}}))
     }
 
     pub async fn reissue_link(&self, id: &str, input: LinkInput, meta: ClientMeta) -> SResult<Value> {
@@ -323,11 +337,13 @@ impl Signatures {
         let s = c.signers.iter_mut().find(|s| s.recipient_id == input.recipient_id && s.status != "signed").ok_or_else(|| bad("unknown or finished recipient"))?;
         let token = secret(); let th = sha(token.as_bytes());
         self.store.set(&token_key(&th), id).await.map_err(storage_error)?;
-        s.token_hash = th; s.verified = false; s.otp_hash = None; s.otp_attempts = 0;
+        s.token_hash = th; s.verified = false; s.otp_hash = None; s.otp_attempts = 0; s.otp_sends = 0; s.otp_last_at = None;
         s.expires_at = (Utc::now() + chrono::Duration::days(7)).to_rfc3339_opts(SecondsFormat::Secs, true);
         c.push("link_reissued", &input.operator_label, &meta, &input.recipient_id)?;
         self.put_ceremony(Some(&raw), Some(&old), &c).await?;
-        Ok(json!({"delivery":{"mode":mode,"email_sent":false,"links":[{"recipient_id":input.recipient_id,"url":format!("/sign/#{token}")}]}}))
+        let links = vec![json!({"recipient_id":input.recipient_id,"url":format!("/sign/#{token}")})];
+        self.queue_links(&c, &links, "Here is a new link. ").await?;
+        Ok(json!({"delivery":{"mode":mode,"email_sent":false,"links":if mode == "test" { json!(links) } else { json!([]) }}}))
     }
 
     pub async fn void(&self, id: &str, input: StaffInput, meta: ClientMeta) -> SResult<Value> {
@@ -407,16 +423,52 @@ impl Signatures {
     }
     pub async fn otp_request(&self, token: &str, meta: ClientMeta) -> SResult<Value> {
         let code = { let u = uuid::Uuid::new_v4(); let b = u.as_bytes(); format!("{:06}", u32::from_le_bytes([b[0], b[1], b[2], b[3]]) % 1_000_000) };
-        self.signer_mutate(token, |c, i| {
+        let r = self.signer_mutate(token, |c, i| {
             Self::require_active(c, i)?;
             let s = &mut c.signers[i];
             s.otp_hash = Some(sha(format!("{}:{code}", s.token_hash).as_bytes()));
             s.otp_expires_at = Some((Utc::now() + chrono::Duration::seconds(OTP_TTL_SECS)).to_rfc3339_opts(SecondsFormat::Secs, true));
-            s.otp_attempts = 0;
-            let rid = s.recipient_id.clone();
-            c.push("otp_requested", &rid, &meta, &format!("one-time code issued by {} delivery; no email sent", c.delivery_mode))?;
-            Ok(json!({"test_code":code,"code_delivery":"shown in-app (test mode); no email sent"}))
-        }).await
+            if s.otp_sends >= OTP_MAX_SENDS { return Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "too many codes for this link; ask the sender for a new link".into())); }
+            if let Some(last) = s.otp_last_at.as_deref().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()) {
+                if (Utc::now() - last.with_timezone(&Utc)).num_seconds() < OTP_COOLDOWN_SECS { return Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "wait a minute before asking for another code".into())); }
+            }
+            s.otp_attempts = 0; s.otp_sends += 1; s.otp_last_at = Some(now());
+            let (rid, name, email) = (s.recipient_id.clone(), s.name.clone(), s.email.clone());
+            c.push("otp_requested", &rid, &meta, &format!("one-time code issued by {} delivery; no email sent by NXT", c.delivery_mode))?;
+            if c.delivery_mode == "outbox" {
+                Ok(json!({"code_delivery":"queued in the sender's outbox","_outbox":{"to_name":name,"to_email":email,"subject":format!("Your code for {}", c.title),"body":format!("Your one-time code is {code}. It expires in 10 minutes. If you didn't ask for it, ignore this message.")}}))
+            } else {
+                Ok(json!({"test_code":code,"code_delivery":"shown in-app (test mode); no email sent"}))
+            }
+        }).await?;
+        let mut v = r;
+        if let Some(m) = v.as_object_mut().and_then(|o| o.remove("_outbox")) {
+            let id = v["envelope_id"].as_str().unwrap_or("").to_string();
+            self.outbox_push(&id, vec![m]).await?;
+        }
+        Ok(v)
+    }
+    async fn outbox_push(&self, id: &str, msgs: Vec<Value>) -> SResult<()> {
+        for _ in 0..8 {
+            let old = self.store.get(&outbox_key(id)).await.map_err(storage_error)?;
+            let mut list: Vec<Value> = old.as_deref().and_then(|o| serde_json::from_str(o).ok()).unwrap_or_default();
+            for mut m in msgs.clone() { m["queued_at"] = json!(now()); m["sent_by_nxt"] = json!(false); list.push(m); }
+            let new = serde_json::to_string(&list).map_err(|e| storage_error(e.to_string()))?;
+            if self.store.compare_exchange(&outbox_key(id), old.as_deref(), &new).await.map_err(storage_error)? { return Ok(()); }
+        }
+        Err(conflict("outbox busy; retry"))
+    }
+    /// Staff view of messages waiting for a provider or a person to send.
+    pub async fn outbox(&self, id: &str) -> SResult<Value> {
+        let raw = self.store.get(&outbox_key(id)).await.map_err(storage_error)?;
+        let list: Value = raw.as_deref().and_then(|o| serde_json::from_str(o).ok()).unwrap_or(json!([]));
+        Ok(json!({"envelope_id":id,"messages":list,"sent_by_nxt":false}))
+    }
+    async fn queue_links(&self, c: &Ceremony, links: &[Value], origin_note: &str) -> SResult<()> {
+        if c.delivery_mode != "outbox" { return Ok(()); }
+        let msgs = links.iter().filter_map(|l| c.signers.iter().find(|s| l["recipient_id"] == json!(s.recipient_id)).map(|s| json!({"to_name":s.name,"to_email":s.email,
+            "subject":format!("Please sign: {}", c.title),"body":format!("{origin_note}Open this private link to review and sign: {{ORIGIN}}{} . It expires {}.", l["url"].as_str().unwrap_or(""), s.expires_at)}))).collect();
+        self.outbox_push(&c.envelope_id, msgs).await
     }
     pub async fn otp_verify(&self, token: &str, input: CodeInput, meta: ClientMeta) -> SResult<Value> {
         let r = self.signer_mutate(token, |c, i| {
@@ -678,4 +730,71 @@ pub fn approve_journey_gate(journey: &mut ClientJourney, def: &JourneyDef, c: &C
     if journey.status_of(step) != Some(StepStatus::AwaitingApproval) { return Err(conflict("journey step is not awaiting approval")); }
     let note = format!("e-sign envelope {} completed; signed PDF sha256 {}", c.envelope_id, c.signed_pdf_sha256.clone().unwrap_or_default());
     journey.approve(def, step, approver, at, &note).map_err(|e| conflict(format!("journey refused approval: {e:?}")))
+}
+
+// ---------- volume: bulk prepare, review and send ----------
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BulkItem { pub recipients: Vec<RecipientIdentity>, pub pdf_base64: String, #[serde(default)] pub title: Option<String>, #[serde(default)] pub context: Option<ContextLink> }
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BulkPrepareInput { pub operator_label: String, pub items: Vec<BulkItem> }
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BulkIdsInput { pub operator_label: String, pub ids: Vec<String>, #[serde(default)] pub note: Option<String>, #[serde(default)] pub expires_days: Option<u16> }
+
+impl Signatures {
+    /// Creates one envelope per item from a built-in template and attaches its PDF.
+    /// Items fail independently; nothing is sent.
+    pub async fn bulk_prepare(&self, key: &str, input: BulkPrepareInput, meta: ClientMeta) -> SResult<Value> {
+        if input.items.is_empty() || input.items.len() > BULK_MAX { return Err(bad(format!("send 1 to {BULK_MAX} items per request"))); }
+        builtin(key).ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "unknown built-in template".into()))?;
+        let mut out = vec![];
+        for (n, it) in input.items.into_iter().enumerate() {
+            let r: SResult<Value> = async {
+                let v = self.instantiate_builtin(key, BuiltinInput { operator_label: input.operator_label.clone(), title: it.title, recipients: it.recipients, context: it.context }).await?;
+                let env = &v["envelope"]["envelope"];
+                let id = env["id"].as_str().unwrap_or("").to_string();
+                self.attach_pdf(&id, PdfInput { operator_label: input.operator_label.clone(), expected_revision: env["revision"].as_u64().unwrap_or(0),
+                    expected_content_hash: env["content_hash"].as_str().unwrap_or("").into(), document_id: env["draft"]["documents"][0]["id"].as_str().unwrap_or("").into(), pdf_base64: it.pdf_base64 }, meta.clone()).await?;
+                Ok(json!({"index":n,"envelope_id":id,"ok":true}))
+            }.await;
+            out.push(r.unwrap_or_else(|e| json!({"index":n,"ok":false,"error":e.1})));
+        }
+        Ok(json!({"results":out}))
+    }
+    /// One reviewer records review and approval of each listed preparation.
+    /// This is the same internal review the single flow uses, at volume.
+    pub async fn bulk_approve(&self, input: BulkIdsInput) -> SResult<Value> {
+        if input.ids.is_empty() || input.ids.len() > BULK_MAX { return Err(bad(format!("send 1 to {BULK_MAX} ids per request"))); }
+        let note = input.note.clone().unwrap_or_else(|| "Bulk review: PDF and recipients checked".into());
+        let mut out = vec![];
+        for id in &input.ids {
+            let r: SResult<()> = async {
+                for action in ["submit_review", "approve"] {
+                    let e = self.envelope(id).await?;
+                    if action == "submit_review" && e.status != "draft" { continue; }
+                    self.transition(id, TransitionInput { expected_revision: e.revision, expected_content_hash: e.content_hash.clone(), operator_label: input.operator_label.clone(),
+                        action: action.into(), note: note.clone(), field_values: vec![] }).await?;
+                }
+                Ok(())
+            }.await;
+            out.push(match r { Ok(()) => json!({"envelope_id":id,"ok":true}), Err(e) => json!({"envelope_id":id,"ok":false,"error":e.1}) });
+        }
+        Ok(json!({"results":out}))
+    }
+    pub async fn bulk_send(&self, input: BulkIdsInput, meta: ClientMeta) -> SResult<Value> {
+        delivery_mode()?;
+        if input.ids.is_empty() || input.ids.len() > BULK_MAX { return Err(bad(format!("send 1 to {BULK_MAX} ids per request"))); }
+        let mut out = vec![];
+        for id in &input.ids {
+            let r: SResult<Value> = async {
+                let e = self.envelope(id).await?;
+                self.send(id, SendInput { operator_label: input.operator_label.clone(), expected_revision: e.revision, expected_content_hash: e.content_hash.clone(), expires_days: input.expires_days }, meta.clone()).await
+            }.await;
+            out.push(match r { Ok(v) => json!({"envelope_id":id,"ok":true,"delivery":v["delivery"]}), Err(e) => json!({"envelope_id":id,"ok":false,"error":e.1}) });
+        }
+        Ok(json!({"results":out}))
+    }
 }
