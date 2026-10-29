@@ -2,6 +2,7 @@
 mod adjustments;
 mod daily;
 mod subledger;
+mod views;
 pub mod models;
 mod roster;
 mod routes;
