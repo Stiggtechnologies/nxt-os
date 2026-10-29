@@ -225,3 +225,19 @@ fn e_reduction_proceeds_reduce_accelerated_additions() {
     let mut d = vec![]; schedule8(&i, &mut d);
     assert!(d.iter().any(|x| x["code"] == "cca_proceeds_exceed_regular_additions"));
 }
+
+#[test]
+fn class_14_1_additional_allowance_reg_1100_1_c1() {
+    let mut i = base();
+    let t = Class141Transitional { ucc_beginning_2017_cents: 20_000_00, prior_deductions_cents: 8_000_00, deemed_13_39_cost_cents: 0 };
+    i.cca = vec![CcaClass { class: "14.1".into(), opening_ucc_cents: 10_000_00, class_14_1_transitional: Some(t.clone()), ..Default::default() }];
+    let mx = |i: &T2Input| { let mut d = vec![]; schedule8(i, &mut d)["classes"][0]["maximum_cca_cents"].as_i64().unwrap() };
+    // 5% × 10,000 = 500 + (i) 2% × 12,000 = 240; (ii) 500 − 740 < 0
+    assert_eq!(mx(&i), 740_00);
+    // 5% × 4,000 = 200 + 240 + (ii) 500 − 440 = 60 → 500
+    i.cca[0].opening_ucc_cents = 4_000_00;
+    assert_eq!(mx(&i), 500_00);
+    i.tax_year_start = "2027-01-01".into(); i.tax_year_end = "2027-12-31".into();
+    assert_eq!(mx(&i), 200_00);
+    i.cca[0].class = "8".into(); assert!(validate(&i).is_err());
+}

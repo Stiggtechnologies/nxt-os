@@ -12,14 +12,14 @@ use super::corporate::GifiRow;
 pub const SOURCES: &[(&str, &str)] = &[
     ("T2 Schedule 1, Net Income (Loss) for Income Tax Purposes (t2sch1-25e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch1.html"),
     ("T2 Schedule 8, Capital Cost Allowance (t2sch8-26e), columns 10, 17, 19, 20, 21 and notes 12, 14, 15", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch8.html"),
-    ("Income Tax Regulations (C.R.C., c. 945) s. 1100(1)(a) rates (incl. (xiv) Class 17, 8%), 1100(1)(b) Class 13, 1100(1)(c) Class 14, 1100(2) factors A/A.1 (incl. A(c.1)–(c.3), A(d), A.1(f)), 1100(2.01)/(2.011) straddle years, 1100(3) years under 12 months, Schedule III, 1100(0.1)–(0.3) immediate expensing", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html"),
+    ("Income Tax Regulations (C.R.C., c. 945) s. 1100(1)(a) rates (incl. (xiv) Class 17, 8%), 1100(1)(b) Class 13, 1100(1)(c) Class 14, 1100(2) factors A/A.1 (incl. A(c.1)–(c.3), A(d), A.1(f)), 1100(2.01)/(2.011) straddle years, 1100(3) years under 12 months, Schedule III, 1100(0.1)–(0.3) immediate expensing, 1100(1)(c.1) Class 14.1 additional allowance", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html"),
     ("Income Tax Regulations (C.R.C., c. 945) s. 1104(3.1) designated immediate expensing property, (3.2) $1,500,000 limit, (3.3)–(3.4) associated allocation, (3.5) multiple and short years", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-19.html"),
     ("CRA T4002 ch. 4, Schedule 8 columns 4, 9, 10, 14–18 and 21 (immediate expensing; proceeds reducing AIIP then RIIP)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/t4002/t4002-6.html"),
     ("CRA classes of depreciable property and CCA rates", "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/sole-proprietorships-partnerships/report-business-income-expenses/claiming-capital-cost-allowance/classes-depreciable-property.html"),
     ("T2 Schedule 50, Shareholder Information (t2sch50-19e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch50.html"),
     ("CRA GIFI (RC4088): Schedule 100/125 codes 2599, 3499, 3620, 3640, 8299, 8670, 9368, 9990, 9995, 9999", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4088/general-index-financial-information-gifi.html"),
 ];
-pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule and the Reg 1100(3) short-year proration (days/365) and the Reg 1100(2) E/E.1 reduction for proceeds (T4002 columns 14–17); the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled, as is CCPC immediate expensing (Reg 1100(0.1), 1104(3.1)–(3.5)) for DIEP available before 2024; separate-class elections, the Class 14.1 pre-2017 additional allowance and per-vehicle cost caps are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
+pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule and the Reg 1100(3) short-year proration (days/365) and the Reg 1100(2) E/E.1 reduction for proceeds (T4002 columns 14–17) and the Class 14.1 additional allowance (Reg 1100(1)(c.1)); the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled, as is CCPC immediate expensing (Reg 1100(0.1), 1104(3.1)–(3.5)) for DIEP available before 2024; separate-class elections and per-vehicle cost caps are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
 
 /// Schedule 1 lines copied from t2sch1-25e. Additions: 101–199 on page 1 plus 201–296
 /// (summed to amount D, line 199). Deductions: 401–499 plus 300–3xx (amount E, line 499).
@@ -107,6 +107,18 @@ pub struct CcaClass {
     /// Reg 1104(3.1)) and the immediate expensing amount claimed on it (column 9, Reg 1100(0.1)).
     pub diep_cents: i64,
     pub immediate_expensing_cents: i64,
+    /// Class 14.1 only: facts for the Reg 1100(1)(c.1) additional allowance (years ending before 2027).
+    pub class_14_1_transitional: Option<Class141Transitional>,
+}
+
+/// Reg 1100(1)(c.1)(i): UCC of Class 14.1 at the beginning of 2017, the 20(1)(a) deductions for the
+/// class in preceding years, and the capital cost of property deemed acquired by ITA 13(39).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Class141Transitional {
+    pub ucc_beginning_2017_cents: i64,
+    pub prior_deductions_cents: i64,
+    pub deemed_13_39_cost_cents: i64,
 }
 
 /// Reg 1100(0.1)–(0.3) and 1104(3.1)–(3.5) facts for immediate expensing (CCPC only here).
@@ -212,6 +224,10 @@ pub fn validate(input: &T2Input) -> Result<(), String> {
         if c.aiip_second_year_cents.unwrap_or(0) > c.aiip_additions_cents || c.riip_second_year_cents.unwrap_or(0) > c.riip_additions_cents { return Err(format!("Class {}: second-year parts exceed the AIIP or RIIP additions", c.class)); }
         if !(0..=MAX).contains(&c.diep_cents) || !(0..=c.diep_cents).contains(&c.immediate_expensing_cents) || c.diep_cents > c.additions_cents { return Err(format!("Class {}: DIEP must be within additions and the immediate expensing amount within DIEP", c.class)); }
         if c.aiip_additions_cents + c.riip_additions_cents + c.half_year_exempt_additions_cents + c.immediate_expensing_cents > c.additions_cents { return Err(format!("Class {}: AIIP, RIIP and half-year-exempt parts are taken from the additions remaining after immediate expensing (column 10)", c.class)); }
+        if let Some(t) = &c.class_14_1_transitional {
+            if c.class != "14.1" { return Err(format!("Class {}: class_14_1_transitional is for Class 14.1 only", c.class)); }
+            for v in [t.ucc_beginning_2017_cents, t.prior_deductions_cents, t.deemed_13_39_cost_cents] { if !(0..=MAX).contains(&v) { return Err("Class 14.1 transitional amounts must be 0 to max".into()); } }
+        }
         if c.leaseholds.len() > 100 || c.limited_life.len() > 100 { return Err("too many rows".into()); }
         if (!c.leaseholds.is_empty() && c.class != "13") || (!c.limited_life.is_empty() && c.class != "14") { return Err(format!("Class {}: leaseholds are Class 13 and limited-life property is Class 14", c.class)); }
         for l in &c.leaseholds {
@@ -419,7 +435,9 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
                 row["rate_percent"] = json!(r);
                 row["reg_1100_2_adjustment_cents"] = json!(adj as i64);
                 row["column_17_half_year_cents"] = json!((f - g).max(0) / 2);
-                (((i128::from(col10) + adj).max(0) * i128::from(r)) / 100) as i64
+                let basis = (i128::from(col10) + adj).max(0);
+                let regular_max = basis * i128::from(r) / 100;
+                regular_max as i64 + class_14_1_additional(c, input, basis, regular_max, &mut row, diagnostics)
             };
             // Reg 1100(3): days in the year / 365 of the maximum, except 1100(1)(c) (Class 14).
             let max = match short { Some(d) if c.class != "14" => { row["short_year_proration"] = json!(format!("{d}/365")); (i128::from(full) * i128::from(d) / 365) as i64 } _ => full };
@@ -465,6 +483,26 @@ fn immediate_expensing_check(input: &T2Input, total: i64, diagnostics: &mut Vec<
     if i128::from(total) > limit { return b(format!("Immediate expensing claimed {total} cents exceeds the immediate expensing limit {limit} cents (Reg 1104(3.2), (3.5)(b)).")); }
     diag(diagnostics, "cca_immediate_expensing_limit", format!("Immediate expensing limit {limit} cents (Reg 1104(3.2){}); claimed {total} cents.", if days < 357 { format!(", prorated {days}/365 under (3.5)(b)") } else { String::new() }), false);
     true
+}
+
+/// Reg 1100(1)(c.1): for a taxation year ending before 2027, (i) 2% of the pre-2017 balance plus
+/// (ii) A − B, A = lesser of $500 and the UCC, B = the (a)(xii.1) amount plus (i).
+fn class_14_1_additional(c: &CcaClass, input: &T2Input, basis: i128, regular: i128, row: &mut Value, diagnostics: &mut Vec<Value>) -> i64 {
+    use chrono::{Datelike, NaiveDate};
+    if c.class != "14.1" { return 0; }
+    let end = NaiveDate::parse_from_str(input.tax_year_end.trim(), "%Y-%m-%d").ok();
+    let Some(t) = &c.class_14_1_transitional else {
+        if end.is_none_or(|e| e.year() < 2027) { diag(diagnostics, "cca_class_14_1_additional", "Class 14.1: the Reg 1100(1)(c.1) additional allowance may apply for years ending before 2027; enter class_14_1_transitional to compute it.", false); }
+        return 0;
+    };
+    let Some(end) = end else { diag(diagnostics, "cca_tax_year", "Class 14.1 additional allowance needs tax_year_end.", true); return 0 };
+    if end.year() >= 2027 { diag(diagnostics, "cca_class_14_1_additional", "Reg 1100(1)(c.1) applies only to taxation years ending before 2027.", false); return 0; }
+    let particular = (i128::from(t.ucc_beginning_2017_cents) - i128::from(t.prior_deductions_cents) - 3 * i128::from(t.deemed_13_39_cost_cents)).max(0);
+    let i = particular * 2 / 100;
+    let ii = (basis.min(500_00) - (regular + i)).max(0);
+    row["reg_1100_1_c1_i_cents"] = json!(i as i64);
+    row["reg_1100_1_c1_ii_cents"] = json!(ii as i64);
+    (i + ii) as i64
 }
 
 /// Class 13 (Reg 1100(1)(b), Schedule III ss. 1–3) and Class 14 (Reg 1100(1)(c)), capped at UCC.
