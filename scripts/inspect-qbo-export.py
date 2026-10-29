@@ -51,6 +51,11 @@ MODERN_JOURNAL_HEADER = {'B': 'Transaction date', 'C': 'Transaction type', 'D': 
 # The same export with the 'Adj' column turned off: nine columns A-I. The
 # adjusting flag is then unknown (None) and is never inferred.
 MODERN_NO_ADJ_JOURNAL_HEADER = {k: v for k, v in MODERN_JOURNAL_HEADER.items() if k != 'J'}
+# QBO variant with an extra 'Distribution account number' column in G; every
+# later column shifts one to the right (account H, debit I, credit J, adj K).
+DISTRIBUTION_JOURNAL_HEADER = {'B': 'Transaction date', 'C': 'Transaction type', 'D': '#', 'E': 'Name', 'F': 'Description', 'G': 'Distribution account number', 'H': 'Account Name', 'I': 'Debit', 'J': 'Credit', 'K': 'Adj'}
+# Column roles per modern layout: account label, debit, credit, adjusting flag.
+MODERN_COLUMNS = {'qbo_modern': ('G', 'H', 'I', 'J'), 'qbo_modern_no_adj': ('G', 'H', 'I', None), 'qbo_modern_distribution': ('H', 'I', 'J', 'K')}
 ADJ_FLAGS = {'yes': True, 'no': False}
 # Member names that look like list exports are never opened, not even to read a title.
 NONFINANCIAL_NAME = re.compile(r'customer|employee|supplier|vendor|contact|payroll', re.I)
@@ -601,7 +606,7 @@ def journal_postings(book, choice):
     are retained here as original cell text. They are not durable source IDs.
     """
     layout = journal_layout(book)
-    if layout in ('qbo_modern', 'qbo_modern_no_adj'):
+    if layout in MODERN_COLUMNS:
         return modern_journal_postings(book, choice)
     order, basis = date_order(book, choice)
     active, groups, accounts, total_row, footer_count = None, [], {}, None, 0
@@ -665,13 +670,24 @@ def journal_postings(book, choice):
     return {'status': 'supported_controls_passed', 'group_count': len(groups), 'line_count': sum(g['line_count'] for g in groups), 'date_start': min(dates), 'date_end': max(dates), 'date_order': order, 'date_order_basis': basis, 'total_row': total_row, 'debit_cents': str(total[0]), 'credit_cents': str(total[1]), 'groups': groups, 'accounts': [{'label': label, 'label_ref': sha(label.encode('utf-8')), 'line_count': v['line_count'], 'debit_cents': str(v['debit']), 'credit_cents': str(v['credit']), 'net_debit_cents': str(v['debit'] - v['credit'])} for label, v in sorted(accounts.items())], 'footer_rows': footer_count, 'warnings': book.warnings, 'held_lines': [], 'held_group_count': 0, 'durable_source_transaction_ids_available': False, 'identity_basis': 'Source workbook hash and report row locators only; no durable source transaction identity.', 'layout': 'qbo_legacy'}
 
 
-def grand_total(book, row, exact):
+def outside_period_blocker(journal, start, end):
+    """Block, and list each out-of-range journal entry for review.
+
+    Only locators are listed (source rows, date, entry number); no amounts,
+    names or accounts. Nothing is corrected or re-dated."""
+    entries = [{'source_start_row': g['source_start_row'], 'source_subtotal_row': g.get('source_subtotal_row'), 'date': g['date'], 'number': g.get('number')}
+               for g in journal.get('groups', []) if (start is not None and g['date'] < start) or g['date'] > end]
+    return {'report': 'cross_report', 'code': 'journal_date_outside_period', 'period_start': start, 'period_end': end,
+            'entry_count': len(entries), 'entries': entries, 'resolution': 'review_in_source_no_auto_fix'}
+
+
+def grand_total(book, row, exact, columns='HI'):
     """The journal TOTAL row, checked against the exact sum of every group.
 
     An over-length cached grand-total formula is ignored (never evaluated) and
     the total is the computed sum of the individual lines, with a warning."""
     result = []
-    for col, value in zip('HI', exact):
+    for col, value in zip(columns, exact):
         address = f'{col}{row}'
         if address in book.overlength:
             book.warn('overlength_total_formula_ignored', address, formula_length=book.overlength[address]['formula_length'])
@@ -690,6 +706,8 @@ def journal_layout(book):
         return 'qbo_modern'
     if header == MODERN_NO_ADJ_JOURNAL_HEADER:
         return 'qbo_modern_no_adj'
+    if header == DISTRIBUTION_JOURNAL_HEADER:
+        return 'qbo_modern_distribution'
     raise AssessmentError('journal_header_mismatch')
 
 
@@ -704,7 +722,10 @@ def modern_journal_postings(book, choice):
     The column-A label is source report text, not a durable transaction id.
     """
     order, basis = date_order(book, choice)
-    has_adj = journal_layout(book) == 'qbo_modern'
+    layout = journal_layout(book)
+    acc, dr, cr, adj = MODERN_COLUMNS[layout]
+    has_adj = adj is not None
+    allowed = set('ABCDEF') | {'G', acc, dr, cr} | ({adj} if adj else set())
     active, groups, accounts, total_row, footer_count, held, held_groups = None, [], {}, None, 0, [], []
     for row in sorted(r for r in book.rows if r > 5):
         cols = nonempty_columns(book, row)
@@ -714,19 +735,19 @@ def modern_journal_postings(book, choice):
             require(cols == {'A'}, 'financial_rows_after_journal_total')
             footer_count += 1
             continue
-        require(cols <= set('ABCDEFGHIJ' if has_adj else 'ABCDEFGHI'), 'unexpected_journal_columns')
+        require(cols <= allowed, 'unexpected_journal_columns')
         if 'A' in cols:
             label = book.text(f'A{row}')
             missing = {'group_start_row': active['source_start_row'], 'boundary_row': row} if active else None
             if label.upper() == 'TOTAL':
                 require(active is None, 'source_control_missing_amount_or_subtotal', missing)
-                require(cols == {'A', 'H', 'I'}, 'invalid_journal_total_row')
+                require(cols == {'A', dr, cr}, 'invalid_journal_total_row')
                 total_row = row
                 continue
             if label.startswith('Total for '):
                 require(active is not None and label[len('Total for '):] == active['group_label'], 'journal_group_total_label_mismatch', {'row': row})
-                require(cols == {'A', 'H', 'I'}, 'source_control_missing_amount_or_subtotal', {'row': row, 'group_start_row': active['source_start_row']})
-                subtotal = (book.control(f'H{row}', active['debit']), book.control(f'I{row}', active['credit']))
+                require(cols == {'A', dr, cr}, 'source_control_missing_amount_or_subtotal', {'row': row, 'group_start_row': active['source_start_row']})
+                subtotal = (book.control(f'{dr}{row}', active['debit']), book.control(f'{cr}{row}', active['credit']))
                 require(active['line_count'] >= 2 and subtotal == (active['debit'], active['credit']), 'journal_group_subtotal_mismatch', {'row': row})
                 require(active['debit'] == active['credit'], 'unbalanced_journal_group', {'row': row})
                 group = {'source_start_row': active['source_start_row'], 'source_subtotal_row': row, 'date': active['date'], 'line_count': active['line_count'], 'debit_cents': str(active['debit']), 'credit_cents': str(active['credit']),
@@ -753,18 +774,18 @@ def modern_journal_postings(book, choice):
         require(active is not None, 'orphan_journal_account_line', {'row': row})
         require('B' in cols and 'C' in cols, 'journal_transaction_type_required', {'row': row})
         if has_adj:
-            require('J' in cols and book.text(f'J{row}').lower() in ADJ_FLAGS, 'journal_adjustment_flag_required', {'row': row})
+            require(adj in cols and book.text(f'{adj}{row}').lower() in ADJ_FLAGS, 'journal_adjustment_flag_required', {'row': row})
         date, ttype = parse_date(book, f'B{row}', order), book.text(f'C{row}')
-        adjusting = ADJ_FLAGS[book.text(f'J{row}').lower()] if has_adj else None
+        adjusting = ADJ_FLAGS[book.text(f'{adj}{row}').lower()] if has_adj else None
         if active['date'] is None:
             active.update(date=date, transaction_type=ttype, adjusting=adjusting, number=optional_text(book, f'D{row}'), name=optional_text(book, f'E{row}'))
         require((date, ttype) == (active['date'], active['transaction_type']), 'journal_group_metadata_inconsistent', {'row': row})
         require(adjusting == active['adjusting'], 'journal_adjustment_flag_inconsistent', {'row': row})
         if not active['memo']:
             active['memo'] = optional_text(book, f'F{row}')
-        label = book.text(f'G{row}') if 'G' in cols else ''
-        valued = bool(cols & {'H', 'I'})
-        debit, credit = (book.amount(f'H{row}'), book.amount(f'I{row}')) if valued else (0, 0)
+        label = book.text(f'{acc}{row}') if acc in cols else ''
+        valued = bool(cols & {dr, cr})
+        debit, credit = (book.amount(f'{dr}{row}'), book.amount(f'{cr}{row}')) if valued else (0, 0)
         require(not (debit and credit), 'journal_line_has_both_sides')
         active['line_count'] += 1
         # Present stored amounts still count toward the group's subtotal
@@ -784,10 +805,10 @@ def modern_journal_postings(book, choice):
     require((groups or held_groups) and total_row is not None, 'journal_groups_and_total_required')
     every = groups + held_groups
     total = (sum(int(g['debit_cents']) for g in every), sum(int(g['credit_cents']) for g in every))
-    require(total == grand_total(book, total_row, total), 'journal_grand_total_mismatch')
+    require(total == grand_total(book, total_row, total, dr + cr), 'journal_grand_total_mismatch')
     dates = [g['date'] for g in every]
     return {'status': 'supported_controls_passed', 'group_count': len(groups), 'line_count': sum(g['line_count'] for g in groups),
-            'held_lines': held, 'held_group_count': len(held_groups), 'held_groups': held_groups, 'warnings': book.warnings, 'date_start': min(dates), 'date_end': max(dates), 'date_order': order, 'date_order_basis': basis, 'total_row': total_row, 'debit_cents': str(total[0]), 'credit_cents': str(total[1]), 'groups': groups, 'accounts': [{'label': label, 'label_ref': sha(label.encode('utf-8')), 'line_count': v['line_count'], 'debit_cents': str(v['debit']), 'credit_cents': str(v['credit']), 'net_debit_cents': str(v['debit'] - v['credit'])} for label, v in sorted(accounts.items())], 'footer_rows': footer_count, 'adjusting_group_count': sum(bool(g['adjusting']) for g in groups) if has_adj else None, 'durable_source_transaction_ids_available': False, 'identity_basis': 'Source workbook hash, report row locators and column-A group text only; no durable source transaction identity.', 'layout': 'qbo_modern' if has_adj else 'qbo_modern_no_adj'}
+            'held_lines': held, 'held_group_count': len(held_groups), 'held_groups': held_groups, 'warnings': book.warnings, 'date_start': min(dates), 'date_end': max(dates), 'date_order': order, 'date_order_basis': basis, 'total_row': total_row, 'debit_cents': str(total[0]), 'credit_cents': str(total[1]), 'groups': groups, 'accounts': [{'label': label, 'label_ref': sha(label.encode('utf-8')), 'line_count': v['line_count'], 'debit_cents': str(v['debit']), 'credit_cents': str(v['credit']), 'net_debit_cents': str(v['debit'] - v['credit'])} for label, v in sorted(accounts.items())], 'footer_rows': footer_count, 'adjusting_group_count': sum(bool(g['adjusting']) for g in groups) if has_adj else None, 'durable_source_transaction_ids_available': False, 'identity_basis': 'Source workbook hash, report row locators and column-A group text only; no durable source transaction identity.', 'layout': layout}
 
 
 def journal(book, choice):
@@ -1031,11 +1052,11 @@ def assess_export_bytes(data, order='auto', prior=None, first_year=False):
             parsed = {r['report']: r for r in report['reports']}
             if profile['kind'] == 'all_dates_journal_with_tb_as_of' and 'journal' in parsed and parsed['journal']['assessment'].get('status') == 'supported_controls_passed':
                 if not parsed['journal']['assessment']['date_end'] <= profile['as_of']:
-                    report['blockers'].append({'report': 'cross_report', 'code': 'journal_date_outside_period'})
+                    report['blockers'].append(outside_period_blocker(parsed['journal']['assessment'], None, profile['as_of']))
             elif profile['kind'] != 'all_dates' and 'journal' in parsed and parsed['journal']['assessment'].get('status') == 'supported_controls_passed':
                 j = parsed['journal']['assessment']
                 if not (profile['period_start'] <= j['date_start'] and j['date_end'] <= profile['period_end']):
-                    report['blockers'].append({'report': 'cross_report', 'code': 'journal_date_outside_period'})
+                    report['blockers'].append(outside_period_blocker(j, profile['period_start'], profile['period_end']))
             if not report['blockers'] and (prior is not None or first_year or parsed['journal']['assessment'].get('held_lines') or profile['kind'] == 'all_dates_journal_with_tb_as_of'):
                 reconcile_year(report, parsed, profile, prior, b, order)
             elif not report['blockers']:
