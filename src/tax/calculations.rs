@@ -111,7 +111,7 @@ fn require(c: &mut Calculation, obj: &Map<String,Value>, key: &str, message: &st
 
 pub const T1_2026_SCOPE: &str = "2026 basic T1 income-tax workpaper (rate table ca-2026.1) for a full-year resident of AB, ON, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU at year-end, with Canadian T4 employment, interest and taxable Canadian dividends, a verified RRSP deduction and verified payroll CPP/EI credit amounts. Federal and provincial basic personal amounts, the Canada employment amount and CPP/EI credits only. All other 2025-scope income, deductions and credits are rejected until their 2026 values are sourced. Not a filing.";
 /// Fields allowed in the 2026 basic scope; any other non-zero/true 2025 field is rejected.
-const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable","born_1961_or_earlier","medical_expenses_cents","credits_verified","spouse_adjusted_net_income_cents","family_income_verified","eligible_dependant_net_income_cents","infirm_dependant_18_plus_net_income_cents","dependants_verified","claim_spouse_amount","disability_tax_credit_approved","eligible_pension_income_cents","tuition_cents","donations_cents","home_buyers_amount_cents","adoption_expenses_cents","student_loan_interest_cents","eligible_dividends_cents","other_dividends_cents","dividends_verified"];
+const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable","born_1961_or_earlier","medical_expenses_cents","credits_verified","spouse_adjusted_net_income_cents","family_income_verified","eligible_dependant_net_income_cents","infirm_dependant_18_plus_net_income_cents","dependants_verified","claim_spouse_amount","disability_tax_credit_approved","eligible_pension_income_cents","tuition_cents","donations_cents","home_buyers_amount_cents","adoption_expenses_cents","student_loan_interest_cents","eligible_dividends_cents","other_dividends_cents","dividends_verified","infirm_dependant_lives_with_you"];
 /// 2026 basic T1: federal (CRA current-year brackets, 14% credit rate, BPA $16,452 phasing to $14,829
 /// between $181,440 and $258,482, CEA $1,501) plus AB or a PROVINCES_2026 province. CPP/EI maxima
 /// from T4127-JAN 2026 Tables 8.4-8.7. Anything not sourced for 2026 blocks instead of being guessed.
@@ -166,7 +166,8 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     if ed.is_some() || cg.is_some() {
         require(c,obj,"dependants_verified","Verify line 30400 conditions (no spouse/common-law partner claimed, dependant related, living with you, not infirm) and line 30450 (infirm dependant 18+ who is not your spouse or eligible dependant; one claim per dependant). Infirm eligible dependants and caregiver top-ups are not handled.")?;
         if ed.is_some() && money(obj,"spouse_adjusted_net_income_cents")?>0 { return Err("Line 30400 cannot be claimed with a spouse or common-law partner in this scope".into()); }
-        if cg.is_some() && pc!="BC" { c.diagnostic("provincial_dependant_2026_unsourced","2026 provincial caregiver amounts for infirm dependants are not yet calculated; only the federal line 30450 amount is calculated.",None,true); }
+        let lives=boolean(obj,"infirm_dependant_lives_with_you")?;
+        if cg.is_some() && pc!="BC" && (pc=="ON" || !lives) { c.diagnostic("provincial_dependant_2026_unsourced","2026 provincial amounts for infirm dependants who do not live with you (and the Ontario caregiver amount) are not yet calculated; only the federal line 30450 amount is calculated.",None,true); }
     }
     let ed_amount=ed.map(|n| (bpa-n.max(0)).max(0)).unwrap_or(0);
     let cg_amount=cg.map(|n| (877_300-(n.max(0)-2_060_100).max(0)).max(0)).unwrap_or(0);
@@ -199,7 +200,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let federal=(federal_before-federal_credits-fed_dtc).max(0);
     let (pbpa,pbefore,pcredits)=match prov {
         None => {
-            let pa=sum(&[prov_age_2026(c,"AB",aged,taxable)?,prov_spouse_2026(c,"AB",t.alberta_bpa_cents,spouse_claim,obj)?,prov_dependant_2026(c,"AB",t.alberta_bpa_cents,ed)?,prov_pension_disability_2026(c,"AB",pension,disabled)?])?;
+            let pa=sum(&[prov_age_2026(c,"AB",aged,taxable)?,prov_spouse_2026(c,"AB",t.alberta_bpa_cents,spouse_claim,obj)?,prov_dependant_2026(c,"AB",t.alberta_bpa_cents,ed)?,prov_caregiver_2026(c,"AB",cg,obj)?,prov_pension_disability_2026(c,"AB",pension,disabled)?])?;
             let base=sum(&[t.alberta_bpa_cents,cpp,ei,pa])?;
             // CRA T4127-JAN 2026 K5P = ((K1P+K2P) - $4,896) x 0.25, i.e. 2% (25% of 8%) of Alberta credit amounts over
             // $61,200 ($4,896 / 8%); Alberta supplemental tax credit, AB428 line 61545 (alberta.ca: 2026 amounts rise 2%).
@@ -214,7 +215,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
             let mut b=p.bpa_cents.unwrap_or(bpa);
             // T4127-JAN 2026 BPAMB: $15,780 reduced by (NI - $200,000) x 15,780/200,000, nil at $400,000.
             if p.code=="MB" { b-=rounded_ratio((taxable-20_000_000).clamp(0,20_000_000),b,20_000_000)?; } let ce=if p.employment_amount { cea } else { 0 };
-            let pa=sum(&[prov_age_2026(c,p.code,aged,taxable)?,prov_spouse_2026(c,p.code,b,spouse_claim,obj)?,prov_dependant_2026(c,p.code,b,ed)?,prov_pension_disability_2026(c,p.code,pension,disabled)?])?;
+            let pa=sum(&[prov_age_2026(c,p.code,aged,taxable)?,prov_spouse_2026(c,p.code,b,spouse_claim,obj)?,prov_dependant_2026(c,p.code,b,ed)?,prov_caregiver_2026(c,p.code,cg,obj)?,prov_pension_disability_2026(c,p.code,pension,disabled)?])?;
             let mut extra=0; let mut extra_credit=0;
             if p.code=="BC" {
                 // gov.bc.ca "B.C. basic personal income tax credits" (updated April 20, 2026), 2026 column: medical expenses
@@ -306,6 +307,21 @@ fn t1_2026_on(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
     let federal=c.totals["federal_tax"]; let paid=c.totals["payments"]; let tax=federal+provincial;
     c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("balance",tax-paid);
     Ok(())
+}
+
+/// 2026 provincial caregiver amount (line 58185) for an infirm dependant 18+ who lives with you, from CRA's 2026 TD1
+/// provincial forms (td1xx-26e.pdf, "Caregiver amount" line): full amount when the dependant's net income is at or below
+/// the stated threshold, partial amount = full amount less net income over the threshold (each form's stated upper limit
+/// equals threshold + full amount). TD1AB $13,180/$20,956; TD1MB $3,605/$12,312; TD1NB $5,957/$20,340; TD1NL $3,553/$17,364;
+/// TD1NS $4,898/$13,677; TD1NT $6,032/$20,601; TD1NU $6,032/$20,601; TD1PE $2,446/$11,953; TD1SK $14,266/$19,490;
+/// TD1YT $8,773/$20,601. BC is handled from gov.bc.ca; ON (TD1ON-WS formula) and non-resident dependants are unsupported.
+const PROV_CAREGIVER_2026: &[(&str,i64,i64)] = &[("AB",1_318_000,2_095_600),("MB",360_500,1_231_200),("NB",595_700,2_034_000),("NL",355_300,1_736_400),("NS",489_800,1_367_700),("NT",603_200,2_060_100),("NU",603_200,2_060_100),("PE",244_600,1_195_300),("SK",1_426_600,1_949_000),("YT",877_300,2_060_100)];
+fn prov_caregiver_2026(c: &mut Calculation, code: &str, cg: Option<i64>, obj: &Map<String,Value>) -> Result<i64,String> {
+    let Some(n)=cg else { return Ok(0) };
+    if !boolean(obj,"infirm_dependant_lives_with_you")? { return Ok(0); }
+    let Some(&(_,max,thr))=PROV_CAREGIVER_2026.iter().find(|x| x.0==code) else { return Ok(0) };
+    let a=(max-(n.max(0)-thr).max(0)).max(0);
+    c.line(&format!("{code}58185"),&format!("{code} caregiver amount (2026 TD1{code})"),a); Ok(a)
 }
 
 /// 2026 provincial/territorial age amounts (max, net-income threshold) from CRA's 2026 TD1 provincial forms
@@ -961,6 +977,14 @@ mod tests {
         for p in ["NL","NB","MB","YT"] { assert!(b(p,base.clone()).supported,"{p}"); }
         for p in ["AB","SK","NS","PE","NT","NU"] { assert!(!b(p,base.clone()).supported,"{p}"); }
         let mut u=base.clone(); u["dividends_verified"]=json!(false); assert!(!b("BC",u).supported);
+    }
+    #[test]fn t1_2026_provincial_caregiver(){
+        let l=|c:&Calculation,k:&str|c.lines.iter().find(|x|x.code==k).unwrap().amount;
+        let v=|p:&str,lives:bool| calculate("T1",2026,p,&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"dependants_verified":true,"interest_income_cents":7_000_000,"infirm_dependant_18_plus_net_income_cents":2_100_000,"infirm_dependant_lives_with_you":lives})).unwrap();
+        // NB: $5,957 - ($21,000 - $20,340) = $5,297; SK: 14,266 - (21,000-19,490) = 12,756; NS: 4,898 - 7,323 -> 0.
+        let nb=v("NB",true); assert!(nb.supported,"{:?}",nb.diagnostics); assert_eq!(l(&nb,"NB58185"),529_700);
+        assert_eq!(l(&v("SK",true),"SK58185"),1_275_600); assert_eq!(l(&v("NS",true),"NS58185"),0);
+        assert!(!v("NB",false).supported); assert!(!v("ON",true).supported); assert!(v("AB",true).supported);
     }
     #[test]fn t1_2026_basic_scope_ab_bc_and_gates(){
         let base=json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":8_000_000});
