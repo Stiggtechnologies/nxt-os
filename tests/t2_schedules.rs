@@ -304,3 +304,18 @@ fn class_13_accelerated_in_straddle_year() {
     i.cca[0].leaseholds[0].in_later_calendar_year = None;
     assert!(run(&i).1);
 }
+
+#[test]
+fn immediate_expensing_multiple_years_reg_1104_3_5_a() {
+    let ie = ImmediateExpensing { associated: Some(true), agreement_percent_bp: Some(10_000), agreement_total_bp: Some(10_000), other_tax_year_ends_same_calendar_year: Some(true), designated_on_prescribed_form: true, diep_conditions_confirmed: true, ..Default::default() };
+    let mut i = base();
+    i.tax_year_start = "2023-01-01".into(); i.tax_year_end = "2023-12-31".into();
+    i.cca = vec![CcaClass { class: "8".into(), additions_cents: 600_000_00, diep_cents: 600_000_00, immediate_expensing_cents: 600_000_00, ..Default::default() }];
+    let blocks = |i: &T2Input| { let mut d = vec![]; schedule8(i, &mut d); d.iter().any(|x| x["code"] == "cca_immediate_expensing" && x["blocks_review"] == true) };
+    i.immediate_expensing = Some(ie.clone()); assert!(blocks(&i));
+    i.immediate_expensing = Some(ImmediateExpensing { first_year_in_calendar_year: Some(true), ..ie.clone() }); assert!(!blocks(&i));
+    i.immediate_expensing = Some(ImmediateExpensing { first_year_in_calendar_year: Some(false), first_year_limit_cents: Some(500_000_00), ..ie.clone() }); assert!(blocks(&i));
+    i.immediate_expensing.as_mut().unwrap().first_year_limit_cents = Some(700_000_00); assert!(!blocks(&i));
+    // Not associated: (3.5)(a) does not apply.
+    i.immediate_expensing = Some(ImmediateExpensing { associated: Some(false), ..ie }); assert!(!blocks(&i));
+}
