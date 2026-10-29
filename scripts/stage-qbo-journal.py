@@ -58,12 +58,14 @@ def cents(value):
     return text
 
 
-def build(data, date_order, prior_data=None, first_year=False):
+def build(data, date_order, prior_data=None, first_year=False, window=None):
     prior = qbo.prior_trial_balance(prior_data) if prior_data is not None else None
-    report = qbo.assess_export_bytes(data, date_order, prior=prior, first_year=first_year)
+    report = qbo.assess_export_bytes(data, date_order, prior=prior, first_year=first_year, window=window)
     if not report["financial_controls_passed"]:
         raise qbo.AssessmentError("financial_controls_blocked")
     books, names = qbo.selected_workbooks(data)
+    if window is not None:
+        books["journal"].fiscal_window = qbo.validate_window(*window)
     journal = qbo.journal_postings(books["journal"], date_order)
     trial = qbo.trial_balance(books["trial_balance"])
     archive_sha = qbo.sha(data)
@@ -112,7 +114,7 @@ def build(data, date_order, prior_data=None, first_year=False):
         # Carry the prior year's closing trial balance forward as this year's
         # opening balance (after QuickBooks' year-end close, if any). Every
         # line is a prior source trial-balance balance; nothing is inferred.
-        for label in closed_opening:
+        for label in [l for l, net in closed_opening.items() if net]:
             accounts.setdefault(label, {"id": account_id(label), "name": label, "kind": None, "tb": None})
         lines = [{"account_id": accounts[label]["id"], "debit_cents": str(max(net, 0)), "credit_cents": str(max(-net, 0)),
                   "source_row": 0, "memo": "Opening balance carried from prior closing trial balance",
@@ -216,6 +218,7 @@ def build(data, date_order, prior_data=None, first_year=False):
         "period_start": journal["date_start"],
         "period_end": journal["date_end"],
         "period_profile": report.get("period_profile", {"kind": "all_dates"}),
+        "fiscal_window": journal.get("fiscal_window"),
         "chunks": return_chunks,
         "controls": controls,
         "entries": len(entries),
@@ -269,10 +272,10 @@ def write_json(path, value):
     return qbo.sha(raw), len(raw)
 
 
-def stage(data, out, cohort, date_order, synthetic_evidence, prior_data=None, first_year=False):
+def stage(data, out, cohort, date_order, synthetic_evidence, prior_data=None, first_year=False, window=None):
     if not op.IDENT.fullmatch(cohort):
         raise qbo.AssessmentError("cohort_alias_invalid")
-    staged = build(data, date_order, prior_data, first_year)
+    staged = build(data, date_order, prior_data, first_year, window)
     out.mkdir(mode=0o700)
     (out / "source.zip").write_bytes(data)
     stage_dir = out / "stage"
@@ -327,6 +330,7 @@ def stage(data, out, cohort, date_order, synthetic_evidence, prior_data=None, fi
         "live_cutover_allowed": False,
         "full_history_means": "All Dates report span only; not a witnessed source freeze",
         "period_profile": staged["period_profile"],
+        "fiscal_window": staged.get("fiscal_window"),
     }
     summary_sha, _ = write_json(stage_dir / "summary.json", summary)
     acquisition = {"format": "nxt-private-queued-qbo-verification/v1", "results": [{
@@ -413,6 +417,7 @@ def main(argv=None):
     parser.add_argument("--synthetic-evidence", action="store_true")
     parser.add_argument("--prior-source", type=Path, help="prior year's export ZIP; its closing trial balance becomes this year's opening")
     parser.add_argument("--first-year", action="store_true", help="first year of a multi-year run with no prior trial balance (partial history)")
+    parser.add_argument("--fiscal-window", help="START:END ISO dates; stage only that fiscal year of an All Dates journal, against a trial balance as of END")
     args = parser.parse_args(argv)
     try:
         if args.out.exists():
@@ -421,7 +426,10 @@ def main(argv=None):
         prior = qbo.read_source(args.prior_source) if args.prior_source else None
         if prior is not None and args.first_year:
             return fail("PRIOR_SOURCE_WITH_FIRST_YEAR")
-        result = stage(data, args.out, args.cohort, args.date_order, args.synthetic_evidence, prior, args.first_year)
+        window = tuple(args.fiscal_window.split(":")) if args.fiscal_window else None
+        if window is not None and len(window) != 2:
+            return fail("FISCAL_WINDOW_INVALID")
+        result = stage(data, args.out, args.cohort, args.date_order, args.synthetic_evidence, prior, args.first_year, window)
         result["cohort"] = args.cohort
         print(json.dumps(result, sort_keys=True))
         return 0

@@ -605,6 +605,13 @@ def journal_postings(book, choice):
     The public assessment omits line payloads. Names, memos and supplied numbers
     are retained here as original cell text. They are not durable source IDs.
     """
+    window = getattr(book, 'fiscal_window', None)
+    if window is not None:
+        book.fiscal_window = None
+        try:
+            return window_postings(journal_postings(book, choice), *window)
+        finally:
+            book.fiscal_window = window
     layout = journal_layout(book)
     if layout in MODERN_COLUMNS:
         return modern_journal_postings(book, choice)
@@ -695,6 +702,48 @@ def grand_total(book, row, exact, columns='HI'):
         else:
             result.append(book.control(address, value))
     return tuple(result)
+
+
+def validate_window(start, end):
+    try:
+        a, b = dt.date.fromisoformat(start), dt.date.fromisoformat(end)
+    except (TypeError, ValueError):
+        raise AssessmentError('fiscal_window_invalid')
+    require(a <= b and (b - a).days <= 366, 'fiscal_window_invalid')
+    return a.isoformat(), b.isoformat()
+
+
+def window_postings(detail, start, end):
+    """One fiscal window of a full-history journal.
+
+    Every whole-export control (group subtotals, balance, grand total) has
+    already passed on the full journal. Entries are kept whole, by entry date;
+    nothing is split, re-dated or dropped silently: counts before and after
+    the window are reported."""
+    inside = lambda g: start <= g['date'] <= end
+    groups = [g for g in detail['groups'] if inside(g)]
+    held_groups = [g for g in detail.get('held_groups', []) if inside(g)]
+    held_rows = {h['row'] for g in held_groups for h in g['held_lines']}
+    accounts = {}
+    for g in groups:
+        for line in g['lines']:
+            old = accounts.setdefault(line['label'], {'debit': 0, 'credit': 0, 'line_count': 0})
+            old['debit'] += line['debit']
+            old['credit'] += line['credit']
+            old['line_count'] += 1
+    every = groups + held_groups
+    require(every, 'fiscal_window_has_no_entries')
+    total = (sum(int(g['debit_cents']) for g in every), sum(int(g['credit_cents']) for g in every))
+    all_groups = detail['groups'] + detail.get('held_groups', [])
+    out = dict(detail)
+    out.update({'groups': groups, 'held_groups': held_groups, 'held_lines': [h for h in detail['held_lines'] if h['row'] in held_rows], 'held_group_count': len(held_groups),
+                'group_count': len(groups), 'line_count': sum(g['line_count'] for g in groups), 'date_start': min(g['date'] for g in every), 'date_end': max(g['date'] for g in every),
+                'debit_cents': str(total[0]), 'credit_cents': str(total[1]),
+                'accounts': [{'label': label, 'label_ref': sha(label.encode('utf-8')), 'line_count': v['line_count'], 'debit_cents': str(v['debit']), 'credit_cents': str(v['credit']), 'net_debit_cents': str(v['debit'] - v['credit'])} for label, v in sorted(accounts.items())],
+                'fiscal_window': {'start': start, 'end': end, 'source_group_count': len(all_groups), 'groups_before_window': sum(g['date'] < start for g in all_groups), 'groups_after_window': sum(g['date'] > end for g in all_groups)}})
+    if detail.get('adjusting_group_count') is not None:
+        out['adjusting_group_count'] = sum(bool(g.get('adjusting')) for g in groups)
+    return out
 
 
 def journal_layout(book):
@@ -891,6 +940,20 @@ def parse_period(label):
         year, last = int(m[3]), MONTHS[m[2]]
         end = (dt.date(year + (last == 12), last % 12 + 1, 1) - dt.timedelta(days=1))
         return dt.date(year, MONTHS[m[1]], 1), end
+    m = re.fullmatch(r'([a-z]+),? (\d{4})\s*-\s*([a-z]+),? (\d{4})', text)
+    if m and m[1] in MONTHS and m[3] in MONTHS:
+        # Year-crossing heading, e.g. `December 2017 - November 2018`.
+        first, last, y1, y2 = MONTHS[m[1]], MONTHS[m[3]], int(m[2]), int(m[4])
+        start, end = dt.date(y1, first, 1), dt.date(y2 + (last == 12), last % 12 + 1, 1) - dt.timedelta(days=1)
+        return (start, end) if start < end and (end - start).days <= 366 else None
+    m = re.fullmatch(r'([a-z]+) (\d{1,2}),? (\d{4})\s*-\s*([a-z]+) (\d{1,2}),? (\d{4})', text)
+    if m and m[1] in MONTHS and m[4] in MONTHS:
+        # `Dec 1, 2017 - Nov 30, 2018` style explicit date range.
+        try:
+            start, end = dt.date(int(m[3]), MONTHS[m[1]], int(m[2])), dt.date(int(m[6]), MONTHS[m[4]], int(m[5]))
+        except ValueError:
+            return None
+        return (start, end) if start <= end and (end - start).days <= 366 else None
     m = re.fullmatch(r'as of ([a-z]+) (\d{1,2}),? (\d{4})', text)
     if m and m[1] in MONTHS:
         try:
@@ -900,9 +963,17 @@ def parse_period(label):
     return None
 
 
-def period_profile(tb_label, journal_label):
+def period_profile(tb_label, journal_label, window=None):
     """Accept identical headings (legacy all-dates profile) or a journal period
-    paired with a trial balance as of exactly that period's end."""
+    paired with a trial balance as of exactly that period's end.
+
+    `window` (start, end ISO dates) selects one fiscal year of an All Dates
+    journal; the trial balance must be as of exactly the window end."""
+    if window is not None:
+        tb = parse_period(tb_label)
+        require(journal_label.strip().lower() == 'all dates', 'fiscal_window_requires_all_dates_journal')
+        require(tb is not None and tb[0] is None and tb[1].isoformat() == window[1], 'fiscal_window_tb_as_of_mismatch')
+        return {'kind': 'journal_period_with_tb_as_of_period_end', 'period_start': window[0], 'period_end': window[1], 'fiscal_window_of_all_dates_journal': True}
     if tb_label == journal_label:
         require(tb_label.strip().lower() == 'all dates', 'only_all_dates_cross_report_profile_supported')
         return {'kind': 'all_dates'}
@@ -1000,7 +1071,7 @@ def activity_before_months(lines_by_date, period_start):
     return out
 
 
-def assess_export_bytes(data, order='auto', prior=None, first_year=False):
+def assess_export_bytes(data, order='auto', prior=None, first_year=False, window=None):
     """Assess one export. `prior` is prior_trial_balance() of the year before
     (multi-year carry-forward). `first_year` marks the first year of a
     multi-year run without a prior trial balance: an opening-balance
@@ -1020,6 +1091,8 @@ def assess_export_bytes(data, order='auto', prior=None, first_year=False):
                 try:
                     book = Workbook(member(outer, selected[kind]), kind)
                     books[kind] = book
+                    if kind == 'journal' and window is not None:
+                        book.fiscal_window = validate_window(*window)
                     record = book.metadata()
                     if kind == 'trial_balance':
                         record['assessment'] = trial_balance(book)
@@ -1047,7 +1120,7 @@ def assess_export_bytes(data, order='auto', prior=None, first_year=False):
         if 'trial_balance' in books and 'journal' in books:
             a, b = books['trial_balance'], books['journal']
             require(a.company_hash == b.company_hash, 'financial_company_heading_mismatch')
-            profile = period_profile(a.period_label, b.period_label)
+            profile = period_profile(a.period_label, b.period_label, validate_window(*window) if window is not None else None)
             report['period_profile'] = profile
             parsed = {r['report']: r for r in report['reports']}
             if profile['kind'] == 'all_dates_journal_with_tb_as_of' and 'journal' in parsed and parsed['journal']['assessment'].get('status') == 'supported_controls_passed':
