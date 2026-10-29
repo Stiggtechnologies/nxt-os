@@ -13,6 +13,7 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("T2 Schedule 1, Net Income (Loss) for Income Tax Purposes (t2sch1-25e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch1.html"),
     ("T2 Schedule 8, Capital Cost Allowance (t2sch8-26e), columns 10, 17, 19, 20, 21 and notes 12, 14, 15", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch8.html"),
     ("Income Tax Regulations (C.R.C., c. 945) s. 1100(1)(a) rates (incl. (xiv) Class 17, 8%), 1100(1)(b) Class 13, 1100(1)(c) Class 14, 1100(2) factors A/A.1 (incl. A(c.1)–(c.3), A(d), A.1(f)), 1100(2.01)/(2.011) straddle years, 1100(3) years under 12 months, Schedule III, 1100(0.1)–(0.3) immediate expensing, 1100(1)(c.1) Class 14.1 additional allowance", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html"),
+    ("Income Tax Regulations (C.R.C., c. 945) s. 1103(2g) transfer of elected 1101(5p)/(5s) classes in the fifth taxation year", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-19.html"),
     ("Income Tax Regulations (C.R.C., c. 945) s. 1104(3.1) designated immediate expensing property, (3.2) $1,500,000 limit, (3.3)–(3.4) associated allocation, (3.5)(a) several years ending in one calendar year while associated, (3.5)(b) years under 51 weeks", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-19.html"),
     ("CRA T4002 ch. 4, Schedule 8 columns 4, 9, 10, 14–18 and 21 (immediate expensing; proceeds reducing AIIP then RIIP)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/t4002/t4002-6.html"),
     ("Income Tax Regulations (C.R.C., c. 945) s. 7307(1) passenger vehicle and 7307(1.1) zero-emission passenger vehicle prescribed amounts; s. 1101(1af), (1ac), (5b.1), (5p), (5q), (5s) separate classes; 1100(1)(a.1)/(a.2) additional allowances; 1104(2) eligible non-residential building", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/FullText.html"),
@@ -20,7 +21,7 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("T2 Schedule 50, Shareholder Information (t2sch50-19e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch50.html"),
     ("CRA GIFI (RC4088): Schedule 100/125 codes 2599, 3499, 3620, 3640, 8299, 8670, 9368, 9990, 9995, 9999", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4088/general-index-financial-information-gifi.html"),
 ];
-pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule and the Reg 1100(3) short-year proration (days/365) and the Reg 1100(2) E/E.1 reduction for proceeds (T4002 columns 14–17) and the Class 14.1 additional allowance (Reg 1100(1)(c.1)); the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled, as is CCPC immediate expensing (Reg 1100(0.1), 1104(3.1)–(3.5)) for DIEP available before 2024; per-vehicle cost caps for Classes 10.1 and 54 (Reg 7307(1), (1.1)) are checked; Reg 1101 separate classes ((1af), (1ac), (5p), (5s), (5b.1) with the 1100(1)(a.1)/(a.2) building allowances) are modelled; other separate classes are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
+pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule and the Reg 1100(3) short-year proration (days/365) and the Reg 1100(2) E/E.1 reduction for proceeds (T4002 columns 14–17) and the Class 14.1 additional allowance (Reg 1100(1)(c.1)); the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled, as is CCPC immediate expensing (Reg 1100(0.1), 1104(3.1)–(3.5)) for DIEP available before 2024; per-vehicle cost caps for Classes 10.1 and 54 (Reg 7307(1), (1.1)) are checked; Reg 1101 separate classes ((1af), (1ac), (5p), (5s), (5b.1) with the 1100(1)(a.1)/(a.2) building allowances) are modelled, with the Reg 1103(2g) fifth-year transfer of (5p)/(5s) classes; other separate classes are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
 
 /// Schedule 1 lines copied from t2sch1-25e. Additions: 101–199 on page 1 plus 201–296
 /// (summed to amount D, line 199). Deductions: 401–499 plus 300–3xx (amount E, line 499).
@@ -125,6 +126,11 @@ pub struct CcaClass {
     /// 1101(5b.1) only: "manufacturing" (Reg 1100(1)(a.1), 6%) or "non_residential" ((a.2), 2%)
     /// when at least 90% of the floor space is so used at year end; "" for none.
     pub building_additional_use: String,
+    /// 1101(5p)/(5s) only (Reg 1103(2g)): how many taxation years have begun after the end of the
+    /// first taxation year in which a property of the class became available for use (ITA 13(26)),
+    /// counting this year; 0 for that first year. At 5 the class is transferred to the general class
+    /// immediately after the beginning of the year.
+    pub years_after_first_available: Option<u32>,
 }
 
 /// Classes each Reg 1101 separate-class rule allows and whether it needs an election.
@@ -314,6 +320,7 @@ pub fn validate(input: &T2Input) -> Result<(), String> {
             if !allowed.is_empty() && !allowed.contains(&c.class.as_str()) { return Err(format!("Class {}: {} applies to Class {}", c.class, c.separate_class, allowed.join("/"))); }
             if c.separate_class == "1101(1ac)" && matches!(c.class.as_str(), "1" | "3" | "6" | "13") { return Err(format!("Class {}: Reg 1101(1ac) excludes buildings and leasehold interests in buildings", c.class)); }
         }
+        if c.years_after_first_available.is_some() && !matches!(c.separate_class.as_str(), "1101(5p)" | "1101(5s)") { return Err("years_after_first_available is only for a 1101(5p)/(5s) separate class (Reg 1103(2g))".into()); }
         if !matches!(c.building_additional_use.as_str(), "" | "manufacturing" | "non_residential") || (!c.building_additional_use.is_empty() && c.separate_class != "1101(5b.1)") { return Err("building_additional_use is manufacturing|non_residential and only for a 1101(5b.1) separate class".into()); }
         if c.separate_class_label.len() > 80 { return Err("separate_class_label is limited to 80 characters".into()); }
         if !classes.insert((c.class.as_str(), c.separate_class.as_str(), c.separate_class_label.as_str())) { return Err(format!("duplicate CCA class {} (use separate_class and separate_class_label for separate classes)", c.class)); }
@@ -415,8 +422,36 @@ fn short_year_days(input: &T2Input) -> Result<Option<i64>, String> {
 /// Schedule 8. Declining-balance classes use Reg 1100(1)(a) rates and the Reg 1100(2) formula
 /// A(B) + A.1(B.1) − 0.5(C); Class 13 follows Reg 1100(1)(b) and Schedule III; Class 14 follows
 /// Reg 1100(1)(c). CCA is floored to the cent so it never exceeds the maximum.
+/// Reg 1103(2g): an elected 1101(5p)/(5s) class is transferred, immediately after the beginning of
+/// the fifth taxation year beginning after the end of the first year in which a property of the
+/// class became available for use, to the class it would otherwise be in. Its opening UCC moves to
+/// the general row of the same Schedule II class.
+fn transfer_1103_2g(input: &T2Input, diagnostics: &mut Vec<Value>) -> Vec<CcaClass> {
+    let mut v = input.cca.clone();
+    for i in 0..v.len() {
+        if !matches!(v[i].separate_class.as_str(), "1101(5p)" | "1101(5s)") { continue; }
+        let (cls, label) = (v[i].class.clone(), v[i].separate_class_label.clone());
+        match v[i].years_after_first_available {
+            None => diag(diagnostics, "cca_separate_class_transfer", format!("Class {cls} {}: set years_after_first_available for the Reg 1103(2g) five-year transfer.", v[i].separate_class), true),
+            Some(n) if n < 5 => {}
+            Some(5) => {
+                let Some(g) = v.iter().position(|x| x.class == cls && x.separate_class.is_empty()) else {
+                    diag(diagnostics, "cca_separate_class_transfer", format!("Class {cls} {label}: Reg 1103(2g) transfers this class to the general Class {cls} this year; add a general Class {cls} row."), true); continue;
+                };
+                let moving = v[i].opening_ucc_cents;
+                if v[i].additions_cents != 0 || v[i].proceeds_cents != 0 { diag(diagnostics, "cca_separate_class_transfer", format!("Class {cls} {label}: after the Reg 1103(2g) transfer the property is in the general class; enter this year's additions and proceeds on the general row."), true); }
+                v[g].opening_ucc_cents += moving; v[i].opening_ucc_cents = 0;
+                diag(diagnostics, "cca_separate_class_transferred", format!("Class {cls} {label}: opening UCC {moving} cents transferred to the general class under Reg 1103(2g)."), false);
+            }
+            Some(_) => diag(diagnostics, "cca_separate_class_transfer", format!("Class {cls} {label}: the Reg 1103(2g) transfer happened in an earlier year; this separate class no longer exists."), true),
+        }
+    }
+    v
+}
+
 pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
-    let classes = &input.cca;
+    let owned = transfer_1103_2g(input, diagnostics);
+    let classes = &owned;
     let (mut recapture, mut terminal, mut cca) = (0i64, 0i64, 0i64);
     let mut rows = vec![];
     let short = short_year_days(input);
@@ -447,7 +482,6 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
         let mut row_pre: Option<Value> = None;
         if let Some((_, elected)) = separate_class_rule(&c.separate_class) {
             if elected && !c.separate_class_election_filed { diag(diagnostics, "cca_separate_class_election", format!("Class {}: {} applies only if elected by letter attached to the return for the year of acquisition (Reg 1101(5q)/(5b.1)).", c.class, c.separate_class), true); }
-            if matches!(c.separate_class.as_str(), "1101(5p)" | "1101(5s)") { diag(diagnostics, "cca_separate_class_transfer", format!("Class {}: the Reg 1103(2g) transfer back to the general class after five years is not modelled; confirm the year.", c.class), false); }
         }
         let zev = matches!(c.class.as_str(), "54" | "55" | "56");
         let ie = if ie_ok { c.immediate_expensing_cents } else { 0 };

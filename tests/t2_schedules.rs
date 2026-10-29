@@ -319,3 +319,26 @@ fn immediate_expensing_multiple_years_reg_1104_3_5_a() {
     // Not associated: (3.5)(a) does not apply.
     i.immediate_expensing = Some(ImmediateExpensing { associated: Some(false), ..ie }); assert!(!blocks(&i));
 }
+
+#[test]
+fn reg_1103_2g_fifth_year_transfer() {
+    let mut i = base();
+    let sep = |n| CcaClass { class: "8".into(), opening_ucc_cents: 4_000_00, separate_class: "1101(5p)".into(), separate_class_label: "Software 2021".into(), separate_class_election_filed: true, years_after_first_available: n, ..Default::default() };
+    let general = CcaClass { class: "8".into(), opening_ucc_cents: 10_000_00, ..Default::default() };
+    let run = |i: &T2Input| { let mut d = vec![]; let s = schedule8(i, &mut d); (s, d) };
+    i.cca = vec![general.clone(), sep(Some(4))];
+    let (s, d) = run(&i);
+    assert_eq!(s["classes"][1]["maximum_cca_cents"], 800_00);
+    assert!(!d.iter().any(|x| x["blocks_review"] == true), "{d:?}");
+    i.cca = vec![general.clone(), sep(Some(5))];
+    let (s, d) = run(&i);
+    assert_eq!(s["classes"][0]["maximum_cca_cents"], 2_800_00); // 20% × (10,000 + 4,000)
+    assert_eq!(s["classes"][1]["maximum_cca_cents"], 0);
+    assert!(d.iter().any(|x| x["code"] == "cca_separate_class_transferred"));
+    assert!(!d.iter().any(|x| x["blocks_review"] == true), "{d:?}");
+    let blocks = |i: &T2Input| run(i).1.iter().any(|x| x["code"] == "cca_separate_class_transfer" && x["blocks_review"] == true);
+    i.cca = vec![sep(Some(5))]; assert!(blocks(&i));
+    i.cca = vec![general.clone(), sep(Some(6))]; assert!(blocks(&i));
+    i.cca = vec![general.clone(), sep(None)]; assert!(blocks(&i));
+    i.cca = vec![CcaClass { years_after_first_available: Some(1), ..general }]; assert!(validate(&i).is_err());
+}
