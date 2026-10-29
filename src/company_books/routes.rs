@@ -43,6 +43,16 @@ pub fn router(state: Arc<CompanyBooks>) -> Router {
         .route("/api/company-books/{company}/parallel/journals/{entry}/sparse", post(sparse_native))
         .route("/api/company-books/{company}/parallel/journals/{entry}/delete", post(delete_native))
         .route("/api/company-books/{company}/parallel/attachments", post(attach))
+        .route("/api/company-books/{company}/parallel/sales-tax", post(sales_tax))
+        .route("/api/company-books/{company}/parallel/departments", post(add_department))
+        .route("/api/company-books/{company}/parallel/items", post(add_item))
+        .route("/api/company-books/{company}/parallel/employees", post(add_employee))
+        .route("/api/company-books/{company}/parallel/estimates", post(add_estimate))
+        .route("/api/company-books/{company}/parallel/purchase-orders", post(add_purchase_order))
+        .route("/api/company-books/{company}/parallel/time", post(add_time))
+        .route("/api/company-books/{company}/parallel/budgets", post(add_budget))
+        .route("/api/company-books/{company}/parallel/payroll", post(payroll_run))
+        .route("/api/company-books/{company}/parallel/daily", get(daily))
         .route(
             "/api/company-books/{company}/register/{account}",
             get(register),
@@ -195,3 +205,15 @@ async fn delete_native(State(s): S, Path((c, e)): Path<(String, String)>, Json(v
 async fn attach(State(s): S, Path(c): Path<String>, Json(v): Json<super::subledger::AttachmentInput>) -> R {
     Ok(Json(s.attach(&c, v).await?))
 }
+async fn sales_tax(State(s): S, Path(c): Path<String>, Json(v): Json<super::subledger::SalesTaxInput>) -> R {
+    Ok(Json(s.set_sales_tax(&c, v).await?))
+}
+async fn add_department(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NamedInput>) -> R { Ok(Json(s.add_department(&c, v).await?)) }
+async fn add_item(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NamedInput>) -> R { Ok(Json(s.add_item(&c, v).await?)) }
+async fn add_employee(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NamedInput>) -> R { Ok(Json(s.add_employee(&c, v).await?)) }
+async fn add_estimate(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NonPostingInput>) -> R { Ok(Json(s.add_estimate(&c, v).await?)) }
+async fn add_purchase_order(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NonPostingInput>) -> R { Ok(Json(s.add_purchase_order(&c, v).await?)) }
+async fn add_time(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::TimeInput>) -> R { Ok(Json(s.add_time(&c, v).await?)) }
+async fn add_budget(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::BudgetInput>) -> R { Ok(Json(s.add_budget(&c, v).await?)) }
+async fn payroll_run(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.payroll_run(&c).await?)) }
+async fn daily(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.daily(&c).await?)) }

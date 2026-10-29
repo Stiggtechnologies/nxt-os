@@ -20,6 +20,8 @@ struct ParallelState {
     annotations: Vec<Annotation>,
     #[serde(default)]
     deletions: Vec<String>,
+    #[serde(default)]
+    sales_tax_enabled: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Class { id: String, name: String }
@@ -36,6 +38,10 @@ struct OpenDoc {
     lines: Vec<DocLine>,
     total_cents: i64,
     journal_entry_id: String,
+    #[serde(default)]
+    document_number: String,
+    #[serde(default)]
+    tax_cents: i64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct DocPayment { id: String, document_id: String, amount_cents: i64, journal_entry_id: String }
@@ -52,6 +58,15 @@ pub struct ClassInput { pub request_id: String, pub name: String }
 pub struct DocLineInput { pub account_id: String, pub amount_cents: i64, pub class_id: Option<String> }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct TaxLineInput { pub account_id: String, pub amount_cents: i64 }
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaxDetailInput { pub tax_cents: i64, pub lines: Vec<TaxLineInput> }
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SalesTaxInput { pub enabled: bool }
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DocumentInput {
     pub request_id: String,
     pub expected_head: String,
@@ -62,6 +77,10 @@ pub struct DocumentInput {
     pub memo: String,
     pub control_account: String,
     pub lines: Vec<DocLineInput>,
+    #[serde(default)]
+    pub document_number: String,
+    #[serde(default)]
+    pub tax: Option<TaxDetailInput>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -133,6 +152,12 @@ impl CompanyBooks {
         self.parallel_save(company, raw.as_deref(), &state).await?;
         Ok(json!({"id": input.request_id, "write_back": false, "authoritative_system": "quickbooks"}))
     }
+    pub async fn set_sales_tax(&self, company: &str, input: SalesTaxInput) -> Result<Value> {
+        let (raw, mut state) = self.parallel_load(company).await?;
+        state.sales_tax_enabled = input.enabled;
+        self.parallel_save(company, raw.as_deref(), &state).await?;
+        Ok(json!({"sales_tax_enabled": input.enabled, "write_back": false, "authoritative_system": "quickbooks"}))
+    }
     pub async fn open_document(&self, company: &str, input: DocumentInput) -> Result<Value> {
         if !matches!(input.kind.as_str(), "invoice" | "bill") { return Err(bad("Document kind must be invoice or bill")); }
         if !date(&input.date) || !text(&input.memo, 500) || !text(&input.contact, 120) || input.contact.trim().is_empty() { return Err(bad("Document contact, date, or memo is invalid")); }
@@ -149,17 +174,47 @@ impl CompanyBooks {
                 if !state.classes.iter().any(|c| &c.id == class) { return Err(bad("Unknown class")); }
             }
         }
+        let document_number = input.document_number.trim();
+        if !document_number.is_empty() && (!text(document_number, 40) || document_number.contains('/') || document_number.contains('\\')) {
+            return Err(bad("Document number is invalid"));
+        }
+        let mut tax_posted = 0_i64;
+        let mut tax_lines_posted = Vec::new();
+        let mut tax_detail_ignored = false;
+        if let Some(tax) = &input.tax {
+            if !state.sales_tax_enabled {
+                tax_detail_ignored = true;
+            } else if tax.tax_cents < 0 || tax.lines.is_empty() || tax.lines.len() > 8 {
+                return Err(bad("Sales-tax detail needs 1–8 nonnegative lines that balance"));
+            } else {
+                let mut sum = 0_i64;
+                for line in &tax.lines {
+                    if line.amount_cents <= 0 || !valid_id(&line.account_id) { return Err(bad("Tax line account or amount is invalid")); }
+                    sum = sum.checked_add(line.amount_cents).ok_or_else(|| bad("Amount overflow"))?;
+                    tax_lines_posted.push((line.account_id.clone(), line.amount_cents));
+                }
+                if sum != tax.tax_cents { return Err(bad("Tax detail does not balance to the tax total and would break the journal")); }
+                tax_posted = tax.tax_cents;
+            }
+        }
+        let gross = total.checked_add(tax_posted).ok_or_else(|| bad("Amount overflow"))?;
         let mut lines = Vec::new();
         if input.kind == "invoice" {
-            lines.push(NativeLine { account_id: input.control_account.clone(), debit_cents: cents(total), credit_cents: "0".into(), memo: input.memo.clone() });
+            lines.push(NativeLine { account_id: input.control_account.clone(), debit_cents: cents(gross), credit_cents: "0".into(), memo: input.memo.clone() });
             for line in &input.lines {
                 lines.push(NativeLine { account_id: line.account_id.clone(), debit_cents: "0".into(), credit_cents: cents(line.amount_cents), memo: input.memo.clone() });
+            }
+            for (account, amount) in &tax_lines_posted {
+                lines.push(NativeLine { account_id: account.clone(), debit_cents: "0".into(), credit_cents: cents(*amount), memo: input.memo.clone() });
             }
         } else {
             for line in &input.lines {
                 lines.push(NativeLine { account_id: line.account_id.clone(), debit_cents: cents(line.amount_cents), credit_cents: "0".into(), memo: input.memo.clone() });
             }
-            lines.push(NativeLine { account_id: input.control_account.clone(), debit_cents: "0".into(), credit_cents: cents(total), memo: input.memo.clone() });
+            for (account, amount) in &tax_lines_posted {
+                lines.push(NativeLine { account_id: account.clone(), debit_cents: cents(*amount), credit_cents: "0".into(), memo: input.memo.clone() });
+            }
+            lines.push(NativeLine { account_id: input.control_account.clone(), debit_cents: "0".into(), credit_cents: cents(gross), memo: input.memo.clone() });
         }
         let posted = self.journal(company, JournalInput {
             request_id: input.request_id.clone(),
@@ -181,12 +236,14 @@ impl CompanyBooks {
             memo: input.memo.clone(),
             control_account: input.control_account.clone(),
             lines: input.lines.iter().map(|line| DocLine { account_id: line.account_id.clone(), amount_cents: line.amount_cents, class_id: line.class_id.clone() }).collect(),
-            total_cents: total,
+            total_cents: gross,
             journal_entry_id: entry_id,
+            document_number: document_number.into(),
+            tax_cents: tax_posted,
         };
         state.documents.push(doc.clone());
         self.parallel_save(company, raw.as_deref(), &state).await?;
-        Ok(json!({"id": doc.id, "journal_entry_id": doc.journal_entry_id, "total_cents": total, "open_cents": total, "head_sha256": head, "write_back": false, "authoritative_system": "quickbooks"}))
+        Ok(json!({"id": doc.id, "journal_entry_id": doc.journal_entry_id, "document_number": doc.document_number, "total_cents": gross, "tax_cents": tax_posted, "tax_detail_ignored": tax_detail_ignored, "open_cents": gross, "head_sha256": head, "write_back": false, "authoritative_system": "quickbooks"}))
     }
     pub async fn apply_payment(&self, company: &str, input: PaymentInput) -> Result<Value> {
         if input.amount_cents <= 0 { return Err(bad("Payment amount must be positive cents")); }
