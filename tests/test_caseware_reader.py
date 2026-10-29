@@ -39,6 +39,31 @@ BL = [("ID", "C", 1), ("NUMBER", "C", 40), ("ENTITY", "C", 40), ("YEAR", "C", 1)
 MP = [("MAP_NO", "C", 40), ("AC_DESC", "C", 50), ("GIFI", "C", 10), ("TYPE", "C", 1)]
 
 
+def cfb_bytes(stream):
+    stream += b"\0" * (-len(stream) % 512)
+    if len(stream) < 4096: stream += b"\0" * (4096 - len(stream))
+    n = len(stream) // 512
+    fat = list(range(1, n)) + [0xFFFFFFFE, 0xFFFFFFFE, 0xFFFFFFFD]  # data chain, dir, fat
+    fat += [0xFFFFFFFF] * (128 - len(fat))
+    def de(name, typ, start, size, child=0xFFFFFFFF):
+        nm = (name + "\0").encode("utf-16-le")
+        return nm.ljust(64, b"\0") + struct.pack("<HBBIII", len(nm), typ, 1, 0xFFFFFFFF, 0xFFFFFFFF, child) + b"\0" * 36 + struct.pack("<IIQ", start, 0, size)[:12] + b"\0" * 0
+    d = de("Root Entry", 5, 0xFFFFFFFE, 0, 1)
+    d = d[:116] + struct.pack("<II", 0xFFFFFFFE, 0) + d[124:128]
+    w = de("CaseView", 2, 0, len(stream))
+    w = w[:116] + struct.pack("<II", 0, len(stream)) + w[124:128]
+    dirsec = (d + w).ljust(512, b"\0")
+    hdr = (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0"*16 + struct.pack("<HHHH", 0x3E, 3, 0xFFFE, 9) + struct.pack("<H", 6) + b"\0"*6
+           + struct.pack("<IIIIIIIII", 0, 1, n, 0, 4096, 0xFFFFFFFE, 0, 0xFFFFFFFE, 0) + struct.pack("<I", n + 1) + b"\xff" * 4 * 108)
+    return hdr + stream + dirsec + struct.pack("<128I", *fat)
+
+
+
+PR = [("DOCGUID", "C", 10), ("NO", "C", 4), ("WP_REF", "C", 8), ("DONE_BY", "C", 8), ("DATE", "C", 8), ("CHECK", "C", 2)]
+HI = [("CATEGORY", "C", 4), ("TYPE", "C", 4), ("OBJECTID", "C", 8), ("USER", "C", 8), ("STARTDATE", "C", 8)]
+TS = [("DOCID", "C", 8), ("SUBJECT", "C", 20), ("PRIORITY", "C", 2), ("RESOLUTION", "C", 10)]
+
+
 class CasewareReaderTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -99,6 +124,24 @@ class CasewareReaderTests(unittest.TestCase):
         after = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in self.eng.iterdir()}
         self.assertEqual(before, after, "source folder must be untouched")
         self.assertEqual(cw.cmd_verify(out), {"verified_files": 5, "accounts": 4})
+
+    def test_cvw_streams_and_signoffs_are_read_not_rendered(self):
+        (self.eng / "Synth20.cvw").write_bytes(cfb_bytes(b"synthetic caseview stream" * 10))
+        write_dbf(self.eng / "SynthPR.dbf", PR, [
+            {"DOCGUID": "g1", "NO": "1", "WP_REF": "A1", "DONE_BY": "SYN", "DATE": "20250131", "CHECK": "Y"},
+            {"DOCGUID": "g1", "NO": "2", "WP_REF": "A2"}])
+        write_dbf(self.eng / "SynthHI.dbf", HI, [{"CATEGORY": "DOC", "TYPE": "SIGN", "OBJECTID": "o1", "USER": "SYN", "STARTDATE": "20250201"}])
+        write_dbf(self.eng / "SynthTS.dbf", TS, [{"DOCID": "d1", "SUBJECT": "Synthetic issue", "PRIORITY": "1"}])
+        d = cw.read_documents(self.eng)
+        by = {x["file"]: x for x in d["documents"]}
+        self.assertEqual(by["Synth20.cvw"]["container"], "ole2")
+        self.assertEqual(by["Synth20.cvw"]["streams"][0]["name"], "CaseView")
+        self.assertFalse(by["Synth20.cvw"]["rendered"])
+        self.assertEqual(d["unreadable"], ["Synth10.cvw"])
+        so = cw.read_signoffs(self.eng)
+        self.assertEqual(so["counts"], {"procedures": 2, "procedures_signed": 1, "history_events": 1, "issues": 1, "open_issues": 1})
+        self.assertEqual(so["procedures"][0]["date"], "2025-01-31")
+        self.assertFalse(so["role_protection_observed"])
 
     def test_verify_detects_tampering(self):
         out = self.root / "out"
