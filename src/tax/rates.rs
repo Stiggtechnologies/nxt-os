@@ -120,6 +120,10 @@ pub const RATE_SOURCES: &[(&str, &str, &str, &str, &str)] = &[
     ("ca-2025.1","cpp_enhanced_max_cents","$1,074.00 (first + second additional CPP deduction maximum, derived)",CRA_T4127_JUL_2025,"unvalidated"),
     ("ca-2025.1","medical_threshold_cents","$2,834 (3% of net income ceiling)",CRA_INDEXATION,"sourced"),
     ("ca-2025.1","rrsp_dollar_limit_cents","$32,490",CRA_RRSP_LIMITS,"sourced"),
+    ("ca-2025.1","capital_gains_inclusion","1/2 for 2025 (2/3 increase cancelled 21 March 2025)","https://www.canada.ca/en/department-finance/news/2025/03/government-of-canada-cancels-capital-gains-tax-increase.html","unvalidated"),
+    ("ca-2025.1","pension_income_amount_cents","$2,000 maximum (line 31400, not indexed)","https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-31400-pension-income-amount.html","unvalidated"),
+    ("ca-2025.1","donation_credit_rates","14.5% on first $200 (2025 blended lowest rate, unconfirmed), 29% above, 33% on income over $253,414","https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-34900-donations-gifts.html","unvalidated"),
+    ("ca-2025.1","tuition_credit_rate","14.5% of eligible T2202 tuition (current year)","https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-32300-your-tuition-education-textbook-amounts.html","unvalidated"),
     ("ca-2025.1","t2_rates","Federal 15%/9%, Alberta 8%/2%, $500,000 business limit","https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/corporations/corporation-tax-rates.html","unvalidated"),
 ];
 
