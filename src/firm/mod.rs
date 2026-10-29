@@ -340,6 +340,30 @@ impl Firm {
         Ok(json!(run))
     }
 
+    /// One client's work across Firm: projects with open/overdue tasks, closes, playbooks and
+    /// applied charts, as of `today` (YYYY-MM-DD, defaults to the UTC date). Read-only.
+    pub async fn client_work(&self, client: &str, today: Option<&str>) -> FResult<Value> {
+        text(client, "client reference", 120, true)?;
+        let today = match today { Some(d) => { date(d)?; d.to_string() }, None => Utc::now().format("%Y-%m-%d").to_string() };
+        let s = self.snapshot().await?;
+        let same = |c: &str| !c.trim().is_empty() && c.trim().eq_ignore_ascii_case(client.trim());
+        let overdue = |t: &Task| !t.completed && t.due_date.as_deref().is_some_and(|d| d < today.as_str());
+        let projects: Vec<Value> = s.projects.iter().filter(|p| same(&p.client_ref)).map(|p| {
+            let open = p.tasks.iter().filter(|t| !t.completed).count();
+            let late = p.tasks.iter().filter(|t| overdue(t)).count();
+            json!({"id":p.id,"name":p.name,"status":p.status,"owner":p.owner,"due_date":p.due_date,"open_tasks":open,"overdue_tasks":late,
+                "next_due":p.tasks.iter().filter(|t| !t.completed).filter_map(|t| t.due_date.clone()).min()})
+        }).collect();
+        let closes: Vec<Value> = s.closes.iter().filter(|c| same(&c.client_ref)).map(|c| json!({"id":c.id,"name":c.name,"status":c.status,
+            "period_end":c.period_end,"due_date":c.due_date,"open_tasks":c.tasks.iter().filter(|t| !t.completed).count(),"overdue_tasks":c.tasks.iter().filter(|t| overdue(t)).count()})).collect();
+        let playbooks: Vec<Value> = s.playbooks.iter().filter(|p| p.client_refs.iter().any(|c| same(c))).map(|p| json!({"id":p.id,"name":p.name})).collect();
+        let charts: Vec<Value> = s.applied_charts.iter().filter(|a| same(&a.company_label)).map(|a| json!({"id":a.id,"template_id":a.template_id})).collect();
+        let open_tasks: usize = projects.iter().chain(closes.iter()).map(|v| v["open_tasks"].as_u64().unwrap_or(0) as usize).sum();
+        let overdue_tasks: usize = projects.iter().chain(closes.iter()).map(|v| v["overdue_tasks"].as_u64().unwrap_or(0) as usize).sum();
+        Ok(json!({"client_ref":client.trim(),"as_of":today,"projects":projects,"closes":closes,"playbooks":playbooks,"applied_charts":charts,
+            "totals":{"open_tasks":open_tasks,"overdue_tasks":overdue_tasks},"source":"nxt_parallel_not_quickbooks"}))
+    }
+
     pub async fn tick(&self, input: TickInput) -> FResult<Value> {
         let at = input.now.as_deref().map(utc_timestamp).transpose()?.unwrap_or_else(Utc::now);
         let stamp = at.to_rfc3339_opts(SecondsFormat::Secs, true);
@@ -489,9 +513,10 @@ impl Firm {
         text(&input.name, "close name", 160, true)?; date(&input.period_start)?; date(&input.period_end)?; optional_date(&input.due_date)?;
         if input.period_start > input.period_end { return Err(bad("period_start must not follow period_end")); }
         for role in [&input.preparer, &input.reviewer, &input.approver] { text(role, "responsibility", 120, false)?; }
+        let client_ref = match &input.client_ref { Some(value) => { text(value, "client reference", 120, false)?; value.trim().to_string() }, None => String::new() };
         let inputs = input.tasks.clone().unwrap_or_else(|| ["Reconcile period balances", "Review supporting schedules", "Prepare financial reports"].into_iter().map(|title| TaskInput { id: None, title: title.into(), assignee: input.preparer.clone(), due_date: input.due_date.clone() }).collect());
         if inputs.is_empty() { return Err(bad("close requires at least one checklist task")); }
-        let record = Close { id: id("close"), name: input.name.trim().into(), period_start: input.period_start, period_end: input.period_end, due_date: input.due_date, preparer: input.preparer.trim().into(), reviewer: input.reviewer.trim().into(), approver: input.approver.trim().into(), status: "open".into(), tasks: tasks(&inputs)?, created_at: now(), updated_at: now() };
+        let record = Close { id: id("close"), name: input.name.trim().into(), period_start: input.period_start, period_end: input.period_end, due_date: input.due_date, preparer: input.preparer.trim().into(), reviewer: input.reviewer.trim().into(), approver: input.approver.trim().into(), status: "open".into(), tasks: tasks(&inputs)?, created_at: now(), updated_at: now(), client_ref };
         self.mutate(|s| { capacity(s.closes.len(), 200, "closes")?; s.closes.push(record.clone()); audit(s, "created", "close", &record.id, &record.name); Ok(record.clone()) }).await
     }
 

@@ -201,6 +201,9 @@ pub struct Close {
     pub tasks: Vec<Task>,
     pub created_at: String,
     pub updated_at: String,
+    /// NXT client label for a client books close. Empty for firm-internal closes.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub client_ref: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -214,6 +217,7 @@ pub struct CloseInput {
     #[serde(default)] pub reviewer: String,
     #[serde(default)] pub approver: String,
     pub tasks: Option<Vec<TaskInput>>,
+    #[serde(default)] pub client_ref: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
