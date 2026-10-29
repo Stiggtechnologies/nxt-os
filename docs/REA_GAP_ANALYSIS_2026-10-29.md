@@ -76,8 +76,8 @@ Still not 100% anywhere. Every remaining row needs either vendor files or creden
 2. **Vendor tie-out for T1/T2.** Real DT Max output (on Orville's PC, offline) and a WebTax credential, paired through parallel-compare. **External.**
 3. **Outbound delivery.** E-sign links, OTP codes and reminders queue in the outbox and nothing is emailed. Closing it needs an email/SMS provider key and approval to send. The hourly cron now exists (#60, `GET /api/cron/esign-sweep`, dry-run by default); it stays inert until `CRON_SECRET` (16+ chars) is set in Vercel, and queues reminders only with `NXT_SWEEP_CRON_MODE=queue`. Hourly crons may need a Vercel Pro plan. **External plus Orville's env step.**
 4. **Production staff cutover.** Create the staff accounts, enroll MFA, then set `NXT_BREAK_GLASS=off`. This is an operational step for Orville.
-5. **Client scoping for migrations.** Signatures, firm projects/closes/client views and company books are now client-scoped (#60 and the client-ops PR); migrations still rely on role checks only. **Code.**
-6. **Tax coverage.** QC TP-1 and years other than 2025 (T1); T3 slips and provincial tax; T5013 CCA. **Code, plus published forms.**
+5. ~~Client scoping for migrations.~~ Done in #64 (cohort reference is the client label; chunk upload and publish are firm-wide).
+6. **Tax coverage.** T2 Schedules 1, 8, 50 and Schedule 100/125 cross-checks are now computed (#66, filed:false; straight-line CCA classes, AIIP factors and other schedules still open). QC TP-1 and years other than 2025 (T1); T3 slips and provincial tax; T5013 CCA. **Code, plus published forms.**
 7. **QBO OAuth and payroll exports** for the remaining companies. **External.**
 8. **Caseware CaseView/iXBRL/TaxCycle file and Xero.** **External: formats and accounts.**
 
@@ -92,3 +92,6 @@ Same formula, measured against main after #59 and #60.
 | All | | | Temporary passwords now force a change: every route except me, password, MFA enrollment and logout returns 403 until the password changes (`staff_identity`). |
 
 Measured-commit note: the evening pass above was measured at the main of #58, not `3a0bfdd`.
+
+
+Human and production steps are listed in plain language in [OPERATOR_STEPS.md](OPERATOR_STEPS.md).
