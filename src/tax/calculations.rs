@@ -109,6 +109,68 @@ fn require(c: &mut Calculation, obj: &Map<String,Value>, key: &str, message: &st
     if !boolean(obj,key)? { c.diagnostic("verification_required",message,Some(key),true); } Ok(())
 }
 
+pub const T1_2026_SCOPE: &str = "2026 basic T1 income-tax workpaper (rate table ca-2026.1) for a full-year resident of AB, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU at year-end, with Canadian T4 employment and interest only, a verified RRSP deduction and verified payroll CPP/EI credit amounts. Federal and provincial basic personal amounts, the Canada employment amount and CPP/EI credits only. All other 2025-scope income, deductions and credits are rejected until their 2026 values are sourced. Not a filing.";
+/// Fields allowed in the 2026 basic scope; any other non-zero/true 2025 field is rejected.
+const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable"];
+/// 2026 basic T1: federal (CRA current-year brackets, 14% credit rate, BPA $16,452 phasing to $14,829
+/// between $181,440 and $258,482, CEA $1,501) plus AB or a PROVINCES_2026 province. CPP/EI maxima
+/// from T4127-JAN 2026 Tables 8.4-8.7. Anything not sourced for 2026 blocks instead of being guessed.
+fn t1_2026(c: &mut Calculation, obj: &Map<String,Value>, code: &str) -> Result<(),String> {
+    let t=&super::rates::CA_2026;
+    for (k,v) in obj { if !T1_2026_FIELDS.contains(&k.as_str()) && !(v.is_null() || v==&Value::Bool(false) || v.as_i64()==Some(0)) { return Err(format!("{k} is not supported in the 2026 basic scope (2026 values not yet sourced)")); } }
+    let prov=if code=="AB" { None } else { Some(super::rates::PROVINCES_2026.iter().find(|p| p.code==code).ok_or("No 2026 parameters for this province")?) };
+    let name=prov.map(|p| p.name).unwrap_or("Alberta");
+    require(c,obj,"full_year_resident",&format!("Confirm full-year Canadian residence and {name} residence at December 31, 2026."))?;
+    if prov.is_some() { require(c,obj,"provincial_adjustments_not_applicable",&format!("2026 {name} reductions, surtaxes and credits other than the basic personal amount and CPP/EI are not calculated. Confirm none apply."))?; }
+    let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
+    let rrsp=money(obj,"rrsp_deduction_cents")?; let limit=money(obj,"rrsp_deduction_limit_cents")?;
+    let cpp=money(obj,"cpp_base_credit_cents")?; let enhanced=money(obj,"cpp_enhanced_deduction_cents")?; let ei=money(obj,"ei_credit_cents")?;
+    if rrsp>limit { return Err("RRSP deduction exceeds the declared verified deduction limit".into()); }
+    if rrsp>0 { require(c,obj,"rrsp_verified","Verify the 2026 RRSP deduction and deduction limit (Notice of Assessment).")?; }
+    if cpp>351_945 || enhanced>112_700 || ei>112_307 { return Err("CPP/EI claim exceeds the 2026 employee maximum (T4127-JAN 2026)".into()); }
+    if cpp>0 || enhanced>0 || ei>0 {
+        require(c,obj,"payroll_verified","Enter only verified Schedule 8 base CPP/enhanced CPP deduction and eligible EI credit amounts.")?;
+        if sum(&[cpp,enhanced,ei])?>employment { return Err("Declared payroll claims exceed employment income".into()); }
+    }
+    let income=sum(&[employment,interest])?; let deductions=sum(&[rrsp,enhanced])?;
+    if deductions>income { return Err("Deductions exceed current income; loss and carryforward treatment is outside this scope".into()); }
+    let taxable=income-deductions;
+    let span=25_848_200-18_144_000;
+    let reduction=rounded_ratio((taxable-18_144_000).clamp(0,span),t.federal_bpa_max_cents-t.federal_bpa_min_cents,span)?;
+    let bpa=t.federal_bpa_max_cents-reduction; let cea=employment.min(t.canada_employment_amount_cents);
+    let federal_before=progressive(taxable,t.federal_brackets)?;
+    let federal_credits=rounded_ratio(sum(&[bpa,cea,cpp,ei])?,t.federal_credit_rate_bps,10000)?;
+    let federal=(federal_before-federal_credits).max(0);
+    let (pbpa,pbefore,pcredits)=match prov {
+        None => {
+            let base=sum(&[t.alberta_bpa_cents,cpp,ei])?;
+            if base>6_000_000 { c.diagnostic("ab_supplemental_2026_unsourced","Alberta credit amounts exceed $60,000; the 2026 Alberta supplemental tax credit is not yet sourced.",None,true); }
+            (t.alberta_bpa_cents,progressive(taxable,t.alberta_brackets)?,rounded_ratio(base,800,10000)?)
+        }
+        Some(p) => {
+            if p.code=="MB" && taxable>20_000_000 { c.diagnostic("mb_bpa_phaseout","Manitoba basic personal amount phase-out (net income $200,000-$400,000) is not calculated.",None,true); }
+            // 2025 low-income reductions end below $45,000 in every province; 2026 thresholds are not yet sourced.
+            if ["BC","NL","PE","NS","NB"].contains(&p.code) && taxable<6_000_000 { c.diagnostic("low_income_reduction_2026_unsourced",&format!("{} low-income tax reduction thresholds for 2026 are not yet sourced; incomes under $60,000 cannot be reviewed.",p.name),None,true); }
+            let b=p.bpa_cents.unwrap_or(bpa); let ce=if p.employment_amount { cea } else { 0 };
+            (b,progressive(taxable,p.brackets)?,rounded_ratio(sum(&[b,ce,cpp,ei])?,p.credit_rate_bps,10000)?)
+        }
+    };
+    let pcode=prov.map(|p| p.code).unwrap_or("AB"); let lc=pcode.to_lowercase();
+    let provincial=(pbefore-pcredits).max(0);
+    let tax=sum(&[federal,provincial])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?])?;
+    for (code,label,amount) in [
+        ("10100".to_string(),"Employment income".to_string(),employment),("12100".into(),"Canadian interest income".into(),interest),("15000".into(),"Total income".into(),income),
+        ("20800".into(),"Verified RRSP deduction".into(),rrsp),("22215".into(),"Verified enhanced CPP deduction".into(),enhanced),("23600".into(),"Net income".into(),taxable),("26000".into(),"Taxable income".into(),taxable),
+        ("30000".into(),"Federal basic personal amount".into(),bpa),("30800".into(),"Verified base CPP credit amount".into(),cpp),("31200".into(),"Verified EI credit amount".into(),ei),("31260".into(),"Canada employment amount".into(),cea),
+        ("federal_before_credits".into(),"Federal tax before credits".into(),federal_before),("35000".into(),"Scoped federal non-refundable credits".into(),federal_credits),("42000".into(),"Scoped net federal income tax".into(),federal),
+        (format!("{pcode}58040"),format!("{name} basic personal amount"),pbpa),(format!("{lc}_before_credits"),format!("{name} tax on taxable income"),pbefore),
+        (format!("{pcode}61500"),format!("Scoped {name} non-refundable credits"),pcredits),("42800".into(),format!("Scoped {name} income tax"),provincial),
+    ] { c.line(&code,&label,amount); }
+    c.total("taxable_income",taxable); c.total("federal_tax",federal); c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("payments",paid); c.total("balance",tax-paid);
+    c.diagnostic("benefits_excluded","Balance covers only the stated 2026 income-tax workpaper and payments. Refundable benefits and all other return amounts are excluded. No return is filed.",None,false);
+    Ok(())
+}
+
 pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -> Result<Calculation,String> {
     let scope = match (program, jurisdiction) {
         ("T1","AB") => T1_SCOPE,
@@ -125,7 +187,16 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
     let obj = inputs.as_object().ok_or("inputs must be an object")?;
     let mut c = Calculation { ruleset:RULESET.into(),program:program.into(),tax_year:year,jurisdiction:jurisdiction.into(),lines:vec![],totals:BTreeMap::new(),diagnostics:vec![],supported:true,scope:scope.into(),sources:sources(program),rate_table:super::rates::CA_2025.id.into(),line_validation:BTreeMap::new() };
     c.diagnostic("workpaper_only","Independent native workpaper; not a complete tax return, CRA-certified software, or filing authorization. Relationship parties are routing metadata; only explicit calculator inputs affect amounts.",None,false);
-    if year != 2025 { c.diagnostic("unsupported_year","Only the versioned 2025 calculation scope is implemented. The 2026 rate table (ca-2026.1) is loaded and constant-tested for reference but is not yet wired into calculations.",None,true); }
+    if year == 2026 && program == "T1" && jurisdiction != "ON" && jurisdiction_ok {
+        c.rate_table=super::rates::CA_2026.id.into(); c.scope=T1_2026_SCOPE.into();
+        c.sources.push(source("CRA current-year (2026) tax rates and brackets",super::rates::CRA_CURRENT_YEAR));
+        c.sources.push(source("CRA T4127-JAN 2026",super::rates::CRA_T4127_JAN_2026));
+        c.sources.push(source("CRA indexation adjustment amounts",super::rates::CRA_INDEXATION));
+        require(&mut c,obj,"scope_confirmed",T1_2026_SCOPE)?;
+        if boolean(obj,"other_tax_situations")? { c.diagnostic("unsupported_situation","Additional income, credits, elections or special regimes need a separately implemented ruleset; this calculation cannot be reviewed as supported.",Some("other_tax_situations"),true); }
+        t1_2026(&mut c,obj,jurisdiction)?; return Ok(c);
+    }
+    if year != 2025 { c.diagnostic("unsupported_year",if year==2026 { "2026 is implemented only for the basic T1 scope outside Ontario (and Quebec); Ontario 2026 surtax/health premium/LIFT and T2/T3/T5013 2026 are not wired." } else { "Only the versioned 2025 calculation scope (and the basic 2026 T1 scope) is implemented." },None,true); }
     if !jurisdiction_ok { c.diagnostic("unsupported_jurisdiction",&format!("This program currently supports {expected} only."),None,true); }
     if year != 2025 || !jurisdiction_ok { return Ok(c); }
     require(&mut c,obj,"scope_confirmed",scope)?;
@@ -661,6 +732,26 @@ mod tests {
         assert_eq!(l("extra_federal_credits"),rounded_ratio(1_560_000,1450,10000).unwrap());
         assert!(calculate("T1",2025,"ON",&json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"home_buyers_amount_cents":1_000_001})).is_err());
         assert!(calculate("T1",2025,"ON",&json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"adoption_expenses_cents":1_958_001})).is_err());
+    }
+    #[test]fn t1_2026_basic_scope_ab_bc_and_gates(){
+        let base=json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":8_000_000});
+        let c=calculate("T1",2026,"AB",&base).unwrap();
+        assert_eq!(c.rate_table,"ca-2026.1"); assert!(c.supported,"{:?}",c.diagnostics);
+        let l=|c:&Calculation,k:&str|c.lines.iter().find(|x|x.code==k).unwrap().amount;
+        // Federal: 58,523*14% + 21,477*20.5% = 8,193.22 + 4,402.785 -> 12,596.01; credits (16,452+1,501)*14% = 2,513.42.
+        assert_eq!(l(&c,"federal_before_credits"),819_322+440_279); assert_eq!(l(&c,"35000"),251_342);
+        // Alberta: 61,200*8% + 18,800*10% = 4,896 + 1,880; credits 22,769*8% = 1,821.52.
+        assert_eq!(l(&c,"ab_before_credits"),489_600+188_000); assert_eq!(l(&c,"AB61500"),182_152);
+        let b=calculate("T1",2026,"BC",&base).unwrap(); assert!(b.supported,"{:?}",b.diagnostics);
+        // BC: 50,363*5.6% + 29,637*7.7% = 2,820.33 + 2,282.05; credit 13,216*5.6% = 740.10.
+        assert_eq!(l(&b,"bc_before_credits"),282_033+228_205); assert_eq!(l(&b,"BC61500"),74_010);
+        // BPA phase-out midpoint and gates.
+        let hi=calculate("T1",2026,"SK",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":25_848_200})).unwrap();
+        assert_eq!(l(&hi,"30000"),1_482_900);
+        assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"medical_expenses_cents":100})).is_err());
+        assert!(!calculate("T1",2026,"ON",&base).unwrap().supported);
+        assert!(!calculate("T1",2026,"PE",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap().supported);
+        assert!(!calculate("T2",2026,"AB",&json!({})).unwrap().supported);
     }
     #[test]fn medical_donation_pension_tuition_federal_credits(){
         // Net $50,000: medical threshold 1,500; 4,000 expenses -> 2,500. Pension 2,000 cap. Tuition 3,000. Donations 1,200 -> 200*14.5% + 1,000*29% = 29 + 290 = 319.
