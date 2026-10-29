@@ -75,3 +75,8 @@ Use [MIGRATION_PREFLIGHT.md](MIGRATION_PREFLIGHT.md) to pin the pilot charter an
 
 - `qbo_modern_distribution`: QBO's Journal with an extra `Distribution account number` column in G. Account name is H, debit I, credit J, Adj K; group and grand totals are in I/J. The header must match exactly; every modern-layout control applies unchanged. The account number is retained as raw cell text only.
 - `journal_date_outside_period` still blocks. The blocker now lists each out-of-range entry for review (`entries[]`: source start/subtotal row, date, entry number; no amounts, names or accounts) with `resolution: review_in_source_no_auto_fix`. Nothing is re-dated or dropped.
+
+## Fiscal-year windows of a full-history journal
+
+- Period headings may cross a calendar year: `December 2017 - November 2018`, `Dec 2017-Nov 2018`, `December 1, 2017 - November 30, 2018` (at most 366 days, start before end).
+- `stage-qbo-journal.py --fiscal-window START:END` (and `assess_export_bytes(..., window=(start, end))`) stages one fiscal year of an `All Dates` journal against a trial balance as of exactly END. All whole-export controls (group subtotals, balance, grand total) run on the full journal first; entries are then selected whole by entry date. Nothing is split, re-dated or dropped silently: `fiscal_window` reports the window and the counts of entries before and after it. Chain years with `--prior-source` (prior window's export; its TB is the opening) or `--first-year`. Reconciliation, held lines and suspense review are unchanged.
