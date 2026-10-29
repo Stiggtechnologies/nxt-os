@@ -127,6 +127,13 @@
     const result=await api(`/api/signatures/audit?offset=${auditOffset}&limit=100`);if(!isActive(state))return;
     main.innerHTML=title("Preparation audit","SHA-256 chained workspace events. This is an internal history, not a signing certificate or external timestamp.")+identity+`<section class="panel"><div class="panel-head"><h2>${result.total} retained event(s)</h2><div class="actions">${auditOffset?button("Previous","audit-prev"):""}${auditOffset+100<result.total?button("Next","audit-next"):""}</div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Action / record</th><th>Operator label</th><th>Revision / hash</th></tr></thead><tbody>${result.events.map(e=>`<tr><td>${esc(new Date(e.occurred_at).toLocaleString())}</td><td>${esc(e.action)}<small>${esc(e.record_id)}</small><small>${esc(e.note)}</small></td><td>${esc(e.operator_label)}</td><td>${e.revision}<div class="hash">${esc(e.content_hash)}</div><details><summary>Event hash</summary><div class="hash">${esc(e.event_hash)}<br>Previous: ${esc(e.previous_event_hash||"Genesis")}</div></details></td></tr>`).join("")||'<tr><td colspan="4">No retained events yet.</td></tr>'}</tbody></table></div></section>`;
   }
+  // DocuSign entry (no OAuth, no envelope API). DocuSign sends
+  // frame-ancestors 'self' on apps.docusign.com, so it cannot be framed;
+  // links open in a new tab instead.
+  const DOCUSIGN_LINKS = [["Sign in to DocuSign","https://account.docusign.com"],["Open DocuSign home","https://apps.docusign.com/send/home"]];
+  function docusign() {
+    main.innerHTML=title("DocuSign","Sign in to the firm's DocuSign account. DocuSign blocks embedding, so it opens in a new tab. NXT does not connect to or read from DocuSign.")+`<section class="panel"><div class="actions">${DOCUSIGN_LINKS.map(([l,u],i)=>`<a class="btn${i?"":" primary"}" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(l)} ↗</a>`).join("")}</div><p class="hint">Use your own DocuSign login. No tokens, envelopes or documents pass through NXT OS.</p></section>`;
+  }
   async function connector(state = viewState()) {
     const c=await api("/api/signatures/catalog");if(!isActive(state))return;
     main.innerHTML=title("Connector status","DocuSign is not connected. This module currently supports internal preparation and review.")+`<section class="panel"><h2>DocuSign · Unconfigured</h2><p>No account consent, OAuth connection, sending credentials, webhook listener or external envelope import is configured.</p><p>External sending and signing are disabled in the API. No action in this workspace contacts recipients, executes signatures or produces a signed completion certificate.</p><h3>Native preparation available</h3><ul>${c.native_scope.map(s=>`<li>${esc(s)}</li>`).join("")}</ul><h3>Remaining capability gaps</h3><ul>${c.unsupported.map(s=>`<li>${esc(s)}</li>`).join("")}</ul><p class="hint">Source interface and runtime parity remain unverified. A menu or preparation feature does not establish DocuSign functionality parity.</p></section>`+identity;
@@ -148,7 +155,7 @@
         if(result.envelope.id!==id)throw Error("Preparation response does not match the selected record.");
         current=result;working=structuredClone(current.envelope.draft);editor();
       }
-      else if(view==="templates")templates();else if(view==="audit")await audit(state);else if(view==="connector")await connector(state);else worklist(["home","drafts","review","approved"].includes(view)?view:"home");
+      else if(view==="templates")templates();else if(view==="audit")await audit(state);else if(view==="connector")await connector(state);else if(view==="docusign")docusign();else worklist(["home","drafts","review","approved"].includes(view)?view:"home");
       if(isActive(state)&&parent!==window)parent.postMessage({nxt:"view",view},location.origin);
     }catch(e){if(isActive(state))toast(e.message,true);}
     finally{if(isActive(state)){loading=false;pendingControls();}}
