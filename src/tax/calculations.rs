@@ -109,16 +109,20 @@ fn require(c: &mut Calculation, obj: &Map<String,Value>, key: &str, message: &st
     if !boolean(obj,key)? { c.diagnostic("verification_required",message,Some(key),true); } Ok(())
 }
 
-pub const T1_2026_SCOPE: &str = "2026 basic T1 income-tax workpaper (rate table ca-2026.1) for a full-year resident of AB, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU at year-end, with Canadian T4 employment and interest only, a verified RRSP deduction and verified payroll CPP/EI credit amounts. Federal and provincial basic personal amounts, the Canada employment amount and CPP/EI credits only. All other 2025-scope income, deductions and credits are rejected until their 2026 values are sourced. Not a filing.";
+pub const T1_2026_SCOPE: &str = "2026 basic T1 income-tax workpaper (rate table ca-2026.1) for a full-year resident of AB, ON, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU at year-end, with Canadian T4 employment and interest only, a verified RRSP deduction and verified payroll CPP/EI credit amounts. Federal and provincial basic personal amounts, the Canada employment amount and CPP/EI credits only. All other 2025-scope income, deductions and credits are rejected until their 2026 values are sourced. Not a filing.";
 /// Fields allowed in the 2026 basic scope; any other non-zero/true 2025 field is rejected.
 const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable"];
 /// 2026 basic T1: federal (CRA current-year brackets, 14% credit rate, BPA $16,452 phasing to $14,829
 /// between $181,440 and $258,482, CEA $1,501) plus AB or a PROVINCES_2026 province. CPP/EI maxima
 /// from T4127-JAN 2026 Tables 8.4-8.7. Anything not sourced for 2026 blocks instead of being guessed.
 fn t1_2026(c: &mut Calculation, obj: &Map<String,Value>, code: &str) -> Result<(),String> {
-    let t=&super::rates::CA_2026;
     for (k,v) in obj { if !T1_2026_FIELDS.contains(&k.as_str()) && !(v.is_null() || v==&Value::Bool(false) || v.as_i64()==Some(0)) { return Err(format!("{k} is not supported in the 2026 basic scope (2026 values not yet sourced)")); } }
+    if code=="ON" { return t1_2026_on(c,obj); }
     let prov=if code=="AB" { None } else { Some(super::rates::PROVINCES_2026.iter().find(|p| p.code==code).ok_or("No 2026 parameters for this province")?) };
+    t1_2026_with(c,obj,prov)
+}
+fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&super::rates::Province>) -> Result<(),String> {
+    let t=&super::rates::CA_2026;
     let name=prov.map(|p| p.name).unwrap_or("Alberta");
     require(c,obj,"full_year_resident",&format!("Confirm full-year Canadian residence and {name} residence at December 31, 2026."))?;
     if prov.is_some() { require(c,obj,"provincial_adjustments_not_applicable",&format!("2026 {name} reductions, surtaxes and credits other than the basic personal amount and CPP/EI are not calculated. Confirm none apply."))?; }
@@ -171,6 +175,35 @@ fn t1_2026(c: &mut Calculation, obj: &Map<String,Value>, code: &str) -> Result<(
     Ok(())
 }
 
+/// Ontario 2026 (T4127-JAN 2026, 122nd ed.: Table 8.1 brackets 5.05%/9.15%/11.16%/12.16%/13.16% at
+/// $53,891/$107,785/$150,000/$220,000; Table 8.2 BPA $12,989, surtax 20% over $5,818 and 36% over $7,446,
+/// tax reduction basic amount $300; Chapter 6 Ontario V1/V2/S formulas incl. Ontario Health Premium).
+/// LIFT credit and dependant tax-reduction amounts (Y) are not sourced for 2026 and must be confirmed not to apply.
+const ON_2026_BRACKETS: &[(i64,i64)] = &[(5_389_100,505),(10_778_500,915),(15_000_000,1116),(22_000_000,1216),(i64::MAX,1316)];
+pub fn on_health_premium_2026(taxable: i64) -> Result<i64,String> {
+    let a=taxable;
+    Ok(if a<=2_000_000 { 0 } else if a<=3_600_000 { rounded_ratio(a-2_000_000,600,10000)?.min(30_000) }
+       else if a<=4_800_000 { (30_000+rounded_ratio(a-3_600_000,600,10000)?).min(45_000) }
+       else if a<=7_200_000 { (45_000+rounded_ratio(a-4_800_000,2500,10000)?).min(60_000) }
+       else if a<=20_000_000 { (60_000+rounded_ratio(a-7_200_000,2500,10000)?).min(75_000) }
+       else { (75_000+rounded_ratio(a-20_000_000,2500,10000)?).min(90_000) })
+}
+fn t1_2026_on(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
+    require(c,obj,"provincial_adjustments_not_applicable","2026 Ontario LIFT credit, dependant amounts for the Ontario tax reduction and Ontario credits other than the basic personal amount and CPP/EI are not calculated. Confirm none apply.")?;
+    let on=super::rates::Province { code:"ON", name:"Ontario", brackets:ON_2026_BRACKETS, credit_rate_bps:505, bpa_cents:Some(1_298_900), employment_amount:false, bracket_source:super::rates::CRA_T4127_JAN_2026, bpa_source:super::rates::CRA_T4127_JAN_2026, t4127_kp:&[], not_calculated:"" };
+    t1_2026_with(c,obj,Some(&on))?;
+    let basic=c.totals["provincial_tax"];
+    let surtax=rounded_ratio((basic-581_800).max(0),2000,10000)?+rounded_ratio((basic-744_600).max(0),3600,10000)?;
+    let reduction=(2*30_000-(basic+surtax)).clamp(0,basic+surtax);
+    let ohp=on_health_premium_2026(c.totals["taxable_income"])?;
+    let provincial=basic+surtax-reduction+ohp;
+    c.line("ON_surtax","Ontario surtax (T4127-JAN 2026 V1)",surtax); c.line("ON_tax_reduction","Ontario tax reduction, basic $300 only (T4127-JAN 2026 S)",reduction);
+    c.lines.retain(|l| l.code!="42800"); c.line("ON_health_premium","Ontario Health Premium (T4127-JAN 2026 V2)",ohp); c.line("42800","Scoped Ontario income tax incl. health premium",provincial);
+    let federal=c.totals["federal_tax"]; let paid=c.totals["payments"]; let tax=federal+provincial;
+    c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("balance",tax-paid);
+    Ok(())
+}
+
 pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -> Result<Calculation,String> {
     let scope = match (program, jurisdiction) {
         ("T1","AB") => T1_SCOPE,
@@ -187,7 +220,7 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
     let obj = inputs.as_object().ok_or("inputs must be an object")?;
     let mut c = Calculation { ruleset:RULESET.into(),program:program.into(),tax_year:year,jurisdiction:jurisdiction.into(),lines:vec![],totals:BTreeMap::new(),diagnostics:vec![],supported:true,scope:scope.into(),sources:sources(program),rate_table:super::rates::CA_2025.id.into(),line_validation:BTreeMap::new() };
     c.diagnostic("workpaper_only","Independent native workpaper; not a complete tax return, CRA-certified software, or filing authorization. Relationship parties are routing metadata; only explicit calculator inputs affect amounts.",None,false);
-    if year == 2026 && program == "T1" && jurisdiction != "ON" && jurisdiction_ok {
+    if year == 2026 && program == "T1" && jurisdiction_ok {
         c.rate_table=super::rates::CA_2026.id.into(); c.scope=T1_2026_SCOPE.into();
         c.sources.push(source("CRA current-year (2026) tax rates and brackets",super::rates::CRA_CURRENT_YEAR));
         c.sources.push(source("CRA T4127-JAN 2026",super::rates::CRA_T4127_JAN_2026));
@@ -196,7 +229,7 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
         if boolean(obj,"other_tax_situations")? { c.diagnostic("unsupported_situation","Additional income, credits, elections or special regimes need a separately implemented ruleset; this calculation cannot be reviewed as supported.",Some("other_tax_situations"),true); }
         t1_2026(&mut c,obj,jurisdiction)?; return Ok(c);
     }
-    if year != 2025 { c.diagnostic("unsupported_year",if year==2026 { "2026 is implemented only for the basic T1 scope outside Ontario (and Quebec); Ontario 2026 surtax/health premium/LIFT and T2/T3/T5013 2026 are not wired." } else { "Only the versioned 2025 calculation scope (and the basic 2026 T1 scope) is implemented." },None,true); }
+    if year != 2025 { c.diagnostic("unsupported_year",if year==2026 { "2026 is implemented only for the basic T1 scope (not Quebec); T2/T3/T5013 2026 are not wired." } else { "Only the versioned 2025 calculation scope (and the basic 2026 T1 scope) is implemented." },None,true); }
     if !jurisdiction_ok { c.diagnostic("unsupported_jurisdiction",&format!("This program currently supports {expected} only."),None,true); }
     if year != 2025 || !jurisdiction_ok { return Ok(c); }
     require(&mut c,obj,"scope_confirmed",scope)?;
@@ -749,7 +782,17 @@ mod tests {
         let hi=calculate("T1",2026,"SK",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":25_848_200})).unwrap();
         assert_eq!(l(&hi,"30000"),1_482_900);
         assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"medical_expenses_cents":100})).is_err());
-        assert!(!calculate("T1",2026,"ON",&base).unwrap().supported);
+        let o=calculate("T1",2026,"ON",&base).unwrap(); assert!(o.supported,"{:?}",o.diagnostics);
+        // ON: 53,891*5.05% + 26,109*9.15% less 12,989*5.05%; below the $5,818 surtax threshold; OHP $750 at $80,000.
+        assert_eq!(l(&o,"on_before_credits"),272_150+238_897); assert_eq!(l(&o,"ON61500"),65_594);
+        assert_eq!(l(&o,"ON_surtax"),0); assert_eq!(l(&o,"ON_tax_reduction"),0); assert_eq!(l(&o,"ON_health_premium"),75_000);
+        assert_eq!(o.totals["provincial_tax"],272_150+238_897-65_594+75_000);
+        for (a,p) in [(2_000_000,0),(3_000_000,30_000),(4_000_000,45_000),(5_000_000,60_000),(7_300_000,75_000),(25_000_000,90_000),(20_020_000,80_000)] { assert_eq!(on_health_premium_2026(a).unwrap(),p,"{a}"); }
+        let lo=calculate("T1",2026,"ON",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":1_500_000})).unwrap();
+        assert_eq!(lo.totals["provincial_tax"],0);
+        let rich=calculate("T1",2026,"ON",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"interest_income_cents":30_000_000})).unwrap();
+        let b=rich.totals["provincial_tax"]-90_000+0; let basic=l(&rich,"on_before_credits")-l(&rich,"ON61500");
+        assert_eq!(l(&rich,"ON_surtax"),rounded_ratio(basic-581_800,2000,10000).unwrap()+rounded_ratio(basic-744_600,3600,10000).unwrap()); assert_eq!(b,basic+l(&rich,"ON_surtax"));
         assert!(!calculate("T1",2026,"PE",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap().supported);
         assert!(!calculate("T2",2026,"AB",&json!({})).unwrap().supported);
     }
