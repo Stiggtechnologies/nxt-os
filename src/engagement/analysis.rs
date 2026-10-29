@@ -94,6 +94,10 @@ fn annual(start: &str, end: &str, label: &str) -> Result<(NaiveDate, NaiveDate),
     Ok((start, end))
 }
 
+/// Unrecorded proposed entries: tracked and balance-checked, never in the adjusted basis.
+pub fn is_proposed(kind: &str) -> bool {
+    matches!(kind, "proposed_factual" | "proposed_projected" | "proposed_judgmental")
+}
 fn kind(value: &str) -> bool {
     matches!(
         value,
@@ -307,8 +311,8 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
             false,
             true,
         )?;
-        if !matches!(adjustment.kind.as_str(), "adjusting" | "reclassifying") {
-            return Err("Only local adjusting and reclassifying entries are supported".into());
+        if !matches!(adjustment.kind.as_str(), "adjusting" | "reclassifying") && !is_proposed(&adjustment.kind) {
+            return Err("Only local adjusting, reclassifying and proposed (unrecorded) entries are supported".into());
         }
         let entry_date = date(&adjustment.date, "Adjustment date")?;
         if entry_date < start || entry_date > end {
@@ -560,12 +564,15 @@ fn calculate(input: &EngagementInput) -> Result<Value, String> {
             if line.debit_cents != 0 || line.credit_cents != 0 {
                 nonzero += 1;
             }
+            if is_proposed(&entry.kind) { continue; }
             let amount = by_account.entry(&line.account_id).or_default();
             add(&mut amount.0, i128::from(line.debit_cents))?;
             add(&mut amount.1, i128::from(line.credit_cents))?;
         }
-        add(&mut totals[2], debit)?;
-        add(&mut totals[3], credit)?;
+        if !is_proposed(&entry.kind) {
+            add(&mut totals[2], debit)?;
+            add(&mut totals[3], credit)?;
+        }
         if nonzero < 2 {
             diagnostic(
                 &mut diagnostics,

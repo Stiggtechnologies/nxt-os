@@ -24,6 +24,7 @@ pub fn router(state: Arc<Engagements>) -> Router {
         .route("/api/engagements/{id}/transition", post(transition))
         .route("/api/engagements/{id}/lockdown", post(lockdown))
         .route("/api/engagements/{id}/gifi", get(gifi))
+        .route("/api/engagements/{id}/statements", get(statements))
         .route("/api/engagements/{id}/file-tickmarks", post(file_tickmark))
         .route("/api/engagements/{id}/rollforward", post(rollforward))
         .route("/api/engagements/{id}/import/preview", post(preview))
@@ -163,6 +164,9 @@ async fn file_upload(State(e):S,Path((id,paper)):Path<(String,String)>,Json(inpu
 }
 async fn lockdown(State(e): S, Path(id): Path<String>, Json(input): Json<LockdownInput>) -> R {
     ok(e.set_lockdown(&id, input).await?)
+}
+async fn statements(State(e): S, Path(id): Path<String>) -> R {
+    ok(super::statements::generate(&e.get(&id).await?.document))
 }
 async fn gifi(State(e): S, Path(id): Path<String>) -> R { ok(e.gifi_lines(&id).await?) }
 async fn file_tickmark(State(e): S, Path(id): Path<String>, Json(input): Json<FileTickmarkInput>) -> R {
