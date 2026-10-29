@@ -140,7 +140,7 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
 }
 
 fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
-    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
+    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident","Confirm full-year Canadian residence and Alberta residence at year-end; newcomer, emigrant and deemed-resident rules are outside scope.")?;
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
     let rrsp=money(obj,"rrsp_deduction_cents")?; let limit=money(obj,"rrsp_deduction_limit_cents")?;
@@ -166,6 +166,7 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
     let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
     let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,"AB")?;
     let federal=(federal_before-federal_credits-xcredit).max(0);
+    let federal=t1_foreign_and_flags(c,obj,federal,taxable)?;
     let provincial_before=progressive(taxable,ALBERTA)?;
     // AB428: credits at 8%, plus the 2025 Alberta supplemental tax credit of 2% on
     // credit amounts above $60,000 (CRA T4127-JUL 2025, factor K5P).
@@ -189,7 +190,7 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
 }
 
 fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::Province) -> Result<(),String> {
-    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
+    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident",&format!("Confirm full-year Canadian residence and {} residence at December 31; part-year, multi-jurisdiction and business-income allocation are outside scope.",p.name))?;
     require(c,obj,"provincial_adjustments_not_applicable",&format!("The generic engine does not calculate: {}. Confirm none apply to this return, or prepare those amounts outside NXT.",p.not_calculated))?;
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
@@ -216,6 +217,7 @@ fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::P
     let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
     let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,p.code)?;
     let federal=(federal_before-federal_credits-xcredit).max(0);
+    let federal=t1_foreign_and_flags(c,obj,federal,taxable)?;
     if p.code=="MB" && taxable>20_000_000 { c.diagnostic("mb_bpa_phaseout","Manitoba phases out its basic personal amount for net income between $200,000 and $400,000 from 2025; this is not calculated.",None,true); }
     let prov_bpa=p.bpa_cents.unwrap_or(bpa);
     let prov_cea=if p.employment_amount { employment_amount } else { 0 };
@@ -245,6 +247,25 @@ fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::P
 /// amount must be verified by the preparer; nothing here derives CCA, ACB or
 /// eligibility.
 pub struct T1Extra { income: i64, deductions: i64, pension_for_credit: i64, se_cpp_credit: i64, elig_div: i64, other_div: i64, oas: i64, lines: Vec<(String,String,i64)> }
+/// Federal foreign tax credit on non-business income only (Form T2209, line 40500), plus
+/// unsupported-item flags for AMT (T691) and the Canada workers benefit (Schedule 6).
+fn t1_foreign_and_flags(c: &mut Calculation, obj: &Map<String,Value>, federal: i64, net: i64) -> Result<i64,String> {
+    let fi=money(obj,"foreign_non_business_income_cents")?; let ft=money(obj,"foreign_non_business_tax_cents")?;
+    let mut ftc=0;
+    if fi>0 || ft>0 {
+        require(c,obj,"foreign_tax_verified","Verify foreign non-business income (in CAD, included in income above) and foreign tax paid on it. Business-income FTC, the provincial FTC (T2036), and the section 20(11)/20(12) deductions are not calculated.")?;
+        // Tax on property income is limited to 15% of that income (excess handled under 20(11), not calculated).
+        let paid=ft.min(rounded_ratio(fi,1500,10000)?);
+        let limit=if net>0 { rounded_ratio(federal,fi.min(net),net)? } else { 0 };
+        ftc=paid.min(limit);
+        c.line("40500","Federal foreign tax credit (non-business, T2209)",ftc);
+        if ft>0 { c.diagnostic("provincial_foreign_tax_credit_not_calculated","Provincial foreign tax credit (Form T2036) is not calculated.",Some("foreign_non_business_tax_cents"),false); }
+    }
+    c.diagnostic("amt_not_calculated","Alternative minimum tax (Form T691) is not calculated. Review if there are large capital gains, donations of securities, tax-shelter losses, or high income with significant credits.",None,false);
+    if boolean(obj,"cwb_may_apply")? { c.diagnostic("canada_workers_benefit_not_calculated","Canada workers benefit (Schedule 6) is refundable and not calculated; prepare it outside NXT.",Some("cwb_may_apply"),false); }
+    Ok((federal-ftc).max(0))
+}
+
 fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i64) -> Result<T1Extra,String> {
     let _ = employment;
     let mut lines: Vec<(String,String,i64)> = vec![];
@@ -379,7 +400,7 @@ fn ontario_health_premium(taxable: i64) -> Result<i64,String> {
 }
 
 fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
-    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
+    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident","Confirm full-year Canadian residence and Ontario residence at year-end; newcomer, emigrant and deemed-resident rules are outside scope.")?;
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
     let rrsp=money(obj,"rrsp_deduction_cents")?; let limit=money(obj,"rrsp_deduction_limit_cents")?;
@@ -405,6 +426,7 @@ fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
     let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
     let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,"ON")?;
     let federal=(federal_before-federal_credits-xcredit).max(0);
+    let federal=t1_foreign_and_flags(c,obj,federal,taxable)?;
     let ontario_before=progressive(taxable,ONTARIO)?;
     let ontario_credit_base=sum(&[1_274_700, cpp, ei, pbase])?;
     let ontario_credits=sum(&[rounded_ratio(ontario_credit_base,505,10000)?,pdon])?;
@@ -630,6 +652,13 @@ mod tests {
         assert_eq!(lr("23500"),218_190); assert_eq!(lr("23600"),10_800_000-218_190);
         assert_eq!(r.totals["income_tax"],r.totals["federal_tax"]+r.totals["provincial_tax"]+218_190);
         assert!(!calc("T1","BC",json!({"scope_confirmed":true,"full_year_resident":true,"oas_pension_cents":800_000})).supported);
+    }
+    #[test]fn foreign_tax_credit_basic(){
+        let c=calc("T1","AB",json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":8_000_000,"foreign_non_business_income_cents":1_000_000,"foreign_non_business_tax_cents":250_000,"foreign_tax_verified":true}));
+        assert!(c.supported,"{:?}",c.diagnostics);
+        // paid capped at 15% x 10,000 = 1,500; T2209 limit = basic federal tax x 10,000/80,000 = 1,327.35 binds.
+        assert_eq!(c.lines.iter().find(|l|l.code=="40500").unwrap().amount,132_735);
+        assert!(!calc("T1","AB",json!({"scope_confirmed":true,"full_year_resident":true,"foreign_non_business_tax_cents":1})).supported);
     }
     #[test]fn low_income_reductions_2025(){
         let r=|j:&str,v:Value|{let c=calc("T1",j,v);c.lines.iter().find(|x|x.code==format!("{}_low_income_reduction",j.to_lowercase())).unwrap().amount};
