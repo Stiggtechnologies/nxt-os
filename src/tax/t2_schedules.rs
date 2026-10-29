@@ -17,7 +17,7 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("T2 Schedule 50, Shareholder Information (t2sch50-19e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch50.html"),
     ("CRA GIFI (RC4088): Schedule 100/125 codes 2599, 3499, 3620, 3640, 8299, 8670, 9368, 9990, 9995, 9999", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4088/general-index-financial-information-gifi.html"),
 ];
-pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule; accelerated investment incentive, immediate expensing, Classes 54 to 56, straight-line classes and short tax years are not modelled. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
+pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule; the Reg 1100(2) AIIP/RIIP factors (A, A.1) for single-calendar-year taxation years, Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled; immediate expensing, straddle and short years, separate-class elections, the Class 14.1 pre-2017 additional allowance and per-vehicle cost caps are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
 
 /// Schedule 1 lines copied from t2sch1-25e. Additions: 101–199 on page 1 plus 201–296
 /// (summed to amount D, line 199). Deductions: 401–499 plus 300–3xx (amount E, line 499).
@@ -53,6 +53,7 @@ pub fn line_label(line: &str) -> Option<(&'static str, bool)> {
 const RATES: &[(&str, u32)] = &[
     ("1", 4), ("3", 5), ("6", 10), ("8", 20), ("10", 30), ("10.1", 30), ("12", 100), ("14.1", 5),
     ("16", 40), ("17", 8), ("43", 30), ("45", 45), ("46", 30), ("50", 55), ("53", 50),
+    ("43.1", 30), ("43.2", 50), ("44", 25), ("54", 30), ("55", 40), ("56", 30),
 ];
 pub fn rate(class: &str) -> Option<u32> { RATES.iter().find(|(c, _)| *c == class).map(|(_, r)| *r) }
 
@@ -70,11 +71,52 @@ pub struct CcaClass {
     pub proceeds_cents: i64,
     /// Signed column 6 adjustments and transfers.
     pub adjustments_cents: i64,
-    /// Additions that are AIIP, RIIP or otherwise excluded from the 50% rule. Not modelled: blocks.
+    /// Legacy catch-all for additions outside the 50% rule. Blocks: use the specific fields below.
     pub accelerated_additions_cents: i64,
+    /// Part of `additions_cents` that is accelerated investment incentive property (or, for
+    /// Classes 54–56, property acquired before 2025): element D of Reg 1100(2).
+    pub aiip_additions_cents: i64,
+    /// Part of `additions_cents` that is reaccelerated investment incentive property (or, for
+    /// Classes 54–56, property acquired after 2024): element D.1 of Reg 1100(2).
+    pub riip_additions_cents: i64,
+    /// Part of `additions_cents` the preparer has classified as excluded from element F of
+    /// Reg 1100(2) (e.g. Class 12 paragraphs (a)–(c), (e)–(i), (k), (l), (p)–(s)): no 50% rule.
+    pub half_year_exempt_additions_cents: i64,
+    /// Class 13 only: each part of the capital cost of a leasehold interest (Schedule III).
+    pub leaseholds: Vec<LeaseholdPart>,
+    /// Class 14 only: each limited-life patent, franchise, concession or licence (Reg 1100(1)(c)).
+    pub limited_life: Vec<LimitedLifeProperty>,
     pub no_property_left: bool,
     /// Optional lower claim (column 21 "or a lower amount").
     pub claim_cents: Option<i64>,
+}
+
+/// none | aiip | riip
+fn accel_ok(v: &str) -> bool { matches!(v, "" | "none" | "aiip" | "riip") }
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LeaseholdPart {
+    pub cost_cents: i64,
+    /// Schedule III s. 2(b): 12-month periods (1 to 40) from the start of the year the cost was
+    /// incurred to the end of the lease, with renewals counted per s. 3(b).
+    pub periods_12m: u32,
+    /// Amounts claimed and deductible for this part in previous years (s. 3(c)).
+    pub claimed_before_cents: i64,
+    /// Capital cost incurred (available for use) in this taxation year (Reg 1100(1)(b)(i)).
+    pub incurred_in_year: bool,
+    pub acceleration: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LimitedLifeProperty {
+    pub cost_cents: i64,
+    /// Life remaining when the cost was incurred, in days, and the days of that life in this year.
+    pub life_days: u32,
+    pub days_in_year: u32,
+    pub available_in_year: bool,
+    pub acceleration: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -100,6 +142,10 @@ pub struct T2Input {
     pub shareholders: Vec<Shareholder>,
     /// ccpc | other_private | public | ... (as in the corporate profile). Private types require Schedule 50.
     pub corporation_type: String,
+    /// Taxation year (YYYY-MM-DD). Needed whenever accelerated additions are claimed: the
+    /// Reg 1100(2) factors depend on the year property became available for use.
+    pub tax_year_start: String,
+    pub tax_year_end: String,
 }
 
 const MAX: i64 = 100_000_000_000_000;
@@ -120,6 +166,16 @@ pub fn validate(input: &T2Input) -> Result<(), String> {
         for v in [c.opening_ucc_cents, c.additions_cents, c.proceeds_cents, c.accelerated_additions_cents] { if !(0..=MAX).contains(&v) { return Err(format!("Class {} amounts must be 0 to {MAX} cents", c.class)); } }
         if !(-MAX..=MAX).contains(&c.adjustments_cents) || c.claim_cents.is_some_and(|v| !(0..=MAX).contains(&v)) { return Err(format!("Class {} amounts out of range", c.class)); }
         if c.accelerated_additions_cents > c.additions_cents { return Err(format!("Class {} accelerated additions exceed additions", c.class)); }
+        for v in [c.aiip_additions_cents, c.riip_additions_cents, c.half_year_exempt_additions_cents] { if !(0..=MAX).contains(&v) { return Err(format!("Class {} amounts must be 0 to {MAX} cents", c.class)); } }
+        if c.aiip_additions_cents + c.riip_additions_cents + c.half_year_exempt_additions_cents > c.additions_cents { return Err(format!("Class {}: AIIP, RIIP and half-year-exempt parts exceed additions", c.class)); }
+        if c.leaseholds.len() > 100 || c.limited_life.len() > 100 { return Err("too many rows".into()); }
+        if (!c.leaseholds.is_empty() && c.class != "13") || (!c.limited_life.is_empty() && c.class != "14") { return Err(format!("Class {}: leaseholds are Class 13 and limited-life property is Class 14", c.class)); }
+        for l in &c.leaseholds {
+            if !(0..=MAX).contains(&l.cost_cents) || !(0..=l.cost_cents).contains(&l.claimed_before_cents) || !(1..=40).contains(&l.periods_12m) || !accel_ok(&l.acceleration) { return Err("leasehold: cost 0..max, claimed_before ≤ cost, periods_12m 1..40, acceleration none|aiip|riip".into()); }
+        }
+        for l in &c.limited_life {
+            if !(0..=MAX).contains(&l.cost_cents) || l.life_days == 0 || l.days_in_year > 366 || l.days_in_year > l.life_days || !accel_ok(&l.acceleration) { return Err("limited-life property: cost 0..max, life_days > 0, days_in_year ≤ 366 and ≤ life_days, acceleration none|aiip|riip".into()); }
+        }
     }
     let mut classes = BTreeSet::new();
     for c in &input.cca { if !classes.insert(c.class.as_str()) { return Err(format!("duplicate CCA class {}", c.class)); } }
@@ -150,21 +206,79 @@ pub fn schedule1(net_income_9999: i64, items: &[Schedule1Item], diagnostics: &mu
         "line_500_cents":l500,"amount_b_cents":b,"line_510_cents":l510,"amount_c_net_income_for_tax_cents":c,"t2_line_300_cents":c})
 }
 
-/// Schedule 8, declining-balance classes. CCA is floored to the cent so it never exceeds the maximum.
-pub fn schedule8(classes: &[CcaClass], diagnostics: &mut Vec<Value>) -> Value {
+type Frac = (i128, i128);
+const NIL: Frac = (0, 1);
+
+/// Reg 1100(2) factor A (AIIP, or Classes 54–56 acquired before 2025) or A.1 (RIIP, or
+/// Classes 54–56 acquired after 2024) for property available for use in calendar year `y`.
+/// Err = the factor depends on facts this workpaper does not capture.
+fn factor(class: &str, riip: bool, y: i32) -> Result<Frac, String> {
+    let tier = |a: Frac, b: Frac, c: Frac, t1: i32, t2: i32| if y < t1 { a } else if y <= t2 { b } else { c };
+    Ok(match (class, riip) {
+        ("12" | "13" | "14" | "15" | "59", _) => NIL,
+        ("43.1", false) => tier((7, 3), (3, 2), (5, 6), 2024, 2025),
+        ("43.1", true) => tier((7, 3), (3, 2), (5, 6), 2030, 2031),
+        ("43.2", false) => tier((1, 1), (1, 2), (1, 10), 2024, 2025),
+        ("53", false) => tier((1, 1), (1, 2), (1, 10), 2024, 2025),
+        ("53", true) => (1, 1),
+        ("54" | "56", false) => tier((7, 3), (3, 2), (5, 6), 2024, 2025),
+        ("54" | "56", true) => tier((7, 3), (3, 2), (5, 6), 2030, 2031),
+        ("55", false) => tier((3, 2), (7, 8), (3, 8), 2024, 2025),
+        ("55", true) => tier((3, 2), (7, 8), (3, 8), 2030, 2031),
+        ("44" | "46" | "50", false) if y >= 2024 => return Err(format!("Class {class} AIIP available for use after 2023: the factor depends on whether it was acquired after April 15, 2024 (Reg 1100(2) A(c.1)–(c.3)).")),
+        ("44", true) => if y < 2027 { (3, 1) } else { NIL },
+        ("46", true) => if y < 2027 { (7, 3) } else { NIL },
+        ("50", true) => if y < 2027 { (9, 11) } else { NIL },
+        ("43", true) if y >= 2026 => return Err("Class 43 RIIP available after 2025: the factor depends on whether it would have been Class 53 (Reg 1100(2) A.1(f)).".into()),
+        (_, false) => if y < 2024 { (1, 2) } else { NIL },
+        (_, true) => if y < 2030 { (1, 2) } else { NIL },
+    })
+}
+fn mul(v: i64, f: Frac) -> i128 { i128::from(v) * f.0 / f.1 }
+
+/// Taxation-year calendar year for the 1100(2) factors, or a blocking reason.
+fn factor_year(input: &T2Input) -> Result<i32, String> {
+    use chrono::{Datelike, NaiveDate};
+    let p = |s: &str| NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok();
+    let (Some(a), Some(b)) = (p(&input.tax_year_start), p(&input.tax_year_end)) else {
+        return Err("Accelerated additions need tax_year_start and tax_year_end (YYYY-MM-DD): the Reg 1100(2) factors depend on the year.".into());
+    };
+    if b < a { return Err("tax_year_end is before tax_year_start.".into()); }
+    if a.year() != b.year() { return Err("Taxation year straddles two calendar years: the blended factor of Reg 1100(2.01)/(2.011) is not modelled.".into()); }
+    Ok(b.year())
+}
+
+/// Schedule 8. Declining-balance classes use Reg 1100(1)(a) rates and the Reg 1100(2) formula
+/// A(B) + A.1(B.1) − 0.5(C); Class 13 follows Reg 1100(1)(b) and Schedule III; Class 14 follows
+/// Reg 1100(1)(c). CCA is floored to the cent so it never exceeds the maximum.
+pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
+    let classes = &input.cca;
     let (mut recapture, mut terminal, mut cca) = (0i64, 0i64, 0i64);
     let mut rows = vec![];
+    if let Some((a, b)) = chrono::NaiveDate::parse_from_str(input.tax_year_start.trim(), "%Y-%m-%d").ok().zip(chrono::NaiveDate::parse_from_str(input.tax_year_end.trim(), "%Y-%m-%d").ok()) {
+        if (b - a).num_days() < 357 && !classes.is_empty() { diag(diagnostics, "cca_short_year", "Short taxation year: the Reg 1100(3) proration is not modelled.", true); }
+    }
+    let needs_year = classes.iter().any(|c| c.aiip_additions_cents + c.riip_additions_cents > 0
+        || c.leaseholds.iter().any(|l| l.incurred_in_year && l.acceleration != "none" && !l.acceleration.is_empty())
+        || c.limited_life.iter().any(|l| l.available_in_year && l.acceleration != "none" && !l.acceleration.is_empty()));
+    let year = if needs_year { match factor_year(input) { Ok(y) => Some(y), Err(m) => { diag(diagnostics, "cca_tax_year", m, true); None } } } else { None };
     for c in classes {
-        let Some(r) = rate(&c.class) else {
-            diag(diagnostics, "cca_class_unsupported", format!("Class {} has no sourced declining-balance rate here (straight-line, leasehold and Classes 54–56 are not modelled).", c.class), true);
+        let straight = c.class == "13" || c.class == "14";
+        let rate = rate(&c.class);
+        if rate.is_none() && !straight {
+            diag(diagnostics, "cca_class_unsupported", format!("Class {} is not modelled here (no Reg 1100(1)(a) rate carried, or a special method).", c.class), true);
             continue;
-        };
+        }
         if c.accelerated_additions_cents > 0 {
-            diag(diagnostics, "cca_accelerated_not_modelled", format!("Class {}: AIIP/RIIP or half-year-exempt additions need the Schedule 8 column 15/16 factors, which are not modelled.", c.class), true);
+            diag(diagnostics, "cca_accelerated_not_modelled", format!("Class {}: accelerated_additions_cents is a legacy field; split it into aiip_additions_cents, riip_additions_cents or half_year_exempt_additions_cents.", c.class), true);
+        }
+        let zev = matches!(c.class.as_str(), "54" | "55" | "56");
+        let regular = c.additions_cents - c.aiip_additions_cents - c.riip_additions_cents - c.half_year_exempt_additions_cents;
+        if zev && regular > 0 {
+            diag(diagnostics, "cca_zev_acquisition_date", format!("Class {}: enter additions as aiip_additions_cents (acquired before 2025) or riip_additions_cents (acquired after 2024).", c.class), true);
         }
         let col10 = c.opening_ucc_cents + c.additions_cents + c.adjustments_cents - c.proceeds_cents;
-        let col17 = ((c.additions_cents - c.accelerated_additions_cents - c.proceeds_cents).max(0)) / 2;
-        let mut row = json!({"class":c.class,"rate_percent":r,"column_10_ucc_cents":col10,"column_17_half_year_cents":col17});
+        let mut row = json!({"class":c.class,"column_10_ucc_cents":col10});
         let (mut rec, mut term, mut claim) = (0, 0, 0);
         if col10 < 0 {
             if c.class == "10.1" { diag(diagnostics, "cca_class_10_1_negative", "Class 10.1 has no recapture; a negative UCC means the inputs need review.", true); }
@@ -173,7 +287,32 @@ pub fn schedule8(classes: &[CcaClass], diagnostics: &mut Vec<Value>) -> Value {
             if c.class == "10.1" { diag(diagnostics, "cca_class_10_1_disposed", "Class 10.1 has no terminal loss; the special half-year rule on disposal is not modelled.", true); }
             else { term = col10; }
         } else {
-            let max = ((i128::from(col10 - col17) * i128::from(r)) / 100) as i64;
+            let max = if straight {
+                straight_line_max(c, year, col10, &mut row, diagnostics)
+            } else {
+                let r = rate.unwrap();
+                // Reg 1100(2): F = regular additions (none for the classes listed in F(b)(ii)), G = proceeds.
+                let f = if zev { 0 } else { regular.max(0) };
+                let g = c.proceeds_cents;
+                let accel = c.aiip_additions_cents + c.riip_additions_cents;
+                let mut adj: i128 = -(i128::from((f - g).max(0)) / 2);
+                if accel > 0 {
+                    if g > f { diag(diagnostics, "cca_proceeds_exceed_regular_additions", format!("Class {}: proceeds exceed regular additions alongside accelerated additions; the E reduction of Reg 1100(2) is not modelled.", c.class), true); }
+                    if let Some(y) = year {
+                        for (amt, riip) in [(c.aiip_additions_cents, false), (c.riip_additions_cents, true)] {
+                            if amt == 0 { continue; }
+                            match factor(&c.class, riip, y) {
+                                Ok(fac) => { adj += mul(amt, fac); row[if riip { "factor_a1" } else { "factor_a" }] = json!(format!("{}/{}", fac.0, fac.1)); }
+                                Err(m) => diag(diagnostics, "cca_factor_unsourced", m, true),
+                            }
+                        }
+                    }
+                }
+                row["rate_percent"] = json!(r);
+                row["reg_1100_2_adjustment_cents"] = json!(adj as i64);
+                row["column_17_half_year_cents"] = json!((f - g).max(0) / 2);
+                (((i128::from(col10) + adj).max(0) * i128::from(r)) / 100) as i64
+            };
             claim = match c.claim_cents { Some(v) if v > max => { diag(diagnostics, "cca_claim_exceeds_maximum", format!("Class {} claim exceeds the maximum {max} cents.", c.class), true); max } Some(v) => v, None => max };
             row["maximum_cca_cents"] = json!(max);
         }
@@ -184,6 +323,53 @@ pub fn schedule8(classes: &[CcaClass], diagnostics: &mut Vec<Value>) -> Value {
         rows.push(row);
     }
     json!({"classes":rows,"schedule1_line_107_recapture_cents":recapture,"schedule1_line_404_terminal_loss_cents":terminal,"schedule1_line_403_cca_cents":cca})
+}
+
+/// Class 13 (Reg 1100(1)(b), Schedule III ss. 1–3) and Class 14 (Reg 1100(1)(c)), capped at UCC.
+fn straight_line_max(c: &CcaClass, year: Option<i32>, ucc: i64, row: &mut Value, diagnostics: &mut Vec<Value>) -> i64 {
+    let mut total: i128 = 0;
+    let mut parts = vec![];
+    if c.class == "13" {
+        if c.leaseholds.is_empty() && ucc > 0 { diag(diagnostics, "cca_class13_parts", "Class 13 needs each leasehold part (cost, 12-month periods, prior claims).", true); }
+        for l in &c.leaseholds {
+            // Schedule III s. 2: lesser of 1/5 of the cost and cost ÷ 12-month periods (max 40); s. 3(c): not more than what is left.
+            let base = (i128::from(l.cost_cents) / 5).min(i128::from(l.cost_cents) / i128::from(l.periods_12m)).min(i128::from(l.cost_cents - l.claimed_before_cents));
+            let amt = if !l.incurred_in_year { base } else {
+                let accel = match (l.acceleration.as_str(), year) {
+                    ("aiip", Some(y)) => Some(y < 2024),
+                    ("riip", Some(y)) => Some(y < 2030),
+                    ("aiip" | "riip", None) => None,
+                    _ => Some(false),
+                };
+                match (l.acceleration.as_str(), accel) {
+                    (_, None) => 0,
+                    ("aiip" | "riip", Some(true)) => base * 3 / 2,   // 1100(1)(b)(i)(A): 150% (capped at UCC below)
+                    ("aiip" | "riip", Some(false)) => base,          // 1100(1)(b)(ii): any other case
+                    _ => base / 2,                                     // 1100(1)(b)(i)(B): 50%
+                }
+            };
+            parts.push(json!({"cost_cents":l.cost_cents,"periods_12m":l.periods_12m,"amount_cents":amt as i64}));
+            total += amt;
+        }
+    } else {
+        if c.limited_life.is_empty() && ucc > 0 { diag(diagnostics, "cca_class14_parts", "Class 14 needs each limited-life property (cost, life in days, days in the year).", true); }
+        for l in &c.limited_life {
+            let base = i128::from(l.cost_cents) * i128::from(l.days_in_year) / i128::from(l.life_days);
+            let extra = if !l.available_in_year { 0 } else {
+                match (l.acceleration.as_str(), year) {
+                    ("aiip", Some(y)) => if y < 2024 { base / 2 } else { base / 4 },
+                    ("riip", Some(y)) => if y < 2030 { base / 2 } else { base / 4 },
+                    _ => 0,
+                }
+            };
+            parts.push(json!({"cost_cents":l.cost_cents,"life_days":l.life_days,"days_in_year":l.days_in_year,"amount_cents":(base + extra) as i64}));
+            total += base + extra;
+        }
+        if !c.limited_life.is_empty() { diag(diagnostics, "cca_class14_day_basis", "Class 14 apportions each cost over its remaining life by days; confirm this matches the property's terms.", false); }
+    }
+    row["method"] = json!(if c.class == "13" { "Reg 1100(1)(b) and Schedule III" } else { "Reg 1100(1)(c)" });
+    row["parts"] = Value::Array(parts);
+    total.min(i128::from(ucc.max(0))) as i64
 }
 
 fn identifier_ok(s: &Shareholder) -> bool {
@@ -251,7 +437,7 @@ pub fn build(input: &T2Input) -> Result<Value, String> {
     let mut diagnostics = vec![];
     let ni = gifi(&input.gifi, "income_statement", "9999").unwrap_or(0);
     let s1 = schedule1(ni, &input.schedule1, &mut diagnostics);
-    let s8 = schedule8(&input.cca, &mut diagnostics);
+    let s8 = schedule8(input, &mut diagnostics);
     let s50 = schedule50(input, &mut diagnostics);
     let checks = cross_checks(input, &s1, &s8, &mut diagnostics);
     let supported = !diagnostics.iter().any(|d| d["blocks_review"] == true);
