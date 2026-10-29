@@ -214,6 +214,8 @@ pub struct LeaseholdPart {
     pub claimed_before_cents: i64,
     /// Capital cost incurred (available for use) in this taxation year (Reg 1100(1)(b)(i)).
     pub incurred_in_year: bool,
+    /// Taxation year spanning two calendar years: was the cost incurred in the later one?
+    pub in_later_calendar_year: Option<bool>,
     pub acceleration: String,
 }
 
@@ -225,6 +227,8 @@ pub struct LimitedLifeProperty {
     pub life_days: u32,
     pub days_in_year: u32,
     pub available_in_year: bool,
+    /// Taxation year spanning two calendar years: did it become available in the later one?
+    pub in_later_calendar_year: Option<bool>,
     pub acceleration: String,
 }
 
@@ -424,8 +428,6 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
         || c.leaseholds.iter().any(|l| l.incurred_in_year && l.acceleration != "none" && !l.acceleration.is_empty())
         || c.limited_life.iter().any(|l| l.available_in_year && l.acceleration != "none" && !l.acceleration.is_empty()));
     let years = if needs_year { match factor_year(input) { Ok(y) => Some(y), Err(m) => { diag(diagnostics, "cca_tax_year", m, true); None } } } else { None };
-    // Classes 13 and 14 apply the acceleration to the year the cost is incurred; a straddle year is not split there.
-    let year = match years { Some((a, b)) if a == b => Some(b), Some(_) if classes.iter().any(|c| (c.class == "13" || c.class == "14") && (c.leaseholds.iter().any(|l| l.incurred_in_year && !matches!(l.acceleration.as_str(), "" | "none")) || c.limited_life.iter().any(|l| l.available_in_year && !matches!(l.acceleration.as_str(), "" | "none")))) => { diag(diagnostics, "cca_tax_year", "Class 13/14 accelerated property in a taxation year spanning two calendar years is not modelled.", true); None }, _ => None };
     let ie_total: i64 = classes.iter().map(|c| c.immediate_expensing_cents).sum();
     let ie_ok = ie_total == 0 || immediate_expensing_check(input, ie_total, diagnostics);
     for c in classes {
@@ -471,7 +473,7 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
             // Reg 1100(0.2): the 1100(0.1) amount is deducted before the other CCA of the class.
             let col10 = col10 - ie;
             let full = if straight {
-                straight_line_max(c, year, col10, &mut row, diagnostics)
+                straight_line_max(c, years, col10, &mut row, diagnostics)
             } else {
                 let r = rate.unwrap();
                 // Reg 1100(2): F = regular additions (none for the classes listed in F(b)(ii)), G = proceeds.
@@ -605,13 +607,27 @@ fn class_14_1_additional(c: &CcaClass, input: &T2Input, basis: i128, regular: i1
     (i + ii) as i64
 }
 
+/// Calendar year an accelerated Class 13/14 item became available. In a year spanning two calendar
+/// years the factor follows the calendar year of the item (as Reg 1100(2.01)/(2.011) do for 1100(2)).
+fn item_year(years: Option<(i32, i32)>, accelerated: bool, later: Option<bool>, diagnostics: &mut Vec<Value>) -> Option<i32> {
+    match years {
+        Some((a, b)) if a == b => Some(b),
+        Some((a, b)) if accelerated => match later {
+            Some(true) => Some(b), Some(false) => Some(a),
+            None => { diag(diagnostics, "cca_straddle_split", format!("Class 13/14 accelerated item in a taxation year spanning {a} and {b}: set in_later_calendar_year."), true); None }
+        },
+        _ => None,
+    }
+}
+
 /// Class 13 (Reg 1100(1)(b), Schedule III ss. 1–3) and Class 14 (Reg 1100(1)(c)), capped at UCC.
-fn straight_line_max(c: &CcaClass, year: Option<i32>, ucc: i64, row: &mut Value, diagnostics: &mut Vec<Value>) -> i64 {
+fn straight_line_max(c: &CcaClass, years: Option<(i32, i32)>, ucc: i64, row: &mut Value, diagnostics: &mut Vec<Value>) -> i64 {
     let mut total: i128 = 0;
     let mut parts = vec![];
     if c.class == "13" {
         if c.leaseholds.is_empty() && ucc > 0 { diag(diagnostics, "cca_class13_parts", "Class 13 needs each leasehold part (cost, 12-month periods, prior claims).", true); }
         for l in &c.leaseholds {
+            let year = item_year(years, l.incurred_in_year && !matches!(l.acceleration.as_str(), "" | "none"), l.in_later_calendar_year, diagnostics);
             // Schedule III s. 2: lesser of 1/5 of the cost and cost ÷ 12-month periods (max 40); s. 3(c): not more than what is left.
             let base = (i128::from(l.cost_cents) / 5).min(i128::from(l.cost_cents) / i128::from(l.periods_12m)).min(i128::from(l.cost_cents - l.claimed_before_cents));
             let amt = if !l.incurred_in_year { base } else {
@@ -634,6 +650,7 @@ fn straight_line_max(c: &CcaClass, year: Option<i32>, ucc: i64, row: &mut Value,
     } else {
         if c.limited_life.is_empty() && ucc > 0 { diag(diagnostics, "cca_class14_parts", "Class 14 needs each limited-life property (cost, life in days, days in the year).", true); }
         for l in &c.limited_life {
+            let year = item_year(years, l.available_in_year && !matches!(l.acceleration.as_str(), "" | "none"), l.in_later_calendar_year, diagnostics);
             let base = i128::from(l.cost_cents) * i128::from(l.days_in_year) / i128::from(l.life_days);
             let extra = if !l.available_in_year { 0 } else {
                 match (l.acceleration.as_str(), year) {
