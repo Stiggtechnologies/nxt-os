@@ -34,6 +34,13 @@ REL = '{http://schemas.openxmlformats.org/package/2006/relationships}'
 RID = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'
 KINDS = {'trialbalance': 'trial_balance', 'journal': 'journal', 'generalledger': 'general_ledger', 'balancesheet': 'balance_sheet', 'profitandloss': 'profit_and_loss'}
 TITLES = {'trial_balance': 'trial balance', 'journal': 'journal', 'general_ledger': 'general ledger', 'balance_sheet': 'balance sheet', 'profit_and_loss': 'profit and loss'}
+LEGACY_JOURNAL_HEADER = {'B': 'Date', 'C': 'Transaction Type', 'D': '#', 'E': 'Name', 'F': 'Memo/Description', 'G': 'Account', 'H': 'Debit', 'I': 'Credit'}
+# QuickBooks Online's current Journal export. Column J ('Adj') flags adjusting entries.
+MODERN_JOURNAL_HEADER = {'B': 'Transaction date', 'C': 'Transaction type', 'D': '#', 'E': 'Name', 'F': 'Description', 'G': 'Account Name', 'H': 'Debit', 'I': 'Credit', 'J': 'Adj'}
+ADJ_FLAGS = {'yes': True, 'no': False}
+# Member names that look like list exports are never opened, not even to read a title.
+NONFINANCIAL_NAME = re.compile(r'customer|employee|supplier|vendor|contact|payroll', re.I)
+MONTHS = {m: i for i, m in enumerate(('january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'), 1)}
 NUMBER = re.compile(r'[+-]?(?:\d+)(?:\.\d+)?\Z')
 ADDRESS = re.compile(r'([A-Z]{1,3})([1-9]\d{0,5})\Z')
 INSPECTOR_SCRIPT_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
@@ -197,8 +204,21 @@ def compile_formula(formula):
     return output
 
 
+def formula_shape(formula):
+    """Describe a formula's structure without any cell values or client text."""
+    text = formula if isinstance(formula, str) else ''
+    refs = re.findall(r'(?<![A-Z])([A-Z]{1,3})([1-9][0-9]{0,5})(?![0-9(])', text, re.I)
+    ranges = re.findall(r'SUM\(', text, re.I)
+    literals = re.findall(r'(?<![A-Z0-9.])[0-9]+(?:\.[0-9]+)?(?![0-9A-Z])', re.sub(r'[A-Z]{1,3}[1-9][0-9]{0,5}', '', text, flags=re.I), re.I)
+    other = sorted(set(re.sub(r'[A-Z]{1,3}[1-9][0-9]{0,5}|SUM|[0-9.]|\s', '', text, flags=re.I)))
+    rows = [int(r) for _, r in refs]
+    return {'formula_length': len(text), 'formula_length_limit': 4096, 'cell_reference_count': len(refs), 'referenced_columns': sorted({c.upper() for c, _ in refs}),
+            'referenced_row_min': min(rows) if rows else None, 'referenced_row_max': max(rows) if rows else None, 'sum_range_count': len(ranges), 'numeric_literal_count': len(literals), 'operator_characters': other}
+
+
 class Workbook:
     def __init__(self, data, kind):
+        """`kind=None` derives the report kind from the title row (A2)."""
         self.kind, self.raw_hash, self.raw_bytes = kind, sha(data), len(data)
         self.cells, self.rows, self.formula_cache_mismatches, self.missing_formula_caches = {}, {}, [], []
         self.formula_count, self.literal_formula_count, self.sum_formula_count = 0, 0, 0
@@ -217,6 +237,7 @@ class Workbook:
                 require(r.get('Id') not in relation_map, 'duplicate_workbook_relationship')
                 relation_map[r.get('Id')] = r
             sheets = book.findall(NS + 'sheets/' + NS + 'sheet')
+            self.sheet_name = sheets[0].get('name', '') if len(sheets) == 1 else ''
             require(len(sheets) == 1 and sheets[0].get('state', 'visible') == 'visible', 'one_visible_sheet_required')
             relation = relation_map.get(sheets[0].get(RID))
             require(relation is not None and relation.get('Type', '').endswith('/worksheet'), 'worksheet_relationship_required')
@@ -247,7 +268,10 @@ class Workbook:
                     f, v, inline = c.find(NS + 'f'), c.find(NS + 'v'), c.find(NS + 'is')
                     formula = None if f is None else f.text or ''
                     require(f is None or not f.attrib, 'shared_array_formula_unsupported')
-                    compiled = None if f is None else compile_formula(formula)
+                    try:
+                        compiled = None if f is None else compile_formula(formula)
+                    except AssessmentError as exc:
+                        raise AssessmentError(str(exc), {'sheet': self.sheet_name, 'cell': address, **formula_shape(formula)}) from exc
                     ctype = c.get('t', 'n')
                     require((ctype == 'inlineStr' and inline is not None and v is None and f is None) or (ctype != 'inlineStr' and inline is None), 'mixed_cell_representations')
                     require(f is None or ctype == 'n', 'numeric_formula_cell_required')
@@ -263,6 +287,10 @@ class Workbook:
                     if formula is not None:
                         self.formula_count += 1
         require(self.text('A1') != '', 'company_heading_required')
+        if kind is None:
+            kind = next((k for k, title in TITLES.items() if self.text('A2').strip().lower() == title), None)
+            require(kind is not None, 'report_title_unrecognised')
+            self.kind = kind
         require(self.text('A2').strip().lower() == TITLES[kind], 'report_title_mismatch')
         self.company_hash = sha(self.text('A1').encode('utf-8'))
         self.period_label = self.text('A3')
@@ -274,6 +302,16 @@ class Workbook:
             return ''
         require(c['formula'] is None and c['type'] in ('s', 'inlineStr', 'str'), 'text_cell_required')
         return c['value'].strip()
+
+    def _located_numeric(self, address, value, role):
+        # Report where a number failed, never the number itself.
+        try:
+            return numeric(value)
+        except AssessmentError as exc:
+            if exc.location is not None:
+                raise
+            decimals = len(value.split('.', 1)[1].split('e')[0].split('E')[0]) if isinstance(value, str) and '.' in value else 0
+            raise AssessmentError(str(exc), {'sheet': self.sheet_name, 'cell': address, 'role': role, 'decimal_places': decimals}) from exc
 
     def amount(self, address, blank_zero=True):
         self._eval_work += 1
@@ -291,7 +329,7 @@ class Workbook:
         try:
             formula = c['formula']
             if formula is None:
-                result = numeric(c['value'])
+                result = self._located_numeric(address, c['value'], 'stored_value')
             else:
                 values = []
                 for token in c['compiled']:
@@ -324,7 +362,7 @@ class Workbook:
             if formula is not None:
                 if c['value'] == '':
                     self.missing_formula_caches.append(address)
-                elif numeric(c['value']) != result:
+                elif self._located_numeric(address, c['value'], 'formula_cached_value') != result:
                     self.formula_cache_mismatches.append(address)
             self._evaluated[address] = result
             return result
@@ -441,8 +479,9 @@ def journal_postings(book, choice):
     The public assessment omits line payloads. Names, memos and supplied numbers
     are retained here as original cell text. They are not durable source IDs.
     """
-    expected = {'B': 'Date', 'C': 'Transaction Type', 'D': '#', 'E': 'Name', 'F': 'Memo/Description', 'G': 'Account', 'H': 'Debit', 'I': 'Credit'}
-    require(all(book.text(f'{c}5') == text for c, text in expected.items()), 'journal_header_mismatch')
+    layout = journal_layout(book)
+    if layout == 'qbo_modern':
+        return modern_journal_postings(book, choice)
     order, basis = date_order(book, choice)
     active, groups, accounts, total_row, footer_count = None, [], {}, None, 0
     grand = (0, 0)
@@ -503,12 +542,101 @@ def journal_postings(book, choice):
     total = (sum(int(g['debit_cents']) for g in groups), sum(int(g['credit_cents']) for g in groups))
     require(total == grand, 'journal_grand_total_mismatch')
     dates = [g['date'] for g in groups]
-    return {'status': 'supported_controls_passed', 'group_count': len(groups), 'line_count': sum(g['line_count'] for g in groups), 'date_start': min(dates), 'date_end': max(dates), 'date_order': order, 'date_order_basis': basis, 'total_row': total_row, 'debit_cents': str(total[0]), 'credit_cents': str(total[1]), 'groups': groups, 'accounts': [{'label': label, 'label_ref': sha(label.encode('utf-8')), 'line_count': v['line_count'], 'debit_cents': str(v['debit']), 'credit_cents': str(v['credit']), 'net_debit_cents': str(v['debit'] - v['credit'])} for label, v in sorted(accounts.items())], 'footer_rows': footer_count, 'durable_source_transaction_ids_available': False, 'identity_basis': 'Source workbook hash and report row locators only; no durable source transaction identity.'}
+    return {'status': 'supported_controls_passed', 'group_count': len(groups), 'line_count': sum(g['line_count'] for g in groups), 'date_start': min(dates), 'date_end': max(dates), 'date_order': order, 'date_order_basis': basis, 'total_row': total_row, 'debit_cents': str(total[0]), 'credit_cents': str(total[1]), 'groups': groups, 'accounts': [{'label': label, 'label_ref': sha(label.encode('utf-8')), 'line_count': v['line_count'], 'debit_cents': str(v['debit']), 'credit_cents': str(v['credit']), 'net_debit_cents': str(v['debit'] - v['credit'])} for label, v in sorted(accounts.items())], 'footer_rows': footer_count, 'durable_source_transaction_ids_available': False, 'identity_basis': 'Source workbook hash and report row locators only; no durable source transaction identity.', 'layout': 'qbo_legacy'}
+
+
+def journal_layout(book):
+    """Exactly one known header layout on row 5; anything else is blocked."""
+    header = {c: book.text(a) for c, a in book.rows.get(5, {}).items() if book.text(a) != ''}
+    if header == LEGACY_JOURNAL_HEADER:
+        return 'qbo_legacy'
+    if header == MODERN_JOURNAL_HEADER:
+        return 'qbo_modern'
+    raise AssessmentError('journal_header_mismatch')
+
+
+def modern_journal_postings(book, choice):
+    """QBO's current Journal layout, under the same controls as the legacy one.
+
+    Groups open with a column-A transaction label and close with
+    'Total for <label>' (H/I subtotal). Every line repeats date and type in B/C,
+    carries its account in G, exactly one valued side in H/I and the adjusting
+    flag in J. Blank amounts are never imputed as zero; a group's lines must
+    share date, type and adjusting flag; group and grand totals must reconcile.
+    The column-A label is source report text, not a durable transaction id.
+    """
+    order, basis = date_order(book, choice)
+    active, groups, accounts, total_row, footer_count = None, [], {}, None, 0
+    grand = (0, 0)
+    for row in sorted(r for r in book.rows if r > 5):
+        cols = nonempty_columns(book, row)
+        if not cols:
+            continue
+        if total_row is not None:
+            require(cols == {'A'}, 'financial_rows_after_journal_total')
+            footer_count += 1
+            continue
+        require(cols <= set('ABCDEFGHIJ'), 'unexpected_journal_columns')
+        if 'A' in cols:
+            label = book.text(f'A{row}')
+            missing = {'group_start_row': active['source_start_row'], 'boundary_row': row} if active else None
+            if label.upper() == 'TOTAL':
+                require(active is None, 'source_control_missing_amount_or_subtotal', missing)
+                require(cols == {'A', 'H', 'I'}, 'invalid_journal_total_row')
+                total_row = row
+                grand = (book.amount(f'H{row}'), book.amount(f'I{row}'))
+                continue
+            if label.startswith('Total for '):
+                require(active is not None and label[len('Total for '):] == active['group_label'], 'journal_group_total_label_mismatch', {'row': row})
+                require(cols == {'A', 'H', 'I'}, 'source_control_missing_amount_or_subtotal', {'row': row, 'group_start_row': active['source_start_row']})
+                subtotal = (book.amount(f'H{row}'), book.amount(f'I{row}'))
+                require(active['line_count'] >= 2 and subtotal == (active['debit'], active['credit']), 'journal_group_subtotal_mismatch', {'row': row})
+                require(active['debit'] == active['credit'], 'unbalanced_journal_group', {'row': row})
+                groups.append({'source_start_row': active['source_start_row'], 'source_subtotal_row': row, 'date': active['date'], 'line_count': active['line_count'], 'debit_cents': str(active['debit']), 'credit_cents': str(active['credit']),
+                               'transaction_type': active['transaction_type'], 'number': active['number'], 'name': active['name'], 'memo': active['memo'], 'lines': active['lines'],
+                               'adjusting': active['adjusting'], 'source_group_label': active['group_label']})
+                active = None
+                continue
+            require(cols == {'A'}, 'unexpected_journal_row_label', {'row': row})
+            require(active is None, 'source_control_missing_amount_or_subtotal', missing)
+            active = {'source_start_row': row, 'group_label': label, 'date': None, 'line_count': 0, 'debit': 0, 'credit': 0, 'lines': [],
+                      'transaction_type': None, 'number': '', 'name': '', 'memo': '', 'adjusting': None}
+            continue
+        require(active is not None, 'orphan_journal_account_line', {'row': row})
+        require('B' in cols and 'C' in cols, 'journal_transaction_type_required', {'row': row})
+        require('G' in cols, 'journal_account_label_required', {'row': row})
+        require(cols & {'H', 'I'}, 'source_control_missing_amount_or_subtotal', {'row': row, 'group_start_row': active['source_start_row']})
+        require('J' in cols and book.text(f'J{row}').lower() in ADJ_FLAGS, 'journal_adjustment_flag_required', {'row': row})
+        date, ttype, adjusting = parse_date(book, f'B{row}', order), book.text(f'C{row}'), ADJ_FLAGS[book.text(f'J{row}').lower()]
+        if active['date'] is None:
+            active.update(date=date, transaction_type=ttype, adjusting=adjusting, number=optional_text(book, f'D{row}'), name=optional_text(book, f'E{row}'))
+        require((date, ttype) == (active['date'], active['transaction_type']), 'journal_group_metadata_inconsistent', {'row': row})
+        require(adjusting == active['adjusting'], 'journal_adjustment_flag_inconsistent', {'row': row})
+        if not active['memo']:
+            active['memo'] = optional_text(book, f'F{row}')
+        label = book.text(f'G{row}')
+        require(label != '', 'journal_account_label_required', {'row': row})
+        debit, credit = book.amount(f'H{row}'), book.amount(f'I{row}')
+        require(not (debit and credit), 'journal_line_has_both_sides')
+        active['line_count'] += 1
+        active['debit'] += debit
+        active['credit'] += credit
+        active['lines'].append({'row': row, 'label': label, 'debit': debit, 'credit': credit, 'adjusting': adjusting, 'memo': optional_text(book, f'F{row}'), 'name': optional_text(book, f'E{row}'), 'raw_cells': _raw_cells(book, row, cols)})
+        old = accounts.setdefault(label, {'debit': 0, 'credit': 0, 'line_count': 0})
+        old['debit'] += debit
+        old['credit'] += credit
+        old['line_count'] += 1
+    require(active is None, 'source_control_missing_amount_or_subtotal', {'group_start_row': active['source_start_row'], 'boundary': 'end_of_sheet'} if active else None)
+    require(groups and total_row is not None, 'journal_groups_and_total_required')
+    total = (sum(int(g['debit_cents']) for g in groups), sum(int(g['credit_cents']) for g in groups))
+    require(total == grand, 'journal_grand_total_mismatch')
+    dates = [g['date'] for g in groups]
+    return {'status': 'supported_controls_passed', 'group_count': len(groups), 'line_count': sum(g['line_count'] for g in groups), 'date_start': min(dates), 'date_end': max(dates), 'date_order': order, 'date_order_basis': basis, 'total_row': total_row, 'debit_cents': str(total[0]), 'credit_cents': str(total[1]), 'groups': groups, 'accounts': [{'label': label, 'label_ref': sha(label.encode('utf-8')), 'line_count': v['line_count'], 'debit_cents': str(v['debit']), 'credit_cents': str(v['credit']), 'net_debit_cents': str(v['debit'] - v['credit'])} for label, v in sorted(accounts.items())], 'footer_rows': footer_count, 'adjusting_group_count': sum(g['adjusting'] for g in groups), 'durable_source_transaction_ids_available': False, 'identity_basis': 'Source workbook hash, report row locators and column-A group text only; no durable source transaction identity.', 'layout': 'qbo_modern'}
 
 
 def journal(book, choice):
     detail = journal_postings(book, choice)
-    detail['groups'] = [{k: g[k] for k in ('source_start_row', 'source_subtotal_row', 'date', 'line_count', 'debit_cents', 'credit_cents')} for g in detail['groups']]
+    detail['groups'] = [{k: g[k] for k in ('source_start_row', 'source_subtotal_row', 'date', 'line_count', 'debit_cents', 'credit_cents', 'adjusting') if k in g} for g in detail['groups']]
     return detail
 
 
@@ -516,12 +644,7 @@ def selected_workbooks(data):
     """Re-open the trial balance and journal after a separate assessment pass."""
     books, names = {}, {}
     with archive(data) as outer:
-        selected = {}
-        for item in outer.infolist():
-            kind = classify(item.filename)
-            if kind:
-                require(kind not in selected, 'duplicate_financial_report_kind')
-                selected[kind] = item.filename
+        selected = select_reports(outer)
         for required in ('trial_balance', 'journal'):
             require(required in selected, 'trial_balance_and_journal_required')
         for kind in ('trial_balance', 'journal'):
@@ -531,6 +654,7 @@ def selected_workbooks(data):
 
 
 def classify(name):
+    """Exact canonical filename -> kind (legacy behaviour)."""
     stem = PurePosixPath(name).name
     if not stem.lower().endswith('.xlsx'):
         return None
@@ -538,18 +662,84 @@ def classify(name):
     return KINDS.get(key)
 
 
+def name_hint(name):
+    """Kind suggested by a non-canonical filename such as `Co_Journal_2017.xlsx`."""
+    stem = PurePosixPath(name).name
+    if not stem.lower().endswith('.xlsx'):
+        return None
+    key = re.sub(r'[^a-z]', '', stem[:-5].lower())
+    hits = {kind for token, kind in KINDS.items() if token in key}
+    return next(iter(hits)) if len(hits) == 1 else None
+
+
+def select_reports(outer):
+    """Pick financial reports by exact name, or by title row (A2) and content.
+
+    Exact canonical names keep their legacy meaning. Other .xlsx members are
+    opened under the same bounded parser and classified by their title row; a
+    name hint must agree with the title. Members whose names look like list
+    exports (customers, employees, suppliers...) are never opened.
+    """
+    selected = {}
+    for item in outer.infolist():
+        name = item.filename
+        if name.endswith('/'):
+            continue
+        kind = classify(name)
+        if kind is None:
+            if not name.lower().endswith('.xlsx') or NONFINANCIAL_NAME.search(PurePosixPath(name).name):
+                continue
+            hint = name_hint(name)
+            try:
+                kind = Workbook(member(outer, name), None).kind
+            except AssessmentError:
+                if hint is None:
+                    continue
+                raise
+            require(hint is None or hint == kind, 'report_name_title_conflict', {'member': name})
+            if kind not in ('trial_balance', 'journal') and hint is None:
+                continue
+        require(kind not in selected, 'duplicate_financial_report_kind')
+        selected[kind] = name
+    return selected
+
+
+def parse_period(label):
+    """`January-December, 2017` -> (start, end); `As of December 31, 2017` -> (None, date)."""
+    text = re.sub(r'\s+', ' ', label.strip().lower())
+    m = re.fullmatch(r'([a-z]+)\s*-\s*([a-z]+),? (\d{4})', text)
+    if m and m[1] in MONTHS and m[2] in MONTHS and MONTHS[m[1]] <= MONTHS[m[2]]:
+        year, last = int(m[3]), MONTHS[m[2]]
+        end = (dt.date(year + (last == 12), last % 12 + 1, 1) - dt.timedelta(days=1))
+        return dt.date(year, MONTHS[m[1]], 1), end
+    m = re.fullmatch(r'as of ([a-z]+) (\d{1,2}),? (\d{4})', text)
+    if m and m[1] in MONTHS:
+        try:
+            return None, dt.date(int(m[3]), MONTHS[m[1]], int(m[2]))
+        except ValueError:
+            return None
+    return None
+
+
+def period_profile(tb_label, journal_label):
+    """Accept identical headings (legacy all-dates profile) or a journal period
+    paired with a trial balance as of exactly that period's end."""
+    if tb_label == journal_label:
+        require(tb_label.strip().lower() == 'all dates', 'only_all_dates_cross_report_profile_supported')
+        return {'kind': 'all_dates'}
+    tb, jr = parse_period(tb_label), parse_period(journal_label)
+    require(tb is not None and jr is not None and tb[0] is None and jr[0] is not None and tb[1] == jr[1], 'financial_period_heading_mismatch')
+    return {'kind': 'journal_period_with_tb_as_of_period_end', 'period_start': jr[0].isoformat(), 'period_end': jr[1].isoformat()}
+
+
 def assess_export_bytes(data, order='auto'):
     report = {'format': 'nxt-qbo-financial-assessment/v1', 'inspector_script_sha256': INSPECTOR_SCRIPT_SHA256, 'inspector_hash_basis': 'raw_local_script_bytes_at_module_load', 'source_sha256': sha(data), 'source_bytes': len(data), 'selection': sorted(TITLES), 'reports': [], 'blockers': [], 'financial_controls_passed': False, 'live_cutover_allowed': False, 'source_completeness_verified': False, 'assumed_currency': 'CAD', 'source_currency_verified': False, 'durable_source_transaction_ids_available': False, 'source_executed': False, 'production_writes': 0, 'network_requests': 0,
-              'limits': ['Selected report assessment only. Customer, employee and supplier list contents are never read.', 'Exact label hashes and row locators are not durable source account/transaction IDs or a source-specific import contract.', 'Only decimal literals, local cell references, same-column SUM ranges, parentheses and plus/minus arithmetic are interpreted by a bounded parser. General Excel/external formulas are never executed; numeric cached formula results are never authoritative.', 'Trial balance and journal controls do not establish source completeness, record authenticity, currency, attachments, open items, statutory archive, tax coverage, tenant authorization or independent approval.', 'General ledger, balance sheet and profit/loss are pinned and structurally inventoried only; their full accounting semantics are not assessed.', 'No target import, data migration, cutover approval or source retirement is performed.']}
+              'limits': ['Selected report assessment only. Members named like customer, employee, supplier, vendor, contact or payroll lists are never opened; other non-canonical .xlsx members are opened by the same bounded parser only to read their title row.', 'Exact label hashes and row locators are not durable source account/transaction IDs or a source-specific import contract.', 'Only decimal literals, local cell references, same-column SUM ranges, parentheses and plus/minus arithmetic are interpreted by a bounded parser. General Excel/external formulas are never executed; numeric cached formula results are never authoritative.', 'Trial balance and journal controls do not establish source completeness, record authenticity, currency, attachments, open items, statutory archive, tax coverage, tenant authorization or independent approval.', 'General ledger, balance sheet and profit/loss are pinned and structurally inventoried only; their full accounting semantics are not assessed.', 'No target import, data migration, cutover approval or source retirement is performed.']}
     books = {}
     try:
         with archive(data) as outer:
-            selected = {}
-            for item in outer.infolist():
-                kind = classify(item.filename)
-                if kind:
-                    require(kind not in selected, 'duplicate_financial_report_kind')
-                    selected[kind] = item.filename
+            selected = select_reports(outer)
+            report['selected_members'] = {k: v for k, v in sorted(selected.items())}
             for required in ('trial_balance', 'journal'):
                 require(required in selected, 'trial_balance_and_journal_required')
             for kind in sorted(selected):
@@ -584,19 +774,26 @@ def assess_export_bytes(data, order='auto'):
         if 'trial_balance' in books and 'journal' in books:
             a, b = books['trial_balance'], books['journal']
             require(a.company_hash == b.company_hash, 'financial_company_heading_mismatch')
-            require(a.period_label == b.period_label, 'financial_period_heading_mismatch')
-            require(a.period_label.strip().lower() == 'all dates', 'only_all_dates_cross_report_profile_supported')
+            profile = period_profile(a.period_label, b.period_label)
+            report['period_profile'] = profile
             parsed = {r['report']: r for r in report['reports']}
+            if profile['kind'] != 'all_dates' and 'journal' in parsed and parsed['journal']['assessment'].get('status') == 'supported_controls_passed':
+                j = parsed['journal']['assessment']
+                if not (profile['period_start'] <= j['date_start'] and j['date_end'] <= profile['period_end']):
+                    report['blockers'].append({'report': 'cross_report', 'code': 'journal_date_outside_period'})
             if not report['blockers']:
                 tb = {a['label']: int(a['net_debit_cents']) for a in parsed['trial_balance']['assessment']['accounts']}
                 gl = {a['label']: int(a['net_debit_cents']) for a in parsed['journal']['assessment']['accounts']}
                 diffs = [{'label': label, 'label_ref': sha(label.encode('utf-8')), 'tb_net_debit_cents': str(tb.get(label, 0)), 'journal_net_debit_cents': str(gl.get(label, 0)), 'delta_cents': str(tb.get(label, 0) - gl.get(label, 0))} for label in sorted(tb.keys() | gl.keys()) if tb.get(label, 0) != gl.get(label, 0)]
-                report['account_net_reconciliation'] = {'basis': 'Exact report labels and all-dates net debit balances, not durable IDs.', 'mismatch_count': len(diffs), 'mismatches': diffs, 'zero_net_journal_labels_absent_from_tb': sum(label not in tb and value == 0 for label, value in gl.items())}
+                report['account_net_reconciliation'] = {'basis': 'Exact report labels; trial balance net debit balances versus journal net debit activity for the reported period, not durable IDs.', 'mismatch_count': len(diffs), 'mismatches': diffs, 'zero_net_journal_labels_absent_from_tb': sum(label not in tb and value == 0 for label, value in gl.items())}
                 if diffs:
                     report['blockers'].append({'report': 'cross_report', 'code': 'account_net_balance_mismatch'})
         report['financial_controls_passed'] = not report['blockers']
     except AssessmentError as exc:
-        report['blockers'].append({'report': 'archive_or_cross_report', 'code': str(exc)})
+        blocker = {'report': 'archive_or_cross_report', 'code': str(exc)}
+        if exc.location is not None:
+            blocker['location'] = exc.location
+        report['blockers'].append(blocker)
     report['report_sha256'] = sha(canonical(report))
     return report
 

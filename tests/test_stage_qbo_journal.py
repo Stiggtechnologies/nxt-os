@@ -157,3 +157,15 @@ class MultiChunkStageTests(unittest.TestCase):
             self.assertGreater(len(operator.chunk_bytes({"accounts": c["accounts"], "entries": c["entries"] + nxt["entries"][:1]})), 2048)
         with self.assertRaises(stage.qbo.AssessmentError):
             stage.split_chunks(accounts, [entry(0, "m" * 5000)], limit=2048)
+
+
+def load_tests(loader, standard_tests, pattern):
+    # CI runs this file by name; also run the current-layout QBO journal tests
+    # (tests/test_qbo_modern_journal.py) until the workflow lists that file.
+    import importlib.util as _u
+    _p = Path(__file__).with_name('test_qbo_modern_journal.py')
+    _s = _u.spec_from_file_location('test_qbo_modern_journal_ci', _p)
+    _m = _u.module_from_spec(_s)
+    _s.loader.exec_module(_m)
+    standard_tests.addTests(loader.loadTestsFromModule(_m))
+    return standard_tests
