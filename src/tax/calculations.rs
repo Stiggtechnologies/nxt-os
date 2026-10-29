@@ -161,15 +161,15 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
     let bpa=1_612_900-reduction; let employment_amount=employment.min(147_100);
     let federal_before=progressive(taxable,FEDERAL)?;
     let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
-    let (xcredit,xlines)=t1_credit_extras(c,obj,&x,taxable)?;
+    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,"AB")?;
     let federal=(federal_before-federal_credits-xcredit).max(0);
     let provincial_before=progressive(taxable,ALBERTA)?;
     // AB428: credits at 8%, plus the 2025 Alberta supplemental tax credit of 2% on
     // credit amounts above $60,000 (CRA T4127-JUL 2025, factor K5P).
-    let ab_credit_base=sum(&[2_232_300,cpp,ei])?;
+    let ab_credit_base=sum(&[2_232_300,cpp,ei,pbase])?;
     let provincial_credits=rounded_ratio(ab_credit_base,800,10000)?;
     let ab_supplemental=rounded_ratio((ab_credit_base-6_000_000).max(0),200,10000)?;
-    let provincial=(provincial_before-provincial_credits-ab_supplemental).max(0);
+    let provincial=(provincial_before-provincial_credits-pdon-ab_supplemental).max(0);
     let tax=sum(&[federal,provincial])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?])?;
     for (code,label,amount) in [
         ("10100","Employment income",employment),("12100","Canadian interest income",interest),("15000","Total income",income),
@@ -207,13 +207,13 @@ fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::P
     let bpa=1_612_900-reduction; let employment_amount=employment.min(147_100);
     let federal_before=progressive(taxable,FEDERAL)?;
     let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
-    let (xcredit,xlines)=t1_credit_extras(c,obj,&x,taxable)?;
+    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,p.code)?;
     let federal=(federal_before-federal_credits-xcredit).max(0);
     if p.code=="MB" && taxable>20_000_000 { c.diagnostic("mb_bpa_phaseout","Manitoba phases out its basic personal amount for net income between $200,000 and $400,000 from 2025; this is not calculated.",None,true); }
     let prov_bpa=p.bpa_cents.unwrap_or(bpa);
     let prov_cea=if p.employment_amount { employment_amount } else { 0 };
     let provincial_before=progressive(taxable,p.brackets)?;
-    let provincial_credits=rounded_ratio(sum(&[prov_bpa,prov_cea,cpp,ei])?,p.credit_rate_bps,10000)?;
+    let provincial_credits=sum(&[rounded_ratio(sum(&[prov_bpa,prov_cea,cpp,ei,pbase])?,p.credit_rate_bps,10000)?,pdon])?;
     let provincial=(provincial_before-provincial_credits).max(0);
     let tax=sum(&[federal,provincial])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?])?;
     let lc=p.code.to_lowercase();
@@ -278,7 +278,8 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     Ok(T1Extra{income,deductions:sum(&[out_split,se_ded])?,pension_for_credit:(pen-out_split).max(0)+in_split,se_cpp_credit:se_credit,lines})
 }
 /// Federal credits for medical (33099), donations (34900), pension (31400), tuition (32300).
-fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, net: i64) -> Result<(i64,Vec<(String,String,i64)>),String> {
+/// Returns (federal credit, provincial credit amounts at the provincial rate, provincial donation credit, lines).
+fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, net: i64, code: &str) -> Result<(i64,i64,i64,Vec<(String,String,i64)>),String> {
     let (med,don,tui)=(money(obj,"medical_expenses_cents")?,money(obj,"donations_cents")?,money(obj,"tuition_cents")?);
     let pension_amount=if x.pension_for_credit>0 { x.pension_for_credit.min(200_000) } else { 0 };
     if pension_amount>0 { c.diagnostic("pension_amount_eligibility","Line 31400 eligibility depends on age and pension type (age 65+ for most RRIF/annuity income). Verify that the pension income is eligible.",None,false); }
@@ -291,11 +292,24 @@ fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, n
     let donation_credit=sum(&[rounded_ratio(first,1450,10000)?,rounded_ratio(rest-at33,2900,10000)?,rounded_ratio(at33,3300,10000)?])?;
     let credit_base=sum(&[medical,pension_amount,tui,x.se_cpp_credit])?;
     let credit=sum(&[rounded_ratio(credit_base,1450,10000)?,donation_credit])?;
-    if medical>0 || don>0 || pension_amount>0 || tui>0 || x.se_cpp_credit>0 {
-        c.diagnostic("provincial_credit_not_calculated","Medical, donation, pension, tuition and self-employed CPP credits are calculated federally only. The provincial counterparts (different amounts and rates per province) are not calculated, so provincial tax is overstated.",None,true);
-    }
-    Ok((credit,vec![("31400".into(),"Pension income amount (max $2,000)".into(),pension_amount),("32300".into(),"Verified T2202 tuition amount (current year)".into(),tui),
-        ("33099".into(),"Allowable medical expenses (less lesser of 3% net income and $2,834)".into(),medical),("34900".into(),"Donations (federal credit: 14.5% first $200, 29%/33% above)".into(),don),("donation_credit".into(),"Federal donation credit".into(),donation_credit),("extra_federal_credits".into(),"Additional federal non-refundable credits".into(),credit)]))
+    // Provincial counterparts from the 2025 428 form and worksheet (rates::PROV_CREDITS_2025).
+    let p=super::rates::prov_credits_2025(code).ok_or("No 2025 provincial credit parameters")?;
+    let p_medical=(med-rounded_ratio(net,300,10000)?.min(p.medical_max_cents)).max(0);
+    let p_pension=x.pension_for_credit.max(0).min(p.pension_max_cents);
+    let p_tuition=if p.current_year_tuition { tui } else { 0 };
+    if tui>0 && !p.current_year_tuition { c.diagnostic("provincial_tuition_none",&format!("{} has no current-year tuition credit for 2025; only unused carryforward amounts (not handled) apply.",code),Some("tuition_cents"),false); }
+    if tui>0 && p.current_year_tuition { c.diagnostic("provincial_education_amount","Provincial monthly education/textbook amounts and tuition carryforwards are not calculated; claim only reduces tax if they are nil.",Some("tuition_cents"),false); }
+    let p_base=sum(&[p_medical,p_pension,p_tuition,x.se_cpp_credit])?;
+    let p_top=match p.donation_top { Some((thr,_))=>rest.min((net-thr).max(0)), None=>0 };
+    let p_don=sum(&[rounded_ratio(first,p.donation_low_bps,10000)?,rounded_ratio(rest-p_top,p.donation_high_bps,10000)?,match p.donation_top { Some((_,r))=>rounded_ratio(p_top,r,10000)?, None=>0 }])?;
+    let lc=code.to_lowercase();
+    let mut lines=vec![(format!("{code}58360"),format!("{code} pension income amount"),p_pension),(format!("{code}58560"),format!("{code} current-year tuition amount"),p_tuition),
+        (format!("{code}58689"),format!("{code} allowable medical expenses"),p_medical),(format!("{lc}_donation_credit"),format!("{code} donation credit"),p_don),(format!("{lc}_extra_credit_amounts"),format!("{code} additional credit amounts at the provincial rate"),p_base)];
+    lines.retain(|l| l.2!=0);
+    let mut out=vec![("31400".into(),"Pension income amount (max $2,000)".into(),pension_amount),("32300".into(),"Verified T2202 tuition amount (current year)".into(),tui),
+        ("33099".into(),"Allowable medical expenses (less lesser of 3% net income and $2,834)".into(),medical),("34900".into(),"Donations (federal credit: 14.5% first $200, 29%/33% above)".into(),don),("donation_credit".into(),"Federal donation credit".into(),donation_credit),("extra_federal_credits".into(),"Additional federal non-refundable credits".into(),credit)];
+    out.extend(lines);
+    Ok((credit,p_base,p_don,out))
 }
 fn ontario_health_premium(taxable: i64) -> Result<i64,String> {
     // 2025 ON428 health-premium chart. Bounds are taxable-income cents.
@@ -334,7 +348,7 @@ fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
     let bpa=1_612_900-reduction; let employment_amount=employment.min(147_100);
     let federal_before=progressive(taxable,FEDERAL)?;
     let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
-    let (xcredit,xlines)=t1_credit_extras(c,obj,&x,taxable)?;
+    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,"ON")?;
     let federal=(federal_before-federal_credits-xcredit).max(0);
     let spouse_net=optional_money(obj,"spouse_net_income_cents")?;
     let spouse_amount=match spouse_net {
@@ -342,8 +356,8 @@ fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
         Some(net) => (1_190_500_i64.saturating_sub(net)).clamp(0, 1_082_300),
     };
     let ontario_before=progressive(taxable,ONTARIO)?;
-    let ontario_credit_base=sum(&[1_274_700, spouse_amount, cpp, ei])?;
-    let ontario_credits=rounded_ratio(ontario_credit_base,505,10000)?;
+    let ontario_credit_base=sum(&[1_274_700, spouse_amount, cpp, ei, pbase])?;
+    let ontario_credits=sum(&[rounded_ratio(ontario_credit_base,505,10000)?,pdon])?;
     let after_credits=(ontario_before-ontario_credits).max(0);
     // ON428 lines 66–68. No dividend tax credit or split income in this scope, so line 65 equals tax after non-refundable credits.
     let surtax_lower=if after_credits>571_000 { rounded_ratio(after_credits-571_000,2000,10000)? } else { 0 };
@@ -367,7 +381,7 @@ fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
     ] { c.line(code,label,amount); }
     for (code,label,amount) in x.lines.iter().chain(xlines.iter()) { c.line(code,label,*amount); }
     c.total("taxable_income",taxable); c.total("federal_tax",federal); c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("payments",paid); c.total("balance",tax-paid);
-    c.diagnostic("ontario_scope","Ontario amount uses published 2025 ON428 brackets, the 5.05% credit rate, surtax, the basic reduction only, and the health-premium chart. Dependant reductions, donations, dividends, LIFT, and minimum tax are not calculated. Cent rounding is half away from zero at each workpaper line, which can differ from dollar rounding on the paper form.",None,false);
+    c.diagnostic("ontario_scope","Ontario amount uses published 2025 ON428 brackets, the 5.05% credit rate, surtax, the basic reduction only, and the health-premium chart. Dependant reductions, age, disability and spouse amounts beyond the supplied net income, dividends, LIFT, and minimum tax are not calculated. Cent rounding is half away from zero at each workpaper line, which can differ from dollar rounding on the paper form.",None,false);
     c.diagnostic("benefits_excluded","Balance covers only the stated income-tax workpaper and payments. Refundable benefits and all other return amounts are excluded. No return is filed.",None,false);
     Ok(())
 }
@@ -544,7 +558,22 @@ mod tests {
         let l=|k:&str|c.lines.iter().find(|x|x.code==k).unwrap().amount;
         assert_eq!(l("33099"),250_000); assert_eq!(l("31400"),200_000); assert_eq!(l("donation_credit"),31_900);
         assert_eq!(l("extra_federal_credits"),rounded_ratio(750_000,1450,10000).unwrap()+31_900);
-        assert!(!c.supported, "provincial counterparts block review");
+        assert!(c.supported, "{:?}", c.diagnostics);
+        // ON428 2025: medical cap $2,885 (3% = 1,500 applies); pension max $1,762; no current-year tuition; donations 5.05%/11.16%.
+        assert_eq!(l("ON58689"),250_000); assert_eq!(l("ON58360"),176_200); assert!(c.lines.iter().all(|x|x.code!="ON58560"));
+        assert_eq!(l("on_donation_credit"),1_010+11_160); assert_eq!(l("on_extra_credit_amounts"),426_200);
+    }
+    #[test]fn provincial_credits_2025_bc_top_donation_tier_and_tuition(){
+        // BC428 worksheet line 58969: $200 at 5.06%, part matched to taxable income over $259,829 at 20.5%, rest 16.8%.
+        let c=calc("T1","BC",json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"interest_income_cents":30_000_000,"donations_cents":5_000_000,"tuition_cents":100_000}));
+        let l=|k:&str|c.lines.iter().find(|x|x.code==k).unwrap().amount;
+        assert_eq!(l("bc_donation_credit"),1_012+823_506+161_767);
+        assert_eq!(l("BC58560"),100_000);
+        for code in ["NL","PE","NS","NB","ON","MB","SK","AB","BC","YT","NT","NU"] {
+            let p=super::super::rates::prov_credits_2025(code).unwrap();
+            assert_eq!(super::super::rates::rate_status("ca-2025.1",&format!("{}_credits_2025",code.to_lowercase())),"sourced");
+            assert!(p.medical_max_cents>0 && p.pension_max_cents>0 && p.donation_high_bps>p.donation_low_bps.min(p.donation_high_bps)-1);
+        }
     }
     #[test]fn t1_ontario_2025_uses_on428_brackets_surtax_reduction_and_health_premium(){
         let base=json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":4_000_000});
