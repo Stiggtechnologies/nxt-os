@@ -2,6 +2,7 @@
 //! DT Max export is pinned. Vendor backups are refused. Filing stays off.
 //! Chunks checkpoint, a bad row is an exception, and the rest of the chunk continues.
 
+pub mod files;
 mod lanes;
 mod routes;
 
