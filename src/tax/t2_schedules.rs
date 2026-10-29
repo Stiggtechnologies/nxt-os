@@ -13,7 +13,7 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("T2 Schedule 1, Net Income (Loss) for Income Tax Purposes (t2sch1-25e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch1.html"),
     ("T2 Schedule 8, Capital Cost Allowance (t2sch8-26e), columns 10, 17, 19, 20, 21 and notes 12, 14, 15", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch8.html"),
     ("Income Tax Regulations (C.R.C., c. 945) s. 1100(1)(a) rates (incl. (xiv) Class 17, 8%), 1100(1)(b) Class 13, 1100(1)(c) Class 14, 1100(2) factors A/A.1 (incl. A(c.1)–(c.3), A(d), A.1(f)), 1100(2.01)/(2.011) straddle years, 1100(3) years under 12 months, Schedule III, 1100(0.1)–(0.3) immediate expensing, 1100(1)(c.1) Class 14.1 additional allowance", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html"),
-    ("Income Tax Regulations (C.R.C., c. 945) s. 1104(3.1) designated immediate expensing property, (3.2) $1,500,000 limit, (3.3)–(3.4) associated allocation, (3.5) multiple and short years", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-19.html"),
+    ("Income Tax Regulations (C.R.C., c. 945) s. 1104(3.1) designated immediate expensing property, (3.2) $1,500,000 limit, (3.3)–(3.4) associated allocation, (3.5)(a) several years ending in one calendar year while associated, (3.5)(b) years under 51 weeks", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-19.html"),
     ("CRA T4002 ch. 4, Schedule 8 columns 4, 9, 10, 14–18 and 21 (immediate expensing; proceeds reducing AIIP then RIIP)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/t4002/t4002-6.html"),
     ("Income Tax Regulations (C.R.C., c. 945) s. 7307(1) passenger vehicle and 7307(1.1) zero-emission passenger vehicle prescribed amounts; s. 1101(1af), (1ac), (5b.1), (5p), (5q), (5s) separate classes; 1100(1)(a.1)/(a.2) additional allowances; 1104(2) eligible non-residential building", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/FullText.html"),
     ("CRA classes of depreciable property and CCA rates", "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/sole-proprietorships-partnerships/report-business-income-expenses/claiming-capital-cost-allowance/classes-depreciable-property.html"),
@@ -192,6 +192,10 @@ pub struct ImmediateExpensing {
     pub agreement_total_bp: Option<u32>,
     /// Another taxation year of this corporation ends in the same calendar year (1104(3.5)(a)).
     pub other_tax_year_ends_same_calendar_year: Option<bool>,
+    /// 1104(3.5)(a), associated with several years in one calendar year only: this is the first of
+    /// those years, or else the 1104(3.3)/(3.4) limit (before (3.5)(b)) for that first year.
+    pub first_year_in_calendar_year: Option<bool>,
+    pub first_year_limit_cents: Option<i64>,
     /// The property was designated on the prescribed form (1104(3.1) DIEP (c)).
     pub designated_on_prescribed_form: bool,
     /// Each DIEP was acquired after April 18, 2021, became available for use before 2024, is
@@ -552,7 +556,7 @@ fn immediate_expensing_check(input: &T2Input, total: i64, diagnostics: &mut Vec<
     if e < a { return b("tax_year_end is before tax_year_start.".into()); }
     if a >= NaiveDate::from_ymd_opt(2024, 1, 1).unwrap() { return b("A CCPC's DIEP must become available for use before 2024 (Reg 1104(3.1)); this year starts after 2023.".into()); }
     if e <= NaiveDate::from_ymd_opt(2021, 4, 18).unwrap() { return b("DIEP must be acquired after April 18, 2021 (Reg 1104(3.1)).".into()); }
-    match ie.other_tax_year_ends_same_calendar_year { None => return b("Set other_tax_year_ends_same_calendar_year (Reg 1104(3.5)(a)).".into()), Some(true) => return b("Several taxation years ending in one calendar year share the limit under Reg 1104(3.5)(a); not modelled.".into()), _ => {} }
+    let Some(multi) = ie.other_tax_year_ends_same_calendar_year else { return b("Set other_tax_year_ends_same_calendar_year (Reg 1104(3.5)(a)).".into()) };
     let mut limit: i128 = 150_000_000;
     match ie.associated {
         None => return b("Set associated (Reg 1104(3.2)): the $1.5M limit is nil for associated persons without a 1104(3.3) agreement.".into()),
@@ -561,6 +565,15 @@ fn immediate_expensing_check(input: &T2Input, total: i64, diagnostics: &mut Vec<
             _ => return b("Associated: enter the 1104(3.3) agreement percentage and the agreement total; without an agreement the limit is nil unless the Minister allocates it under 1104(3.4).".into()),
         },
         Some(false) => {}
+    }
+    // 1104(3.5)(a): associated with another eligible person in several years ending in one calendar
+    // year: each later year's limit is the lesser of the first such year's limit and its own.
+    if multi && ie.associated == Some(true) {
+        match (ie.first_year_in_calendar_year, ie.first_year_limit_cents) {
+            (Some(true), _) => {}
+            (Some(false), Some(f)) if f >= 0 => limit = limit.min(i128::from(f)),
+            _ => return b("Several taxation years end in this calendar year while associated: set first_year_in_calendar_year and, for a later year, first_year_limit_cents (Reg 1104(3.5)(a)).".into()),
+        }
     }
     let days = (e - a).num_days() + 1;
     if days < 357 { limit = limit * i128::from(days) / 365; }
