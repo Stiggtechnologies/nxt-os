@@ -1,6 +1,6 @@
 # REA replica gap analysis, 2026-10-29
 
-This re-measures every row of `REA_REPLICA_AUDIT.md` against main at `3a0bfdd`, which includes merged PRs #34 and #35.
+This re-measures every row of `REA_REPLICA_AUDIT.md` against main at `3a0bfdd` (#34 and #35) for the first scores; the re-score sections below name the commit they were measured at.
 
 Score = (copied & tested + 0.5 × partial) / rows. The "after" column reflects #34 and #35, both merged. No paired vendor golden files exist yet, so "copied & tested" means a test asserts the behaviour and, where noted, real staged files were checked.
 
@@ -74,9 +74,21 @@ Still not 100% anywhere. Every remaining row needs either vendor files or creden
 
 1. **CRA EFILE / NETFILE transmission.** Filing stays off, and "filed" is a human record behind the T183 gate. Closing it needs a CRA EFILE registration and software certification. **External.**
 2. **Vendor tie-out for T1/T2.** Real DT Max output (on Orville's PC, offline) and a WebTax credential, paired through parallel-compare. **External.**
-3. **Outbound delivery.** E-sign links, OTP codes and reminders queue in the outbox and nothing is emailed. Closing it needs an email/SMS provider key and approval to send. The sweep needs a scheduler: a Vercel cron entry for `POST /api/signatures/esign/sweep`, not added. **External plus a config change.**
+3. **Outbound delivery.** E-sign links, OTP codes and reminders queue in the outbox and nothing is emailed. Closing it needs an email/SMS provider key and approval to send. The hourly cron now exists (#60, `GET /api/cron/esign-sweep`, dry-run by default); it stays inert until `CRON_SECRET` (16+ chars) is set in Vercel, and queues reminders only with `NXT_SWEEP_CRON_MODE=queue`. Hourly crons may need a Vercel Pro plan. **External plus Orville's env step.**
 4. **Production staff cutover.** Create the staff accounts, enroll MFA, then set `NXT_BREAK_GLASS=off`. This is an operational step for Orville.
-5. **Client scoping beyond tax and engagements.** Signatures, firm, company books and migrations still rely on role checks only. **Code.**
+5. **Client scoping for migrations.** Signatures, firm projects/closes/client views and company books are now client-scoped (#60 and the client-ops PR); migrations still rely on role checks only. **Code.**
 6. **Tax coverage.** QC TP-1 and years other than 2025 (T1); T3 slips and provincial tax; T5013 CCA. **Code, plus published forms.**
 7. **QBO OAuth and payroll exports** for the remaining companies. **External.**
 8. **Caseware CaseView/iXBRL/TaxCycle file and Xero.** **External: formats and accounts.**
+
+## Re-score after #60 and the firm client-ops PR (2026-10-29, night pass)
+
+Same formula, measured against main after #59 and #60.
+
+| Module | Previous | Now | What moved |
+|---|---|---|---|
+| Firm | 45.5% | **45.8%** (12: 1/9/2) | +per-client work view (`GET /api/firm/clients/{client}/work`: projects with open/overdue/next due, closes, playbooks, applied charts; partial: NXT data, not QBOA's client list). Closes carry a client label and are client-scoped; projects, closes and client views deny out-of-scope staff (`staff_scoping`, `firm_client_ops`). Opt-in hourly workflow-trigger cron `GET /api/cron/firm-tick` (needs `CRON_SECRET` and `NXT_FIRM_CRON=on`). The two missing rows (provider connections, Excel add-in) are external. |
+| DocuSign | 40.6% | **40.6%** | Envelope client labels and scoping, and the authenticated hourly sweep cron, strengthen existing partial rows. Delivery is still outbox-only. |
+| All | | | Temporary passwords now force a change: every route except me, password, MFA enrollment and logout returns 403 until the password changes (`staff_identity`). |
+
+Measured-commit note: the evening pass above was measured at the main of #58, not `3a0bfdd`.
