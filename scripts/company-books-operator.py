@@ -894,8 +894,10 @@ class Runner:
 def main(argv=None):
     parser = SafeParser(description=__doc__)
     parser.add_argument("mode", choices=("preview", "commit", "verify"))
-    for name in ("origin", "private-root", "controls-manifest", "controls-sha256", "acquisition-manifest", "company", "evidence", "evidence-sha256", "receipt"):
+    parser.add_argument("--target", choices=("production", "test-copy"), default="production")
+    for name in ("private-root", "controls-manifest", "controls-sha256", "acquisition-manifest", "company", "evidence", "evidence-sha256", "receipt"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--origin")
     for name in ("request-id", "preview-receipt", "preview-receipt-sha256", "approve-preview-id", "reviewer-label", "commit-receipt", "commit-receipt-sha256", "readback-dir"):
         parser.add_argument("--" + name)
     parser.add_argument("--allow-native-adjustments", action="store_true")
@@ -904,7 +906,15 @@ def main(argv=None):
         required = {"preview": ["request_id"], "commit": ["request_id", "preview_receipt", "preview_receipt_sha256", "approve_preview_id", "reviewer_label"],
                     "verify": ["commit_receipt", "commit_receipt_sha256", "readback_dir"]}[args.mode]
         need(all(getattr(args, key) for key in required), "MODE_ARGUMENTS_MISSING")
-        client = Transport(args.origin, os.environ.get("NXT_COMPANY_BOOKS_KEY"))
+        if args.target == "test-copy":
+            # A persistent local test copy: its own key and origin, never production.
+            args.origin = args.origin or os.environ.get("NXT_TEST_COMPANY_BOOKS_ORIGIN") or "http://127.0.0.1:3917"
+            need(origin(args.origin)[1], "TEST_COPY_TARGET_MUST_BE_LOCAL")
+            token = os.environ.get("NXT_TEST_COMPANY_BOOKS_KEY")
+        else:
+            need(bool(args.origin), "MODE_ARGUMENTS_MISSING")
+            token = os.environ.get("NXT_COMPANY_BOOKS_KEY")
+        client = Transport(args.origin, token)
         bundle = Bundle(args)
         # Review blockers (SUSPENSE_REVIEW, OPENING_BALANCE_UNRECONCILED) never
         # reach production; only a local test copy until a human resolves them.

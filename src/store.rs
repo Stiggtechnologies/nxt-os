@@ -8,7 +8,8 @@
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::io::{BufRead, Write};
+use std::sync::{Arc, Mutex, OnceLock};
 
 pub type StoreResult<T> = Result<T, String>;
 
@@ -17,10 +18,49 @@ pub struct Memory {
     strings: HashMap<String, String>,
     sets: HashMap<String, HashSet<String>>,
     lists: HashMap<String, Vec<String>>,
+    /// Optional append-only JSONL log (NXT_DEV_STORE_FILE) so a local test copy
+    /// survives a restart. Each line records the full resulting state of one key.
+    log: Option<std::fs::File>,
+}
+
+impl Memory {
+    fn open(path: &str) -> StoreResult<Self> {
+        let mut m = Memory::default();
+        if let Ok(file) = std::fs::File::open(path) {
+            for line in std::io::BufReader::new(file).lines() {
+                let line = line.map_err(|_| "dev store file could not be read".to_string())?;
+                if line.trim().is_empty() { continue; }
+                let rec: Value = serde_json::from_str(&line).map_err(|_| "dev store file is corrupt".to_string())?;
+                let key = rec["k"].as_str().ok_or("dev store record is missing its key")?.to_string();
+                match (rec["t"].as_str(), &rec["v"]) {
+                    (Some("s"), Value::String(v)) => { m.strings.insert(key, v.clone()); }
+                    (Some("m"), Value::String(v)) => { m.sets.entry(key).or_default().insert(v.clone()); }
+                    (Some("l"), Value::Array(v)) => { m.lists.insert(key, v.iter().filter_map(|x| x.as_str().map(String::from)).collect()); }
+                    _ => return Err("dev store record is invalid".into()),
+                }
+            }
+        }
+        m.log = Some(std::fs::OpenOptions::new().create(true).append(true).open(path)
+            .map_err(|_| "dev store file could not be opened".to_string())?);
+        Ok(m)
+    }
+
+    fn record(&mut self, kind: &str, key: &str, value: Value) -> StoreResult<()> {
+        let Some(log) = self.log.as_mut() else { return Ok(()) };
+        let mut line = serde_json::to_vec(&json!({"t": kind, "k": key, "v": value})).map_err(|_| "dev store encode failed".to_string())?;
+        line.push(b'\n');
+        log.write_all(&line).and_then(|_| log.flush()).map_err(|_| "dev store file write failed".to_string())
+    }
+
+    fn put(&mut self, key: String, value: String) -> StoreResult<()> {
+        self.record("s", &key, json!(value))?;
+        self.strings.insert(key, value);
+        Ok(())
+    }
 }
 
 pub enum Store {
-    Memory(Mutex<Memory>),
+    Memory(Arc<Mutex<Memory>>),
     Redis {
         url: String,
         token: String,
@@ -39,7 +79,17 @@ const PREFIX: &str = "nxt:";
 
 impl Store {
     pub fn memory() -> Self {
-        Store::Memory(Mutex::new(Memory::default()))
+        Store::Memory(Arc::new(Mutex::new(Memory::default())))
+    }
+
+    /// Local test copy persisted to an append-only file. All stores in the
+    /// process share it, matching a shared production backend.
+    pub fn memory_file(path: &str) -> Self {
+        static SHARED: OnceLock<Result<Arc<Mutex<Memory>>, String>> = OnceLock::new();
+        match SHARED.get_or_init(|| Memory::open(path).map(|m| Arc::new(Mutex::new(m)))) {
+            Ok(m) => Store::Memory(m.clone()),
+            Err(reason) => Store::Unavailable { reason: reason.clone() },
+        }
     }
 
     pub fn from_env() -> Self {
@@ -66,7 +116,10 @@ impl Store {
                 token,
                 http: reqwest::Client::new(),
             },
-            _ => Store::memory(),
+            _ => match std::env::var("NXT_DEV_STORE_FILE") {
+                Ok(path) if !path.is_empty() => Store::memory_file(&path),
+                _ => Store::memory(),
+            },
         }
     }
 
@@ -155,8 +208,7 @@ impl Store {
         let key = format!("{PREFIX}{key}");
         match self {
             Store::Memory(m) => {
-                m.lock().unwrap().strings.insert(key, value.to_string());
-                Ok(())
+                m.lock().unwrap().put(key, value.to_string())
             }
             _ => {
                 let result = self.remote(vec![json!("SET"), json!(key), json!(value)]).await?;
@@ -174,7 +226,7 @@ impl Store {
                 if m.strings.contains_key(&key) {
                     return Ok(false);
                 }
-                m.strings.insert(key, value.to_string());
+                m.put(key, value.to_string())?;
                 Ok(true)
             }
             _ => match self.remote(vec![json!("SET"), json!(key), json!(value), json!("NX")]).await? {
@@ -196,7 +248,7 @@ impl Store {
                 if m.strings.get(&key).map(String::as_str) != expected {
                     return Ok(false);
                 }
-                m.strings.insert(key, value.to_string());
+                m.put(key, value.to_string())?;
                 Ok(true)
             }
             Store::Redis { .. } => {
@@ -216,7 +268,7 @@ impl Store {
                 let mut m = m.lock().unwrap();
                 let cur: i64 = m.strings.get(&key).and_then(|v| v.parse().ok()).unwrap_or(0);
                 let next = cur.checked_add(by).ok_or_else(|| "storage counter overflow".to_string())?;
-                m.strings.insert(key, next.to_string());
+                m.put(key, next.to_string())?;
                 Ok(next)
             }
             _ => self.remote(vec![json!("INCRBY"), json!(key), json!(by)]).await?.as_i64().ok_or_else(|| "storage counter response was invalid".into()),
@@ -227,7 +279,9 @@ impl Store {
         let key = format!("{PREFIX}{key}");
         match self {
             Store::Memory(m) => {
-                m.lock().unwrap().sets.entry(key).or_default().insert(member.to_string());
+                let mut m = m.lock().unwrap();
+                m.record("m", &key, json!(member))?;
+                m.sets.entry(key).or_default().insert(member.to_string());
                 Ok(())
             }
             _ => {
@@ -257,9 +311,11 @@ impl Store {
         match self {
             Store::Memory(m) => {
                 let mut m = m.lock().unwrap();
-                let list = m.lists.entry(key).or_default();
+                let mut list = m.lists.get(&key).cloned().unwrap_or_default();
                 list.insert(0, value.to_string());
                 list.truncate(cap);
+                m.record("l", &key, json!(list))?;
+                m.lists.insert(key, list);
                 Ok(())
             }
             Store::Redis { .. } => {
@@ -381,5 +437,41 @@ mod compare_exchange_tests {
             async move { b.compare_exchange("proposal", Some("pending"), "rejected").await.unwrap() }
         );
         assert_ne!(a, b, "one decision must win without overwriting it");
+    }
+}
+
+#[cfg(test)]
+mod dev_store_file_tests {
+    use super::*;
+
+    fn open(path: &str) -> Store { Store::Memory(Arc::new(Mutex::new(Memory::open(path).unwrap()))) }
+
+    #[tokio::test]
+    async fn dev_store_file_survives_restart() {
+        let dir = std::env::temp_dir().join(format!("nxt-dev-store-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("store.jsonl");
+        let path = path.to_str().unwrap();
+        {
+            let s = open(path);
+            s.set("a", "1").await.unwrap();
+            assert!(s.set_nx("b", "x").await.unwrap());
+            assert!(!s.set_nx("b", "y").await.unwrap());
+            assert!(s.compare_exchange("a", Some("1"), "2").await.unwrap());
+            assert_eq!(s.incr_by("n", 5).await.unwrap(), 5);
+            s.sadd("set", "m1").await.unwrap();
+            s.lpush_capped("l", "v1", 2).await.unwrap();
+            s.lpush_capped("l", "v2", 2).await.unwrap();
+            s.lpush_capped("l", "v3", 2).await.unwrap();
+        }
+        let s = open(path);
+        assert_eq!(s.get("a").await.unwrap().as_deref(), Some("2"));
+        assert_eq!(s.get("b").await.unwrap().as_deref(), Some("x"));
+        assert_eq!(s.incr_by("n", 1).await.unwrap(), 6);
+        assert_eq!(s.smembers("set").await.unwrap(), vec!["m1".to_string()]);
+        assert_eq!(s.lrange("l", 10).await.unwrap(), vec!["v3".to_string(), "v2".to_string()]);
+        std::fs::write(dir.join("bad.jsonl"), "not json\n").unwrap();
+        assert!(Memory::open(dir.join("bad.jsonl").to_str().unwrap()).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
