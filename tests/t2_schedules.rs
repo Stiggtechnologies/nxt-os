@@ -23,6 +23,7 @@ fn base() -> T2Input {
         cca: vec![CcaClass { class: "8".into(), opening_ucc_cents: 20_000_00, additions_cents: 10_000_00, ..Default::default() }],
         shareholders: vec![Shareholder { name: "Synthetic Holder".into(), kind: "individual".into(), identifier: "046454286".into(), common_bp: 10_000, preferred_bp: 0 }],
         tax_year_start: "2024-01-01".into(), tax_year_end: "2024-12-31".into(),
+        immediate_expensing: None,
     }
 }
 
@@ -174,4 +175,31 @@ fn short_year_proration_reg_1100_3() {
     // Missing dates block
     i.tax_year_end = String::new();
     assert!(codes(&build(&i).unwrap()).contains(&"cca_tax_year".to_string()));
+}
+
+#[test]
+fn immediate_expensing_ccpc_reg_1100_0_1() {
+    let ok = ImmediateExpensing { associated: Some(false), other_tax_year_ends_same_calendar_year: Some(false), designated_on_prescribed_form: true, diep_conditions_confirmed: true, ..Default::default() };
+    let mut i = base();
+    i.tax_year_start = "2023-01-01".into(); i.tax_year_end = "2023-12-31".into();
+    i.cca = vec![CcaClass { class: "8".into(), opening_ucc_cents: 20_000_00, additions_cents: 10_000_00, diep_cents: 10_000_00, immediate_expensing_cents: 10_000_00, ..Default::default() }];
+    i.immediate_expensing = Some(ok.clone());
+    let mut d = vec![];
+    let s8 = schedule8(&i, &mut d);
+    // IE 10,000 + 20% × (30,000 − 10,000; no regular additions left for the half-year rule) = 14,000
+    assert_eq!(s8["classes"][0]["maximum_cca_cents"], 14_000_00);
+    assert_eq!(s8["classes"][0]["column_9_immediate_expensing_cents"], 10_000_00);
+    assert_eq!(s8["classes"][0]["ucc_end_of_year_cents"], 16_000_00);
+    assert!(!codes(&serde_json::json!({"diagnostics":d})).contains(&"cca_immediate_expensing".to_string()));
+    let blocks = |i: &T2Input| { let mut d = vec![]; let s8 = schedule8(i, &mut d); (s8["schedule1_line_403_cca_cents"].as_i64().unwrap(), d.iter().any(|x| x["code"] == "cca_immediate_expensing" && x["blocks_review"] == true)) };
+    let mut j = i.clone(); j.corporation_type = "public".into(); assert_eq!(blocks(&j), (5_000_00, true)); // falls back to the half-year rule
+    let mut j = i.clone(); j.immediate_expensing.as_mut().unwrap().associated = None; assert!(blocks(&j).1);
+    let mut j = i.clone(); j.immediate_expensing = Some(ImmediateExpensing { associated: Some(true), agreement_percent_bp: Some(5_000), agreement_total_bp: Some(10_000), ..ok.clone() }); assert!(!blocks(&j).1);
+    j.immediate_expensing.as_mut().unwrap().agreement_total_bp = Some(12_000); assert!(blocks(&j).1);
+    let mut j = i.clone(); j.tax_year_start = "2024-01-01".into(); j.tax_year_end = "2024-12-31".into(); assert!(blocks(&j).1);
+    let mut j = i.clone(); j.cca[0].diep_cents = 1_000_000_00; j.cca[0].additions_cents = 1_000_000_00; j.cca[0].immediate_expensing_cents = 1_000_000_00;
+    assert!(!blocks(&j).1);
+    j.tax_year_end = "2023-06-30".into(); assert!(blocks(&j).1); // 181/365 × 1.5M = 743,835.61
+    let mut j = i.clone(); j.cca[0].class = "1".into(); let mut d = vec![]; schedule8(&j, &mut d); assert!(d.iter().any(|x| x["code"] == "cca_immediate_expensing_class"));
+    let mut j = i.clone(); j.cca[0].aiip_additions_cents = 1_00; assert!(validate(&j).is_err());
 }
