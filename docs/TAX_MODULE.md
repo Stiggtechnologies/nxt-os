@@ -23,7 +23,17 @@ Decision (2026-10-29): NXT OS carries out tax preparation itself. There are no l
 A new `src/tax_prep` workspace, which was drafted and then dropped. It would have duplicated TaxReturn, the lifecycle, the audit log, print and rollforward. PR #42 (a Python GIFI CSV importer) stays separate; the native trial-balance mapping complements it.
 
 ## Accuracy
-No rate line is marked validated, because no CRA worked example has been reproduced yet. The Alberta credit rate (8%) and the 2025 brackets need review by a qualified tax professional. NXT does not claim certified accuracy.
+Every 2025 rate has an entry in `rates::RATE_SOURCES` with the official URL it was checked against (checked 2026-10-29) and a status of `sourced` or `unvalidated`. Sources: CRA "Tax rates and income brackets, previous year", CRA T4127-JUL 2025 (121st ed.), the CRA indexation table, and the CRA RRSP/YMPE limits page.
+
+A line is `validated` (`rates::VALIDATIONS`) only when its inputs are sourced and a repo test reproduces a figure CRA publishes. Today that covers:
+- federal, Alberta and Ontario tax before credits (the brackets reproduce the T4127 Option 2 constants K/KP to the dollar),
+- line 30000 BPA and its phase-out, line 31260, and AB/ON basic personal amounts.
+
+These are reproductions of CRA-published constants, not full CRA T1 worked examples; CRA publishes none for 2025 that we could fetch. Net tax lines (42000, 42800) stay `unvalidated`.
+
+Alberta credit rate: 8% is correct for 2025. The engine previously omitted the 2025 Alberta supplemental tax credit (2% of credit amounts above $60,000, T4127 factor K5P). It is now applied as line `ab_supplemental_credit`.
+
+Still unvalidated: the ON health premium chart, the ON spouse amount, the enhanced CPP max, and the T2 rates. NXT does not claim certified accuracy, and a qualified tax professional must review it.
 
 ## External dependencies
 - CRA EFILE/NETFILE/Corporation Internet Filing software certification, renewed every year

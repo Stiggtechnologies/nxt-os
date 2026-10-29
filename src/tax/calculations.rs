@@ -159,15 +159,19 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
     let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
     let federal=(federal_before-federal_credits).max(0);
     let provincial_before=progressive(taxable,ALBERTA)?;
-    let provincial_credits=rounded_ratio(sum(&[2_232_300,cpp,ei])?,800,10000)?;
-    let provincial=(provincial_before-provincial_credits).max(0);
+    // AB428: credits at 8%, plus the 2025 Alberta supplemental tax credit of 2% on
+    // credit amounts above $60,000 (CRA T4127-JUL 2025, factor K5P).
+    let ab_credit_base=sum(&[2_232_300,cpp,ei])?;
+    let provincial_credits=rounded_ratio(ab_credit_base,800,10000)?;
+    let ab_supplemental=rounded_ratio((ab_credit_base-6_000_000).max(0),200,10000)?;
+    let provincial=(provincial_before-provincial_credits-ab_supplemental).max(0);
     let tax=sum(&[federal,provincial])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?])?;
     for (code,label,amount) in [
         ("10100","Employment income",employment),("12100","Canadian interest income",interest),("15000","Total income",income),
         ("20800","Verified RRSP deduction",rrsp),("22215","Verified enhanced CPP deduction",enhanced),("23600","Net income",taxable),("26000","Taxable income",taxable),
         ("30000","Federal basic personal amount",bpa),("30800","Verified base CPP credit amount",cpp),("31200","Verified EI credit amount",ei),("31260","Canada employment amount",employment_amount),
         ("federal_before_credits","Federal tax before credits",federal_before),("35000","Scoped federal non-refundable credits",federal_credits),("42000","Scoped net federal income tax",federal),
-        ("AB58040","Alberta basic personal amount",2_232_300),("ab_before_credits","Alberta tax before credits",provincial_before),("AB61500","Scoped Alberta non-refundable credits",provincial_credits),("42800","Scoped Alberta income tax",provincial),
+        ("AB58040","Alberta basic personal amount",2_232_300),("ab_before_credits","Alberta tax before credits",provincial_before),("AB61500","Scoped Alberta non-refundable credits",provincial_credits),("ab_supplemental_credit","Alberta supplemental tax credit (2% of credit amounts over $60,000)",ab_supplemental),("42800","Scoped Alberta income tax",provincial),
     ] { c.line(code,label,amount); }
     c.total("taxable_income",taxable); c.total("federal_tax",federal); c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("payments",paid); c.total("balance",tax-paid);
     c.diagnostic("benefits_excluded","Balance covers only the stated income-tax workpaper and payments. Refundable benefits, CWB, GST/HST credits, CPP/EI adjustments and all other return amounts are excluded.",None,false);
@@ -363,6 +367,27 @@ mod tests {
         assert!(!calculate("T1",2025,"BC",&json!({})).unwrap().supported);
         let c=calc("T1","AB",json!({"scope_confirmed":true,"full_year_resident":true,"other_tax_situations":true}));assert!(!c.supported);
         for partners in [json!([]),json!([{"id":"a","name":"A","share_bps":9999}]),json!([{"id":"a","name":"A","share_bps":5000},{"id":"a","name":"A","share_bps":5000}]),json!([{"id":"a","name":"A","share_bps":10000,"extra":true}])]{assert!(calculate("T5013",2025,"CA",&json!({"partners":partners})).is_err());}
+    }
+    /// Regression suite: hand-computed from CRA published 2025 rates (last-year.html,
+    /// T4127-JUL 2025). Synthetic inputs only, no client data.
+    #[test]fn regression_ab_on_published_rate_examples(){
+        // Federal tax before credits on $80,000 taxable: 57,375*14.5% + 22,625*20.5% = 8,319.38 + 4,638.13 = 12,957.51
+        assert_eq!(progressive(8_000_000,FEDERAL).unwrap(),1_295_750);
+        // Alberta on $80,000: 60,000*8% + 20,000*10% = 6,800.00
+        assert_eq!(progressive(8_000_000,ALBERTA).unwrap(),680_000);
+        // Ontario on $80,000: 52,886*5.05% + 27,114*9.15% = 2,670.74 + 2,480.93 = 5,151.67
+        assert_eq!(progressive(8_000_000,ONTARIO).unwrap(),515_167);
+        // AB $80,000 interest only: federal 12,957.50 - 14.5%*16,129 = 10,618.79; AB 6,800 - 8%*22,323 = 5,014.16
+        let ab=calc("T1","AB",json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":8_000_000}));
+        assert!(ab.supported); assert_eq!(ab.totals["federal_tax"],1_061_879); assert_eq!(ab.totals["provincial_tax"],501_416);
+        assert_eq!(ab.line_validation["federal_before_credits"],"validated");
+        assert_eq!(ab.lines.iter().find(|l|l.code=="ab_supplemental_credit").unwrap().amount,0);
+    }
+    #[test]fn alberta_supplemental_credit_applies_above_60000_of_credit_amounts(){
+        // Credit base 22,323 + 3,356.10 + 1,077.48 = 26,756.58 < 60,000 -> no supplemental.
+        let c=calc("T1","AB",json!({"scope_confirmed":true,"full_year_resident":true,"payroll_verified":true,"employment_income_cents":10_000_000,"cpp_base_credit_cents":335_610,"ei_credit_cents":107_748}));
+        assert_eq!(c.lines.iter().find(|l|l.code=="ab_supplemental_credit").unwrap().amount,0);
+        assert_eq!(rounded_ratio((7_000_000_i64-6_000_000).max(0),200,10000).unwrap(),20_000);
     }
     #[test]fn t1_ontario_2025_uses_on428_brackets_surtax_reduction_and_health_premium(){
         let base=json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":4_000_000});
