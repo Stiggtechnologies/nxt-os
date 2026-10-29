@@ -25,7 +25,7 @@ Sources: CaseWare public docs ([Adjusting Entry worksheet](https://documentation
 | Draft financial statements | Draft ASPE balance sheet, income statement, retained earnings, indirect cash flow, note skeletons | **Added** |
 | Compilation report and engagement letter templates | `GET .../templates/{compilation_report|engagement_letter}` (+ `/pdf`); all text flagged CPA REVIEW REQUIRED | **Added** |
 | PDF export | `GET .../statements/pdf`, `.../templates/{name}/pdf` (dependency-free PDF writer) | **Added** |
-| GIFI handoff to tax | Existing `tax/preview` bridge and `gifi` lines; `GET .../gifi-handoff` CSV in the `scripts/import-gifi-csv.py` input format (PR #42). Detail lines only; GIFI totals left to tax | **Added** |
+| GIFI handoff to tax | Existing `tax/preview` bridge and `gifi` lines; `GET .../gifi-handoff` CSV in the `scripts/import-gifi-csv.py` input format (PR #42). Detail lines plus totals 2599, 3499, 3620, 8299 and 9368 plus the 3600/3660/3680/3700/3849 retained-earnings schedule; verified against `scripts/import-gifi-csv.py` in tests | **Added** |
 | Engagement letter to e-sign | `GET .../esign-handoff` returns a `signatures::models::Draft`-shaped payload, `submitted:false`; recipients/fields left to the e-sign module. Nothing is created or sent | **Added** |
 | Eliminating/consolidation, tax-basis entries, CaseView, SmartSync | Not built | Gap |
 
@@ -48,7 +48,13 @@ Groups roll into statement lines by GIFI range (CRA RC4088) when set, otherwise 
 ## Open items
 
 - CPA review of all report, letter and note wording (external dependency).
-- Cash flow: separate amortization and other non-cash items.
-- UI views for statements, templates and PDF download.
 - E-sign: the e-sign worker loads the handoff into `src/signatures`; no e-sign PR was open on 2026-10-29.
-- Eliminating/consolidation and tax-basis entries.
+- Eliminating/consolidation entries (needs multi-entity engagements).
+- Cash flow: gains/losses and other non-cash items beyond GIFI 8570/8670 amortization.
+
+## Added in the gap-closing PR
+
+- `tax` entry kind: kept off the financial-statement basis (like proposed entries), still balance-checked, listed under `tax_entries` for the Schedule 1 side.
+- Cash flow adds back amortization mapped to GIFI 8570/8670.
+- GIFI CSV includes the total lines.
+- Output section UI: download statements PDF, compilation report PDF, engagement letter PDF, GIFI CSV and e-sign draft JSON.

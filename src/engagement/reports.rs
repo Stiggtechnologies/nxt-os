@@ -192,10 +192,24 @@ pub fn gifi_csv(input: &EngagementInput) -> String {
     let mut by: BTreeMap<String, (i64, i64, String)> = BTreeMap::new();
     for l in s["leadsheets"].as_array().into_iter().flatten() {
         let Some(code) = l["gifi_code"].as_str().filter(|c| !c.is_empty()) else { continue };
+        // Retained earnings and dividends are restated below as the GIFI retained-earnings schedule.
+        if matches!(l["statement_line"].as_str(), Some("retained_earnings_opening" | "dividends")) { continue; }
         let e = by.entry(code.to_string()).or_insert((0, 0, l["name"].as_str().unwrap_or("").to_string()));
         e.0 += l["final_cents"].as_i64().unwrap_or(0);
         e.1 += l["prior_cents"].as_i64().unwrap_or(0);
     }
+    let num = |v: &Value, a: &str, b: &str| v[a][b].as_i64().unwrap_or(0);
+    let (cur, pri) = (&s["current"], &s["prior"]);
+    for (code, a, b, d) in [("2599", "balance_sheet", "total_assets_cents", "Total assets"), ("3499", "balance_sheet", "total_liabilities_cents", "Total liabilities"),
+        ("3620", "balance_sheet", "total_equity_cents", "Total shareholder equity"), ("8299", "income_statement", "revenue_cents", "Total revenue")] {
+        by.insert(code.into(), (num(cur, a, b), num(pri, a, b), d.into()));
+    }
+    for (code, b, d) in [("3600", "closing_cents", "Retained earnings/deficit"), ("3660", "opening_cents", "Retained earnings/deficit - start"),
+        ("3680", "net_income_cents", "Net income/loss"), ("3700", "dividends_cents", "Dividends declared"), ("3849", "closing_cents", "Retained earnings/deficit - end")] {
+        by.insert(code.into(), (num(cur, "retained_earnings", b), num(pri, "retained_earnings", b), d.into()));
+    }
+    let exp = |v: &Value| num(v, "income_statement", "cost_of_sales_cents") + num(v, "income_statement", "operating_expenses_cents");
+    by.insert("9368".into(), (exp(cur), exp(pri), "Total expenses".into()));
     let mut out = String::from("code,current,prior,description\n");
     for (code, (c, p, d)) in by {
         let d = d.replace(['"', '\n', '\r'], " ");
