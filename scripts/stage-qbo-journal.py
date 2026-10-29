@@ -57,8 +57,9 @@ def cents(value):
     return text
 
 
-def build(data, date_order):
-    report = qbo.assess_export_bytes(data, date_order)
+def build(data, date_order, prior_data=None, first_year=False):
+    prior = qbo.prior_trial_balance(prior_data) if prior_data is not None else None
+    report = qbo.assess_export_bytes(data, date_order, prior=prior, first_year=first_year)
     if not report["financial_controls_passed"]:
         raise qbo.AssessmentError("financial_controls_blocked")
     books, names = qbo.selected_workbooks(data)
@@ -76,7 +77,27 @@ def build(data, date_order):
     for row in journal["accounts"]:
         accounts.setdefault(row["label"], {"id": account_id(row["label"]), "name": row["label"], "kind": None, "tb": None})
         accounts[row["label"]]["journal"] = row
-    entries = []
+    reconciliation = report.get("opening_reconciliation")
+    closed_opening = report.get("_closed_opening") if reconciliation and reconciliation["status"].startswith("reconciled") else None
+    opening_entry = None
+    if prior is not None and closed_opening:
+        # Carry the prior year's closing trial balance forward as this year's
+        # opening balance (after QuickBooks' year-end close, if any). Every
+        # line is a prior source trial-balance balance; nothing is inferred.
+        for label in closed_opening:
+            accounts.setdefault(label, {"id": account_id(label), "name": label, "kind": None, "tb": None})
+        lines = [{"account_id": accounts[label]["id"], "debit_cents": str(max(net, 0)), "credit_cents": str(max(-net, 0)),
+                  "source_row": 0, "memo": "Opening balance carried from prior closing trial balance",
+                  "source_metadata": {"format": "qbo-opening-carry-forward/v1", "prior_trial_balance_sha256": prior["sha256"], "prior_as_of": prior["as_of"]}}
+                 for label, net in sorted(closed_opening.items(), key=lambda item: account_id(item[0])) if net]
+        if lines:
+            if sum(int(l["debit_cents"]) for l in lines) != sum(int(l["credit_cents"]) for l in lines):
+                raise qbo.AssessmentError("opening_balance_unbalanced")
+            opening_entry = {"id": "o" + qbo.sha(f"{journal_sha}:{prior['sha256']}".encode("utf-8"))[:20], "date": report["period_profile"]["period_start"],
+                             "source_id": f"prior-trial-balance:{prior['sha256'][:16]}", "memo": "Opening balance", "lines": lines,
+                             "source_metadata": {"format": "qbo-opening-carry-forward/v1", "prior_trial_balance_sha256": prior["sha256"], "prior_as_of": prior["as_of"],
+                                                 "year_end_close_accounts": reconciliation.get("year_end_close_accounts", 0), "durable_source_id": False}}
+    entries = [opening_entry] if opening_entry else []
     used_rows = set()
     for group in journal["groups"]:
         lines = []
@@ -118,7 +139,7 @@ def build(data, date_order):
                 **({"adjusting_entry": group["adjusting"], "source_group_label": group["source_group_label"]} if "adjusting" in group else {}),
             },
         })
-    if len(entries) != journal["group_count"] or len(used_rows) != journal["line_count"]:
+    if len(entries) - bool(opening_entry) != journal["group_count"] or len(used_rows) != journal["line_count"]:
         raise qbo.AssessmentError("journal_line_coverage_mismatch")
     controls = []
     used_tb_rows = set()
@@ -126,11 +147,15 @@ def build(data, date_order):
         journal_row = account.get("journal")
         debit = int(journal_row["debit_cents"]) if journal_row else 0
         credit = int(journal_row["credit_cents"]) if journal_row else 0
-        net = debit - credit
+        net = debit - credit + (closed_opening or {}).get(label, 0)
         presented = (str(max(net, 0)), str(max(-net, 0)))
         tb = account.get("tb")
+        # Exact TB = opening + journal applies when the year reconciles. A year
+        # with held entries or unknown opening balances keeps the source TB rows
+        # as controls and is flagged by its review blockers instead.
+        exact = closed_opening is not None or reconciliation is None
         if tb is None:
-            if net != 0 or not journal_row or int(journal_row["line_count"]) <= 0:
+            if (net != 0 and exact) or not journal_row or int(journal_row["line_count"]) <= 0:
                 raise qbo.AssessmentError("trial_balance_control_missing")
             basis = {
                 "kind": "derived_zero_journal_omission",
@@ -140,10 +165,11 @@ def build(data, date_order):
                 "journal_credit_cents": str(credit),
             }
         else:
-            if (tb["debit_cents"], tb["credit_cents"]) != presented or tb["row"] in used_tb_rows:
+            if (exact and (tb["debit_cents"], tb["credit_cents"]) != presented) or tb["row"] in used_tb_rows:
                 raise qbo.AssessmentError("trial_balance_mismatch")
             used_tb_rows.add(tb["row"])
             basis = {"kind": "source_report_row", "report_sha256": trial_sha, "row": tb["row"]}
+            presented = (tb["debit_cents"], tb["credit_cents"])
         controls.append({"account_id": account["id"], "debit_cents": presented[0], "credit_cents": presented[1], "basis": basis})
     account_rows = [{"id": account["id"], "name": account["name"], "kind": None} for _, account in sorted(accounts.items(), key=lambda item: item[1]["id"])]
     chunks = split_chunks(account_rows, entries)
@@ -161,8 +187,14 @@ def build(data, date_order):
         "chunks": return_chunks,
         "controls": controls,
         "entries": len(entries),
-        "lines": len(used_rows),
+        "lines": len(used_rows) + (len(opening_entry["lines"]) if opening_entry else 0),
         "accounts": len(accounts),
+        "warnings": report.get("warnings", []),
+        "held_for_review": report.get("held_for_review", []),
+        "held_groups": journal.get("held_group_count", 0),
+        "review_blockers": report.get("review_blockers", []),
+        "opening_reconciliation": reconciliation,
+        "opening_entry": bool(opening_entry),
     }
 
 
@@ -205,10 +237,10 @@ def write_json(path, value):
     return qbo.sha(raw), len(raw)
 
 
-def stage(data, out, cohort, date_order, synthetic_evidence):
+def stage(data, out, cohort, date_order, synthetic_evidence, prior_data=None, first_year=False):
     if not op.IDENT.fullmatch(cohort):
         raise qbo.AssessmentError("cohort_alias_invalid")
-    staged = build(data, date_order)
+    staged = build(data, date_order, prior_data, first_year)
     out.mkdir(mode=0o700)
     (out / "source.zip").write_bytes(data)
     stage_dir = out / "stage"
@@ -247,7 +279,13 @@ def stage(data, out, cohort, date_order, synthetic_evidence):
     summary = {
         "restricted_source_controls_passed": True,
         "missing_amount_source_rows": [],
-        "quarantined_groups": 0,
+        # Entries held for review are never posted and never given a suspense
+        # account; SUSPENSE_REVIEW keeps the stage off production and G5.
+        "quarantined_groups": staged["held_groups"],
+        "held_for_review": staged["held_for_review"],
+        "review_blockers": staged["review_blockers"],
+        "warnings": staged["warnings"],
+        "opening_reconciliation": staged["opening_reconciliation"],
         "source_archive_sha256": staged["archive_sha256"],
         "backend_transport_chunks": refs,
         "artifact_refs": [],
@@ -267,7 +305,8 @@ def stage(data, out, cohort, date_order, synthetic_evidence):
             "source_archives_unchanged": True,
             "independent_raw_row_equality": True,
             "all_source_rows_represented_exactly_once": True,
-            "quarantined_groups": 0,
+            "quarantined_groups": staged["held_groups"],
+            "review_blockers": staged["review_blockers"],
             "source_unknown_amount_rows": 0,
             "stage_summary_sha256": summary_sha,
             "backend_entries": staged["entries"],
@@ -306,6 +345,12 @@ def stage(data, out, cohort, date_order, synthetic_evidence):
     return {
         "staged": True,
         "financial_controls_passed": True,
+        "review_blockers": staged["review_blockers"],
+        "warnings": len(staged["warnings"]),
+        "held_lines": len(staged["held_for_review"]),
+        "held_entries": staged["held_groups"],
+        "reconciliation": (staged["opening_reconciliation"] or {"status": "reconciled_exact"})["status"],
+        "opening_entry": staged["opening_entry"],
         "accounts": staged["accounts"],
         "entries": staged["entries"],
         "lines": staged["lines"],
@@ -334,12 +379,17 @@ def main(argv=None):
     parser.add_argument("--cohort", required=True)
     parser.add_argument("--date-order", choices=("auto", "dmy", "mdy"), default="auto")
     parser.add_argument("--synthetic-evidence", action="store_true")
+    parser.add_argument("--prior-source", type=Path, help="prior year's export ZIP; its closing trial balance becomes this year's opening")
+    parser.add_argument("--first-year", action="store_true", help="first year of a multi-year run with no prior trial balance (partial history)")
     args = parser.parse_args(argv)
     try:
         if args.out.exists():
             return fail("OUTPUT_EXISTS")
         data = qbo.read_source(args.source)
-        result = stage(data, args.out, args.cohort, args.date_order, args.synthetic_evidence)
+        prior = qbo.read_source(args.prior_source) if args.prior_source else None
+        if prior is not None and args.first_year:
+            return fail("PRIOR_SOURCE_WITH_FIRST_YEAR")
+        result = stage(data, args.out, args.cohort, args.date_order, args.synthetic_evidence, prior, args.first_year)
         result["cohort"] = args.cohort
         print(json.dumps(result, sort_keys=True))
         return 0

@@ -313,8 +313,12 @@ class Bundle:
         need(len(matches) == 1, "ACQUISITION_BINDING_MISSING")
         acquired = matches[0]
         verification = acquired["verification"]
+        # A stage may carry entries held for human review (SUSPENSE_REVIEW).
+        # They are never posted; such a stage may only reach a local test copy.
+        self.review_blockers = list(verification.get("review_blockers") or [])
+        held_ok = "SUSPENSE_REVIEW" in self.review_blockers and isinstance(verification.get("quarantined_groups"), int) and verification["quarantined_groups"] > 0
         need(all(verification.get(k) is True for k in ("source_archives_unchanged", "independent_raw_row_equality", "all_source_rows_represented_exactly_once")) and
-             verification.get("quarantined_groups") == 0 and verification.get("source_unknown_amount_rows") == 0, "SOURCE_ROW_COMPLETENESS_NOT_VERIFIED")
+             (verification.get("quarantined_groups") == 0 or held_ok) and verification.get("source_unknown_amount_rows") == 0, "SOURCE_ROW_COMPLETENESS_NOT_VERIFIED")
         self.stage = self.files.path(self.template["stage_path"], exists=False)
         need(self.stage.is_dir(), "STAGE_DIRECTORY_MISSING")
         self.input = copy.deepcopy(self.template["input"])
@@ -327,8 +331,10 @@ class Bundle:
         else:
             summary, inventory = source_summary, source_summary["backend_transport_chunks"]
             expected_entries, expected_rows = verification["backend_entries"], verification["backend_rows"]
+        need(list(source_summary.get("review_blockers") or []) == self.review_blockers and
+             source_summary.get("quarantined_groups", 0) == verification.get("quarantined_groups") == len({h["entry_start_row"] for h in source_summary.get("held_for_review", [])}), "SOURCE_STAGE_BLOCKED")
         need(source_summary.get("restricted_source_controls_passed") is True and not source_summary.get("missing_amount_source_rows") and
-             not source_summary.get("quarantined_groups") and source_summary["source_archive_sha256"] == self.input["source"]["archive_sha256"], "SOURCE_STAGE_BLOCKED")
+             (not source_summary.get("quarantined_groups") or held_ok) and source_summary["source_archive_sha256"] == self.input["source"]["archive_sha256"], "SOURCE_STAGE_BLOCKED")
         refs = self.template["local_transport_chunks"]
         need(refs == inventory and 0 < len(refs) <= 256, "CHUNK_INVENTORY_MISMATCH")
         self.source_archive = self.files.path(acquired["resolved_source_path"])
@@ -857,7 +863,11 @@ def main(argv=None):
                     "verify": ["commit_receipt", "commit_receipt_sha256", "readback_dir"]}[args.mode]
         need(all(getattr(args, key) for key in required), "MODE_ARGUMENTS_MISSING")
         client = Transport(args.origin, os.environ.get("NXT_COMPANY_BOOKS_KEY"))
-        result = getattr(Runner(Bundle(args), client), args.mode)(args)
+        bundle = Bundle(args)
+        # Review blockers (SUSPENSE_REVIEW, OPENING_BALANCE_UNRECONCILED) never
+        # reach production; only a local test copy until a human resolves them.
+        need(client.local or not bundle.review_blockers, "SUSPENSE_REVIEW_BLOCKS_PRODUCTION" if "SUSPENSE_REVIEW" in bundle.review_blockers else "REVIEW_BLOCKERS_BLOCK_PRODUCTION")
+        result = getattr(Runner(bundle, client), args.mode)(args)
         print(json.dumps(result, sort_keys=True))
         return 0
     except OperatorError as exc:

@@ -291,6 +291,12 @@ def pipeline(run, src, key, a):
     # 5. G5: zero blockers => production
     if run.s["blockers"]:
         return 2
+    # Staged review blockers (e.g. SUSPENSE_REVIEW: journal lines held for
+    # review) never promote; a human must resolve them first.
+    summary = st / "stage" / "summary.json"
+    review = json.loads(summary.read_text()).get("review_blockers", []) if summary.exists() else []
+    if review:
+        return run.block(review[0], review_blockers=review, note="resolve held-for-review items before production")
     if not a.production_origin:
         run.s["state"] = "test_verified_awaiting_production_origin"
         run.save()
