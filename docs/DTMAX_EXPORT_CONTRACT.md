@@ -45,3 +45,12 @@ Chunks are at most 1,000 rows. `seq` must be the checkpoint (`checkpoint_seq` on
 `tests/dtmax_import_flow.rs` streams 6,000 valid accounts plus 3 exception rows (duplicate key, fractional cents, empty code) in chunks of 500. After 1,000 accepted rows it rejects a sequence gap, replays chunk 0, then finishes, commits, replays the commit, and recovers.
 
 Measured on this machine, in-memory store, one process: **300 ms** for that whole flow (`dtmax_6000_elapsed_ms=300`). The test fails if it takes 15 seconds or more. This is not a hosted Supabase or production timing.
+
+## DT Max export reader (`scripts/read-dtmax-export.py`)
+
+Reads DT Max's own export output, never `.pNN` return files. Recognised layouts, both observed on the firm's Y: share (DT Max 29.30):
+
+* `client_list`: DT Max client-list CSV export, header starting `Client #`. One record per client number; duplicate or blank numbers are exceptions.
+* `afr_slips`: auto-fill-return CSV (`sep=,` then `Box NN` headers) under `T1/<year>/afr-prd/`. Box amounts become exact integer cents; blank is `absent`, not zero. Tax year comes from the folder; unknown year is a blocker.
+
+Any other layout is the blocker `unrecognised_export_layout`. Exit 0 only when every file has zero blockers (`load_ready: true`). The script writes at most a local staging JSON (`--stage`), never loads data, and keeps `live_load_performed: false`. A client goes to prod only after this inspect and the test-copy load pass with zero blockers and Orville's per-company G5 approval.
