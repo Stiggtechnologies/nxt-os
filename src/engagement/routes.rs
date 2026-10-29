@@ -25,6 +25,11 @@ pub fn router(state: Arc<Engagements>) -> Router {
         .route("/api/engagements/{id}/lockdown", post(lockdown))
         .route("/api/engagements/{id}/gifi", get(gifi))
         .route("/api/engagements/{id}/statements", get(statements))
+        .route("/api/engagements/{id}/statements/pdf", get(statements_pdf))
+        .route("/api/engagements/{id}/templates/{template}", get(template))
+        .route("/api/engagements/{id}/templates/{template}/pdf", get(template_pdf))
+        .route("/api/engagements/{id}/esign-handoff", get(esign_handoff))
+        .route("/api/engagements/{id}/gifi-handoff", get(gifi_handoff))
         .route("/api/engagements/{id}/file-tickmarks", post(file_tickmark))
         .route("/api/engagements/{id}/rollforward", post(rollforward))
         .route("/api/engagements/{id}/import/preview", post(preview))
@@ -167,6 +172,31 @@ async fn lockdown(State(e): S, Path(id): Path<String>, Json(input): Json<Lockdow
 }
 async fn statements(State(e): S, Path(id): Path<String>) -> R {
     ok(super::statements::generate(&e.get(&id).await?.document))
+}
+fn pdf_response(bytes: Vec<u8>, name: &str) -> Response {
+    ([(header::CONTENT_TYPE, "application/pdf".to_string()), (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{name}.pdf\"")), (header::CACHE_CONTROL, "private, no-store".to_string())], bytes).into_response()
+}
+async fn statements_pdf(State(e): S, Path(id): Path<String>) -> EResult<Response> {
+    let doc = e.get(&id).await?.document;
+    Ok(pdf_response(super::reports::pdf(&super::reports::statement_lines(&doc)), "draft-financial-statements"))
+}
+async fn template(State(e): S, Path((id, name)): Path<(String, String)>) -> R {
+    let doc = e.get(&id).await?.document;
+    let lines = super::reports::template(&doc, &name).map_err(super::bad)?;
+    ok(serde_json::json!({"template": name, "review_required": true, "lines": lines}))
+}
+async fn template_pdf(State(e): S, Path((id, name)): Path<(String, String)>) -> EResult<Response> {
+    let doc = e.get(&id).await?.document;
+    let lines = super::reports::template(&doc, &name).map_err(super::bad)?;
+    Ok(pdf_response(super::reports::pdf(&lines), &name))
+}
+async fn esign_handoff(State(e): S, Path(id): Path<String>) -> R {
+    let doc = e.get(&id).await?.document;
+    ok(super::reports::esign_handoff(&doc, &id).map_err(super::bad)?)
+}
+async fn gifi_handoff(State(e): S, Path(id): Path<String>) -> EResult<Response> {
+    let doc = e.get(&id).await?.document;
+    Ok(([(header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()), (header::CACHE_CONTROL, "private, no-store".to_string())], super::reports::gifi_csv(&doc)).into_response())
 }
 async fn gifi(State(e): S, Path(id): Path<String>) -> R { ok(e.gifi_lines(&id).await?) }
 async fn file_tickmark(State(e): S, Path(id): Path<String>, Json(input): Json<FileTickmarkInput>) -> R {

@@ -1,4 +1,4 @@
-use nxt_os::engagement::{models::EngagementInput, statements};
+use nxt_os::engagement::{models::EngagementInput, reports, statements};
 use serde_json::json;
 
 pub fn fixture() -> EngagementInput {
@@ -66,6 +66,79 @@ fn unbalanced_proposed_entry_still_blocks() {
 #[test]
 fn unknown_entry_kind_rejected() {
     let mut input = fixture();
-    input.adjustments[0].kind = "tax".into();
+    input.adjustments[0].kind = "bogus".into();
     assert_eq!(statements::generate(&input)["supported"], false);
+}
+
+#[test]
+fn templates_are_flagged_for_cpa_review() {
+    let input = fixture();
+    let report = reports::template(&input, "compilation_report").unwrap();
+    assert!(report[0].contains("CPA REVIEW REQUIRED"));
+    assert!(report.iter().any(|l| l.contains("Synthetic Co") && l.contains("2025-12-31")));
+    let mut review = fixture();
+    review.kind = "review".into();
+    assert!(reports::template(&review, "compilation_report").is_err());
+    assert!(reports::template(&review, "engagement_letter").unwrap().iter().any(|l| l.contains("CSRE 2400")));
+    assert!(reports::template(&input, "nope").is_err());
+}
+
+#[test]
+fn pdf_export_is_well_formed() {
+    let bytes = reports::pdf(&reports::statement_lines(&fixture()));
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(text.starts_with("%PDF-1.4"));
+    assert!(text.trim_end().ends_with("%%EOF"));
+    assert!(text.contains("NET INCOME"));
+    let xref: usize = text.rsplit("startxref\n").next().unwrap().lines().next().unwrap().parse().unwrap();
+    assert_eq!(&bytes[xref..xref + 4], b"xref");
+}
+
+#[test]
+fn esign_handoff_matches_signatures_draft_and_is_not_submitted() {
+    let v = reports::esign_handoff(&fixture(), "eng-1").unwrap();
+    assert_eq!(v["submitted"], false);
+    let draft: nxt_os::signatures::models::Draft = serde_json::from_value(v["draft"].clone()).unwrap();
+    assert_eq!(draft.documents.len(), 1);
+    assert!(draft.recipients.is_empty());
+}
+
+#[test]
+fn gifi_csv_matches_tax_import_columns() {
+    let csv = reports::gifi_csv(&fixture());
+    let mut lines = csv.lines();
+    assert_eq!(lines.next(), Some("code,current,prior,description"));
+    assert!(csv.contains("1001,\"500.00\",\"300.00\""));
+    assert!(csv.contains("8000,\"1,800.00\",\"1,200.00\""));
+}
+
+#[test]
+fn gifi_csv_includes_totals_for_tax_import_checks() {
+    let csv = reports::gifi_csv(&fixture());
+    assert!(csv.contains("2599,\"1,700.00\""));
+    assert!(csv.contains("8299,\"1,800.00\""));
+    assert!(csv.contains("9368,\"1,400.00\""));
+}
+
+#[test]
+fn amortization_is_added_back_and_tax_entries_stay_off_book() {
+    let mut input = fixture();
+    input.groups.iter_mut().find(|g| g.id == "gopex").unwrap().gifi_code = Some("8670".into());
+    input.adjustments.push(serde_json::from_value(json!({"id":"t1","reference":"TJE1","date":"2025-12-31","kind":"tax","description":"CCA","lines":[{"account_id":"opex","debit_cents":500},{"account_id":"equip","credit_cents":500}]})).unwrap());
+    let s = statements::generate(&input);
+    assert!(!s["diagnostics"].to_string().contains("cash_flow_unreconciled"), "{}", s["diagnostics"]);
+    assert_eq!(s["cash_flow"]["amortization_cents"], 60_000);
+    assert_eq!(s["cash_flow"]["operating_cents"], 95_000);
+    assert_eq!(s["cash_flow"]["investing_cents"], -80_000);
+    assert_eq!(s["current"]["income_statement"]["net_income_cents"], 40_000);
+    assert_eq!(s["tax_entries"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn gifi_csv_passes_tax_import_script() {
+    let path = std::env::temp_dir().join(format!("nxt-eng-gifi-{}.csv", std::process::id()));
+    std::fs::write(&path, reports::gifi_csv(&fixture())).unwrap();
+    let Ok(out) = std::process::Command::new("python3").arg("scripts/import-gifi-csv.py").arg(&path).output() else { return };
+    let _ = std::fs::remove_file(&path);
+    assert!(out.status.success(), "{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
 }

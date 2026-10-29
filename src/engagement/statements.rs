@@ -133,6 +133,9 @@ pub fn generate(input: &EngagementInput) -> Value {
             "unadjusted_cents":total[0],"adjustments_cents":total[1],"final_cents":total[2],"prior_cents":total[3],"change_cents":total[2].saturating_sub(total[3])}));
     }
     let g = |l: Line| lines.get(&l).copied().unwrap_or_default();
+    // Amortization (GIFI 8570 intangible, 8670 tangible) is a non-cash add-back.
+    let amortization: i64 = input.groups.iter().filter(|g| g.kind == "expense" && matches!(g.gifi_code.as_deref().and_then(|c| c.parse::<u32>().ok()), Some(8570 | 8670)))
+        .filter_map(|g| leadsheets.iter().find(|l| l["group_id"] == g.id.as_str())).map(|l| n(l, "final_cents")).sum();
     let sum = |ls: &[Line], cur: bool| ls.iter().map(|l| if cur { g(*l).cur } else { g(*l).pri }).fold(0i64, i64::saturating_add);
     let period = |cur: bool| {
         let revenue = sum(&[Line::Revenue], cur);
@@ -168,8 +171,8 @@ pub fn generate(input: &EngagementInput) -> Value {
         let d = |l: Line| g(l).cur - g(l).pri;
         let ni = current["income_statement"]["net_income_cents"].as_i64().unwrap_or(0);
         let working_capital = -d(Line::CurrentAsset) + d(Line::CurrentLiability);
-        let operating = ni + working_capital;
-        let investing = -d(Line::LongTermAsset);
+        let operating = ni + amortization + working_capital;
+        let investing = -d(Line::LongTermAsset) - amortization;
         let dividends = current["retained_earnings"]["dividends_cents"].as_i64().unwrap_or(0);
         let financing = d(Line::LongTermLiability) + d(Line::ShareCapital) + d(Line::OtherEquity) - dividends;
         let net = operating + investing + financing;
@@ -177,8 +180,8 @@ pub fn generate(input: &EngagementInput) -> Value {
         if net != actual {
             diagnostics.push(json!({"code":"cash_flow_unreconciled","message":format!("Derived cash flow differs from the change in cash by {} cents; review retained-earnings mapping and non-cash items.", net - actual),"blocking":true,"severity":"error"}));
         }
-        json!({"method":"indirect","net_income_cents":ni,"change_in_non_cash_working_capital_cents":working_capital,"operating_cents":operating,"investing_cents":investing,"financing_cents":financing,"net_change_in_cash_cents":net,"cash_opening_cents":g(Line::Cash).pri,"cash_closing_cents":g(Line::Cash).cur,
-            "limitation":"Derived from balance changes only; amortization, gains/losses and other non-cash items are not separated from investing activity."})
+        json!({"method":"indirect","net_income_cents":ni,"amortization_cents":amortization,"change_in_non_cash_working_capital_cents":working_capital,"operating_cents":operating,"investing_cents":investing,"financing_cents":financing,"net_change_in_cash_cents":net,"cash_opening_cents":g(Line::Cash).pri,"cash_closing_cents":g(Line::Cash).cur,
+            "limitation":"Derived from balance changes only; amortization mapped to GIFI 8570/8670 is added back; gains/losses and other non-cash items are not separated."})
     } else {
         diagnostics.push(json!({"code":"cash_flow_requires_prior","message":"A cash flow statement needs prior-period comparatives.","blocking":false,"severity":"warning"}));
         Value::Null
@@ -205,6 +208,8 @@ pub fn generate(input: &EngagementInput) -> Value {
         proposed_ni += ni;
         proposed.push(json!({"id":entry.id,"reference":entry.reference,"kind":entry.kind,"description":entry.description,"net_income_effect_cents":ni,"asset_effect_cents":assets}));
     }
+    let tax_entries: Vec<Value> = input.adjustments.iter().filter(|e| e.kind == "tax").map(|e| json!({"id":e.id,"reference":e.reference,"description":e.description,
+        "debit_cents":e.lines.iter().map(|l| l.debit_cents).sum::<i64>()})).collect();
     let supported = !diagnostics.iter().any(|d| d["blocking"] == true);
     let _ = &groups;
     json!({
@@ -212,6 +217,7 @@ pub fn generate(input: &EngagementInput) -> Value {
         "engagement":{"name":input.name,"kind":input.kind,"period_start":input.period_start,"period_end":input.period_end,"prior_period_end":input.prior_period_end,"currency":input.currency},
         "current":current,"prior":if has_prior {prior} else {Value::Null},"cash_flow":cash_flow,
         "leadsheets":leadsheets,
+        "tax_entries":tax_entries,
         "uncorrected_misstatements":{"entries":proposed,"total_net_income_effect_cents":proposed_ni},
         "notes":notes(input),
         "diagnostics":diagnostics,

@@ -95,6 +95,10 @@ fn annual(start: &str, end: &str, label: &str) -> Result<(NaiveDate, NaiveDate),
 }
 
 /// Unrecorded proposed entries: tracked and balance-checked, never in the adjusted basis.
+/// Entries tracked outside the financial-statement basis: proposed (unrecorded)
+/// misstatements and tax-basis entries (Schedule 1 side, not GIFI).
+pub fn is_off_book(kind: &str) -> bool { is_proposed(kind) || kind == "tax" }
+
 pub fn is_proposed(kind: &str) -> bool {
     matches!(kind, "proposed_factual" | "proposed_projected" | "proposed_judgmental")
 }
@@ -311,7 +315,7 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
             false,
             true,
         )?;
-        if !matches!(adjustment.kind.as_str(), "adjusting" | "reclassifying") && !is_proposed(&adjustment.kind) {
+        if !matches!(adjustment.kind.as_str(), "adjusting" | "reclassifying") && !is_off_book(&adjustment.kind) {
             return Err("Only local adjusting, reclassifying and proposed (unrecorded) entries are supported".into());
         }
         let entry_date = date(&adjustment.date, "Adjustment date")?;
@@ -564,12 +568,12 @@ fn calculate(input: &EngagementInput) -> Result<Value, String> {
             if line.debit_cents != 0 || line.credit_cents != 0 {
                 nonzero += 1;
             }
-            if is_proposed(&entry.kind) { continue; }
+            if is_off_book(&entry.kind) { continue; }
             let amount = by_account.entry(&line.account_id).or_default();
             add(&mut amount.0, i128::from(line.debit_cents))?;
             add(&mut amount.1, i128::from(line.credit_cents))?;
         }
-        if !is_proposed(&entry.kind) {
+        if !is_off_book(&entry.kind) {
             add(&mut totals[2], debit)?;
             add(&mut totals[3], credit)?;
         }
