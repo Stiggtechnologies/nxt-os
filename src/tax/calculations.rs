@@ -173,9 +173,10 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let spouse_claim=boolean(obj,"claim_spouse_amount")?; let disabled=boolean(obj,"disability_tax_credit_approved")?;
     let (tui,don,hb,adopt,sli)=(money(obj,"tuition_cents")?,money(obj,"donations_cents")?,money(obj,"home_buyers_amount_cents")?,money(obj,"adoption_expenses_cents")?,money(obj,"student_loan_interest_cents")?);
     let others=spouse_claim||disabled||pension>0||tui>0||don>0||hb>0||adopt>0||sli>0;
+    let prov_others=disabled||pension>0||tui>0||don>0||hb>0||adopt>0||sli>0;
     if others {
         require(c,obj,"credits_verified","Verify spouse net income, CRA-approved T2201, eligible pension income (age/type), T2202 tuition (current year only), official donation receipts, home buyers', adoption and student-loan receipts.")?;
-        c.diagnostic("provincial_credits_2026_unsourced","2026 provincial counterparts of these credits are not yet sourced; only federal amounts are calculated.",None,true);
+        if prov_others { c.diagnostic("provincial_credits_2026_unsourced","2026 provincial counterparts of these credits are not yet sourced; only federal amounts are calculated.",None,true); }
     }
     if spouse_claim && ed.is_some() { return Err("Lines 30300 and 30400 cannot both be claimed".into()); }
     if hb>1_000_000 { return Err("home_buyers_amount_cents exceeds the $10,000 maximum".into()); }
@@ -190,7 +191,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let federal=(federal_before-federal_credits).max(0);
     let (pbpa,pbefore,pcredits)=match prov {
         None => {
-            let pa=prov_age_2026(c,"AB",aged,taxable)?;
+            let pa=sum(&[prov_age_2026(c,"AB",aged,taxable)?,prov_spouse_2026(c,"AB",t.alberta_bpa_cents,spouse_claim,obj)?])?;
             let base=sum(&[t.alberta_bpa_cents,cpp,ei,pa])?;
             // CRA T4127-JAN 2026 K5P = ((K1P+K2P) - $4,896) x 0.25, i.e. 2% (25% of 8%) of Alberta credit amounts over
             // $61,200 ($4,896 / 8%); Alberta supplemental tax credit, AB428 line 61545 (alberta.ca: 2026 amounts rise 2%).
@@ -205,7 +206,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
             let mut b=p.bpa_cents.unwrap_or(bpa);
             // T4127-JAN 2026 BPAMB: $15,780 reduced by (NI - $200,000) x 15,780/200,000, nil at $400,000.
             if p.code=="MB" { b-=rounded_ratio((taxable-20_000_000).clamp(0,20_000_000),b,20_000_000)?; } let ce=if p.employment_amount { cea } else { 0 };
-            let pa=prov_age_2026(c,p.code,aged,taxable)?;
+            let pa=sum(&[prov_age_2026(c,p.code,aged,taxable)?,prov_spouse_2026(c,p.code,b,spouse_claim,obj)?])?;
             (b,progressive(taxable,p.brackets)?,rounded_ratio(sum(&[b,ce,cpp,ei,pa])?,p.credit_rate_bps,10000)?)
         }
     };
@@ -279,6 +280,21 @@ fn prov_age_2026(c: &mut Calculation, code: &str, aged: bool, net: i64) -> Resul
     let mut a=(max-rounded_ratio((net-thr).max(0),1500,10000)?).max(0);
     c.line(&format!("{code}58080"),&format!("{code} age amount (2026 TD1{code})"),a);
     if code=="SK" { c.line("SK58085","SK senior supplementary amount (TD1SK 2026)",256_900); a+=256_900; }
+    Ok(a)
+}
+
+/// 2026 provincial spouse/common-law partner amounts from CRA's 2026 TD1 provincial forms (td1xx-26e.pdf):
+/// AB/NT/NU/YT: line 1 basic personal amount less spouse net income; MB: $9,134 less spouse net income;
+/// BC/NB/NL/NS/ON/PE/SK: the stated full amount when spouse net income is at or below the stated limit. The TD1
+/// does not give the reduced amount above that limit, so that case blocks. YT infirm top-up is not handled.
+const PROV_SPOUSE_FIXED_2026: &[(&str,i64,i64)] = &[("BC",1_131_700,113_200),("NB",1_070_900,107_200),("NL",914_200,91_500),("NS",1_193_200,88_800),("ON",1_102_900,110_300),("PE",1_274_000,127_400),("SK",2_038_100,203_800)];
+fn prov_spouse_2026(c: &mut Calculation, code: &str, bpa: i64, claim: bool, obj: &Map<String,Value>) -> Result<i64,String> {
+    if !claim { return Ok(0); }
+    let sni=money(obj,"spouse_adjusted_net_income_cents")?.max(0);
+    let a=if let Some(&(_,full,lim))=PROV_SPOUSE_FIXED_2026.iter().find(|x| x.0==code) {
+        if sni>lim { c.diagnostic("provincial_spouse_2026_unsourced",&format!("{code} 2026 TD1 gives the spouse amount only for spouse net income up to its stated limit; the reduced amount is not yet sourced."),None,true); 0 } else { full }
+    } else if code=="MB" { (913_400-sni).max(0) } else { (bpa-sni).max(0) };
+    c.line(&format!("{code}58120"),&format!("{code} spouse or common-law partner amount (2026 TD1{code})"),a);
     Ok(a)
 }
 
@@ -890,6 +906,11 @@ mod tests {
         assert_eq!(l(&rich,"ON_surtax"),rounded_ratio(basic-581_800,2000,10000).unwrap()+rounded_ratio(basic-744_600,3600,10000).unwrap()); assert_eq!(b,basic+l(&rich,"ON_surtax"));
         assert!(!calculate("T1",2026,"PE",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap().supported);
         assert!(!calculate("T2",2026,"AB",&json!({})).unwrap().supported);
+        let base=json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"credits_verified":true,"claim_spouse_amount":true,"spouse_adjusted_net_income_cents":50_000,"interest_income_cents":5_000_000});
+        let bc=calculate("T1",2026,"BC",&base).unwrap(); assert!(bc.supported,"{:?}",bc.diagnostics); assert_eq!(l(&bc,"BC58120"),1_131_700);
+        let mb=calculate("T1",2026,"MB",&base).unwrap(); assert_eq!(l(&mb,"MB58120"),863_400);
+        let mut hi=base.clone(); hi["spouse_adjusted_net_income_cents"]=json!(500_000);
+        assert!(!calculate("T1",2026,"BC",&hi).unwrap().supported);
         let t2=calculate("T2",2026,"AB",&json!({"scope_confirmed":true,"small_business_eligible":true,"sbd_eligibility_verified":true,"taxable_income_cents":60_000_000,"active_business_income_cents":60_000_000})).unwrap();
         assert!(t2.supported,"{:?}",t2.diagnostics); assert_eq!(t2.totals["income_tax"],7_800_000);
         let g=calculate("T2",2026,"AB",&json!({"scope_confirmed":true,"small_business_eligible":true,"sbd_eligibility_verified":true,"taxable_income_cents":60_000_000,"active_business_income_cents":60_000_000,"passive_income_cents":10_000_000})).unwrap();
