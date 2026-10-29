@@ -15,11 +15,12 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("Income Tax Regulations (C.R.C., c. 945) s. 1100(1)(a) rates (incl. (xiv) Class 17, 8%), 1100(1)(b) Class 13, 1100(1)(c) Class 14, 1100(2) factors A/A.1 (incl. A(c.1)–(c.3), A(d), A.1(f)), 1100(2.01)/(2.011) straddle years, 1100(3) years under 12 months, Schedule III, 1100(0.1)–(0.3) immediate expensing, 1100(1)(c.1) Class 14.1 additional allowance", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html"),
     ("Income Tax Regulations (C.R.C., c. 945) s. 1104(3.1) designated immediate expensing property, (3.2) $1,500,000 limit, (3.3)–(3.4) associated allocation, (3.5) multiple and short years", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-19.html"),
     ("CRA T4002 ch. 4, Schedule 8 columns 4, 9, 10, 14–18 and 21 (immediate expensing; proceeds reducing AIIP then RIIP)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/t4002/t4002-6.html"),
+    ("Income Tax Regulations (C.R.C., c. 945) s. 7307(1) passenger vehicle and 7307(1.1) zero-emission passenger vehicle prescribed amounts; s. 1101(1af) separate class per Class 10.1 vehicle", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/FullText.html"),
     ("CRA classes of depreciable property and CCA rates", "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/sole-proprietorships-partnerships/report-business-income-expenses/claiming-capital-cost-allowance/classes-depreciable-property.html"),
     ("T2 Schedule 50, Shareholder Information (t2sch50-19e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch50.html"),
     ("CRA GIFI (RC4088): Schedule 100/125 codes 2599, 3499, 3620, 3640, 8299, 8670, 9368, 9990, 9995, 9999", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4088/general-index-financial-information-gifi.html"),
 ];
-pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule and the Reg 1100(3) short-year proration (days/365) and the Reg 1100(2) E/E.1 reduction for proceeds (T4002 columns 14–17) and the Class 14.1 additional allowance (Reg 1100(1)(c.1)); the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled, as is CCPC immediate expensing (Reg 1100(0.1), 1104(3.1)–(3.5)) for DIEP available before 2024; separate-class elections and per-vehicle cost caps are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
+pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule and the Reg 1100(3) short-year proration (days/365) and the Reg 1100(2) E/E.1 reduction for proceeds (T4002 columns 14–17) and the Class 14.1 additional allowance (Reg 1100(1)(c.1)); the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled, as is CCPC immediate expensing (Reg 1100(0.1), 1104(3.1)–(3.5)) for DIEP available before 2024; per-vehicle cost caps for Classes 10.1 and 54 (Reg 7307(1), (1.1)) are checked; separate-class elections are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
 
 /// Schedule 1 lines copied from t2sch1-25e. Additions: 101–199 on page 1 plus 201–296
 /// (summed to amount D, line 199). Deductions: 401–499 plus 300–3xx (amount E, line 499).
@@ -109,6 +110,40 @@ pub struct CcaClass {
     pub immediate_expensing_cents: i64,
     /// Class 14.1 only: facts for the Reg 1100(1)(c.1) additional allowance (years ending before 2027).
     pub class_14_1_transitional: Option<Class141Transitional>,
+    /// Class 10.1 (one per class, Reg 1101(1af)) or Class 54: passenger vehicles added in the year,
+    /// capped at the Reg 7307(1) / 7307(1.1) prescribed amount.
+    pub vehicles: Vec<Vehicle>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Vehicle {
+    /// Acquisition date (YYYY-MM-DD).
+    pub acquired: String,
+    /// Actual capital cost including federal and provincial sales taxes.
+    pub cost_cents: i64,
+    /// Element B of Reg 7307(1)(b) / (1.1): the federal and provincial sales taxes that would have
+    /// been payable on a cost equal to element A. Preparer-entered (depends on the province).
+    pub sales_tax_on_limit_cents: Option<i64>,
+}
+
+/// Reg 7307(1)(b) element A for Class 10.1 by acquisition date (and 7307(1)(a) before 1991).
+const CLASS_10_1_LIMITS: &[(&str, i64)] = &[
+    ("1989-08-31", 24_000_00), ("1996-12-31", 24_000_00), ("1997-12-31", 25_000_00), ("1999-12-31", 26_000_00),
+    ("2000-12-31", 27_000_00), ("2021-12-31", 30_000_00), ("2022-12-31", 34_000_00), ("2023-12-31", 36_000_00),
+    ("2024-12-31", 37_000_00), ("9999-12-31", 38_000_00),
+];
+/// Reg 7307(1.1) element A for zero-emission passenger vehicles (Class 54) acquired after March 18, 2019.
+const ZEV_LIMITS: &[(&str, i64)] = &[("2019-03-18", 0), ("2021-12-31", 55_000_00), ("2022-12-31", 59_000_00), ("9999-12-31", 61_000_00)];
+
+/// Element A for an acquisition date: the first row whose end date is on or after the date; the first
+/// row is the exclusive lower bound (property acquired on or before it is not covered).
+fn vehicle_limit(class: &str, acquired: &str) -> Result<i64, String> {
+    let table = if class == "10.1" { CLASS_10_1_LIMITS } else { ZEV_LIMITS };
+    let d = acquired.trim();
+    if chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").is_err() { return Err(format!("Class {class} vehicle: acquired must be YYYY-MM-DD.")); }
+    if d <= table[0].0 { return Err(format!("Class {class} vehicle acquired on or before {}: no Reg 7307 amount is carried.", table[0].0)); }
+    Ok(table[1..].iter().find(|(end, _)| d <= *end).map(|(_, a)| *a).unwrap())
 }
 
 /// Reg 1100(1)(c.1)(i): UCC of Class 14.1 at the beginning of 2017, the 20(1)(a) deductions for the
@@ -228,6 +263,9 @@ pub fn validate(input: &T2Input) -> Result<(), String> {
             if c.class != "14.1" { return Err(format!("Class {}: class_14_1_transitional is for Class 14.1 only", c.class)); }
             for v in [t.ucc_beginning_2017_cents, t.prior_deductions_cents, t.deemed_13_39_cost_cents] { if !(0..=MAX).contains(&v) { return Err("Class 14.1 transitional amounts must be 0 to max".into()); } }
         }
+        if !c.vehicles.is_empty() && !matches!(c.class.as_str(), "10.1" | "54") { return Err(format!("Class {}: vehicles are for Class 10.1 or 54", c.class)); }
+        if c.class == "10.1" && c.vehicles.len() > 1 { return Err("Class 10.1: one vehicle per class (Reg 1101(1af))".into()); }
+        if c.vehicles.len() > 100 || c.vehicles.iter().any(|v| !(0..=MAX).contains(&v.cost_cents) || v.sales_tax_on_limit_cents.is_some_and(|b| !(0..=MAX).contains(&b))) { return Err("vehicle amounts must be 0 to max".into()); }
         if c.leaseholds.len() > 100 || c.limited_life.len() > 100 { return Err("too many rows".into()); }
         if (!c.leaseholds.is_empty() && c.class != "13") || (!c.limited_life.is_empty() && c.class != "14") { return Err(format!("Class {}: leaseholds are Class 13 and limited-life property is Class 14", c.class)); }
         for l in &c.leaseholds {
@@ -367,6 +405,7 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
         if c.accelerated_additions_cents > 0 {
             diag(diagnostics, "cca_accelerated_not_modelled", format!("Class {}: accelerated_additions_cents is a legacy field; split it into aiip_additions_cents, riip_additions_cents or half_year_exempt_additions_cents.", c.class), true);
         }
+        let mut row_pre: Option<Value> = None;
         let zev = matches!(c.class.as_str(), "54" | "55" | "56");
         let ie = if ie_ok { c.immediate_expensing_cents } else { 0 };
         if c.immediate_expensing_cents > 0 && matches!(c.class.as_str(), "1" | "2" | "3" | "4" | "5" | "6" | "14.1" | "17" | "47" | "49" | "51") {
@@ -376,8 +415,10 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
         if zev && regular > 0 {
             diag(diagnostics, "cca_zev_acquisition_date", format!("Class {}: enter additions as aiip_additions_cents (acquired before 2025) or riip_additions_cents (acquired after 2024).", c.class), true);
         }
+        if !c.vehicles.is_empty() { vehicle_caps(c, &mut row_pre, diagnostics); }
         let col10 = c.opening_ucc_cents + c.additions_cents + c.adjustments_cents - c.proceeds_cents;
         let mut row = json!({"class":c.class,"column_10_ucc_cents":col10});
+        if let Some(v) = row_pre.take() { row["vehicles"] = v; }
         if c.diep_cents > 0 || ie > 0 { row["column_4_diep_cents"] = json!(c.diep_cents); row["column_9_immediate_expensing_cents"] = json!(ie); }
         if ie > col10.max(0) { diag(diagnostics, "cca_immediate_expensing_exceeds_ucc", format!("Class {}: the immediate expensing amount exceeds the UCC (Reg 1100(0.1)(b)).", c.class), true); }
         let (mut rec, mut term, mut claim) = (0, 0, 0);
@@ -483,6 +524,24 @@ fn immediate_expensing_check(input: &T2Input, total: i64, diagnostics: &mut Vec<
     if i128::from(total) > limit { return b(format!("Immediate expensing claimed {total} cents exceeds the immediate expensing limit {limit} cents (Reg 1104(3.2), (3.5)(b)).")); }
     diag(diagnostics, "cca_immediate_expensing_limit", format!("Immediate expensing limit {limit} cents (Reg 1104(3.2){}); claimed {total} cents.", if days < 357 { format!(", prorated {days}/365 under (3.5)(b)") } else { String::new() }), false);
     true
+}
+
+/// Reg 7307(1)/(1.1) via ITA 13(7)(g)/(i): each vehicle's capital cost is capped at A + B; the
+/// class additions must equal the capped total.
+fn vehicle_caps(c: &CcaClass, out: &mut Option<Value>, diagnostics: &mut Vec<Value>) {
+    let mut total = 0i64;
+    let mut rows = vec![];
+    for v in &c.vehicles {
+        let a = match vehicle_limit(&c.class, &v.acquired) { Ok(a) => a, Err(m) => { diag(diagnostics, "cca_vehicle_limit", m, true); continue } };
+        let Some(b) = v.sales_tax_on_limit_cents else { diag(diagnostics, "cca_vehicle_limit", format!("Class {}: enter sales_tax_on_limit_cents (Reg 7307 element B, the sales taxes on {a} cents).", c.class), true); continue };
+        let cap = a + b;
+        if c.class == "10.1" && v.cost_cents <= cap { diag(diagnostics, "cca_vehicle_class", format!("A passenger vehicle costing no more than the Reg 7307(1) amount ({cap} cents) belongs in Class 10, not 10.1."), true); }
+        let capped = v.cost_cents.min(cap);
+        rows.push(json!({"acquired":v.acquired,"cost_cents":v.cost_cents,"prescribed_amount_cents":cap,"capital_cost_cents":capped}));
+        total += capped;
+    }
+    if total != c.additions_cents { diag(diagnostics, "cca_vehicle_limit", format!("Class {}: additions ({} cents) must equal the capped vehicle costs ({total} cents) under Reg 7307.", c.class, c.additions_cents), true); }
+    *out = Some(Value::Array(rows));
 }
 
 /// Reg 1100(1)(c.1): for a taxation year ending before 2027, (i) 2% of the pre-2017 balance plus
