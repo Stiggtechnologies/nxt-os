@@ -109,9 +109,9 @@ fn require(c: &mut Calculation, obj: &Map<String,Value>, key: &str, message: &st
     if !boolean(obj,key)? { c.diagnostic("verification_required",message,Some(key),true); } Ok(())
 }
 
-pub const T1_2026_SCOPE: &str = "2026 basic T1 income-tax workpaper (rate table ca-2026.1) for a full-year resident of AB, ON, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU at year-end, with Canadian T4 employment and interest only, a verified RRSP deduction and verified payroll CPP/EI credit amounts. Federal and provincial basic personal amounts, the Canada employment amount and CPP/EI credits only. All other 2025-scope income, deductions and credits are rejected until their 2026 values are sourced. Not a filing.";
+pub const T1_2026_SCOPE: &str = "2026 basic T1 income-tax workpaper (rate table ca-2026.1) for a full-year resident of AB, ON, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU at year-end, with Canadian T4 employment, interest and taxable Canadian dividends, a verified RRSP deduction and verified payroll CPP/EI credit amounts. Federal and provincial basic personal amounts, the Canada employment amount and CPP/EI credits only. All other 2025-scope income, deductions and credits are rejected until their 2026 values are sourced. Not a filing.";
 /// Fields allowed in the 2026 basic scope; any other non-zero/true 2025 field is rejected.
-const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable","born_1961_or_earlier","medical_expenses_cents","credits_verified","spouse_adjusted_net_income_cents","family_income_verified","eligible_dependant_net_income_cents","infirm_dependant_18_plus_net_income_cents","dependants_verified","claim_spouse_amount","disability_tax_credit_approved","eligible_pension_income_cents","tuition_cents","donations_cents","home_buyers_amount_cents","adoption_expenses_cents","student_loan_interest_cents"];
+const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable","born_1961_or_earlier","medical_expenses_cents","credits_verified","spouse_adjusted_net_income_cents","family_income_verified","eligible_dependant_net_income_cents","infirm_dependant_18_plus_net_income_cents","dependants_verified","claim_spouse_amount","disability_tax_credit_approved","eligible_pension_income_cents","tuition_cents","donations_cents","home_buyers_amount_cents","adoption_expenses_cents","student_loan_interest_cents","eligible_dividends_cents","other_dividends_cents","dividends_verified"];
 /// 2026 basic T1: federal (CRA current-year brackets, 14% credit rate, BPA $16,452 phasing to $14,829
 /// between $181,440 and $258,482, CEA $1,501) plus AB or a PROVINCES_2026 province. CPP/EI maxima
 /// from T4127-JAN 2026 Tables 8.4-8.7. Anything not sourced for 2026 blocks instead of being guessed.
@@ -137,7 +137,12 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
         if sum(&[cpp,enhanced,ei])?>employment { return Err("Declared payroll claims exceed employment income".into()); }
     }
     let pension=money(obj,"eligible_pension_income_cents")?;
-    let income=sum(&[employment,interest,pension])?; let deductions=sum(&[rrsp,enhanced])?;
+    // Dividends (actual amounts): ITA 82(1)(b) gross-up 38% eligible / 15% other (taxation years after 2018);
+    // ITA 121 federal DTC = 6/11 (eligible) and 9/13 (other) of the gross-up, i.e. 15.0198% / 9.0301% of the taxable amount.
+    let (edv,odv)=(money(obj,"eligible_dividends_cents")?,money(obj,"other_dividends_cents")?);
+    if edv>0||odv>0 { require(c,obj,"dividends_verified","Verify actual (not taxable) eligible and other-than-eligible dividends from taxable Canadian corporations (T5 boxes 24/10, T3 boxes 49/23). Foreign dividends do not qualify.")?; }
+    let (elig_div,other_div)=(rounded_ratio(edv,138,100)?,rounded_ratio(odv,115,100)?);
+    let income=sum(&[employment,interest,pension,elig_div,other_div])?; let deductions=sum(&[rrsp,enhanced])?;
     if deductions>income { return Err("Deductions exceed current income; loss and carryforward treatment is outside this scope".into()); }
     let taxable=income-deductions;
     let span=25_848_200-18_144_000;
@@ -189,7 +194,9 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let don_credit=sum(&[rounded_ratio(first,t.federal_credit_rate_bps,10000)?,rounded_ratio(rest-at33,2900,10000)?,rounded_ratio(at33,3300,10000)?])?;
     for (k,lbl,v,on) in [("11500","Eligible pension income",pension,pension>0),("30300","Spouse or common-law partner amount (2026)",spouse_amt,spouse_claim),("31600","Disability amount (2026)",dis,disabled),("31400","Pension income amount",pen,pension>0),("32300","T2202 tuition (current year)",tui,tui>0),("34900","Donations",don,don>0),("donation_credit","Federal donation credit (2026)",don_credit,don>0),("31270","Home buyers' amount",hb,hb>0),("31300","Adoption expenses (2026)",adopt,adopt>0),("31900","Student loan interest",sli,sli>0)] { if on { c.line(k,lbl,v); } }
     let federal_credits=sum(&[rounded_ratio(sum(&[bpa,cea,cpp,ei,age_amount,medical,ed_amount,cg_amount,spouse_amt,dis,pen,tui,hb,adopt,sli])?,t.federal_credit_rate_bps,10000)?,don_credit])?;
-    let federal=(federal_before-federal_credits).max(0);
+    let fed_dtc=sum(&[rounded_ratio(elig_div,150_198,1_000_000)?,rounded_ratio(other_div,90_301,1_000_000)?])?;
+    if edv>0||odv>0 { c.line("12000","Taxable amount of dividends (eligible 138% + other 115%)",sum(&[elig_div,other_div])?); c.line("12010","Taxable amount of other than eligible dividends (115%)",other_div); c.line("40425","Federal dividend tax credit (ITA 121)",fed_dtc); }
+    let federal=(federal_before-federal_credits-fed_dtc).max(0);
     let (pbpa,pbefore,pcredits)=match prov {
         None => {
             let pa=sum(&[prov_age_2026(c,"AB",aged,taxable)?,prov_spouse_2026(c,"AB",t.alberta_bpa_cents,spouse_claim,obj)?,prov_dependant_2026(c,"AB",t.alberta_bpa_cents,ed)?,prov_pension_disability_2026(c,"AB",pension,disabled)?])?;
@@ -227,7 +234,18 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
         }
     };
     let pcode=prov.map(|p| p.code).unwrap_or("AB"); let lc=pcode.to_lowercase();
-    let mut provincial=(pbefore-pcredits).max(0);
+    // Provincial DTC (line 61520), % of taxable amount, 2026 official government sources:
+    // BC 12% / 1.96% (gov.bc.ca basic credits page, 2026 table); ON 10% / 2.9863% (ontario.ca Ontario dividend tax credit, 2020-2026);
+    // NL 6.3% / 3.2% (gov.nl.ca Personal Income Tax page, 2026 column); NB 14% / 2.75% (gnb.ca Dividend Tax Credit, dividends
+    // paid on or after Jan 1, 2019); MB 8% / 0.7835% (gov.mb.ca, The Income Tax Act C.C.S.M. c. I10 s. 4.7 as in force 2026-01-01);
+    // YT 12.02% / 0.67% (yukon.ca Yukon income tax measures). Other jurisdictions: no official 2026 rate located -> unsupported.
+    const PROV_DTC_2026: &[(&str,i64,i64)] = &[("BC",120_000,19_600),("ON",100_000,29_863),("NL",63_000,32_000),("NB",140_000,27_500),("MB",80_000,7_835),("YT",120_200,6_700)];
+    let p_dtc=if edv>0||odv>0 { match PROV_DTC_2026.iter().find(|x| x.0==pcode) {
+        Some(&(_,e,o)) => sum(&[rounded_ratio(elig_div,e,1_000_000)?,rounded_ratio(other_div,o,1_000_000)?])?,
+        None => { c.diagnostic("provincial_dtc_2026_unsourced",&format!("No official 2026 {name} dividend tax credit rate is sourced; the provincial dividend credit cannot be calculated."),None,true); 0 } } } else { 0 };
+    if p_dtc>0 { c.line(&format!("{pcode}61520"),&format!("{name} dividend tax credit (2026)"),p_dtc); }
+    // Ontario applies its DTC after surtax (ON428); handled in t1_2026_on.
+    let mut provincial=(pbefore-pcredits-if pcode=="ON" {0} else {p_dtc}).max(0);
     if pcode=="BC" {
         // gov.bc.ca basic credits page (April 20, 2026): Budget 2026 raised the 2026 B.C. tax reduction to $690, less 3.56% of
         // net income over $25,570 (nil at $44,952); supersedes the $575 in T4127-JAN 2026 factor S. Limited to BC tax.
@@ -265,8 +283,11 @@ fn t1_2026_on(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
     require(c,obj,"provincial_adjustments_not_applicable","2026 dependant amounts for the Ontario tax reduction and Ontario credits other than the basic personal, age, spouse, eligible dependant, pension, disability and CPP/EI amounts are not calculated. Confirm none apply.")?;
     let on=super::rates::Province { code:"ON", name:"Ontario", brackets:ON_2026_BRACKETS, credit_rate_bps:505, bpa_cents:Some(1_298_900), employment_amount:false, bracket_source:super::rates::CRA_T4127_JAN_2026, bpa_source:super::rates::CRA_T4127_JAN_2026, t4127_kp:&[], not_calculated:"" };
     t1_2026_with(c,obj,Some(&on))?;
-    let basic=c.totals["provincial_tax"];
-    let surtax=rounded_ratio((basic-581_800).max(0),2000,10000)?+rounded_ratio((basic-744_600).max(0),3600,10000)?;
+    let basic0=c.totals["provincial_tax"];
+    let surtax=rounded_ratio((basic0-581_800).max(0),2000,10000)?+rounded_ratio((basic0-744_600).max(0),3600,10000)?;
+    // ON428: dividend tax credit is deducted after surtax and before the Ontario tax reduction.
+    let dtc=c.lines.iter().find(|l| l.code=="ON61520").map(|l| l.amount).unwrap_or(0).min(basic0+surtax);
+    let basic=basic0-dtc;
     let reduction=(2*30_000-(basic+surtax)).clamp(0,basic+surtax);
     let ohp=on_health_premium_2026(c.totals["taxable_income"])?;
     // LIFT (ontario.ca "Low-Income Workers Tax Credit", 2022 onward): lesser of $875 and 5.05% of employment income,
@@ -927,6 +948,19 @@ mod tests {
         assert_eq!(l("extra_federal_credits"),rounded_ratio(1_560_000,1450,10000).unwrap());
         assert!(calculate("T1",2025,"ON",&json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"home_buyers_amount_cents":1_000_001})).is_err());
         assert!(calculate("T1",2025,"ON",&json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"adoption_expenses_cents":1_958_001})).is_err());
+    }
+    #[test]fn t1_2026_dividends(){
+        let b=|code:&str,v:Value| calculate("T1",2026,code,&v).unwrap();
+        let l=|c:&Calculation,k:&str|c.lines.iter().find(|x|x.code==k).unwrap().amount;
+        let base=json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"dividends_verified":true,"interest_income_cents":7_000_000,"eligible_dividends_cents":100_000,"other_dividends_cents":100_000});
+        // $1,000 eligible -> 1,380; $1,000 other -> 1,150. Federal DTC 207.27 + 103.85; BC 12% x 1,380 + 1.96% x 1,150 = 165.60 + 22.54.
+        let bc=b("BC",base.clone()); assert!(bc.supported,"{:?}",bc.diagnostics);
+        assert_eq!(l(&bc,"12000"),253_000); assert_eq!(l(&bc,"40425"),20_727+10_385); assert_eq!(l(&bc,"BC61520"),16_560+2_254);
+        assert_eq!(bc.totals["taxable_income"],7_253_000);
+        let on=b("ON",base.clone()); assert_eq!(l(&on,"ON61520"),13_800+3_434);
+        for p in ["NL","NB","MB","YT"] { assert!(b(p,base.clone()).supported,"{p}"); }
+        for p in ["AB","SK","NS","PE","NT","NU"] { assert!(!b(p,base.clone()).supported,"{p}"); }
+        let mut u=base.clone(); u["dividends_verified"]=json!(false); assert!(!b("BC",u).supported);
     }
     #[test]fn t1_2026_basic_scope_ab_bc_and_gates(){
         let base=json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":8_000_000});
