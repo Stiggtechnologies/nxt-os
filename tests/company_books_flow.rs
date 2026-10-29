@@ -172,7 +172,8 @@ async fn source_journal_and_trial_balance_pages_are_byte_bounded_without_row_los
             account_id: id,
             debit_cents: "0".into(),
             credit_cents: "0".into(),
-            basis: Some(ControlBasis::SourceReportRow {
+            held_residual: None,
+        basis: Some(ControlBasis::SourceReportRow {
                 report_sha256: "c".repeat(64),
                 row: 100 + i,
             }),
@@ -232,6 +233,7 @@ async fn independent_tb_rows_and_derived_zero_proofs_remain_distinct() {
         account_id: "zero-net".into(),
         debit_cents: "0".into(),
         credit_cents: "0".into(),
+        held_residual: None,
         basis: Some(ControlBasis::DerivedZeroJournalOmission {
             journal_sha256: "b".repeat(64),
             source_row_count: 2,
@@ -839,6 +841,7 @@ async fn derived_year_end_close_is_labelled_and_proven_apart_from_source_rows() 
     input.trial_balance[1].credit_cents = "12645".into();
     input.trial_balance.push(Control {
         account_id: "revenue".into(), debit_cents: "0".into(), credit_cents: "0".into(),
+        held_residual: None,
         basis: Some(ControlBasis::DerivedZeroAfterYearEndClose {
             journal_sha256: "b".repeat(64), source_row_count: 1, journal_debit_cents: "0".into(), journal_credit_cents: "300".into(),
             close_line_count: 1, close_debit_cents: "300".into(), close_credit_cents: "0".into(),
@@ -861,4 +864,27 @@ async fn derived_year_end_close_is_labelled_and_proven_apart_from_source_rows() 
     bad.request_id = "unlabelled".into();
     bad.chunks = vec![u["sha256"].as_str().unwrap().into()];
     assert!(s.preview("multi-bad", bad).await.is_err());
+}
+#[tokio::test]
+async fn held_residual_is_explicit_and_must_net_to_zero() {
+    let s = CompanyBooks::new(Store::memory());
+    let h = s.upload("held", fixture()).await.ok().unwrap();
+    let mut input = preview(h["sha256"].as_str().unwrap());
+    input.trial_balance[0].debit_cents = "12845".into();
+    input.trial_balance[1].credit_cents = "12845".into();
+    // Without a labelled residual the TB no longer ties: no silent balancing.
+    input.request_id = "no-residual".into();
+    assert_eq!(s.preview("held", input.clone()).await.ok().unwrap()["stage"], "assessment_blocked");
+    input.request_id = "residual".into();
+    input.trial_balance[0].held_residual = Some(HeldResidual { debit_cents: "500".into(), credit_cents: "0".into() });
+    input.trial_balance[1].held_residual = Some(HeldResidual { debit_cents: "0".into(), credit_cents: "500".into() });
+    let p = s.preview("held", input.clone()).await.ok().unwrap();
+    assert_eq!(p["stage"], "preview_ready", "{p}");
+    assert_eq!(p["preview"]["analysis"]["held_residual_accounts"], 2);
+    assert_eq!(p["preview"]["analysis"]["balances"][0]["debit_cents"], "12345");
+    let mut bad = input;
+    bad.request_id = "unbalanced".into();
+    bad.trial_balance[1].held_residual = None;
+    bad.trial_balance[1].credit_cents = "12345".into();
+    assert_eq!(s.preview("held", bad).await.ok().unwrap()["stage"], "assessment_blocked");
 }

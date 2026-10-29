@@ -303,3 +303,34 @@ class AllDatesJournalWithAsOfTrialBalance(unittest.TestCase):
         self.assertIsNone(qbo.parse_period('As of Decem 31, 2026'))
         r = qbo.assess_export_bytes(canonical(journal(period='All Dates'), tb('As of Dec 31, 2025')))
         self.assertEqual(r['blockers'], [], r['blockers'])
+
+
+class HeldResidual(unittest.TestCase):
+    def _export(self):
+        rows = modern_rows()
+        rows[9] = [x.string('A9', 'Total for 9001'), x.number('H9', '0', formula='H7+H8', cache='100.01'), x.number('I9', '0', formula='I7+I8', cache='100.01')]
+        rows[10] = [x.string('A10', '9002')]
+        rows[11] = line(11, 'Synthetic cash', 'H', '5.00')
+        rows[12] = line(12, 'Synthetic capital', 'I', '5.00')
+        rows[13] = [x.string('B13', '2025-03-04'), x.string('C13', 'Journal Entry'), x.string('G13', 'Synthetic cash'), x.string('J13', 'No')]
+        rows[15] = [x.string('A15', 'Total for 9002'), x.number('H15', '0', formula='H11+H12', cache='5.00'), x.number('I15', '0', formula='I11+I12', cache='5.00')]
+        rows[16] = [x.string('A16', 'TOTAL'), x.number('H16', '0', formula='H9+H15', cache='105.01'), x.number('I16', '0', formula='I9+I15', cache='105.01')]
+        rows.pop(14)
+        rows[18] = [x.string('A18', ' Synthetic generated timestamp footer')]
+        t = x.xlsx('Trial Balance', {
+            5: [x.string('B5', 'Debit'), x.string('C5', 'Credit')],
+            6: [x.string('A6', 'Synthetic cash'), x.number('B6', '105.01')],
+            7: [x.string('A7', 'Synthetic capital'), x.number('C7', '105.01')],
+            8: [x.string('A8', 'TOTAL'), x.number('B8', '105.01'), x.number('C8', '105.01')]}, TB_AS_OF)
+        return canonical(x.xlsx('Journal', rows, JOURNAL_PERIOD), t)
+
+    def test_held_entry_is_an_explicit_labelled_residual_not_a_posting(self):
+        data = self._export()
+        r = qbo.assess_export_bytes(data)
+        self.assertIn('SUSPENSE_REVIEW', r['review_blockers'])
+        self.assertTrue(r['opening_reconciliation']['status'].endswith('_and_held_residual'), r['opening_reconciliation'])
+        out = stage.build(data, 'auto')
+        payload = out[0] if isinstance(out, tuple) else out
+        text = repr(payload)
+        self.assertIn("'held_residual': {'debit_cents': '500', 'credit_cents': '0'}", text)
+        self.assertIn("'held_residual': {'debit_cents': '0', 'credit_cents': '500'}", text)

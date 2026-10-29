@@ -73,6 +73,20 @@ pub struct Control {
     pub credit_cents: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub basis: Option<ControlBasis>,
+    /// Explicit, labelled amount of this trial-balance row carried by source
+    /// entries held for review (never posted). The control must equal posted
+    /// activity plus this residual; residuals must net to zero across the book.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held_residual: Option<HeldResidual>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HeldResidual {
+    pub debit_cents: String,
+    pub credit_cents: String,
+}
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -135,6 +149,8 @@ pub struct Analysis {
     pub controls_passed: bool,
     pub independent_trial_balance_accounts: usize,
     pub derived_zero_accounts: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub held_residual_accounts: usize,
     pub control_provenance_complete: bool,
     pub chart_of_accounts_complete: bool,
 }

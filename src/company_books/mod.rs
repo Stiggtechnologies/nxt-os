@@ -419,6 +419,16 @@ impl CompanyBooks {
                             money(&t.debit_cents)?,
                             money(&t.credit_cents)?,
                             t.basis.as_ref(),
+                            match &t.held_residual {
+                                None => None,
+                                Some(r) => {
+                                    let (rd, rc) = (money(&r.debit_cents)?, money(&r.credit_cents)?);
+                                    if (rd > 0 && rc > 0) || rd == rc {
+                                        return Err(bad("Invalid held residual"));
+                                    }
+                                    Some(rd - rc)
+                                }
+                            },
                         ),
                     )
                     .is_some()
@@ -435,15 +445,22 @@ impl CompanyBooks {
         let mut balances = vec![];
         let (mut independent, mut derived, mut provenance_complete) = (0usize, 0usize, true);
         let mut source_tb_rows = HashSet::new();
+        let (mut held_residual_accounts, mut held_residual_net) = (0usize, 0i128);
         for (id, (a, d, c)) in totals {
             let net = d - c;
-            let (bd, bc) = (net.max(0), (-net).max(0));
+            let residual = checks.get(&id).and_then(|k| k.3);
+            if let Some(r) = residual {
+                held_residual_accounts += 1;
+                held_residual_net += r;
+            }
+            let expected = net + residual.unwrap_or(0);
+            let (bd, bc) = (expected.max(0), (-expected).max(0));
             match checks.get(&id) {
                 None => {
                     blockers.push(format!("trial_balance_control_missing:{id}"));
                     provenance_complete = false;
                 }
-                Some((sd, sc, basis)) => {
+                Some((sd, sc, basis, _)) => {
                     let matches = (*sd, *sc) == (bd, bc);
                     if !matches {
                         blockers.push(format!("trial_balance_mismatch:{id}"));
@@ -476,7 +493,7 @@ impl CompanyBooks {
                                 || closes.contains_key(&id)
                                 || aggregate(journal_debit_cents)? != d
                                 || aggregate(journal_credit_cents)? != c
-                                || d != c
+                                || expected != 0
                                 || *sd != 0
                                 || *sc != 0
                             {
@@ -505,7 +522,7 @@ impl CompanyBooks {
                                 || aggregate(journal_credit_cents)? != c - yc
                                 || aggregate(close_debit_cents)? != yd
                                 || aggregate(close_credit_cents)? != yc
-                                || d != c
+                                || expected != 0
                                 || *sd != 0
                                 || *sc != 0
                             {
@@ -522,12 +539,15 @@ impl CompanyBooks {
                 account_id: id.clone(),
                 name: a.name.clone(),
                 kind: a.kind.clone(),
-                debit_cents: bd.to_string(),
-                credit_cents: bc.to_string(),
+                debit_cents: net.max(0).to_string(),
+                credit_cents: (-net).max(0).to_string(),
                 journal_debit_cents: d.to_string(),
                 journal_credit_cents: c.to_string(),
-                source_control_basis: checks.get(&id).and_then(|(_, _, b)| b.map(Clone::clone)),
+                source_control_basis: checks.get(&id).and_then(|(_, _, b, _)| b.map(Clone::clone)),
             });
+        }
+        if held_residual_net != 0 {
+            blockers.push("held_residual_unbalanced".into());
         }
         blockers.sort();
         blockers.dedup();
@@ -541,6 +561,7 @@ impl CompanyBooks {
             controls_passed: blockers.is_empty(),
             independent_trial_balance_accounts: independent,
             derived_zero_accounts: derived,
+            held_residual_accounts,
             control_provenance_complete: provenance_complete,
             chart_of_accounts_complete: false,
             balances,
