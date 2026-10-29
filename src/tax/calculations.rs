@@ -140,7 +140,7 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
 }
 
 fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
-    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","provincial_adjustments_not_applicable"])?;
+    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident","Confirm full-year Canadian residence and Alberta residence at year-end; newcomer, emigrant and deemed-resident rules are outside scope.")?;
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
     let rrsp=money(obj,"rrsp_deduction_cents")?; let limit=money(obj,"rrsp_deduction_limit_cents")?;
@@ -161,7 +161,7 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
     let bpa=1_612_900-reduction; let employment_amount=employment.min(147_100);
     let federal_before=progressive(taxable,FEDERAL)?;
     let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
-    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,"AB")?;
+    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,"AB")?;
     let federal=(federal_before-federal_credits-xcredit).max(0);
     let provincial_before=progressive(taxable,ALBERTA)?;
     // AB428: credits at 8%, plus the 2025 Alberta supplemental tax credit of 2% on
@@ -185,7 +185,7 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
 }
 
 fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::Province) -> Result<(),String> {
-    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","provincial_adjustments_not_applicable"])?;
+    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident",&format!("Confirm full-year Canadian residence and {} residence at December 31; part-year, multi-jurisdiction and business-income allocation are outside scope.",p.name))?;
     require(c,obj,"provincial_adjustments_not_applicable",&format!("The generic engine does not calculate: {}. Confirm none apply to this return, or prepare those amounts outside NXT.",p.not_calculated))?;
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
@@ -207,7 +207,7 @@ fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::P
     let bpa=1_612_900-reduction; let employment_amount=employment.min(147_100);
     let federal_before=progressive(taxable,FEDERAL)?;
     let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
-    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,p.code)?;
+    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,p.code)?;
     let federal=(federal_before-federal_credits-xcredit).max(0);
     if p.code=="MB" && taxable>20_000_000 { c.diagnostic("mb_bpa_phaseout","Manitoba phases out its basic personal amount for net income between $200,000 and $400,000 from 2025; this is not calculated.",None,true); }
     let prov_bpa=p.bpa_cents.unwrap_or(bpa);
@@ -279,7 +279,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
 }
 /// Federal credits for medical (33099), donations (34900), pension (31400), tuition (32300).
 /// Returns (federal credit, provincial credit amounts at the provincial rate, provincial donation credit, lines).
-fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, net: i64, code: &str) -> Result<(i64,i64,i64,Vec<(String,String,i64)>),String> {
+fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, net: i64, bpa: i64, code: &str) -> Result<(i64,i64,i64,Vec<(String,String,i64)>),String> {
     let (med,don,tui)=(money(obj,"medical_expenses_cents")?,money(obj,"donations_cents")?,money(obj,"tuition_cents")?);
     let pension_amount=if x.pension_for_credit>0 { x.pension_for_credit.min(200_000) } else { 0 };
     if pension_amount>0 { c.diagnostic("pension_amount_eligibility","Line 31400 eligibility depends on age and pension type (age 65+ for most RRIF/annuity income). Verify that the pension income is eligible.",None,false); }
@@ -290,7 +290,15 @@ fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, n
     let first=don.min(20_000); let rest=don-first;
     let at33=rest.min((net-25_341_400).max(0));
     let donation_credit=sum(&[rounded_ratio(first,1450,10000)?,rounded_ratio(rest-at33,2900,10000)?,rounded_ratio(at33,3300,10000)?])?;
-    let credit_base=sum(&[medical,pension_amount,tui,x.se_cpp_credit])?;
+    // Age (30100), spouse (30300) and disability (31600) amounts; inputs are preparer-verified facts.
+    let flag=|k:&str| -> Result<bool,String> { Ok(obj.get(k).is_some() && boolean(obj,k)?) };
+    let aged=flag("born_1960_or_earlier")?; let disabled=flag("disability_tax_credit_approved")?;
+    let spouse_net=optional_money(obj,"spouse_net_income_cents")?;
+    if aged || disabled || spouse_net.is_some() { require(c,obj,"credits_verified","Verify the birth year (1960 or earlier), CRA-approved T2201 for an adult, and the spouse's line 23600 net income. Infirmity supplements, eligible dependant and caregiver amounts are not handled.")?; }
+    let age_amount=if aged { (902_800-rounded_ratio((net-4_552_200).max(0),1500,10000)?).max(0) } else { 0 };
+    let spouse_fed=spouse_net.map(|n| (bpa-n.max(0)).max(0)).unwrap_or(0);
+    let disability=if disabled { 1_013_800 } else { 0 };
+    let credit_base=sum(&[medical,pension_amount,tui,x.se_cpp_credit,age_amount,spouse_fed,disability])?;
     let credit=sum(&[rounded_ratio(credit_base,1450,10000)?,donation_credit])?;
     // Provincial counterparts from the 2025 428 form and worksheet (rates::PROV_CREDITS_2025).
     let p=super::rates::prov_credits_2025(code).ok_or("No 2025 provincial credit parameters")?;
@@ -299,15 +307,18 @@ fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, n
     let p_tuition=if p.current_year_tuition { tui } else { 0 };
     if tui>0 && !p.current_year_tuition { c.diagnostic("provincial_tuition_none",&format!("{} has no current-year tuition credit for 2025; only unused carryforward amounts (not handled) apply.",code),Some("tuition_cents"),false); }
     if tui>0 && p.current_year_tuition { c.diagnostic("provincial_education_amount","Provincial monthly education/textbook amounts and tuition carryforwards are not calculated; claim only reduces tax if they are nil.",Some("tuition_cents"),false); }
-    let p_base=sum(&[p_medical,p_pension,p_tuition,x.se_cpp_credit])?;
+    let p_age=if !aged { 0 } else if p.age_max_cents==0 { age_amount } else { (p.age_max_cents-rounded_ratio((net-p.age_threshold_cents).max(0),1500,10000)?).max(0) };
+    let p_spouse=match spouse_net { None=>0, Some(n) if p.spouse_base_cents==0 => { let _=n; spouse_fed }, Some(n) => { let floor=if code=="NS" { 87_400 } else { 0 }; (p.spouse_base_cents-n.max(floor)).clamp(0,p.spouse_max_cents) } };
+    let p_disability=if !disabled { 0 } else if p.disability_cents==0 { disability } else { p.disability_cents };
+    let p_base=sum(&[p_medical,p_pension,p_tuition,x.se_cpp_credit,p_age,p_spouse,p_disability])?;
     let p_top=match p.donation_top { Some((thr,_))=>rest.min((net-thr).max(0)), None=>0 };
     let p_don=sum(&[rounded_ratio(first,p.donation_low_bps,10000)?,rounded_ratio(rest-p_top,p.donation_high_bps,10000)?,match p.donation_top { Some((_,r))=>rounded_ratio(p_top,r,10000)?, None=>0 }])?;
     let lc=code.to_lowercase();
-    let mut lines=vec![(format!("{code}58360"),format!("{code} pension income amount"),p_pension),(format!("{code}58560"),format!("{code} current-year tuition amount"),p_tuition),
+    let mut lines=vec![(format!("{code}58080"),format!("{code} age amount"),p_age),(format!("{code}58120"),format!("{code} spouse or common-law partner amount"),p_spouse),(format!("{code}58440"),format!("{code} disability amount"),p_disability),(format!("{code}58360"),format!("{code} pension income amount"),p_pension),(format!("{code}58560"),format!("{code} current-year tuition amount"),p_tuition),
         (format!("{code}58689"),format!("{code} allowable medical expenses"),p_medical),(format!("{lc}_donation_credit"),format!("{code} donation credit"),p_don),(format!("{lc}_extra_credit_amounts"),format!("{code} additional credit amounts at the provincial rate"),p_base)];
     lines.retain(|l| l.2!=0);
     let mut out=vec![("31400".into(),"Pension income amount (max $2,000)".into(),pension_amount),("32300".into(),"Verified T2202 tuition amount (current year)".into(),tui),
-        ("33099".into(),"Allowable medical expenses (less lesser of 3% net income and $2,834)".into(),medical),("34900".into(),"Donations (federal credit: 14.5% first $200, 29%/33% above)".into(),don),("donation_credit".into(),"Federal donation credit".into(),donation_credit),("extra_federal_credits".into(),"Additional federal non-refundable credits".into(),credit)];
+        ("33099".into(),"Allowable medical expenses (less lesser of 3% net income and $2,834)".into(),medical),("34900".into(),"Donations (federal credit: 14.5% first $200, 29%/33% above)".into(),don),("donation_credit".into(),"Federal donation credit".into(),donation_credit),("30100".into(),"Age amount".into(),age_amount),("30300".into(),"Spouse or common-law partner amount".into(),spouse_fed),("31600".into(),"Disability amount (18+)".into(),disability),("extra_federal_credits".into(),"Additional federal non-refundable credits".into(),credit)];
     out.extend(lines);
     Ok((credit,p_base,p_don,out))
 }
@@ -327,7 +338,7 @@ fn ontario_health_premium(taxable: i64) -> Result<i64,String> {
 }
 
 fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
-    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","spouse_net_income_cents","provincial_adjustments_not_applicable"])?;
+    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident","Confirm full-year Canadian residence and Ontario residence at year-end; newcomer, emigrant and deemed-resident rules are outside scope.")?;
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
     let rrsp=money(obj,"rrsp_deduction_cents")?; let limit=money(obj,"rrsp_deduction_limit_cents")?;
@@ -348,15 +359,10 @@ fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
     let bpa=1_612_900-reduction; let employment_amount=employment.min(147_100);
     let federal_before=progressive(taxable,FEDERAL)?;
     let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
-    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,"ON")?;
+    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,"ON")?;
     let federal=(federal_before-federal_credits-xcredit).max(0);
-    let spouse_net=optional_money(obj,"spouse_net_income_cents")?;
-    let spouse_amount=match spouse_net {
-        None => 0,
-        Some(net) => (1_190_500_i64.saturating_sub(net)).clamp(0, 1_082_300),
-    };
     let ontario_before=progressive(taxable,ONTARIO)?;
-    let ontario_credit_base=sum(&[1_274_700, spouse_amount, cpp, ei, pbase])?;
+    let ontario_credit_base=sum(&[1_274_700, cpp, ei, pbase])?;
     let ontario_credits=sum(&[rounded_ratio(ontario_credit_base,505,10000)?,pdon])?;
     let after_credits=(ontario_before-ontario_credits).max(0);
     // ON428 lines 66–68. No dividend tax credit or split income in this scope, so line 65 equals tax after non-refundable credits.
@@ -375,13 +381,13 @@ fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
         ("20800","Verified RRSP deduction",rrsp),("22215","Verified enhanced CPP deduction",enhanced),("23600","Net income",taxable),("26000","Taxable income",taxable),
         ("30000","Federal basic personal amount",bpa),("30800","Verified base CPP credit amount",cpp),("31200","Verified EI credit amount",ei),("31260","Canada employment amount",employment_amount),
         ("federal_before_credits","Federal tax before credits",federal_before),("35000","Scoped federal non-refundable credits",federal_credits),("42000","Scoped net federal income tax",federal),
-        ("ON58040","Ontario basic personal amount",1_274_700),("ON58120","Ontario spouse amount from supplied net income",spouse_amount),
+        ("ON58040","Ontario basic personal amount",1_274_700),
         ("on_before_credits","Ontario tax on taxable income",ontario_before),("ON61500","Scoped Ontario non-refundable credits",ontario_credits),
         ("on_surtax","Ontario surtax",surtax),("on_tax_reduction","Ontario basic tax reduction",tax_reduction),("on_health_premium","Ontario health premium",health),("42800","Scoped Ontario income tax",provincial),
     ] { c.line(code,label,amount); }
     for (code,label,amount) in x.lines.iter().chain(xlines.iter()) { c.line(code,label,*amount); }
     c.total("taxable_income",taxable); c.total("federal_tax",federal); c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("payments",paid); c.total("balance",tax-paid);
-    c.diagnostic("ontario_scope","Ontario amount uses published 2025 ON428 brackets, the 5.05% credit rate, surtax, the basic reduction only, and the health-premium chart. Dependant reductions, age, disability and spouse amounts beyond the supplied net income, dividends, LIFT, and minimum tax are not calculated. Cent rounding is half away from zero at each workpaper line, which can differ from dollar rounding on the paper form.",None,false);
+    c.diagnostic("ontario_scope","Ontario amount uses published 2025 ON428 brackets, the 5.05% credit rate, surtax, the basic reduction only, and the health-premium chart. Dependant reductions, eligible-dependant and caregiver amounts, dividends, LIFT, and minimum tax are not calculated. Cent rounding is half away from zero at each workpaper line, which can differ from dollar rounding on the paper form.",None,false);
     c.diagnostic("benefits_excluded","Balance covers only the stated income-tax workpaper and payments. Refundable benefits and all other return amounts are excluded. No return is filed.",None,false);
     Ok(())
 }
@@ -592,6 +598,16 @@ mod tests {
         let spouse=calc("T1","ON",json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":4_000_000,"spouse_net_income_cents":0}));
         assert_eq!(spouse.lines.iter().find(|l|l.code=="ON58120").unwrap().amount,1_082_300);
         assert!(spouse.totals["provincial_tax"]<c.totals["provincial_tax"]);
-        assert!(calculate("T1",2025,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"spouse_net_income_cents":0})).is_err());
+        assert!(!spouse.supported || spouse.diagnostics.iter().any(|d|d.code=="credits_verified"));
+        // Age (Worksheet 5000-D1 / AB428): net $40,000 below both thresholds; spouse with nil income; DTC adult.
+        let ab=calc("T1","AB",json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"interest_income_cents":4_000_000,"spouse_net_income_cents":0,"born_1960_or_earlier":true,"disability_tax_credit_approved":true}));
+        assert!(ab.supported, "{:?}", ab.diagnostics);
+        let l=|k:&str|ab.lines.iter().find(|x|x.code==k).unwrap().amount;
+        assert_eq!(l("30100"),902_800); assert_eq!(l("30300"),1_612_900); assert_eq!(l("31600"),1_013_800);
+        assert_eq!(l("AB58080"),622_100); assert_eq!(l("AB58120"),2_232_300); assert_eq!(l("AB58440"),1_721_900);
+        // Age amount phases out at 15%: net $60,000 -> 9,028 - 0.15*(60,000-45,522) = 6,856.30.
+        let ns=calc("T1","NS",json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"interest_income_cents":6_000_000,"born_1960_or_earlier":true,"spouse_net_income_cents":50_000}));
+        let n=|k:&str|ns.lines.iter().find(|x|x.code==k).unwrap().amount;
+        assert_eq!(n("30100"),685_630); assert_eq!(n("NS58080"),573_400-437_580); assert_eq!(n("NS58120"),1_261_800-87_400);
     }
 }
