@@ -268,3 +268,25 @@ fn vehicle_caps_reg_7307() {
     z.cca[0].vehicles[0].acquired = "2019-03-18".into();
     assert!(run(&z).1.iter().any(|x| x["code"] == "cca_vehicle_limit"));
 }
+
+#[test]
+fn separate_classes_reg_1101() {
+    let mut i = base();
+    let car = |label: &str| CcaClass { class: "10.1".into(), opening_ucc_cents: 20_000_00, separate_class: "1101(1af)".into(), separate_class_label: label.into(), ..Default::default() };
+    i.cca = vec![car("Car A"), car("Car B")];
+    assert!(validate(&i).is_ok());
+    let mut d = vec![]; let s8 = schedule8(&i, &mut d);
+    assert_eq!(s8["schedule1_line_403_cca_cents"], 12_000_00);
+    i.cca[1].separate_class_label = "Car A".into(); assert!(validate(&i).is_err());
+    // 1101(5b.1) building used 90%+ for manufacturing: 4% + 6% (Reg 1100(1)(a.1)).
+    let mut b = base();
+    b.cca = vec![CcaClass { class: "1".into(), opening_ucc_cents: 100_000_00, separate_class: "1101(5b.1)".into(), building_additional_use: "manufacturing".into(), ..Default::default() }];
+    let mut d = vec![]; let s8 = schedule8(&b, &mut d);
+    assert_eq!(s8["classes"][0]["maximum_cca_cents"], 10_000_00);
+    assert!(d.iter().any(|x| x["code"] == "cca_separate_class_election"));
+    b.cca[0].separate_class_election_filed = true; b.cca[0].building_additional_use = "non_residential".into();
+    let mut d = vec![]; let s8 = schedule8(&b, &mut d);
+    assert_eq!(s8["classes"][0]["maximum_cca_cents"], 6_000_00);
+    assert!(!d.iter().any(|x| x["blocks_review"] == true), "{d:?}");
+    b.cca[0].class = "8".into(); assert!(validate(&b).is_err());
+}
