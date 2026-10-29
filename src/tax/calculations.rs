@@ -192,8 +192,11 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
         None => {
             let pa=prov_age_2026(c,"AB",aged,taxable)?;
             let base=sum(&[t.alberta_bpa_cents,cpp,ei,pa])?;
-            if base>6_000_000 { c.diagnostic("ab_supplemental_2026_unsourced","Alberta credit amounts exceed $60,000; the 2026 Alberta supplemental tax credit is not yet sourced.",None,true); }
-            (t.alberta_bpa_cents,progressive(taxable,t.alberta_brackets)?,rounded_ratio(base,800,10000)?)
+            // CRA T4127-JAN 2026 K5P = ((K1P+K2P) - $4,896) x 0.25, i.e. 2% (25% of 8%) of Alberta credit amounts over
+            // $61,200 ($4,896 / 8%); Alberta supplemental tax credit, AB428 line 61545 (alberta.ca: 2026 amounts rise 2%).
+            let supp=rounded_ratio((base-6_120_000).max(0),200,10000)?;
+            if supp>0 { c.line("61545","Alberta supplemental tax credit (T4127-JAN 2026 K5P)",supp); }
+            (t.alberta_bpa_cents,progressive(taxable,t.alberta_brackets)?,rounded_ratio(base,800,10000)?+supp)
         }
         Some(p) => {
 
