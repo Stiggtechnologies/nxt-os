@@ -123,7 +123,7 @@ fn t1_2026(c: &mut Calculation, obj: &Map<String,Value>, code: &str) -> Result<(
 }
 fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&super::rates::Province>) -> Result<(),String> {
     let t=&super::rates::CA_2026;
-    let name=prov.map(|p| p.name).unwrap_or("Alberta");
+    let name=prov.map(|p| p.name).unwrap_or("Alberta"); let pc=prov.map(|p| p.code).unwrap_or("AB");
     require(c,obj,"full_year_resident",&format!("Confirm full-year Canadian residence and {name} residence at December 31, 2026."))?;
     if prov.is_some() { require(c,obj,"provincial_adjustments_not_applicable",&format!("2026 {name} reductions, surtaxes and credits other than the basic personal, age, spouse, eligible dependant, pension, disability and CPP/EI amounts are not calculated. Confirm none apply."))?; }
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
@@ -149,7 +149,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let aged=boolean(obj,"born_1961_or_earlier")?; let med=money(obj,"medical_expenses_cents")?;
     if aged || med>0 {
         require(c,obj,"credits_verified","Verify the birth year (1961 or earlier) and medical receipts (12-month period ending in 2026).")?;
-        if med>0 { c.diagnostic("provincial_medical_2026_unsourced","2026 provincial medical expense thresholds are not yet sourced; only the federal medical credit is calculated.",None,true); }
+        if med>0 && pc!="BC" { c.diagnostic("provincial_medical_2026_unsourced","2026 provincial medical expense thresholds are not yet sourced; only the federal medical credit is calculated.",None,true); }
     }
     let age_amount=if aged { (920_800-rounded_ratio((taxable-4_643_200).max(0),1500,10000)?).max(0) } else { 0 };
     let medical=(med-rounded_ratio(taxable,300,10000)?.min(289_000)).max(0);
@@ -161,7 +161,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     if ed.is_some() || cg.is_some() {
         require(c,obj,"dependants_verified","Verify line 30400 conditions (no spouse/common-law partner claimed, dependant related, living with you, not infirm) and line 30450 (infirm dependant 18+ who is not your spouse or eligible dependant; one claim per dependant). Infirm eligible dependants and caregiver top-ups are not handled.")?;
         if ed.is_some() && money(obj,"spouse_adjusted_net_income_cents")?>0 { return Err("Line 30400 cannot be claimed with a spouse or common-law partner in this scope".into()); }
-        if cg.is_some() { c.diagnostic("provincial_dependant_2026_unsourced","2026 provincial caregiver amounts for infirm dependants are not yet calculated; only the federal line 30450 amount is calculated.",None,true); }
+        if cg.is_some() && pc!="BC" { c.diagnostic("provincial_dependant_2026_unsourced","2026 provincial caregiver amounts for infirm dependants are not yet calculated; only the federal line 30450 amount is calculated.",None,true); }
     }
     let ed_amount=ed.map(|n| (bpa-n.max(0)).max(0)).unwrap_or(0);
     let cg_amount=cg.map(|n| (877_300-(n.max(0)-2_060_100).max(0)).max(0)).unwrap_or(0);
@@ -173,7 +173,8 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let spouse_claim=boolean(obj,"claim_spouse_amount")?; let disabled=boolean(obj,"disability_tax_credit_approved")?;
     let (tui,don,hb,adopt,sli)=(money(obj,"tuition_cents")?,money(obj,"donations_cents")?,money(obj,"home_buyers_amount_cents")?,money(obj,"adoption_expenses_cents")?,money(obj,"student_loan_interest_cents")?);
     let others=spouse_claim||disabled||pension>0||tui>0||don>0||hb>0||adopt>0||sli>0;
-    let prov_others=tui>0||don>0||hb>0||adopt>0||sli>0;
+    // BC: tuition, donations, adoption and student-loan interest are calculated below (gov.bc.ca basic credits page).
+    let prov_others=if pc=="BC" { hb>0 } else { tui>0||don>0||hb>0||adopt>0||sli>0 };
     if others {
         require(c,obj,"credits_verified","Verify spouse net income, CRA-approved T2201, eligible pension income (age/type), T2202 tuition (current year only), official donation receipts, home buyers', adoption and student-loan receipts.")?;
         if prov_others { c.diagnostic("provincial_credits_2026_unsourced","2026 provincial counterparts of these credits are not yet sourced; only federal amounts are calculated.",None,true); }
@@ -207,14 +208,30 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
             // T4127-JAN 2026 BPAMB: $15,780 reduced by (NI - $200,000) x 15,780/200,000, nil at $400,000.
             if p.code=="MB" { b-=rounded_ratio((taxable-20_000_000).clamp(0,20_000_000),b,20_000_000)?; } let ce=if p.employment_amount { cea } else { 0 };
             let pa=sum(&[prov_age_2026(c,p.code,aged,taxable)?,prov_spouse_2026(c,p.code,b,spouse_claim,obj)?,prov_dependant_2026(c,p.code,b,ed)?,prov_pension_disability_2026(c,p.code,pension,disabled)?])?;
-            (b,progressive(taxable,p.brackets)?,rounded_ratio(sum(&[b,ce,cpp,ei,pa])?,p.credit_rate_bps,10000)?)
+            let mut extra=0; let mut extra_credit=0;
+            if p.code=="BC" {
+                // gov.bc.ca "B.C. basic personal income tax credits" (updated April 20, 2026), 2026 column: medical expenses
+                // reduced by the lesser of 3% of net income and $2,748; B.C. caregiver $5,784 reduced by dependant net income
+                // over $19,572; tuition, adoption (max $19,972) and student-loan interest at actual amounts; gifts at the lowest
+                // rate on the first $200, 20.5% on the lesser of the excess and taxable income over $265,545, 16.8% on the rest.
+                let bmed=(med-rounded_ratio(taxable,300,10000)?.min(274_800)).max(0);
+                let bcg=cg.map(|n| (578_400-(n.max(0)-1_957_200).max(0)).max(0)).unwrap_or(0);
+                if med>0 { c.line("BC58689","BC allowable medical expenses (2026)",bmed); }
+                if cg.is_some() { c.line("BC58185","BC caregiver amount (2026)",bcg); }
+                extra=sum(&[bmed,bcg,tui,adopt,sli])?;
+                let r=don-first; let hi=r.min((taxable-26_554_500).max(0));
+                extra_credit=sum(&[rounded_ratio(first,p.credit_rate_bps,10000)?,rounded_ratio(r-hi,1680,10000)?,rounded_ratio(hi,2050,10000)?])?;
+                if don>0 { c.line("bc_donation_credit","BC donation credit (2026)",extra_credit); }
+            }
+            (b,progressive(taxable,p.brackets)?,sum(&[rounded_ratio(sum(&[b,ce,cpp,ei,pa,extra])?,p.credit_rate_bps,10000)?,extra_credit])?)
         }
     };
     let pcode=prov.map(|p| p.code).unwrap_or("AB"); let lc=pcode.to_lowercase();
     let mut provincial=(pbefore-pcredits).max(0);
     if pcode=="BC" {
-        // T4127-JAN 2026 BC factor S: $575 less 3.56% of net income over $25,570 (nil above $41,722), limited to BC tax.
-        let r=(57_500-rounded_ratio((taxable-2_557_000).max(0),356,10000)?).clamp(0,provincial);
+        // gov.bc.ca basic credits page (April 20, 2026): Budget 2026 raised the 2026 B.C. tax reduction to $690, less 3.56% of
+        // net income over $25,570 (nil at $44,952); supersedes the $575 in T4127-JAN 2026 factor S. Limited to BC tax.
+        let r=(69_000-rounded_ratio((taxable-2_557_000).max(0),356,10000)?).clamp(0,provincial);
         c.line("BC61800","BC tax reduction (T4127-JAN 2026 factor S)",r); provincial-=r;
     }
     let tax=sum(&[federal,provincial])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?])?;
@@ -981,8 +998,15 @@ mod tests {
         assert_eq!(l(&am,"35000"),rounded_ratio(1_645_200+867_280+250_000,1400,10000).unwrap());
         assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"medical_expenses_cents":100})).map(|c|!c.supported).unwrap_or(true));
         let bc=calculate("T1",2026,"BC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap();
-        assert!(bc.supported,"{:?}",bc.diagnostics); assert_eq!(l(&bc,"BC61800"),41_729);
-        let bc_hi=calculate("T1",2026,"BC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":4_200_000})).unwrap(); assert_eq!(l(&bc_hi,"BC61800"),0);
+        assert!(bc.supported,"{:?}",bc.diagnostics); assert_eq!(l(&bc,"BC61800"),53_229); // $690 - 3.56% x $4,430
+        let bc_hi=calculate("T1",2026,"BC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":4_200_000})).unwrap(); assert_eq!(l(&bc_hi,"BC61800"),10_509);
+        let bc_top=calculate("T1",2026,"BC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":4_500_000})).unwrap(); assert_eq!(l(&bc_top,"BC61800"),0);
+        // BC credits: medical 4,000 - 2,748 = 1,252; caregiver 5,784 - (20,572-19,572) = 4,784; tuition 1,000;
+        // donations 1,200: 200 x 5.6% + 1,000 x 16.8% = 179.20 (income below $265,545).
+        let bcc=calculate("T1",2026,"BC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"credits_verified":true,"dependants_verified":true,"interest_income_cents":10_000_000,"medical_expenses_cents":400_000,"infirm_dependant_18_plus_net_income_cents":2_057_200,"tuition_cents":100_000,"donations_cents":120_000})).unwrap();
+        assert!(bcc.supported,"{:?}",bcc.diagnostics); assert_eq!(l(&bcc,"BC58689"),125_200); assert_eq!(l(&bcc,"BC58185"),478_400); assert_eq!(l(&bcc,"bc_donation_credit"),17_920);
+        assert_eq!(l(&bcc,"BC61500"),rounded_ratio(1_321_600+125_200+478_400+100_000,560,10000).unwrap()+17_920);
+        assert!(!calculate("T1",2026,"BC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"credits_verified":true,"interest_income_cents":5_000_000,"home_buyers_amount_cents":100_000})).unwrap().supported);
         let mb=calculate("T1",2026,"MB",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"interest_income_cents":30_000_000})).unwrap();
         assert!(mb.supported,"{:?}",mb.diagnostics); assert_eq!(l(&mb,"MB58040"),789_000);
         let mb0=calculate("T1",2026,"MB",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"interest_income_cents":45_000_000})).unwrap(); assert_eq!(l(&mb0,"MB58040"),0);
