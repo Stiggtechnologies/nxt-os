@@ -41,14 +41,44 @@ pub fn router(firm: Arc<Firm>) -> Router {
         .route("/api/firm/spreadsheet-sync", get(spreadsheet))
         .route("/api/firm/integrations", get(integrations))
         .route("/api/firm/audit", get(audit))
+        .route("/api/firm/clients/{client}/work", get(client_work))
         .layer(middleware::from_fn_with_state(firm.clone(), client_scope))
         .layer(middleware::from_fn(require_admin))
-        .with_state(firm)
+        .with_state(firm.clone())
+        .merge(Router::new().route("/api/cron/firm-tick", get(cron_tick)).with_state(firm))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AsOf { as_of: Option<String> }
+async fn client_work(State(f): S, Path(client): Path<String>, Query(q): Query<AsOf>) -> R { ok(f.client_work(&client, q.as_of.as_deref()).await?) }
+
+/// Hourly Vercel Cron for daily/weekly workflow triggers. Off unless NXT_FIRM_CRON=on, and
+/// authenticated with CRON_SECRET. Actions stay internal (tasks, reports); approval-gated runs
+/// wait for a human.
+async fn cron_tick(State(f): S, h: axum::http::HeaderMap) -> Response {
+    if let Err(r) = super::staff::cron_authorized(&h) { return r; }
+    if !std::env::var("NXT_FIRM_CRON").is_ok_and(|v| v.trim().eq_ignore_ascii_case("on")) {
+        return Json(json!({"skipped":true,"reason":"NXT_FIRM_CRON is not on"})).into_response();
+    }
+    match f.tick(TickInput { now: None }).await { Ok(v) => Json(v).into_response(), Err(e) => e.into_response() }
 }
 
 /// Client-scoped accounts see only projects for their clients; every other firm view
 /// (templates, workflows, closes, contacts, exports, audit) is firm-wide.
 async fn client_scope(State(f): S, req: axum::extract::Request, next: middleware::Next) -> Response {
+    let path = req.uri().path().to_string();
+    if let Some(rest) = path.strip_prefix("/api/firm/clients/") {
+        if let Some(id) = super::staff::scoped(&req) {
+            let client = rest.split('/').next().unwrap_or("");
+            if !id.can_client(client) { return ApiError(axum::http::StatusCode::FORBIDDEN, "you are not assigned to this client".into()).into_response(); }
+        }
+        return next.run(req).await;
+    }
+    if path.starts_with("/api/firm/closes") {
+        return super::staff::scope_guard(req, next, "/api/firm/closes", &[],
+            |id| async move { f.snapshot().await.ok()?.closes.into_iter().find(|c| c.id == id).map(|c| c.client_ref) }).await;
+    }
     super::staff::scope_guard(req, next, "/api/firm/projects", &[],
         |id| async move { f.snapshot().await.ok()?.projects.into_iter().find(|p| p.id == id).map(|p| p.client_ref) }).await
 }

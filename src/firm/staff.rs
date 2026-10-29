@@ -583,6 +583,18 @@ where F: FnOnce(String) -> Fut, Fut: std::future::Future<Output = Option<String>
     denied("firm-wide views need an account with access to all clients").into_response()
 }
 
+/// Checks a Vercel Cron request: `Authorization: Bearer $CRON_SECRET`. Without a configured
+/// secret (16+ chars) every scheduled route refuses with 503. Constant-time comparison.
+pub fn cron_authorized(h: &HeaderMap) -> Result<(), Response> {
+    let Some(secret) = std::env::var("CRON_SECRET").ok().filter(|v| v.trim().len() >= 16) else {
+        return Err(auth_error(StatusCode::SERVICE_UNAVAILABLE, "scheduled job is not configured"));
+    };
+    if !ct_eq(sha_hex(bearer(h).as_bytes()).as_bytes(), sha_hex(secret.trim().as_bytes()).as_bytes()) {
+        return Err(auth_error(StatusCode::UNAUTHORIZED, "invalid cron credential"));
+    }
+    Ok(())
+}
+
 /// Refuses client-scoped accounts outright (firm-wide registers such as the company roster).
 pub async fn firm_wide_only(req: Request, next: Next) -> Response {
     if scoped(&req).is_some() { return denied("firm-wide views need an account with access to all clients").into_response(); }

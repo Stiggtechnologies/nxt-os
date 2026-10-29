@@ -229,18 +229,8 @@ fn cron_router(state: Arc<Signatures>) -> Router {
         .with_state(state)
 }
 async fn cron_sweep(State(s): S, h: HeaderMap) -> Response {
-    use axum::{http::StatusCode, response::IntoResponse};
-    use sha2::Digest;
-    let secret = std::env::var("CRON_SECRET").ok().filter(|v| v.trim().len() >= 16);
-    let Some(secret) = secret else {
-        return crate::firm::staff::auth_error(StatusCode::SERVICE_UNAVAILABLE, "scheduled sweep is not configured");
-    };
-    let got = h.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
-    let a = sha2::Sha256::digest(got.as_bytes());
-    let b = sha2::Sha256::digest(secret.trim().as_bytes());
-    if a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) != 0 {
-        return crate::firm::staff::auth_error(StatusCode::UNAUTHORIZED, "invalid cron credential");
-    }
+    use axum::response::IntoResponse;
+    if let Err(r) = crate::firm::staff::cron_authorized(&h) { return r; }
     let queue = std::env::var("NXT_SWEEP_CRON_MODE").is_ok_and(|v| v.trim().eq_ignore_ascii_case("queue"));
     let input = esign::SweepInput { operator_label: "Scheduled sweep (Vercel Cron)".into(), remind_after_hours: None, reissue_expired: false, dry_run: !queue };
     match s.sweep(input, meta(&h)).await {
