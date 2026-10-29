@@ -815,3 +815,50 @@ async fn protected_routes_replay_and_paging() {
         404
     );
 }
+#[tokio::test]
+async fn derived_year_end_close_is_labelled_and_proven_apart_from_source_rows() {
+    let s = CompanyBooks::new(Store::memory());
+    let mut c = fixture();
+    c.accounts.push(Account { id: "revenue".into(), name: "Synthetic revenue".into(), kind: None });
+    let meta = json!({"format": company_books::DERIVED_CLOSE_FORMAT, "fiscal_year_end": "2026-06-30", "fiscal_year_start_month": 7});
+    c.entries[0].lines.push(Line { account_id: "cash".into(), debit_cents: "300".into(), credit_cents: "0".into(), source_row: 8, memo: "Synthetic sale".into(), source_metadata: None });
+    c.entries[0].lines.push(Line { account_id: "revenue".into(), debit_cents: "0".into(), credit_cents: "300".into(), source_row: 9, memo: "Synthetic sale".into(), source_metadata: None });
+    let close = |m: Option<Value>| Entry {
+        id: "close-2026".into(), date: "2026-06-30".into(), source_id: "derived-year-end-close:2026-06-30".into(),
+        memo: "Derived year-end close".into(), source_metadata: Some(meta.clone()),
+        lines: vec![
+            Line { account_id: "revenue".into(), debit_cents: "300".into(), credit_cents: "0".into(), source_row: 0, memo: "Close".into(), source_metadata: m.clone() },
+            Line { account_id: "equity".into(), debit_cents: "0".into(), credit_cents: "300".into(), source_row: 0, memo: "Close".into(), source_metadata: m },
+        ],
+    };
+    let mut good = c.clone();
+    good.entries.push(close(Some(meta.clone())));
+    let h = s.upload("multi", good).await.ok().unwrap();
+    let mut input = preview(h["sha256"].as_str().unwrap());
+    input.trial_balance[0].debit_cents = "12645".into();
+    input.trial_balance[1].credit_cents = "12645".into();
+    input.trial_balance.push(Control {
+        account_id: "revenue".into(), debit_cents: "0".into(), credit_cents: "0".into(),
+        basis: Some(ControlBasis::DerivedZeroAfterYearEndClose {
+            journal_sha256: "b".repeat(64), source_row_count: 1, journal_debit_cents: "0".into(), journal_credit_cents: "300".into(),
+            close_line_count: 1, close_debit_cents: "300".into(), close_credit_cents: "0".into(),
+        }),
+    });
+    let p = s.preview("multi", input.clone()).await.ok().unwrap();
+    assert_eq!(p["stage"], "preview_ready", "{p}");
+    assert_eq!(p["preview"]["analysis"]["derived_zero_accounts"], 1);
+    let mut bad = input.clone();
+    bad.request_id = "close-misstated".into();
+    if let Some(ControlBasis::DerivedZeroAfterYearEndClose { close_debit_cents, .. }) = &mut bad.trial_balance[2].basis {
+        *close_debit_cents = "299".into();
+    }
+    assert_eq!(s.preview("multi", bad).await.ok().unwrap()["stage"], "assessment_blocked");
+    // An unlabelled row-0 line is never accepted as a close.
+    let mut unlabelled = c;
+    unlabelled.entries.push(close(None));
+    let u = s.upload("multi-bad", unlabelled).await.ok().unwrap();
+    let mut bad = input;
+    bad.request_id = "unlabelled".into();
+    bad.chunks = vec![u["sha256"].as_str().unwrap().into()];
+    assert!(s.preview("multi-bad", bad).await.is_err());
+}

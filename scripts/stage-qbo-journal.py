@@ -58,6 +58,63 @@ def cents(value):
     return text
 
 
+DERIVED_CLOSE_FORMAT = "qbo-derived-year-end-close/v1"
+
+
+def derive_year_end_closes(journal, closed_opening, reconciliation, as_of, journal_sha):
+    """One close entry per fiscal year end before the trial balance's fiscal year.
+
+    `closed_opening` (from reconcile_opening against an empty opening) is the
+    total each closed account was reset by and the single retained-earnings
+    receiver's total. Each fiscal year's close moves exactly that year's
+    journal activity of the closed accounts; the sum over years must equal the
+    reconciled totals to the cent, otherwise staging is refused."""
+    month = int(reconciliation["fiscal_year_start_month"])
+    receiver = next(l for l in closed_opening if qbo.sha(l.encode("utf-8")) == reconciliation["retained_earnings_label_ref"])
+    closed = {l for l in closed_opening if l != receiver}
+    as_of_date = dt.date.fromisoformat(as_of)
+    cut = dt.date(as_of_date.year - (month > as_of_date.month), month, 1)
+    per_year = {}
+    for group in journal["groups"]:
+        for line in group["lines"]:
+            if line["label"] not in closed:
+                continue
+            d = dt.date.fromisoformat(group["date"])
+            if d >= cut:
+                continue
+            fy_end_year = d.year + (d.month >= month and month != 1)
+            fy_end = dt.date(fy_end_year, month, 1) - dt.timedelta(days=1) if month != 1 else dt.date(d.year, 12, 31)
+            bucket = per_year.setdefault(fy_end.isoformat(), {})
+            bucket[line["label"]] = bucket.get(line["label"], 0) + int(cents(line["debit"])) - int(cents(line["credit"]))
+    totals = {}
+    closes = []
+    for fy_end in sorted(per_year):
+        nets = {l: -n for l, n in per_year[fy_end].items() if n}
+        moved = -sum(nets.values())
+        if moved:
+            nets[receiver] = moved
+        lines = []
+        for label, close_net in sorted(nets.items(), key=lambda item: account_id(item[0])):
+            if not close_net:
+                continue
+            totals[label] = totals.get(label, 0) + close_net
+            lines.append({"_label": label, "account_id": account_id(label), "debit_cents": str(max(close_net, 0)), "credit_cents": str(max(-close_net, 0)),
+                          "source_row": 0, "memo": "QuickBooks year-end close (derived from source journal activity)",
+                          "source_metadata": {"format": DERIVED_CLOSE_FORMAT, "fiscal_year_end": fy_end, "fiscal_year_start_month": month}})
+        if not lines:
+            continue
+        if sum(int(l["debit_cents"]) for l in lines) != sum(int(l["credit_cents"]) for l in lines):
+            raise qbo.AssessmentError("year_end_close_unbalanced")
+        closes.append({"id": "y" + qbo.sha(f"{journal_sha}:close:{fy_end}".encode("utf-8"))[:20], "date": fy_end,
+                       "source_id": f"derived-year-end-close:{fy_end}", "memo": "Fiscal year-end close (derived)", "lines": lines,
+                       "source_metadata": {"format": DERIVED_CLOSE_FORMAT, "fiscal_year_end": fy_end, "fiscal_year_start_month": month,
+                                           "basis": "closed account journal activity within the fiscal year, moved to retained earnings", "durable_source_id": False}})
+    expected = {l: n for l, n in closed_opening.items() if n}
+    if {l: n for l, n in totals.items() if n} != expected:
+        raise qbo.AssessmentError("derived_year_end_close_mismatch")
+    return closes
+
+
 def build(data, date_order, prior_data=None, first_year=False, window=None):
     prior = qbo.prior_trial_balance(prior_data) if prior_data is not None else None
     report = qbo.assess_export_bytes(data, date_order, prior=prior, first_year=first_year, window=window)
@@ -84,11 +141,21 @@ def build(data, date_order, prior_data=None, first_year=False, window=None):
     closed_opening = report.get("_closed_opening") if reconciliation and reconciliation["status"].startswith("reconciled") else None
     opening_entry = close_entry = None
     year_end_close = (reconciliation or {}).get("year_end_close") if closed_opening else None
+    derived_closes = []
     if prior is None and closed_opening and any(closed_opening.values()):
-        # A close reconciled from an empty opening (full-history journal with
-        # an as-of trial balance) has no source entries to post: refuse
-        # rather than stage books whose entries do not produce the TB.
-        raise qbo.AssessmentError("year_end_close_without_prior_not_staged")
+        # Multi-year books: an All Dates journal paired with an as-of trial
+        # balance that QuickBooks has closed at each fiscal year end. Derive one
+        # labelled close entry per fiscal year from the journal itself (each
+        # closed account's activity in that year, moved to retained earnings),
+        # so posted entries reproduce the trial balance exactly. Nothing is
+        # plugged: every amount is source journal activity.
+        if (report["period_profile"] or {}).get("kind") != "all_dates_journal_with_tb_as_of" or not reconciliation.get("retained_earnings_label_ref"):
+            raise qbo.AssessmentError("year_end_close_without_prior_not_staged")
+        derived_closes = derive_year_end_closes(journal, closed_opening, reconciliation, report["period_profile"]["as_of"], journal_sha)
+        for close in derived_closes:
+            for line in close["lines"]:
+                label = line.pop("_label")
+                accounts.setdefault(label, {"id": line["account_id"], "name": label, "kind": None, "tb": None})
     if prior is not None and closed_opening and year_end_close:
         # Fiscal year does not start in January: QuickBooks closes the income
         # statement inside this calendar period. Carry the prior trial balance
@@ -173,8 +240,15 @@ def build(data, date_order, prior_data=None, first_year=False, window=None):
         })
     if close_entry:
         entries.append(close_entry)
-    if len(entries) - bool(opening_entry) - bool(close_entry) != journal["group_count"] or len(used_rows) != journal["line_count"]:
+    if derived_closes:
+        entries = entries + derived_closes
+    if len(entries) - bool(opening_entry) - bool(close_entry) - len(derived_closes) != journal["group_count"] or len(used_rows) != journal["line_count"]:
         raise qbo.AssessmentError("journal_line_coverage_mismatch")
+    close_totals = {}
+    for close in derived_closes:
+        for line in close["lines"]:
+            t = close_totals.setdefault(line["account_id"], [0, 0, 0])
+            t[0] += int(line["debit_cents"]); t[1] += int(line["credit_cents"]); t[2] += 1
     controls = []
     used_tb_rows = set()
     for label, account in sorted(accounts.items(), key=lambda item: item[1]["id"]):
@@ -191,7 +265,17 @@ def build(data, date_order, prior_data=None, first_year=False, window=None):
         if tb is None:
             if (net != 0 and exact) or not journal_row or int(journal_row["line_count"]) <= 0:
                 raise qbo.AssessmentError("trial_balance_control_missing")
+            closed = close_totals.get(account["id"])
             basis = {
+                "kind": "derived_zero_after_year_end_close",
+                "journal_sha256": journal_sha,
+                "source_row_count": int(journal_row["line_count"]),
+                "journal_debit_cents": str(debit),
+                "journal_credit_cents": str(credit),
+                "close_line_count": closed[2],
+                "close_debit_cents": str(closed[0]),
+                "close_credit_cents": str(closed[1]),
+            } if closed else {
                 "kind": "derived_zero_journal_omission",
                 "journal_sha256": journal_sha,
                 "source_row_count": int(journal_row["line_count"]),
@@ -216,13 +300,14 @@ def build(data, date_order, prior_data=None, first_year=False, window=None):
         "journal_member": names["journal"],
         "trial_balance_member": names["trial_balance"],
         "period_start": journal["date_start"],
-        "period_end": journal["date_end"],
+        "period_end": max([journal["date_end"]] + [c["date"] for c in derived_closes]),
         "period_profile": report.get("period_profile", {"kind": "all_dates"}),
         "fiscal_window": journal.get("fiscal_window"),
         "chunks": return_chunks,
         "controls": controls,
         "entries": len(entries),
-        "lines": len(used_rows) + (len(opening_entry["lines"]) if opening_entry else 0) + (len(close_entry["lines"]) if close_entry else 0),
+        "lines": len(used_rows) + (len(opening_entry["lines"]) if opening_entry else 0) + (len(close_entry["lines"]) if close_entry else 0) + sum(len(c["lines"]) for c in derived_closes),
+        "derived_year_end_closes": [{"date": c["date"], "lines": len(c["lines"])} for c in derived_closes],
         "accounts": len(accounts),
         "warnings": report.get("warnings", []),
         "held_for_review": report.get("held_for_review", []),

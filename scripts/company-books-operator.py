@@ -100,6 +100,9 @@ def basis(value):
         return None
     if value.get("kind") == "source_report_row":
         return ordered(value, ["kind", "report_sha256", "row"])
+    if value.get("kind") == "derived_zero_after_year_end_close":
+        return ordered(value, ["kind", "journal_sha256", "source_row_count", "journal_debit_cents", "journal_credit_cents",
+                               "close_line_count", "close_debit_cents", "close_credit_cents"])
     need(value.get("kind") == "derived_zero_journal_omission", "CONTROL_BASIS_UNKNOWN")
     return ordered(value, ["kind", "journal_sha256", "source_row_count",
                            "journal_debit_cents", "journal_credit_cents"])
@@ -474,6 +477,9 @@ class Bundle:
     def _analysis(self):
         need(self.input["source"]["full_history"] is True and self.entries and 0 < len(self.accounts) <= 20000 and len(self.entries) <= 100000, "SOURCE_HISTORY_INCOMPLETE")
         totals = {key: [0, 0, 0] for key in self.accounts}
+        # Derived year-end closes (multi-year books) are labelled entries with
+        # no source row; they are tallied apart so source-row proofs stay exact.
+        closes = {key: [0, 0, 0] for key in self.accounts}
         rows, ids, source_ids = set(), set(), set()
         debit = credit = lines = 0
         for e in self.entries:
@@ -481,13 +487,18 @@ class Bundle:
                  self.input["source"]["period_start"] <= e["date"] <= self.input["source"]["period_end"], "SOURCE_ENTRY_ID_OR_DATE_INVALID")
             ids.add(e["id"]); source_ids.add(e["source_id"])
             ed = ec = 0
+            derived_close = is_derived_close(e)
             for line in e["lines"]:
                 key, row = line["account_id"], line["source_row"]
-                need(key in totals and type(row) is int and row > 0 and row not in rows, "SOURCE_LINE_IDENTITY_INVALID")
-                rows.add(row)
+                if derived_close:
+                    need(key in totals and row == 0 and is_derived_close(line), "SOURCE_LINE_IDENTITY_INVALID")
+                else:
+                    need(key in totals and type(row) is int and row > 0 and row not in rows, "SOURCE_LINE_IDENTITY_INVALID")
+                    rows.add(row)
                 d, c = cents(line["debit_cents"]), cents(line["credit_cents"])
                 need(not (d and c), "SOURCE_LINE_DOUBLE_SIDED")
-                totals[key][0] += d; totals[key][1] += c; totals[key][2] += 1
+                tally = closes if derived_close else totals
+                tally[key][0] += d; tally[key][1] += c; tally[key][2] += 1
                 ed += d; ec += c; lines += 1
             need(ed == ec, "SOURCE_ENTRY_UNBALANCED")
             debit += ed; credit += ec
@@ -497,7 +508,9 @@ class Bundle:
         balances, used_tb_rows = [], set()
         independent = derived = 0
         for key in sorted(totals):
-            d, c, count = totals[key]
+            sd, sc, count = totals[key]
+            yd, yc, ycount = closes[key]
+            d, c = sd + yd, sc + yc
             control = checks[key]
             net = d - c
             need((cents(control["debit_cents"]), cents(control["credit_cents"])) == (max(net, 0), max(-net, 0)), "SOURCE_ACCOUNT_RECONCILIATION_MISMATCH")
@@ -506,8 +519,14 @@ class Bundle:
             if proof["kind"] == "source_report_row":
                 need(proof["report_sha256"] == self.input["source"]["trial_balance_sha256"] and type(proof["row"]) is int and proof["row"] > 0 and proof["row"] not in used_tb_rows, "SOURCE_TB_ROW_PROOF_MISMATCH")
                 used_tb_rows.add(proof["row"]); independent += 1
-            else:
+            elif proof["kind"] == "derived_zero_after_year_end_close":
                 need(proof["journal_sha256"] == self.input["source"]["journal_sha256"] and proof["source_row_count"] == count and
+                     cents(proof["journal_debit_cents"], True) == sd and cents(proof["journal_credit_cents"], True) == sc and
+                     proof["close_line_count"] == ycount > 0 and cents(proof["close_debit_cents"], True) == yd and cents(proof["close_credit_cents"], True) == yc and
+                     d == c, "SOURCE_DERIVED_ZERO_PROOF_MISMATCH")
+                derived += 1
+            else:
+                need(proof["journal_sha256"] == self.input["source"]["journal_sha256"] and proof["source_row_count"] == count and ycount == 0 and
                      cents(proof["journal_debit_cents"], True) == d and cents(proof["journal_credit_cents"], True) == c and d == c, "SOURCE_DERIVED_ZERO_PROOF_MISMATCH")
                 derived += 1
             account = self.accounts[key]
@@ -519,6 +538,14 @@ class Bundle:
                 "classified_reports_ready": all(a["kind"] is not None for a in self.accounts.values()), "controls_passed": True,
                 "independent_trial_balance_accounts": independent, "derived_zero_accounts": derived,
                 "control_provenance_complete": True, "chart_of_accounts_complete": False}
+
+
+DERIVED_CLOSE_FORMAT = "qbo-derived-year-end-close/v1"
+
+
+def is_derived_close(row):
+    meta = row.get("source_metadata")
+    return isinstance(meta, dict) and meta.get("format") == DERIVED_CLOSE_FORMAT
 
 
 def valid_date(value):

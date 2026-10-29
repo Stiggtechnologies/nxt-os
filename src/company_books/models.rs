@@ -87,6 +87,19 @@ pub enum ControlBasis {
         journal_debit_cents: String,
         journal_credit_cents: String,
     },
+    /// Multi-year books: an account absent from the as-of trial balance because
+    /// QuickBooks closed it at fiscal year ends. Source journal activity and the
+    /// labelled derived year-end close lines are proven separately and must net
+    /// to zero together.
+    DerivedZeroAfterYearEndClose {
+        journal_sha256: String,
+        source_row_count: u32,
+        journal_debit_cents: String,
+        journal_credit_cents: String,
+        close_line_count: u32,
+        close_debit_cents: String,
+        close_credit_cents: String,
+    },
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]

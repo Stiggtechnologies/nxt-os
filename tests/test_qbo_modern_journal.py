@@ -270,7 +270,7 @@ class AllDatesJournalWithAsOfTrialBalance(unittest.TestCase):
         r = qbo.assess_export_bytes(canonical(journal(period='All Dates', date='2026-01-02'), tb()))
         self.assertIn('journal_date_outside_period', x.codes(r))
 
-    def test_prior_year_close_into_retained_earnings_is_detected_but_not_staged(self):
+    def test_prior_year_close_into_retained_earnings_is_derived_and_labelled(self):
         j = journal(period='All Dates', date='2024-06-01', second_line=line(8, 'Synthetic revenue', 'I', '100.01', date='2024-06-01'))
         t = x.xlsx('Trial Balance', {
             5: [x.string('B5', 'Debit'), x.string('C5', 'Credit')],
@@ -281,10 +281,12 @@ class AllDatesJournalWithAsOfTrialBalance(unittest.TestCase):
         self.assertEqual(r['blockers'], [], r['blockers'])
         self.assertEqual(r['opening_reconciliation']['status'], 'reconciled_with_year_end_close')
         self.assertEqual(r['opening_reconciliation']['fiscal_year_start_month'], 1)
-        with self.assertRaises(Exception) as ctx:
-            stage.build(canonical(j, t), 'auto')
-        self.assertEqual(type(ctx.exception).__name__, 'AssessmentError')
-        self.assertEqual(str(ctx.exception), 'year_end_close_without_prior_not_staged')
+        out = stage.build(canonical(j, t), 'auto')
+        payload = out[0] if isinstance(out, tuple) else out
+        text = repr(payload)
+        self.assertIn(stage.DERIVED_CLOSE_FORMAT, text)
+        self.assertIn('2024-12-31', text)
+        self.assertIn('derived_zero_after_year_end_close', text)
 
     def test_unexplained_difference_blocks(self):
         t = x.xlsx('Trial Balance', {
