@@ -25,6 +25,7 @@ Migrations, in order:
 
 - `supabase/migrations/20261025051013_nxt_store.sql`
 - `supabase/migrations/20261026033000_nxt_backup_reader.sql` (read-only `nxt_backup_reader` role; no client data)
+- `supabase/migrations/20261029140000_company_access.sql` (staff-to-company assignments, company-books import catalog, admin role, append-only access audit)
 
 The store migration adds:
 
@@ -34,6 +35,25 @@ The store migration adds:
 - A fixed `pg_catalog, nxt_private` search path, qualified table references, and transaction-scoped advisory locking for single-key operations.
 
 The function uses `SECURITY DEFINER` so its owner can access the private tables while callers have only function execution rights. Ordinary anonymous and authenticated roles cannot execute it. Supabase documents explicit function permissions and fixed search paths for this pattern. [Database-function security](https://supabase.com/docs/guides/database/functions), [RLS and grants](https://supabase.com/docs/guides/database/postgres/row-level-security).
+
+## Company access
+
+`20261029140000_company_access.sql` adds the staff boundary for client company books. It does not import a real company and it does not turn the shared workspace key into a staff login.
+
+| Object | Purpose |
+| --- | --- |
+| `public.staff_principals` | Staff identity. `is_admin` sees every company. Staff cannot set this flag. |
+| `public.staff_company_assignments` | Which staff member is assigned to which client company. |
+| `public.client_companies` | Client companies referenced by assignments and imports. |
+| `public.company_book_imports` | Catalog of `company-books` and `company-source-lists` objects. Payloads stay in `nxt_private`. |
+| `public.company_access_audit` | Append-only record of who accessed which company and when. |
+| `nxt_company_admin` | Database role that sees every client company and does not bypass row-level security. |
+
+`authenticated` selects are limited to assigned companies, or to all companies when `nxt_is_company_admin()` is true. `anon` has no grants. `public.nxt_read_company_books(company_id)` reads under those policies and appends an allowed or denied audit row.
+
+The company-books operator and the Rust API do not open a staff session. They call `public.nxt_store_command` with the server service role. That is intentional: `service_role` remains the only role that can execute the store RPC, and on a hosted project that role may bypass row-level security. The RPC still appends `company_access_audit` with `actor = service_role` and `source = service_role_store` for each company-books or company-source-lists key. Global roster and company-index keys are not treated as client companies. A non-company key is not audited.
+
+Audit updates, deletes, and truncates raise `insufficient_privilege`. The local contract is `supabase/tests/company_access_contract.sql`, applied only to a loopback database by `scripts/check-store-migrations.sh`. Do not run that file, or this migration, by hand against the hosted project.
 
 After authenticating the Supabase CLI, link the intended project and inspect pending migrations before applying them:
 
@@ -88,6 +108,7 @@ Apply the migration on a test/local project, then run the administrative SQL ass
 
 ```sh
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/store_contract.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/company_access_contract.sql
 ```
 
 It covers strings, missing/empty CAS, stale snapshots, namespaces, NX, ordered MGET, integer overflow, set deduplication, list order/caps/ranges, malformed commands, grants/RLS, and denied anon/authenticated calls. Its synthetic writes are inside a transaction that rolls back. It does not prove concurrent behavior by itself; run the application's concurrent approval test against the deployed backend as well.

@@ -4,7 +4,7 @@ This records the fixture run on this branch. It is not a production cutover. `li
 
 ## Duplicate store migration
 
-Drafts #1 and #2 both carried `supabase/migrations/20261025051013_nxt_store.sql`. The git blob is the same on both branches: `1a18213c13bac5e5111590094aeb965c446c8a35`. This branch keeps that file once and keeps `supabase/migrations/20261026033000_nxt_backup_reader.sql` once. `scripts/check-store-migrations.sh` fails if a third file appears or if two migration files share a checksum.
+Drafts #1 and #2 both carried `supabase/migrations/20261025051013_nxt_store.sql`. The git blob is the same on both branches: `1a18213c13bac5e5111590094aeb965c446c8a35`. This branch keeps that file once and keeps `supabase/migrations/20261026033000_nxt_backup_reader.sql` once. `scripts/check-store-migrations.sh` fails if the checked-in migration list changes order or if two migration files share a checksum. The list now includes `supabase/migrations/20261029140000_company_access.sql`.
 
 ## What the fixture run did
 
