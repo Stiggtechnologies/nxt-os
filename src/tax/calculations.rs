@@ -111,7 +111,7 @@ fn require(c: &mut Calculation, obj: &Map<String,Value>, key: &str, message: &st
 
 pub const T1_2026_SCOPE: &str = "2026 basic T1 income-tax workpaper (rate table ca-2026.1) for a full-year resident of AB, ON, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU at year-end, with Canadian T4 employment and interest only, a verified RRSP deduction and verified payroll CPP/EI credit amounts. Federal and provincial basic personal amounts, the Canada employment amount and CPP/EI credits only. All other 2025-scope income, deductions and credits are rejected until their 2026 values are sourced. Not a filing.";
 /// Fields allowed in the 2026 basic scope; any other non-zero/true 2025 field is rejected.
-const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable"];
+const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable","born_1961_or_earlier","medical_expenses_cents","credits_verified"];
 /// 2026 basic T1: federal (CRA current-year brackets, 14% credit rate, BPA $16,452 phasing to $14,829
 /// between $181,440 and $258,482, CEA $1,501) plus AB or a PROVINCES_2026 province. CPP/EI maxima
 /// from T4127-JAN 2026 Tables 8.4-8.7. Anything not sourced for 2026 blocks instead of being guessed.
@@ -143,7 +143,17 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let reduction=rounded_ratio((taxable-18_144_000).clamp(0,span),t.federal_bpa_max_cents-t.federal_bpa_min_cents,span)?;
     let bpa=t.federal_bpa_max_cents-reduction; let cea=employment.min(t.canada_employment_amount_cents);
     let federal_before=progressive(taxable,t.federal_brackets)?;
-    let federal_credits=rounded_ratio(sum(&[bpa,cea,cpp,ei])?,t.federal_credit_rate_bps,10000)?;
+    // CRA indexation page, 2026 column: age amount $9,208 reduced by 15% of net income over $46,432 (ITA 118(2));
+    // medical expenses over the lesser of $2,890 and 3% of net income (ITA 118.2(1)).
+    let aged=boolean(obj,"born_1961_or_earlier")?; let med=money(obj,"medical_expenses_cents")?;
+    if aged || med>0 {
+        require(c,obj,"credits_verified","Verify the birth year (1961 or earlier) and medical receipts (12-month period ending in 2026).")?;
+        c.diagnostic("provincial_age_medical_2026_unsourced","2026 provincial age and medical expense credit amounts are not yet sourced; only the federal credits are calculated.",None,true);
+    }
+    let age_amount=if aged { (920_800-rounded_ratio((taxable-4_643_200).max(0),1500,10000)?).max(0) } else { 0 };
+    let medical=(med-rounded_ratio(taxable,300,10000)?.min(289_000)).max(0);
+    if aged { c.line("30100","Age amount (2026)",age_amount); } if med>0 { c.line("33099","Allowable medical expenses (2026)",medical); }
+    let federal_credits=rounded_ratio(sum(&[bpa,cea,cpp,ei,age_amount,medical])?,t.federal_credit_rate_bps,10000)?;
     let federal=(federal_before-federal_credits).max(0);
     let (pbpa,pbefore,pcredits)=match prov {
         None => {
@@ -788,7 +798,7 @@ mod tests {
         // BPA phase-out midpoint and gates.
         let hi=calculate("T1",2026,"SK",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":25_848_200})).unwrap();
         assert_eq!(l(&hi,"30000"),1_482_900);
-        assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"medical_expenses_cents":100})).is_err());
+        assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"donations_cents":100})).is_err());
         let o=calculate("T1",2026,"ON",&base).unwrap(); assert!(o.supported,"{:?}",o.diagnostics);
         // ON: 53,891*5.05% + 26,109*9.15% less 12,989*5.05%; below the $5,818 surtax threshold; OHP $750 at $80,000.
         assert_eq!(l(&o,"on_before_credits"),272_150+238_897); assert_eq!(l(&o,"ON61500"),65_594);
@@ -802,6 +812,11 @@ mod tests {
         assert_eq!(l(&rich,"ON_surtax"),rounded_ratio(basic-581_800,2000,10000).unwrap()+rounded_ratio(basic-744_600,3600,10000).unwrap()); assert_eq!(b,basic+l(&rich,"ON_surtax"));
         assert!(!calculate("T1",2026,"PE",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap().supported);
         assert!(!calculate("T2",2026,"AB",&json!({})).unwrap().supported);
+        let am=calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"born_1961_or_earlier":true,"medical_expenses_cents":400_000,"interest_income_cents":5_000_000})).unwrap();
+        // 9,208 - 15% x (50,000-46,432) = 8,672.80; medical 4,000 - 1,500 (3% < 2,890) = 2,500.
+        assert_eq!(l(&am,"30100"),867_280); assert_eq!(l(&am,"33099"),250_000); assert!(!am.supported);
+        assert_eq!(l(&am,"35000"),rounded_ratio(1_645_200+867_280+250_000,1400,10000).unwrap());
+        assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"medical_expenses_cents":100})).map(|c|!c.supported).unwrap_or(true));
         let bc=calculate("T1",2026,"BC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap();
         assert!(bc.supported,"{:?}",bc.diagnostics); assert_eq!(l(&bc,"BC61800"),41_729);
         let bc_hi=calculate("T1",2026,"BC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":4_200_000})).unwrap(); assert_eq!(l(&bc_hi,"BC61800"),0);
