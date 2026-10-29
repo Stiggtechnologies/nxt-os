@@ -53,3 +53,30 @@ Root cause: the data was already committed in full, but the UI never showed it. 
 2. `node --test tests/*.test.mjs`
 3. `cargo test --locked --test company_gl_payroll_views`, already covered by `cargo test`.
 4. Install a rustls crypto provider in test setup, or pin the reqwest feature. `nixon_finance::voice_opens_records_and_falls_back_without_a_provider_key` currently fails locally on main.
+
+
+## Re-score after merged work through #56 (2026-10-29, evening pass)
+
+Same formula. Measured against main after #37–#42, #44, #45, #47–#54 and #56. #43 was closed without merging. Rows were added only where a merged PR introduced an original-product behaviour the audit had no row for. Nothing is "copied & tested" unless a test asserts it.
+
+| Module | Previous | Now (rows: copied/partial/missing) | What moved |
+|---|---|---|---|
+| QuickBooks | 54.8% | **56.5%** (23: 4/18/1) | payroll .xls reader partial → copied & tested (#39; NXT Accounting totals match source: 14 rows, 6 employees); +QBD report profiles (partial, #40; vendor reports unverified); +IIF reader (partial, #41; no real sample). #37/#52/#54 strengthen existing partial rows. |
+| Firm | 40.0% | **45.5%** (11: 1/8/2) | +staff users, roles, TOTP MFA and per-client access (copied & tested, #56 `staff_identity`) |
+| Caseware | 44.4% | **47.4%** (19: 1/16/2) | automatic documents missing → partial (report/letter templates, PDF export, draft ASPE statements; not CaseView, #44/#48); +proposed entries and leadsheets (partial). Link documents (#54) and id-based reviewer sign-off (#56) strengthen existing partial rows. |
+| DocuSign | 28.1% | **40.6%** (16: 2/9/5) | recipient signing partial → copied & tested, and completion certificate/signed PDF missing → copied & tested (native ceremony, #49); users/groups missing → partial (staff accounts and roles, #56; no groups, orgs or billing). Reminders and expiry sweep (#56) strengthen send/resend; delivery is still outbox-only. |
+| DT Max | 36.4% | **41.7%** (12: 1/8/3) | +preparer/reviewer sign-off by staff id, with a completed T183 ceremony required before filed (copied & tested, #45/#47/#53/#56). The provinces row stays partial after #51 (QC TP-1 is only scoped). Slips (#45) and rate sources (#50) strengthen existing partial rows. |
+| WebTax | 33.3% | **41.7%** (6: 0/5/1) | username/password/recovery missing → partial: NXT has its own per-user login, MFA and admin reset, but no WebTax account bridge |
+
+Still not 100% anywhere. Every remaining row needs either vendor files or credentials (listed above), or the code items below.
+
+## Remaining blockers, ranked by the 5% Canadian tax-prep GTM
+
+1. **CRA EFILE / NETFILE transmission.** Filing stays off, and "filed" is a human record behind the T183 gate. Closing it needs a CRA EFILE registration and software certification. **External.**
+2. **Vendor tie-out for T1/T2.** Real DT Max output (on Orville's PC, offline) and a WebTax credential, paired through parallel-compare. **External.**
+3. **Outbound delivery.** E-sign links, OTP codes and reminders queue in the outbox and nothing is emailed. Closing it needs an email/SMS provider key and approval to send. The sweep needs a scheduler: a Vercel cron entry for `POST /api/signatures/esign/sweep`, not added. **External plus a config change.**
+4. **Production staff cutover.** Create the staff accounts, enroll MFA, then set `NXT_BREAK_GLASS=off`. This is an operational step for Orville.
+5. **Client scoping beyond tax and engagements.** Signatures, firm, company books and migrations still rely on role checks only. **Code.**
+6. **Tax coverage.** QC TP-1 and years other than 2025 (T1); T3 slips and provincial tax; T5013 CCA. **Code, plus published forms.**
+7. **QBO OAuth and payroll exports** for the remaining companies. **External.**
+8. **Caseware CaseView/iXBRL/TaxCycle file and Xero.** **External: formats and accounts.**
