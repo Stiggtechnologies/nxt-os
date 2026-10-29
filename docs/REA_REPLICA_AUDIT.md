@@ -178,7 +178,7 @@ NXT tests that passed: `t1_alberta_2025_workpaper_uses_new_rates_and_verified_cl
 
 ## WebTaxT2 to Tax
 
-Fidelity: **25%** after the same parallel-compare closure (was **20%**). Now 0 copied & tested, 3 partial, 3 missing, 0 wrong; 6 rows. `(0.5×3) / 6`. The previous 5-row score was `(0.5×2) / 5`.
+Fidelity: **33.3%** after a local save, calculate, and GIFI detail check (was **25%**). Now 0 copied & tested, 4 partial, 2 missing, 0 wrong; 6 rows. `(0.5×4) / 6`. The previous score was `(0.5×3) / 6`.
 This run's only WebTax evidence is the public login document `ev_ff52839e2bf2cf3b42fb5e8b20d3a33a33340080994fbe786e7c5aa18b947d1c`: Login, Forgot Username, Forgot Password, New User Register, final URL `taxOnline.jsp?` with no query secrets. The authenticated topic strip and identification codes in [WEBTAX_RECONSTRUCTION.md](WEBTAX_RECONSTRUCTION.md) were **not** re-captured. Those rows stay at the earlier bound and are not upgraded.
 
 | Original feature | NXT status | Evidence |
@@ -186,7 +186,7 @@ This run's only WebTax evidence is the public login document `ev_ff52839e2bf2cf3
 | WebTax username, password, recovery, and registration | missing | Login snapshot above. NXT Tax uses the workspace bearer key. No WebTax account bridge. |
 | Corporate identification and fiscal period | partial | `corporate_profile_lifecycle` inside `independent_tax_workpaper_lifecycle`. Field codes 001/002/060/061/750 were not re-observed, so the match is the NXT profile shape, not a paired WebTax screen. |
 | Topic navigator: information, tax, provinces, calculation, output, GIFI | partial | NXT tax UI has its own topics and a coverage page that says filing is disabled. The authenticated WebTax navigator was not opened in this run. |
-| Save, calculate, and show GIFI detail | missing | Not activated on the live site. NXT calculation tests do not call WebTax. |
+| Save, calculate, and show GIFI detail | partial | A corporate return saves, calculates, and checks GIFI detail rows 8000–8298 and 8521–9367 locally (`local_save_calculates_gifi_detail_without_opening_webtax`). Filing stays off. The WebTax screen was not opened. |
 | Years 2004–2027 and certified filing / auto-fill | missing | Not re-observed. NXT years are `[2025]` and `filing_supported` is false. |
 | Supplied WebTax line comparison | partial | The same parallel-compare route accepts `source_system: webtax`. It checks lines the operator supplies. It does not open the authenticated workspace or file. |
 ## Top gaps for a parallel run
@@ -200,7 +200,7 @@ Impact is how badly a side-by-side period would diverge or be unsafe if someone 
 | 3 | Caseware engines and file format | Engagements can hold a cent-exact trial balance, local adjustments, text workpapers, 14/45-day lockdown spacing, a non-TaxCycle GIFI list, and file metadata. CaseView, automatic documents, Word/Excel, SmartSync, Xero transfer, iXBRL, and the 2025 program binaries are missing. Reviewers still need Working Papers for the file the client already has. |
 | 4 | DocuSign external send and sign | NXT can rehearse send, resend, correct, void, decline, folders, edit lock, and bulk copy inside the workspace, with no delivery and no legal effect. External send, recipient authentication, certificates, and Connect are still missing. |
 | 5 | Firm client operations | Templates, close, report export, an NXT directory export, chart apply, and internal playbooks are tested. Live QuickBooks firm clients, the Excel add-in, and spreadsheet write-back are still missing. The 154-snapshot roster is a read-only review copy. |
-| 6 | WebTax workspace not re-observed | This VM saw only the login gate. Identification codes, GIFI detail, and save/calc behavior remain unverified against the live product. |
+| 6 | WebTax workspace not re-observed | This VM saw only the login gate. NXT can save, calculate, and check GIFI detail locally, but identification codes and the authenticated save/calc screen remain unverified against the live product. |
 | 7 | DT Max binaries not decompiled | See below. Until that Windows run exists, keyword catalogs and year-engine math stay unknown rather than "matched." |
 
 ## What a DT Max REA run on Orville's Windows PC would add
