@@ -111,7 +111,7 @@ fn require(c: &mut Calculation, obj: &Map<String,Value>, key: &str, message: &st
 
 pub const T1_2026_SCOPE: &str = "2026 basic T1 income-tax workpaper (rate table ca-2026.1) for a full-year resident of AB, ON, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU at year-end, with Canadian T4 employment and interest only, a verified RRSP deduction and verified payroll CPP/EI credit amounts. Federal and provincial basic personal amounts, the Canada employment amount and CPP/EI credits only. All other 2025-scope income, deductions and credits are rejected until their 2026 values are sourced. Not a filing.";
 /// Fields allowed in the 2026 basic scope; any other non-zero/true 2025 field is rejected.
-const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable","born_1961_or_earlier","medical_expenses_cents","credits_verified","spouse_adjusted_net_income_cents","family_income_verified"];
+const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable","born_1961_or_earlier","medical_expenses_cents","credits_verified","spouse_adjusted_net_income_cents","family_income_verified","eligible_dependant_net_income_cents","infirm_dependant_18_plus_net_income_cents","dependants_verified"];
 /// 2026 basic T1: federal (CRA current-year brackets, 14% credit rate, BPA $16,452 phasing to $14,829
 /// between $181,440 and $258,482, CEA $1,501) plus AB or a PROVINCES_2026 province. CPP/EI maxima
 /// from T4127-JAN 2026 Tables 8.4-8.7. Anything not sourced for 2026 blocks instead of being guessed.
@@ -153,7 +153,19 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let age_amount=if aged { (920_800-rounded_ratio((taxable-4_643_200).max(0),1500,10000)?).max(0) } else { 0 };
     let medical=(med-rounded_ratio(taxable,300,10000)?.min(289_000)).max(0);
     if aged { c.line("30100","Age amount (2026)",age_amount); } if med>0 { c.line("33099","Allowable medical expenses (2026)",medical); }
-    let federal_credits=rounded_ratio(sum(&[bpa,cea,cpp,ei,age_amount,medical])?,t.federal_credit_rate_bps,10000)?;
+    // Line 30400 eligible dependant (no spouse; dependant not infirm): line 30000 amount less the dependant's net income.
+    // Line 30450 Canada caregiver for an infirm dependant 18+ (other than spouse/eligible dependant): 2026 maximum $8,773
+    // reduced by the dependant's net income over $20,601. CRA lines 30400/30450 guidance and 2026 indexation page.
+    let ed=optional_money(obj,"eligible_dependant_net_income_cents")?; let cg=optional_money(obj,"infirm_dependant_18_plus_net_income_cents")?;
+    if ed.is_some() || cg.is_some() {
+        require(c,obj,"dependants_verified","Verify line 30400 conditions (no spouse/common-law partner claimed, dependant related, living with you, not infirm) and line 30450 (infirm dependant 18+ who is not your spouse or eligible dependant; one claim per dependant). Infirm eligible dependants and caregiver top-ups are not handled.")?;
+        if ed.is_some() && money(obj,"spouse_adjusted_net_income_cents")?>0 { return Err("Line 30400 cannot be claimed with a spouse or common-law partner in this scope".into()); }
+        c.diagnostic("provincial_dependant_2026_unsourced","2026 provincial eligible-dependant and caregiver amounts are not yet sourced; only federal amounts are calculated.",None,true);
+    }
+    let ed_amount=ed.map(|n| (bpa-n.max(0)).max(0)).unwrap_or(0);
+    let cg_amount=cg.map(|n| (877_300-(n.max(0)-2_060_100).max(0)).max(0)).unwrap_or(0);
+    if ed.is_some() { c.line("30400","Amount for an eligible dependant (2026)",ed_amount); } if cg.is_some() { c.line("30450","Canada caregiver amount for infirm dependant 18+ (2026)",cg_amount); }
+    let federal_credits=rounded_ratio(sum(&[bpa,cea,cpp,ei,age_amount,medical,ed_amount,cg_amount])?,t.federal_credit_rate_bps,10000)?;
     let federal=(federal_before-federal_credits).max(0);
     let (pbpa,pbefore,pcredits)=match prov {
         None => {
@@ -826,6 +838,9 @@ mod tests {
         assert_eq!(l(&rich,"ON_surtax"),rounded_ratio(basic-581_800,2000,10000).unwrap()+rounded_ratio(basic-744_600,3600,10000).unwrap()); assert_eq!(b,basic+l(&rich,"ON_surtax"));
         assert!(!calculate("T1",2026,"PE",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap().supported);
         assert!(!calculate("T2",2026,"AB",&json!({})).unwrap().supported);
+        let d=calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"dependants_verified":true,"employment_income_cents":5_000_000,"eligible_dependant_net_income_cents":200_000,"infirm_dependant_18_plus_net_income_cents":2_200_000})).unwrap();
+        assert_eq!(l(&d,"30400"),1_645_200-200_000); assert_eq!(l(&d,"30450"),877_300-139_900); assert!(!d.supported);
+        assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"dependants_verified":true,"eligible_dependant_net_income_cents":0,"spouse_adjusted_net_income_cents":100})).is_err());
         let am=calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"born_1961_or_earlier":true,"medical_expenses_cents":400_000,"interest_income_cents":5_000_000})).unwrap();
         // 9,208 - 15% x (50,000-46,432) = 8,672.80; medical 4,000 - 1,500 (3% < 2,890) = 2,500.
         assert_eq!(l(&am,"30100"),867_280); assert_eq!(l(&am,"33099"),250_000); assert!(!am.supported);
