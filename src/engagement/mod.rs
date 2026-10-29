@@ -11,7 +11,7 @@ mod routes;
 pub mod storage_models;
 use crate::{referral::routes::ApiError, store::Store};
 use axum::http::StatusCode;
-use chrono::{Duration, SecondsFormat, Utc};
+use chrono::{Duration, NaiveDate, SecondsFormat, Utc};
 use models::*;
 pub use routes::router;
 use serde_json::{Value, json};
@@ -121,6 +121,8 @@ fn record(input: EngagementInput, record_id: &str, at: &str) -> EngagementRecord
         rollforward_from: None,
         rollforward_origin: None,
         annotation_bindings: vec![],
+        lockdown: None,
+        file_tickmarks: vec![],
     }
 }
 fn touch(r: &mut EngagementRecord) {
@@ -493,6 +495,12 @@ impl Engagements {
                     if r.status != "in_review" {
                         return Err(conflict("complete review before locking"));
                     }
+                    if let Some(policy) = &r.lockdown {
+                        let earliest = NaiveDate::parse_from_str(&policy.earliest_lock_date, "%Y-%m-%d").map_err(|_| bad("lockdown date is invalid"))?;
+                        if Utc::now().date_naive() < earliest {
+                            return Err(conflict(format!("lockdown spacing has not elapsed; earliest lock date is {}", policy.earliest_lock_date)));
+                        }
+                    }
                     fresh(r)?;
                     if !required_done(r, "reviewed") {
                         return Err(conflict("review every required workpaper before locking"));
@@ -531,6 +539,61 @@ impl Engagements {
             Ok(out)
         })
         .await
+    }
+    pub async fn set_lockdown(&self, rid: &str, input: LockdownInput) -> EResult<EngagementRecord> {
+        label(&input.operator, "operator label", 120)?;
+        if !matches!(input.spacing_days, 14 | 45) {
+            return Err(bad("lockdown spacing must be 14 or 45 days"));
+        }
+        let start = NaiveDate::parse_from_str(&input.reference_date, "%Y-%m-%d").map_err(|_| bad("reference date is invalid"))?;
+        let earliest = start.checked_add_signed(Duration::days(i64::from(input.spacing_days))).ok_or_else(|| bad("lockdown date is outside the supported calendar"))?;
+        self.mutate(|s| {
+            let r = s.engagements.iter_mut().find(|r| r.id == rid).ok_or_else(missing)?;
+            check_revision(r, input.expected_revision)?;
+            if !matches!(r.status.as_str(), "draft" | "in_review") {
+                return Err(conflict("set lockdown spacing before the engagement is locked"));
+            }
+            r.lockdown = Some(LockdownPolicy { spacing_days: input.spacing_days, reference_date: input.reference_date.clone(), earliest_lock_date: earliest.format("%Y-%m-%d").to_string() });
+            touch(r);
+            let out = r.clone();
+            audit(s, rid, "lockdown_spacing", &format!("{} set {} days from {}", input.operator, input.spacing_days, input.reference_date));
+            Ok(out)
+        }).await
+    }
+    pub async fn gifi_lines(&self, rid: &str) -> EResult<Value> {
+        let record = self.get(rid).await?;
+        let mut rows = Vec::new();
+        for group in &record.document.groups {
+            let Some(code) = group.gifi_code.as_ref().filter(|code| !code.is_empty()) else { continue };
+            let mut debit = 0_i64;
+            let mut credit = 0_i64;
+            for account in record.document.accounts.iter().filter(|account| account.group_id.as_deref() == Some(group.id.as_str())) {
+                debit = debit.checked_add(account.debit_cents).ok_or_else(|| bad("amount overflow"))?;
+                credit = credit.checked_add(account.credit_cents).ok_or_else(|| bad("amount overflow"))?;
+            }
+            rows.push(json!({"gifi": code, "group_id": group.id, "debit_cents": debit, "credit_cents": credit}));
+        }
+        Ok(json!({"format":"nxt-gifi-lines/v1","taxcycle_file":false,"rows":rows,"write_back":false}))
+    }
+    pub async fn add_file_tickmark(&self, rid: &str, input: FileTickmarkInput) -> EResult<Value> {
+        label(&input.code, "tickmark code", 16)?;
+        if !input.note.is_empty() { label(&input.note, "tickmark note", 400)?; }
+        if input.page == 0 || input.page > 500 { return Err(bad("tickmark page must be 1 to 500")); }
+        self.mutate(|s| {
+            let r = s.engagements.iter_mut().find(|r| r.id == rid).ok_or_else(missing)?;
+            check_revision(r, input.expected_revision)?;
+            editable(r)?;
+            let paper = r.document.workpapers.iter().find(|paper| paper.id == input.workpaper_id).ok_or_else(|| bad("workpaper not found"))?;
+            if !paper.attachment_versions.iter().any(|version| version.id == input.attachment_id) {
+                return Err(bad("tickmark file was not stored on that workpaper"));
+            }
+            if r.file_tickmarks.len() >= 200 { return Err(conflict("file tickmark capacity reached")); }
+            let mark = FileTickmark { id: id("tick"), workpaper_id: input.workpaper_id.clone(), attachment_id: input.attachment_id.clone(), page: input.page, code: input.code.trim().into(), note: input.note.trim().into() };
+            r.file_tickmarks.push(mark.clone());
+            touch(r);
+            audit(s, rid, "file_tickmark", "Stored a page anchor. The file was not rendered or scanned.");
+            Ok(json!({"id": mark.id, "page": mark.page, "rendered": false, "scanned": false}))
+        }).await
     }
     pub async fn rollforward(
         &self,

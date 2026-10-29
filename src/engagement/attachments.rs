@@ -31,6 +31,36 @@ fn file_name(value: &str) -> bool {
             .chars()
             .any(|c| c.is_control() || "/\\:\"".contains(c))
 }
+fn inspect_bytes(bytes: &[u8]) -> (&'static str, Option<u32>, Option<u32>, Option<u32>) {
+    if bytes.starts_with(b"%PDF") {
+        let text = String::from_utf8_lossy(bytes);
+        let pages = text.matches("/Type /Page").count().saturating_sub(text.matches("/Type /Pages").count()) as u32;
+        return ("pdf", None, None, Some(pages));
+    }
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) && bytes.len() >= 24 && &bytes[12..16] == b"IHDR" {
+        let width = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
+        let height = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+        return ("png", Some(width), Some(height), None);
+    }
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        let mut index = 2;
+        while index + 9 < bytes.len() {
+            if bytes[index] != 0xFF { break; }
+            let marker = bytes[index + 1];
+            if marker == 0xC0 || marker == 0xC1 || marker == 0xC2 {
+                let height = u32::from(u16::from_be_bytes([bytes[index + 5], bytes[index + 6]]));
+                let width = u32::from(u16::from_be_bytes([bytes[index + 7], bytes[index + 8]]));
+                return ("jpeg", Some(width), Some(height), None);
+            }
+            if index + 3 >= bytes.len() { break; }
+            let length = u16::from_be_bytes([bytes[index + 2], bytes[index + 3]]) as usize;
+            if length < 2 || index + 2 + length > bytes.len() { break; }
+            index += 2 + length;
+        }
+        return ("jpeg", None, None, None);
+    }
+    ("opaque", None, None, None)
+}
 fn content(value: &str) -> EResult<Vec<u8>> {
     if value.is_empty()
         || value.len() > FILE_MAX * 2
@@ -281,6 +311,15 @@ impl Engagements {
             audit(state,rid,"file_version_uploaded","Retained immutable bytes and metadata; active calculation and sign-offs invalidated. Operator label is unverified metadata.");
             Ok(record)
         }).await
+    }
+    pub async fn describe_attachment(&self, rid: &str, paper_id: &str, version_id: &str) -> EResult<Value> {
+        let (metadata, bytes) = self.attachment(rid, paper_id, version_id).await?;
+        let (kind, width, height, page_count) = inspect_bytes(&bytes);
+        Ok(json!({
+            "id": metadata.id, "file_name": metadata.file_name, "byte_len": bytes.len(), "sha256": metadata.sha256,
+            "kind": kind, "width": width, "height": height, "page_count": page_count,
+            "rendered": false, "scanned": false, "executed": false
+        }))
     }
     pub async fn attachment(
         &self,

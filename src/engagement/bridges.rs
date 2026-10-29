@@ -641,6 +641,8 @@ mod tests {
             rollforward_from: None,
             rollforward_origin: None,
             annotation_bindings: vec![],
+            lockdown: None,
+            file_tickmarks: vec![],
         }
     }
 
