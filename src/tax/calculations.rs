@@ -111,13 +111,14 @@ fn require(c: &mut Calculation, obj: &Map<String,Value>, key: &str, message: &st
 
 pub const T1_2026_SCOPE: &str = "2026 basic T1 income-tax workpaper (rate table ca-2026.1) for a full-year resident of AB, ON, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU at year-end, with Canadian T4 employment, interest and taxable Canadian dividends, a verified RRSP deduction and verified payroll CPP/EI credit amounts. Federal and provincial basic personal amounts, the Canada employment amount and CPP/EI credits only. All other 2025-scope income, deductions and credits are rejected until their 2026 values are sourced. Not a filing.";
 /// Fields allowed in the 2026 basic scope; any other non-zero/true 2025 field is rejected.
-const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable","born_1961_or_earlier","medical_expenses_cents","credits_verified","spouse_adjusted_net_income_cents","family_income_verified","eligible_dependant_net_income_cents","infirm_dependant_18_plus_net_income_cents","dependants_verified","claim_spouse_amount","disability_tax_credit_approved","eligible_pension_income_cents","tuition_cents","donations_cents","home_buyers_amount_cents","adoption_expenses_cents","student_loan_interest_cents","eligible_dividends_cents","other_dividends_cents","dividends_verified","infirm_dependant_lives_with_you"];
+const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable","born_1961_or_earlier","medical_expenses_cents","credits_verified","spouse_adjusted_net_income_cents","family_income_verified","eligible_dependant_net_income_cents","infirm_dependant_18_plus_net_income_cents","dependants_verified","claim_spouse_amount","disability_tax_credit_approved","eligible_pension_income_cents","tuition_cents","donations_cents","home_buyers_amount_cents","adoption_expenses_cents","student_loan_interest_cents","eligible_dividends_cents","other_dividends_cents","dividends_verified","infirm_dependant_lives_with_you","qpip_premium_cents"];
 /// 2026 basic T1: federal (CRA current-year brackets, 14% credit rate, BPA $16,452 phasing to $14,829
 /// between $181,440 and $258,482, CEA $1,501) plus AB or a PROVINCES_2026 province. CPP/EI maxima
 /// from T4127-JAN 2026 Tables 8.4-8.7. Anything not sourced for 2026 blocks instead of being guessed.
 fn t1_2026(c: &mut Calculation, obj: &Map<String,Value>, code: &str) -> Result<(),String> {
     for (k,v) in obj { if !T1_2026_FIELDS.contains(&k.as_str()) && !(v.is_null() || v==&Value::Bool(false) || v.as_i64()==Some(0)) { return Err(format!("{k} is not supported in the 2026 basic scope (2026 values not yet sourced)")); } }
     if code=="ON" { return t1_2026_on(c,obj); }
+    if code=="QC" { return t1_2026_qc(c,obj); }
     let prov=if code=="AB" { None } else { Some(super::rates::PROVINCES_2026.iter().find(|p| p.code==code).ok_or("No 2026 parameters for this province")?) };
     t1_2026_with(c,obj,prov)
 }
@@ -131,7 +132,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let cpp=money(obj,"cpp_base_credit_cents")?; let enhanced=money(obj,"cpp_enhanced_deduction_cents")?; let ei=money(obj,"ei_credit_cents")?;
     if rrsp>limit { return Err("RRSP deduction exceeds the declared verified deduction limit".into()); }
     if rrsp>0 { require(c,obj,"rrsp_verified","Verify the 2026 RRSP deduction and deduction limit (Notice of Assessment).")?; }
-    if cpp>351_945 || enhanced>112_700 || ei>112_307 { return Err("CPP/EI claim exceeds the 2026 employee maximum (T4127-JAN 2026)".into()); }
+    if cpp>(if pc=="QC" { 376_830 } else { 351_945 }) || enhanced>112_700 || ei>112_307 { return Err("CPP/EI claim exceeds the 2026 employee maximum (T4127-JAN 2026)".into()); }
     if cpp>0 || enhanced>0 || ei>0 {
         require(c,obj,"payroll_verified","Enter only verified Schedule 8 base CPP/enhanced CPP deduction and eligible EI credit amounts.")?;
         if sum(&[cpp,enhanced,ei])?>employment { return Err("Declared payroll claims exceed employment income".into()); }
@@ -154,7 +155,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let aged=boolean(obj,"born_1961_or_earlier")?; let med=money(obj,"medical_expenses_cents")?;
     if aged || med>0 {
         require(c,obj,"credits_verified","Verify the birth year (1961 or earlier) and medical receipts (12-month period ending in 2026).")?;
-        if med>0 && pc!="BC" && prov_extra_2026(pc).is_none() { c.diagnostic("provincial_medical_2026_unsourced","2026 provincial medical expense thresholds are not yet sourced; only the federal medical credit is calculated.",None,true); }
+        if med>0 && pc!="BC" && pc!="QC" && prov_extra_2026(pc).is_none() { c.diagnostic("provincial_medical_2026_unsourced","2026 provincial medical expense thresholds are not yet sourced; only the federal medical credit is calculated.",None,true); }
     }
     let age_amount=if aged { (920_800-rounded_ratio((taxable-4_643_200).max(0),1500,10000)?).max(0) } else { 0 };
     let medical=(med-rounded_ratio(taxable,300,10000)?.min(289_000)).max(0);
@@ -180,7 +181,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let (tui,don,hb,adopt,sli)=(money(obj,"tuition_cents")?,money(obj,"donations_cents")?,money(obj,"home_buyers_amount_cents")?,money(obj,"adoption_expenses_cents")?,money(obj,"student_loan_interest_cents")?);
     let others=spouse_claim||disabled||pension>0||tui>0||don>0||hb>0||adopt>0||sli>0;
     // BC: tuition, donations, adoption and student-loan interest are calculated below (gov.bc.ca basic credits page).
-    let prov_others=if pc=="BC" { hb>0 } else { match prov_extra_2026(pc) {
+    let prov_others=if pc=="QC" { false } else if pc=="BC" { hb>0 } else { match prov_extra_2026(pc) {
         Some(x) => hb>0 || (tui>0 && !x.tuition) || (don>0 && x.donations.is_none()) || (adopt>0 && x.adoption_max.is_none()) || (sli>0 && !x.student_loan),
         None => tui>0||don>0||hb>0||adopt>0||sli>0 } };
     if others {
@@ -272,6 +273,76 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     ] { c.line(&code,&label,amount); }
     c.total("taxable_income",taxable); c.total("federal_tax",federal); c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("payments",paid); c.total("balance",tax-paid);
     c.diagnostic("benefits_excluded","Balance covers only the stated 2026 income-tax workpaper and payments. Refundable benefits and all other return amounts are excluded. No return is filed.",None,false);
+    Ok(())
+}
+
+/// Québec 2026 (TP-1 / TP-1015.F-V). Official sources:
+/// - Finances Québec, "Parameters of the Personal Income Tax System for 2026" (QC_FIN_2026): brackets 14% to $54,345,
+///   19% to $108,680, 24% to $132,245, 25.75% above; credit rate 14%; basic personal amount $18,952; deduction for
+///   workers 6% of employment income up to $1,450.
+/// - Revenu Québec TP-1015.F-V(2026-01) (QC_TP1015_2026): same brackets/constants (T, K, E at 14%), QPP 2026 base rate
+///   5.30% on $3,500-$74,600 (base max $3,768.30), first additional 1%, second additional 4% (max $416); Appendix 1 example.
+/// - Revenu Québec line-by-line help, line 381 (medical: 20% of expenses over 3% of family income) and line 395
+///   (donations: 20% on the first $200, 24% or 25.75% on the rest). These statutory rates are not indexed.
+/// - Federal: Quebec abatement 16.5% of basic federal tax (T4127-JUL 2026 Table 8.2, QC abatement 0.165; line 44000);
+///   QPIP premiums credited at 14% federally (line 31205); QPIP 2026 max $442.90 (0.430% of $103,000, QC_FIN_2026).
+/// Not sourced/implemented for 2026 and therefore blocked: age, living-alone and retirement-income amounts (reduction
+/// rate not found in a 2026 official source), dependants, disability, pension, tuition, home buyers, adoption, student
+/// loan, Québec dividend tax credit, family tax reduction, health services fund contribution above $18,500 of
+/// non-employment income, and the 25.75% donation rate.
+const QC_FIN_2026: &str = "https://cdn-contenu.quebec.ca/cdn-contenu/adm/min/finances/publications-adm/parametres/AUTEN_IncomeTax2026.pdf";
+const QC_TP1015_2026: &str = "https://www.revenuquebec.ca/documents/en/formulaires/tp/TP-1015.F-V%282026-01%29.pdf";
+const QC_L381: &str = "https://www.revenuquebec.ca/en/citizens/income-tax-return/completing-your-income-tax-return/how-to-complete-your-income-tax-return/line-by-line-help/350-to-398-1-non-refundable-tax-credits/line-381/";
+const QC_L395: &str = "https://www.revenuquebec.ca/en/citizens/income-tax-return/completing-your-income-tax-return/how-to-complete-your-income-tax-return/line-by-line-help/350-to-398-1-non-refundable-tax-credits/line-395/";
+const QC_2026_BRACKETS: &[(i64,i64)] = &[(5_434_500,1400),(10_868_000,1900),(13_224_500,2400),(i64::MAX,2575)];
+fn t1_2026_qc(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
+    for k in ["born_1961_or_earlier","claim_spouse_amount","disability_tax_credit_approved"] { if boolean(obj,k)? { return Err(format!("{k}: the 2026 Québec counterpart is not yet sourced; not supported for QC")); } }
+    for k in ["eligible_dependant_net_income_cents","infirm_dependant_18_plus_net_income_cents","eligible_pension_income_cents","tuition_cents","home_buyers_amount_cents","adoption_expenses_cents","student_loan_interest_cents","eligible_dividends_cents","other_dividends_cents"] {
+        if obj.get(k).map_or(false,|v| !v.is_null()) { return Err(format!("{k}: the 2026 Québec counterpart is not yet sourced; not supported for QC")); }
+    }
+    require(c,obj,"provincial_adjustments_not_applicable","Québec: the amounts for a person living alone, age and retirement income, the family tax reduction, the health services fund contribution and refundable credits are not calculated. Confirm none apply.")?;
+    c.sources.push(source("Finances Québec, Parameters of the Personal Income Tax System for 2026",QC_FIN_2026));
+    c.sources.push(source("Revenu Québec TP-1015.F-V (2026-01)",QC_TP1015_2026));
+    let qpip=money(obj,"qpip_premium_cents")?;
+    if qpip>44_290 { return Err("QPIP premium exceeds the 2026 employee maximum $442.90 (Finances Québec 2026)".into()); }
+    let qc=super::rates::Province { code:"QC", name:"Quebec", brackets:QC_2026_BRACKETS, credit_rate_bps:1400, bpa_cents:Some(1_895_200), employment_amount:false, bracket_source:QC_FIN_2026, bpa_source:QC_FIN_2026, t4127_kp:&[], not_calculated:"" };
+    t1_2026_with(c,obj,Some(&qc))?;
+    let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
+    if qpip>0 { require(c,obj,"payroll_verified","Enter only the verified QPIP premium from RL-1 box H.")?; if qpip>employment { return Err("QPIP premium exceeds employment income".into()); } }
+    // Federal: QPIP credit (line 31205) at 14%, then the refundable Quebec abatement of 16.5% of basic federal tax.
+    let qcred=rounded_ratio(qpip,1400,10000)?;
+    let basic_fed=(c.totals["federal_tax"]-qcred).max(0);
+    let abatement=rounded_ratio(basic_fed,165,1000)?; let federal=basic_fed-abatement;
+    // Québec TP-1: net income = federal net income less the deduction for workers (6%, max $1,450). No QPP/EI/QPIP credits.
+    let net=c.totals["taxable_income"];
+    let workers=rounded_ratio(employment,600,10000)?.min(145_000).min(net);
+    let qtax_inc=net-workers;
+    let mut before=0; let mut lo=0;
+    for &(hi,r) in QC_2026_BRACKETS { if qtax_inc>lo { before+=rounded_ratio(qtax_inc.min(hi)-lo,r,10000)?; } lo=hi; }
+    let bpa_credit=rounded_ratio(1_895_200,1400,10000)?;
+    let med=money(obj,"medical_expenses_cents")?; let mut med_credit=0;
+    if med>0 {
+        require(c,obj,"family_income_verified","Québec medical credit: confirm your spouse's net income (0 if none); the 3% threshold uses family income (TP-1 line 381).")?;
+        let fam=sum(&[net,money(obj,"spouse_adjusted_net_income_cents")?])?;
+        med_credit=rounded_ratio((med-rounded_ratio(fam,3,100)?).max(0),2000,10000)?;
+        c.sources.push(source("Revenu Québec line 381 (medical expenses)",QC_L381));
+    }
+    let don=money(obj,"donations_cents")?; let mut don_credit=0;
+    if don>0 {
+        c.sources.push(source("Revenu Québec line 395 (donations and gifts)",QC_L395));
+        if don>20_000 && qtax_inc>13_224_500 { c.diagnostic("qc_donation_top_rate","The 25.75% Québec donation rate above $132,245 of taxable income is not implemented.",Some("donations_cents"),true); }
+        don_credit=rounded_ratio(don.min(20_000),2000,10000)?+rounded_ratio((don-20_000).max(0),2400,10000)?;
+    }
+    if interest>1_850_000 { c.diagnostic("qc_health_services_fund","Non-employment income above $18,500 triggers the 2026 health services fund contribution (Finances Québec 2026), whose rates/maxima are not implemented.",Some("interest_income_cents"),true); }
+    let credits=sum(&[bpa_credit,med_credit,don_credit])?;
+    let provincial=(before-credits).max(0);
+    c.lines.retain(|l| !(l.code.starts_with("QC") || l.code.starts_with("qc_") || l.code=="42800"));
+    for (code,label,amount) in [("31205","Federal QPIP premium amount (RL-1 box H)",qpip),("44000","Refundable Quebec abatement (16.5% of basic federal tax)",abatement),("42000_after_abatement","Federal tax after Quebec abatement",federal),
+        ("QC201","Québec deduction for workers (6%, max $1,450)",workers),("QC299","Québec taxable income",qtax_inc),("qc_before_credits","Québec tax on taxable income (TP-1 Schedule/brackets 2026)",before),
+        ("QC350","Québec basic personal amount credit (14% × $18,952)",bpa_credit),("QC381","Québec medical expense credit (20% over 3% of family income)",med_credit),("QC395","Québec donation credit (20%/24%)",don_credit),("42800","Scoped Québec income tax (TP-1 line 432)",provincial)] { c.line(code,label,amount); }
+    let paid=c.totals["payments"]; let tax=federal+provincial;
+    c.total("federal_tax",federal); c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("balance",tax-paid);
+    c.diagnostic("qc_separate_return","Québec tax is assessed by Revenu Québec on the TP-1 return with its own withholding (RL-1 box E); tax_withheld_cents should combine federal and Québec withholding.",None,false);
     Ok(())
 }
 
@@ -399,6 +470,7 @@ const PROV_PENSION_DISABILITY_2026: &[(&str,i64,i64)] = &[
     ("ON",179_600,1_049_400),("PE",100_000,689_000),("SK",100_000,1_426_600),("YT",200_000,1_034_100),
 ];
 fn prov_pension_disability_2026(c: &mut Calculation, code: &str, pension: i64, disabled: bool) -> Result<i64,String> {
+    if pension<=0 && !disabled { return Ok(0); }
     let &(_,pmax,dis)=PROV_PENSION_DISABILITY_2026.iter().find(|x| x.0==code).ok_or("No 2026 provincial pension/disability amount")?;
     let p=pension.clamp(0,pmax); let d=if disabled { dis } else { 0 };
     if pension>0 { c.line(&format!("{code}58360"),&format!("{code} pension income amount (2026 TD1{code})"),p); }
@@ -417,7 +489,7 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
         ("T5013", _) => T5013_SCOPE,
         _ => return Err("Unknown tax program".into()),
     };
-    let jurisdiction_ok = matches!((program, jurisdiction), ("T1","AB") | ("T1","ON") | ("T1","BC"|"SK"|"MB"|"NB"|"NS"|"PE"|"NL"|"YT"|"NT"|"NU") | ("T2","AB") | ("T3","CA-FED") | ("T5013","CA"));
+    let jurisdiction_ok = matches!((program, jurisdiction), ("T1","AB") | ("T1","ON") | ("T1","BC"|"QC"|"SK"|"MB"|"NB"|"NS"|"PE"|"NL"|"YT"|"NT"|"NU") | ("T2","AB") | ("T3","CA-FED") | ("T5013","CA"));
     let expected = match program { "T1" => "AB, ON, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU (not QC)", "T2" => "AB", "T3" => "CA-FED", "T5013" => "CA", _ => "" };
     let obj = inputs.as_object().ok_or("inputs must be an object")?;
     let mut c = Calculation { ruleset:RULESET.into(),program:program.into(),tax_year:year,jurisdiction:jurisdiction.into(),lines:vec![],totals:BTreeMap::new(),diagnostics:vec![],supported:true,scope:scope.into(),sources:sources(program),rate_table:super::rates::CA_2025.id.into(),line_validation:BTreeMap::new() };
@@ -1162,6 +1234,24 @@ mod tests {
             assert_eq!(super::super::rates::rate_status("ca-2025.1",&format!("{}_credits_2025",code.to_lowercase())),"sourced");
             assert!(p.medical_max_cents>0 && p.pension_max_cents>0 && p.donation_high_bps>p.donation_low_bps.min(p.donation_high_bps)-1);
         }
+    }
+    #[test]
+    fn t1_2026_quebec() {
+        // Golden: TP-1015.F-V(2026-01) Appendix 1 — $4,000 x 26 salary, workers deduction $55.77/period, QPP additional
+        // deduction $38.65/period -> annual taxable income $96,345.08; 0.19 x I - K = $15,588.57 with rounded K $2,717
+        // (exact table K is $2,717.25, giving $15,588.32 on the annual return).
+        let q=calculate("T1",2026,"QC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"payroll_verified":true,"rrsp_verified":true,
+            "employment_income_cents":10_400_000,"rrsp_deduction_cents":520_000,"rrsp_deduction_limit_cents":520_000,"cpp_enhanced_deduction_cents":100_492,"cpp_base_credit_cents":376_830,"qpip_premium_cents":44_290})).unwrap();
+        assert!(q.supported,"{:?}",q.diagnostics);
+        let l=|k:&str| q.lines.iter().find(|x| x.code==k).unwrap().amount;
+        assert_eq!(l("QC201"),145_000); assert_eq!(l("QC299"),9_634_508); assert_eq!(l("qc_before_credits"),1_558_832);
+        assert_eq!(l("QC350"),265_328); assert_eq!(q.totals["provincial_tax"],1_558_832-265_328);
+        let fedbasic=l("42000")-6_201; assert_eq!(l("44000"),(fedbasic*165+500)/1000); assert_eq!(q.totals["federal_tax"],fedbasic-l("44000"));
+        let d=calculate("T1",2026,"QC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"credits_verified":true,"family_income_verified":true,"interest_income_cents":1_500_000,"medical_expenses_cents":250_000,"donations_cents":100_000})).unwrap();
+        assert!(d.supported,"{:?}",d.diagnostics);
+        assert_eq!(d.lines.iter().find(|x| x.code=="QC381").unwrap().amount,41_000); assert_eq!(d.lines.iter().find(|x| x.code=="QC395").unwrap().amount,23_200);
+        assert!(calculate("T1",2026,"QC",&json!({"scope_confirmed":true,"born_1961_or_earlier":true})).is_err());
+        assert!(!calculate("T1",2026,"QC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"interest_income_cents":5_000_000})).unwrap().supported);
     }
     #[test]fn t1_ontario_2025_uses_on428_brackets_surtax_reduction_and_health_premium(){
         let base=json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":4_000_000});
