@@ -5,6 +5,7 @@
 pub mod files;
 mod lanes;
 mod routes;
+pub mod test_copy;
 
 use crate::store::Store;
 use axum::http::StatusCode;
