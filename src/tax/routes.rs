@@ -18,6 +18,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}",get(detail).put(update))
         .route("/api/tax/returns/{id}/calculate",post(calculate))
         .route("/api/tax/returns/{id}/transition",post(transition))
+        .route("/api/tax/returns/{id}/t183",get(t183_draft))
         .route("/api/tax/returns/{id}/rollforward",post(rollforward))
         .route("/api/tax/returns/{id}/package",get(package))
         .route("/api/tax/returns/{id}/print",get(print))
@@ -68,7 +69,7 @@ async fn import_preview(State(t):S,Path(id):Path<String>) -> R { ok(t.import_pre
 async fn commit(State(t):S,Json(input):Json<CommitInput>) -> R { ok(t.commit_import(&input.preview_id).await?) }
 async fn filing(State(t):S,Path(id):Path<String>) -> R {
     t.get(&id).await?;
-    Err(conflict("Electronic filing is disabled. NXT is not certified and cannot transmit tax returns or mark them filed/accepted."))
+    Err(conflict(&format!("Electronic filing is a stub (config_enabled={}). NXT is not CRA-certified, has no EFILE number and never transmits. File outside NXT, then record it with status \"filed\".", super::efile_status()["config_enabled"])))
 }
 async fn parallel_compare(State(t):S,Path(id):Path<String>,Json(source):Json<super::parallel::ParallelSource>) -> R {
     ok(t.compare_parallel(&id, source).await?)
@@ -120,3 +121,6 @@ async fn gifi_from_tb(Json(input):Json<GifiInput>) -> R {
     if input.balances.len()>5000 { return Err(super::bad("at most 5000 trial-balance rows")); }
     ok(super::gifi_map::build(&input.balances,&input.mapping).map_err(super::bad)?)
 }
+
+/// Returns a src/signatures Draft (context module "tax"); POST it to /api/signatures to prepare the envelope.
+async fn t183_draft(State(t):S,Path(id):Path<String>) -> R { let r=t.get(&id).await?; ok(super::t183::draft(&r).map_err(|e|conflict(&e))?) }

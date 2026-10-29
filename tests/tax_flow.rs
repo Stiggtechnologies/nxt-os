@@ -298,7 +298,7 @@ async fn independent_tax_workpaper_lifecycle() {
     assert!(!html.contains("<script>")); assert!(!html.contains("<img src=x"));
     assert!(html.contains("Not a certified tax return or filing"));
     fails(&router, "POST", &endpoint(&injection, "/filing"), None, 409).await;
-    fails(&router, "POST", &endpoint(&injection, "/transition"), Some(json!({"expected_revision":revision(&injection),"status":"filed"})), 400).await;
+    fails(&router, "POST", &endpoint(&injection, "/transition"), Some(json!({"expected_revision":revision(&injection),"status":"filed"})), 409).await;
     let archived = transition(&router, &injection, "archived", "Synthetic acceptance complete.", "").await;
     fails(&router, "PUT", &endpoint(&archived, ""), Some(editable(&archived)), 409).await;
     let summary = ok(&router, "GET", "/api/tax/summary", None).await;
@@ -363,7 +363,17 @@ async fn corporate_profile_lifecycle(router: &axum::Router) {
     assert_eq!(analysis["reconciliation"]["balance_sheets"][0]["balanced"], true);
     assert_eq!(calculated["calculation"]["input_document"]["corporate"], created["corporate"]);
     let in_review = transition(router, &calculated, "in_review", "", "Synthetic preparer").await;
+    fails(router, "POST", &endpoint(&in_review, "/transition"), Some(json!({"expected_revision":revision(&in_review),"status":"approved","note":"same person","reviewer":"synthetic PREPARER"})), 409).await;
+    fails(router, "GET", &endpoint(&in_review, "/t183"), None, 409).await;
     let approved = transition(router, &in_review, "approved", "Checked synthetic financial totals and explicit signed tax adjustments.", "Synthetic corporate reviewer").await;
+    let t183 = ok(router, "GET", &endpoint(&approved, "/t183"), None).await;
+    assert_eq!(t183["context"]["module"], "tax");
+    assert!(t183["title"].as_str().unwrap().starts_with("T183CORP"));
+    let filed_body = |extra: Value| { let mut b = json!({"expected_revision":revision(&approved),"status":"filed","note":"Filed outside NXT by a human","reviewer":"Synthetic operator"}); b.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone()); b };
+    fails(router, "POST", &endpoint(&approved, "/transition"), Some(filed_body(json!({"filing_reference":"SYNTH-REF"}))), 409).await;
+    fails(router, "POST", &endpoint(&approved, "/transition"), Some(filed_body(json!({"t183_envelope_id":"env-synthetic"}))), 400).await;
+    let audit = ok(router, "GET", "/api/tax/audit/verify", None).await;
+    assert_eq!(audit["valid"], true, "{audit}");
     let reopened = transition(router, &approved, "draft", "Reopen synthetic corporate profile for a financial correction.", "").await;
     let mut unbalanced = editable(&reopened);
     unbalanced["corporate"]["legal_name"] = json!("Changed synthetic corporate profile");

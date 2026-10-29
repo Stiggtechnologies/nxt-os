@@ -4,7 +4,7 @@ pub mod catalog;
 pub mod corporate;
 pub mod models;
 pub mod parallel;
-pub mod rates;
+pub mod rates; pub mod t183;
 pub mod slips;
 pub mod gifi_map;
 mod routes;
@@ -116,7 +116,7 @@ pub fn verify_audit(events: &[AuditEvent]) -> Value {
     json!({"valid":true,"chained":chained,"pre_chain":legacy})
 }
 fn record(input: &ReturnInput, record_id: &str, at: &str) -> TaxReturn {
-    TaxReturn { id:record_id.into(), program:input.program.clone(), tax_year:input.tax_year, jurisdiction:input.jurisdiction.clone(), name:input.name.clone(), client_ref:input.client_ref.clone(), period_start:input.period_start.clone(), period_end:input.period_end.clone(), inputs:input.inputs.clone(), parties:input.parties.clone(), corporate:input.corporate.clone(), notes:input.notes.clone(), revision:1, input_revision:1, status:"draft".into(), calculation:None, calculations:Vec::new(), review:None, reviews:Vec::new(), rollforward_from:None, created_at:at.into(), updated_at:at.into(), parallel_comparisons:Vec::new(), prior_lines:Vec::new(), preparer_signoff:None }
+    TaxReturn { id:record_id.into(), program:input.program.clone(), tax_year:input.tax_year, jurisdiction:input.jurisdiction.clone(), name:input.name.clone(), client_ref:input.client_ref.clone(), period_start:input.period_start.clone(), period_end:input.period_end.clone(), inputs:input.inputs.clone(), parties:input.parties.clone(), corporate:input.corporate.clone(), notes:input.notes.clone(), revision:1, input_revision:1, status:"draft".into(), calculation:None, calculations:Vec::new(), review:None, reviews:Vec::new(), rollforward_from:None, created_at:at.into(), updated_at:at.into(), parallel_comparisons:Vec::new(), prior_lines:Vec::new(), preparer_signoff:None, filed_record:None }
 }
 
 impl Tax {
@@ -150,7 +150,7 @@ impl Tax {
         Ok(json!({"returns":s.returns.len(),"total":s.returns.len(),"drafts":n("draft"),"calculated":n("calculated"),"in_review":n("in_review"),"approved":n("approved"),"archived":n("archived"),"by_program":by_program,"storage":self.store.backend_name(),"auth_required":crate::referral::routes::auth_required(),"filing_enabled":false,"calculation_years":[2025],"engine":"Independent NXT engine","access_model":"shared workspace credential; labels are not verified individual identities"}))
     }
     pub fn capabilities() -> Value {
-        json!({"engine":"independent","filing_enabled":false,"certification":"not_certified","parallel_compare":"supplied dtmax or webtax lines only; vendor file bytes are not fetched","sdk":{"mode":"reference_only","connected":false},"exports":["nxt-tax-json","printable-workpaper-html"],"programs":catalog::catalog()["programs"],"limitations":["Native calculations cover only the explicit ruleset cases in the catalog, not every DT Max form, province, year or election.","Output is an internal workpaper, not a CRA/Revenu Québec filing or certified form.","A parallel comparison does not replace the old system and does not file.","Related parties are metadata; use calculation input fields for supported allocations.","Client/company isolation and individual approval authority are not implemented by the shared workspace credential.","No DT Max client database, SDK runtime, license secret or filing credential is accessed."]})
+        json!({"engine":"independent","filing_enabled":false,"efile":efile_status(),"rate_tables":rates::catalog(),"filed_status":"human record of filing done outside NXT; requires approved return, signed T183 envelope id and reference","certification":"not_certified","parallel_compare":"supplied dtmax or webtax lines only; vendor file bytes are not fetched","sdk":{"mode":"reference_only","connected":false},"exports":["nxt-tax-json","printable-workpaper-html"],"programs":catalog::catalog()["programs"],"limitations":["Native calculations cover only the explicit ruleset cases in the catalog, not every DT Max form, province, year or election.","Output is an internal workpaper, not a CRA/Revenu Québec filing or certified form.","A parallel comparison does not replace the old system and does not file.","Related parties are metadata; use calculation input fields for supported allocations.","Client/company isolation and individual approval authority are not implemented by the shared workspace credential.","No DT Max client database, SDK runtime, license secret or filing credential is accessed."]})
     }
     pub async fn save(&self, existing: Option<&str>, input: ReturnInput) -> TResult<TaxReturn> {
         let input = validate(input)?; let record_id = existing.map(str::to_owned).unwrap_or_else(||id("tax")); let at=now();
@@ -163,7 +163,7 @@ impl Tax {
             let mut r=record(&input,&record_id,&at);
             if let Some(previous)=prior {
                 assert_revision(&previous,input.expected_revision.unwrap())?;
-                if ["approved","archived"].contains(&previous.status.as_str()) { return Err(conflict("reopen the return to draft before editing")); }
+                if ["approved","filed","archived"].contains(&previous.status.as_str()) { return Err(conflict("reopen the return to draft before editing")); }
                 if previous.program != input.program || previous.tax_year != input.tax_year { return Err(bad("program and year are immutable; create or roll forward a return")); }
                 r.revision=previous.revision+1; r.input_revision=previous.input_revision+1; r.created_at=previous.created_at; r.rollforward_from=previous.rollforward_from; r.calculations=previous.calculations; r.reviews=previous.reviews; r.parallel_comparisons=previous.parallel_comparisons; r.prior_lines=previous.prior_lines;
             }
@@ -183,7 +183,7 @@ impl Tax {
             let r = s.returns.iter_mut().find(|r| r.id == record_id).ok_or_else(missing)?;
             assert_revision(r, expected)?;
             if r.program != "T1" { return Err(bad("prior-year columns are stored on T1 returns")); }
-            if ["approved", "archived"].contains(&r.status.as_str()) { return Err(conflict("reopen the return to draft before editing prior-year columns")); }
+            if ["approved", "filed", "archived"].contains(&r.status.as_str()) { return Err(conflict("reopen the return to draft before editing prior-year columns")); }
             r.prior_lines = stored.clone();
             r.revision += 1;
             r.updated_at = now();
@@ -206,7 +206,7 @@ impl Tax {
         }
         if original.calculation.as_ref().is_some_and(|c|c.input_document.is_some() && c.request_revision==request.expected_revision && c.input_hash==fingerprint && c.input_revision==original.input_revision) { return Ok(original); }
         assert_revision(&original,request.expected_revision)?;
-        if ["approved","archived"].contains(&original.status.as_str()) { return Err(conflict("reopen the return before recalculating")); }
+        if ["approved","filed","archived"].contains(&original.status.as_str()) { return Err(conflict("reopen the return before recalculating")); }
         let result=calculations::calculate(&original.program,original.tax_year,&original.jurisdiction,&original.inputs).map_err(bad)?;
         let mut result=serde_json::to_value(result).map_err(|_|bad("calculation could not be encoded"))?;
         if original.program=="T2" {
@@ -246,12 +246,20 @@ impl Tax {
     }
     pub async fn transition(&self, record_id: &str, input: TransitionInput) -> TResult<TaxReturn> {
         text(&input.note,"review note",4000,false)?; text(&input.reviewer,"reviewer label",120,false)?;
-        if !["draft","in_review","approved","archived"].contains(&input.status.as_str()) { return Err(bad("invalid transition; filing is unavailable")); }
+        if !["draft","in_review","approved","filed","archived"].contains(&input.status.as_str()) { return Err(bad("invalid transition status")); }
+        text(&input.filing_reference,"filing reference",120,false)?; text(&input.t183_envelope_id,"T183 envelope id",120,false)?;
         let at=now();
         self.mutate(|s| {
             let r=s.returns.iter_mut().find(|r|r.id==record_id).ok_or_else(missing)?; assert_revision(r,input.expected_revision)?;
             if input.status==r.status { return Ok(r.clone()); }
-            if input.status=="draft" {
+            if r.status=="filed" && input.status!="archived" { return Err(conflict("a return recorded as filed can only be archived; amendments start from a new return")); }
+            if input.status=="filed" {
+                if r.status!="approved" { return Err(conflict("only an approved return can be recorded as filed")); }
+                if input.reviewer.trim().is_empty() || input.note.trim().is_empty() { return Err(bad("operator label and note are required to record filing")); }
+                if input.t183_envelope_id.trim().is_empty() { return Err(conflict("a signed T183/T183CORP envelope id is required before recording filing")); }
+                if input.filing_reference.trim().is_empty() { return Err(bad("the CRA confirmation/reference received outside NXT is required")); }
+                r.filed_record=Some(FiledRecord{by:input.reviewer.trim().into(),at:at.clone(),reference:input.filing_reference.trim().into(),t183_envelope_id:input.t183_envelope_id.trim().into()});
+            } else if input.status=="draft" {
                 if input.note.trim().is_empty(){return Err(bad("a reason is required to reopen a return"));} r.review=None; r.calculation=None; r.preparer_signoff=None;
             } else if input.status=="archived" {
                 if input.note.trim().is_empty(){return Err(bad("an archive reason is required"));}
@@ -280,7 +288,7 @@ impl Tax {
         let prior=self.get(record_id).await?; assert_revision(&prior,input.expected_revision)?;
         if input.tax_year!=prior.tax_year+1 { return Err(bad("roll forward to the next tax year only")); }
         let mut next=ReturnInput::from(&prior); next.tax_year=input.tax_year; next.name=input.name.unwrap_or_else(||format!("{} — {}",prior.name,input.tax_year)); next.period_start=None; next.period_end=None;
-        next.inputs=json!({}); next.notes="Rolled forward profile only. Income, allocations, calculations and approvals were cleared. Assessed carryforwards must be entered and verified separately.".into();
+        next.inputs=carryforward_inputs(&prior.inputs); next.notes="Rolled forward profile only. Income, allocations, calculations and approvals were cleared. Closing carryforward balances (*_closing_cents) became *_opening_cents and must be verified against the notice of assessment.".into();
         if let Some(profile)=&mut next.corporate { profile.gifi.clear(); profile.adjustments.clear(); profile.reconciliation_confirmed=false; profile.notes.clear(); }
         for party in &mut next.parties { party.id=id("party"); party.allocation_cents=0; }
         let next=validate(next)?; let new_id=id("tax"); let at=now();
@@ -428,3 +436,20 @@ fn family_side(r: &TaxReturn) -> Value {
         "totals": r.calculation.as_ref().and_then(|c| c.result.get("totals").cloned()),
     })
 }
+
+/// Carry `<name>_closing_cents` (e.g. non_capital_loss_closing_cents, rrsp_unused_closing_cents)
+/// into the next year as `<name>_opening_cents`. Everything else is cleared.
+pub fn carryforward_inputs(prior: &Value) -> Value {
+    let mut out = serde_json::Map::new();
+    if let Some(m) = prior.as_object() { for (k, v) in m { if let Some(stem) = k.strip_suffix("_closing_cents") { if v.is_i64() { out.insert(format!("{stem}_opening_cents"), v.clone()); } } } }
+    Value::Object(out)
+}
+/// E-file is a stub. Even with NXT_TAX_EFILE_ENABLED=true nothing is transmitted:
+/// real EFILE/NETFILE/Corporation Internet Filing needs annual CRA certification and an EFILE number.
+pub fn efile_status() -> Value {
+    let configured = std::env::var("NXT_TAX_EFILE_ENABLED").is_ok_and(|v| v == "true");
+    json!({"stub":true,"config_flag":"NXT_TAX_EFILE_ENABLED","config_enabled":configured,"certified":false,"efile_number":null,"transmits":false,"external_dependencies":["CRA EFILE/NETFILE/Corporation Internet Filing software certification (renewed annually)","CRA EFILE number and firm registration","Legal and tax review"]})
+}
+#[cfg(test)] mod carry_tests { use super::*;
+    #[test] fn closing_becomes_opening() { let v=carryforward_inputs(&json!({"non_capital_loss_closing_cents":120000,"employment_income_cents":5,"x_closing_cents":"bad"})); assert_eq!(v,json!({"non_capital_loss_opening_cents":120000})); }
+    #[test] fn efile_never_transmits() { assert_eq!(efile_status()["transmits"],false); assert_eq!(efile_status()["certified"],false); } }

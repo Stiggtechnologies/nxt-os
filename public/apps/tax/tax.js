@@ -23,8 +23,8 @@
   const program = id => programs().find(p => p.id.toLowerCase() === String(id || state.program).toLowerCase()) || programs()[0];
   const fields = p => list(p?.sections).flatMap(s => list(s.fields));
   const defaults = p => Object.assign({}, ...fields(p).map(f => ({ [f.key]: clone(f.default ?? (f.kind === "boolean" ? false : f.kind === "text" ? "" : 0)) })), clone(p.defaults || {}));
-  const statuses = [["", "All statuses"], ["draft", "Draft"], ["calculated", "Calculated"], ["in_review", "In review"], ["approved", "Approved"], ["archived", "Archived"]];
-  const canEdit = record => !!record && !["approved", "archived"].includes(record.status);
+  const statuses = [["", "All statuses"], ["draft", "Draft"], ["calculated", "Calculated"], ["in_review", "In review"], ["approved", "Approved"], ["filed", "Filed (recorded, outside NXT)"], ["archived", "Archived"]];
+  const canEdit = record => !!record && !["approved", "filed", "archived"].includes(record.status);
   const isCorporate = record => record?.program?.toUpperCase() === "T2";
   const corporateSections = ["corp-identification", "corp-records", "gifi-balance", "gifi-opening", "gifi-income", "corp-adjustments", "province", "output"];
   const provinces = [["", "Choose jurisdiction"], ["AB", "Alberta"], ["BC", "British Columbia"], ["MB", "Manitoba"], ["NB", "New Brunswick"], ["NL", "Newfoundland and Labrador"], ["NS", "Nova Scotia"], ["NT", "Northwest Territories"], ["NU", "Nunavut"], ["ON", "Ontario"], ["PE", "Prince Edward Island"], ["QC", "Québec"], ["SK", "Saskatchewan"], ["YT", "Yukon"]];
