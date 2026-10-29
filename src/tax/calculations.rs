@@ -152,15 +152,22 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
             (t.alberta_bpa_cents,progressive(taxable,t.alberta_brackets)?,rounded_ratio(base,800,10000)?)
         }
         Some(p) => {
-            if p.code=="MB" && taxable>20_000_000 { c.diagnostic("mb_bpa_phaseout","Manitoba basic personal amount phase-out (net income $200,000-$400,000) is not calculated.",None,true); }
+
             // 2025 low-income reductions end below $45,000 in every province; 2026 thresholds are not yet sourced.
-            if ["BC","NL","PE","NS","NB"].contains(&p.code) && taxable<6_000_000 { c.diagnostic("low_income_reduction_2026_unsourced",&format!("{} low-income tax reduction thresholds for 2026 are not yet sourced; incomes under $60,000 cannot be reviewed.",p.name),None,true); }
-            let b=p.bpa_cents.unwrap_or(bpa); let ce=if p.employment_amount { cea } else { 0 };
+            if ["NL","PE","NS","NB"].contains(&p.code) && taxable<6_000_000 { c.diagnostic("low_income_reduction_2026_unsourced",&format!("{} low-income tax reduction thresholds for 2026 are not yet sourced; incomes under $60,000 cannot be reviewed.",p.name),None,true); }
+            let mut b=p.bpa_cents.unwrap_or(bpa);
+            // T4127-JAN 2026 BPAMB: $15,780 reduced by (NI - $200,000) x 15,780/200,000, nil at $400,000.
+            if p.code=="MB" { b-=rounded_ratio((taxable-20_000_000).clamp(0,20_000_000),b,20_000_000)?; } let ce=if p.employment_amount { cea } else { 0 };
             (b,progressive(taxable,p.brackets)?,rounded_ratio(sum(&[b,ce,cpp,ei])?,p.credit_rate_bps,10000)?)
         }
     };
     let pcode=prov.map(|p| p.code).unwrap_or("AB"); let lc=pcode.to_lowercase();
-    let provincial=(pbefore-pcredits).max(0);
+    let mut provincial=(pbefore-pcredits).max(0);
+    if pcode=="BC" {
+        // T4127-JAN 2026 BC factor S: $575 less 3.56% of net income over $25,570 (nil above $41,722), limited to BC tax.
+        let r=(57_500-rounded_ratio((taxable-2_557_000).max(0),356,10000)?).clamp(0,provincial);
+        c.line("BC61800","BC tax reduction (T4127-JAN 2026 factor S)",r); provincial-=r;
+    }
     let tax=sum(&[federal,provincial])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?])?;
     for (code,label,amount) in [
         ("10100".to_string(),"Employment income".to_string(),employment),("12100".into(),"Canadian interest income".into(),interest),("15000".into(),"Total income".into(),income),
@@ -795,6 +802,12 @@ mod tests {
         assert_eq!(l(&rich,"ON_surtax"),rounded_ratio(basic-581_800,2000,10000).unwrap()+rounded_ratio(basic-744_600,3600,10000).unwrap()); assert_eq!(b,basic+l(&rich,"ON_surtax"));
         assert!(!calculate("T1",2026,"PE",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap().supported);
         assert!(!calculate("T2",2026,"AB",&json!({})).unwrap().supported);
+        let bc=calculate("T1",2026,"BC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap();
+        assert!(bc.supported,"{:?}",bc.diagnostics); assert_eq!(l(&bc,"BC61800"),41_729);
+        let bc_hi=calculate("T1",2026,"BC",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":4_200_000})).unwrap(); assert_eq!(l(&bc_hi,"BC61800"),0);
+        let mb=calculate("T1",2026,"MB",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"interest_income_cents":30_000_000})).unwrap();
+        assert!(mb.supported,"{:?}",mb.diagnostics); assert_eq!(l(&mb,"MB58040"),789_000);
+        let mb0=calculate("T1",2026,"MB",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"interest_income_cents":45_000_000})).unwrap(); assert_eq!(l(&mb0,"MB58040"),0);
     }
     #[test]fn medical_donation_pension_tuition_federal_credits(){
         // Net $50,000: medical threshold 1,500; 4,000 expenses -> 2,500. Pension 2,000 cap. Tuition 3,000. Donations 1,200 -> 200*14.5% + 1,000*29% = 29 + 290 = 319.
