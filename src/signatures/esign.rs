@@ -196,6 +196,17 @@ pub struct PdfInput { pub operator_label: String, pub expected_revision: u64, pu
 pub struct SendInput { pub operator_label: String, pub expected_revision: u64, pub expected_content_hash: String, #[serde(default)] pub expires_days: Option<u16> }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SweepInput {
+    pub operator_label: String,
+    /// Reissue a fresh link to active signers whose last link is older than this (default 72h).
+    #[serde(default)] pub remind_after_hours: Option<u32>,
+    /// Also reissue fresh links where the link has expired (default: report only).
+    #[serde(default)] pub reissue_expired: bool,
+    /// Report what would happen without changing anything.
+    #[serde(default)] pub dry_run: bool,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StaffInput { pub operator_label: String, pub reason: String }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -344,6 +355,36 @@ impl Signatures {
         let links = vec![json!({"recipient_id":input.recipient_id,"url":format!("/sign/#{token}")})];
         self.queue_links(&c, &links, "Here is a new link. ").await?;
         Ok(json!({"delivery":{"mode":mode,"email_sent":false,"links":if mode == "test" { json!(links) } else { json!([]) }}}))
+    }
+
+    /// Expiry sweep + reminders without new infra: call from a cron or by hand. Reminders
+    /// reissue a fresh link (old one stops working) and queue it in the outbox; nothing is emailed.
+    pub async fn sweep(&self, input: SweepInput, meta: ClientMeta) -> SResult<Value> {
+        if !nonempty(&input.operator_label, 120) { return Err(bad("operator label is required")); }
+        let remind_after = chrono::Duration::hours(i64::from(input.remind_after_hours.unwrap_or(72).clamp(1, 24 * 30)));
+        let (_, state) = self.read().await?;
+        let now_t = Utc::now();
+        let mut out = vec![];
+        for env in state.envelopes.iter().take(500) {
+            let Some((_, c)) = self.ceremony(&env.id).await? else { continue };
+            if c.status != "sent" { continue; }
+            for sg in c.signers.iter().filter(|s| s.status == "active") {
+                let expired = chrono::DateTime::parse_from_rfc3339(&sg.expires_at).map(|t| t < now_t).unwrap_or(false);
+                let last = c.events.iter().rev().find(|e| e.action == "sent" || (e.action == "link_reissued" && e.detail == sg.recipient_id))
+                    .and_then(|e| chrono::DateTime::parse_from_rfc3339(&e.at).ok());
+                let due = last.is_some_and(|t| now_t - t.with_timezone(&Utc) >= remind_after);
+                let action = if expired { if input.reissue_expired { "reissue_expired" } else { "expired" } } else if due { "remind" } else { continue };
+                let mut item = json!({"envelope_id":env.id,"recipient_id":sg.recipient_id,"action":action,"expires_at":sg.expires_at});
+                if !input.dry_run && action != "expired" {
+                    match self.reissue_link(&env.id, LinkInput { operator_label: input.operator_label.clone(), recipient_id: sg.recipient_id.clone() }, meta.clone()).await {
+                        Ok(v) => { item["delivery"] = v["delivery"].clone(); }
+                        Err(e) => { item["error"] = json!(e.1); }
+                    }
+                }
+                out.push(item);
+            }
+        }
+        Ok(json!({"dry_run":input.dry_run,"email_sent":false,"results":out}))
     }
 
     pub async fn void(&self, id: &str, input: StaffInput, meta: ClientMeta) -> SResult<Value> {

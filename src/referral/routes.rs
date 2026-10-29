@@ -97,28 +97,12 @@ pub fn auth_required() -> bool {
     true
 }
 
-pub async fn require_admin(headers: HeaderMap, req: Request, next: Next) -> Response {
-    let expected = match std::env::var("ADMIN_API_KEY") {
-        Ok(key) if !key.trim().is_empty() => key,
-        _ => return auth_error(StatusCode::SERVICE_UNAVAILABLE, "Workspace sign-in is unavailable. Contact the administrator."),
-    };
-    let given = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or("");
-    if !constant_time_eq(given.as_bytes(), expected.as_bytes()) {
-        return auth_error(StatusCode::UNAUTHORIZED, "invalid or missing API key");
-    }
-    next.run(req).await
+/// Shared protected-route guard: staff sessions or the break-glass admin key.
+/// See `firm::staff` for roles, MFA, label stamping and policy.
+pub async fn require_admin(req: Request, next: Next) -> Response {
+    crate::firm::staff::authorize(req, next).await
 }
 
-fn auth_error(status: StatusCode, message: &str) -> Response {
-    let mut response = ApiError(status, message.into()).into_response();
-    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
-    response.headers_mut().insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
-    response
-}
 
 /// Public endpoints are called by the widget from merchant storefronts.
 async fn cors(req: Request, next: Next) -> Response {

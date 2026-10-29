@@ -36,6 +36,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/slips/aggregate",post(slips_aggregate))
         .route("/api/tax/gifi/from-trial-balance",post(gifi_from_tb))
         .layer(DefaultBodyLimit::max(1024 * 1024))
+        .layer(middleware::from_fn_with_state(tax.clone(), client_scope))
         .layer(middleware::from_fn(require_admin))
         .layer(middleware::map_response(|mut response: Response| async move {
             response.headers_mut().insert(header::CACHE_CONTROL, "private, no-store".parse().unwrap());
@@ -124,3 +125,8 @@ async fn gifi_from_tb(Json(input):Json<GifiInput>) -> R {
 
 /// Returns a src/signatures Draft (context module "tax"); POST it to /api/signatures to prepare the envelope.
 async fn t183_draft(State(t):S,Path(id):Path<String>) -> R { let r=t.get(&id).await?; ok(super::t183::draft(&r).map_err(|e|conflict(&e))?) }
+
+async fn client_scope(State(t): S, req: axum::extract::Request, next: middleware::Next) -> Response {
+    crate::firm::staff::scope_guard(req, next, "/api/tax/returns", &["/api/tax/catalog", "/api/tax/capabilities", "/api/tax/rates"],
+        |id| async move { t.get(&id).await.ok().map(|r| r.client_ref) }).await
+}
