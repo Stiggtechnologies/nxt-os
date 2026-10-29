@@ -321,6 +321,7 @@ impl Tax {
                 if input.status=="approved" {
                     if r.status!="in_review" { return Err(conflict("return must enter review before approval")); }
                     if input.note.trim().is_empty() || input.reviewer.trim().is_empty(){return Err(bad("reviewer label and review note are required"));}
+                    if let Some(m)=r.preparer_signoff.as_ref().and_then(|p|crate::firm::staff::same_person(&p.by,&input.reviewer)) { return Err(conflict(m)); }
                     if r.preparer_signoff.as_ref().is_some_and(|p|p.by.trim().eq_ignore_ascii_case(input.reviewer.trim())) { return Err(conflict("reviewer must be a different person from the preparer")); }
                     if r.reviews.len()>=20 { return Err(conflict("review history capacity reached (20)")); }
                     let review=Review{at:at.clone(),reviewer:input.reviewer.trim().into(),note:input.note.trim().into(),input_hash:c.input_hash.clone(),output_hash:c.output_hash.clone()};

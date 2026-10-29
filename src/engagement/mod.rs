@@ -434,6 +434,11 @@ impl Engagements {
             {
                 return Err(conflict("start review after preparing this workpaper"));
             }
+            if input.stage == "reviewed" {
+                if let Some(m) = r.signoffs.iter().filter(|s| s.workpaper_id == paper.id && s.stage == "prepared").find_map(|s| crate::firm::staff::same_person(&s.operator, &input.operator)) {
+                    return Err(conflict(m));
+                }
+            }
             if !paper
                 .depends_on
                 .iter()

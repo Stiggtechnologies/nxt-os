@@ -105,6 +105,16 @@ impl Identity {
     pub fn is_reviewer(&self) -> bool { matches!(self.role, Role::Admin | Role::Reviewer) }
 }
 
+/// Segregation of duties on verified labels: a staff-signed preparation can only be
+/// reviewed by a different staff account (never by the shared break-glass key).
+pub fn same_person(preparer: &str, reviewer: &str) -> Option<&'static str> {
+    match (label_user_id(preparer), label_user_id(reviewer)) {
+        (Some(a), Some(b)) if a == b => Some("reviewer must be a different staff account from the preparer"),
+        // Staff sessions always carry a stamped id; an id-less label means the break-glass key.
+        (Some(_), None) => Some("the break-glass key cannot review work prepared by a staff account"),
+        _ => None,
+    }
+}
 /// Extracts the staff user id that a verified label carries, e.g. `Pat [usr_1]`.
 pub fn label_user_id(label: &str) -> Option<&str> {
     let l = label.trim();
@@ -503,3 +513,50 @@ async fn create(Extension(i): Extension<Identity>, Json(v): Json<CreateUser>) ->
 async fn update(Extension(i): Extension<Identity>, Path(id): Path<String>, Json(v): Json<UpdateUser>) -> R { admin(&i)?; Ok(Json(registry().update_user(&i, &id, v).await?)) }
 async fn audit(Extension(i): Extension<Identity>) -> R { admin(&i)?; Ok(Json(json!({"events":registry().audit_log(500).await?}))) }
 fn admin(i: &Identity) -> SResult<()> { if i.role == Role::Admin { Ok(()) } else { Err(denied("admin only")) } }
+
+// ---- Per-client scoping -------------------------------------------------------------------
+
+/// The caller's identity when it is limited to specific clients (None = unrestricted).
+pub fn scoped(req: &Request) -> Option<Identity> {
+    req.extensions().get::<Identity>().filter(|i| !i.clients.iter().any(|c| c == "*")).cloned()
+}
+
+/// Shared scope guard for modules whose records carry a `client_ref`.
+/// `base` is the collection path (e.g. `/api/tax/returns`); `open` lists paths a scoped user
+/// may still read (catalogs, rates). Everything else that is not a record path is refused.
+pub async fn scope_guard<F, Fut>(req: Request, next: Next, base: &str, open: &[&str], lookup: F) -> Response
+where F: FnOnce(String) -> Fut, Fut: std::future::Future<Output = Option<String>> {
+    let Some(id) = scoped(&req) else { return next.run(req).await };
+    let path = req.uri().path().to_string();
+    if open.iter().any(|p| path == *p) { return next.run(req).await; }
+    if path == base {
+        if req.method() == Method::GET {
+            let resp = next.run(req).await;
+            return filter_list(resp, &id).await;
+        }
+        let (parts, body) = req.into_parts();
+        let Ok(bytes) = axum::body::to_bytes(body, 8 * 1024 * 1024).await else { return denied("request body too large").into_response() };
+        let cref = serde_json::from_slice::<Value>(&bytes).ok().and_then(|v| v["client_ref"].as_str().map(str::to_string)).unwrap_or_default();
+        if !id.can_client(&cref) { return denied("you are not assigned to this client").into_response(); }
+        return next.run(Request::from_parts(parts, Body::from(bytes))).await;
+    }
+    if let Some(rest) = path.strip_prefix(base).and_then(|r| r.strip_prefix('/')) {
+        let rid = rest.split('/').next().unwrap_or("").to_string();
+        return match lookup(rid).await {
+            Some(c) if id.can_client(&c) => next.run(req).await,
+            Some(_) => denied("you are not assigned to this client").into_response(),
+            None => next.run(req).await, // unknown id: let the handler answer 404
+        };
+    }
+    denied("firm-wide views need an account with access to all clients").into_response()
+}
+
+async fn filter_list(resp: Response, id: &Identity) -> Response {
+    if !resp.status().is_success() { return resp; }
+    let (mut parts, body) = resp.into_parts();
+    let Ok(bytes) = axum::body::to_bytes(body, 32 * 1024 * 1024).await else { return denied("response too large").into_response() };
+    let Ok(Value::Array(items)) = serde_json::from_slice::<Value>(&bytes) else { return Response::from_parts(parts, Body::from(bytes)) };
+    let kept: Vec<Value> = items.into_iter().filter(|v| id.can_client(v["client_ref"].as_str().unwrap_or(""))).collect();
+    parts.headers.remove(header::CONTENT_LENGTH);
+    Response::from_parts(parts, Body::from(serde_json::to_vec(&kept).unwrap_or_default()))
+}

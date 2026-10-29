@@ -144,6 +144,7 @@ fn esign_staff_router(state: Arc<Signatures>) -> Router {
         .route("/api/signatures/esign/bulk/{key}", post(es_bulk_prepare))
         .route("/api/signatures/esign/bulk-approve", post(es_bulk_approve))
         .route("/api/signatures/esign/bulk-send", post(es_bulk_send))
+        .route("/api/signatures/esign/sweep", post(es_sweep))
         .layer(DefaultBodyLimit::max(4 * 1024 * 1024 + 64 * 1024))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|r: Response| async move { no_store(r) }))
@@ -154,6 +155,7 @@ async fn es_status(State(s): S, Path(id): Path<String>) -> R { Ok(Json(s.esign_s
 async fn es_pdf(State(s): S, Path(id): Path<String>, h: HeaderMap, Json(v): Json<esign::PdfInput>) -> R { Ok(Json(s.attach_pdf(&id, v, meta(&h)).await?)) }
 async fn es_send(State(s): S, Path(id): Path<String>, h: HeaderMap, Json(v): Json<esign::SendInput>) -> R { Ok(Json(s.send(&id, v, meta(&h)).await?)) }
 async fn es_link(State(s): S, Path(id): Path<String>, h: HeaderMap, Json(v): Json<esign::LinkInput>) -> R { Ok(Json(s.reissue_link(&id, v, meta(&h)).await?)) }
+async fn es_sweep(State(s): S, h: HeaderMap, Json(v): Json<esign::SweepInput>) -> R { Ok(Json(s.sweep(v, meta(&h)).await?)) }
 async fn es_void(State(s): S, Path(id): Path<String>, h: HeaderMap, Json(v): Json<esign::StaffInput>) -> R { Ok(Json(s.void(&id, v, meta(&h)).await?)) }
 async fn es_doc(State(s): S, Path((id, which)): Path<(String, String)>) -> SResult<Response> {
     if !["original", "signed", "certificate"].contains(&which.as_str()) { return Err(bad("document must be original, signed or certificate")); }
@@ -172,6 +174,7 @@ fn signer_router(state: Arc<Signatures>) -> Router {
         .route("/api/sign/{token}/decline", post(sg_decline))
         .route("/api/sign/{token}/document", get(sg_doc))
         .layer(DefaultBodyLimit::max(128 * 1024))
+        .layer(middleware::from_fn_with_state(state.clone(), signer_rate_limit))
         .layer(middleware::map_response(|r: Response| async move { no_store(r) }))
         .with_state(state)
 }
@@ -187,3 +190,20 @@ async fn es_outbox(State(s): S, Path(id): Path<String>) -> R { Ok(Json(s.outbox(
 async fn es_bulk_prepare(State(s): S, Path(k): Path<String>, h: HeaderMap, Json(v): Json<esign::BulkPrepareInput>) -> R { Ok(Json(s.bulk_prepare(&k, v, meta(&h)).await?)) }
 async fn es_bulk_approve(State(s): S, Json(v): Json<esign::BulkIdsInput>) -> R { Ok(Json(s.bulk_approve(v).await?)) }
 async fn es_bulk_send(State(s): S, h: HeaderMap, Json(v): Json<esign::BulkIdsInput>) -> R { Ok(Json(s.bulk_send(v, meta(&h)).await?)) }
+
+fn env_limit(name: &str, default: i64) -> i64 {
+    std::env::var(name).ok().and_then(|v| v.parse().ok()).filter(|v: &i64| *v > 0).unwrap_or(default)
+}
+/// Per-IP fixed-window limits on the public signing pages (no new infra: uses the KV store).
+async fn signer_rate_limit(State(s): S, req: axum::extract::Request, next: middleware::Next) -> Response {
+    let ip = crate::firm::staff::client_ip(req.headers());
+    if let Err(e) = crate::firm::staff::rate_limit(&s.store, "sign", &ip, env_limit("NXT_SIGN_RATE_LIMIT", 120), 600).await {
+        return e.into_response();
+    }
+    if req.uri().path().ends_with("/otp") || req.uri().path().ends_with("/verify") {
+        if let Err(e) = crate::firm::staff::rate_limit(&s.store, "sign-otp", &ip, env_limit("NXT_SIGN_OTP_RATE_LIMIT", 10), 600).await {
+            return e.into_response();
+        }
+    }
+    next.run(req).await
+}

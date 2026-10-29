@@ -45,6 +45,7 @@ pub fn router(state: Arc<Engagements>) -> Router {
         .route("/api/engagements/{id}/workpapers/{paper}/attachments/{version}/describe", get(file_describe))
         .route("/api/engagements/{id}/print", get(print))
         .layer(DefaultBodyLimit::max(1024 * 1024))
+        .layer(middleware::from_fn_with_state(state.clone(), client_scope))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|mut r: Response| async move {
             r.headers_mut()
@@ -354,4 +355,12 @@ async fn print(State(e): S, Path(id): Path<String>) -> EResult<Response> {
         return Err(conflict("print export exceeds 4 MiB"));
     }
     Ok((StatusCode::OK,[(header::CONTENT_TYPE,"text/html; charset=utf-8"),(header::CONTENT_SECURITY_POLICY,"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'")],html).into_response())
+}
+
+async fn client_scope(State(e): S, req: axum::extract::Request, next: middleware::Next) -> Response {
+    if crate::firm::staff::scoped(&req).is_some() && ["/api/engagements/summary", "/api/engagements/audit"].contains(&req.uri().path()) {
+        return crate::referral::routes::ApiError(StatusCode::FORBIDDEN, "firm-wide views need an account with access to all clients".into()).into_response();
+    }
+    crate::firm::staff::scope_guard(req, next, "/api/engagements", &["/api/engagements/catalog"],
+        |id| async move { e.get(&id).await.ok().map(|r| r.document.client_ref) }).await
 }
