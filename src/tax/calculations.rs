@@ -111,7 +111,7 @@ fn require(c: &mut Calculation, obj: &Map<String,Value>, key: &str, message: &st
 
 pub const T1_2026_SCOPE: &str = "2026 basic T1 income-tax workpaper (rate table ca-2026.1) for a full-year resident of AB, ON, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU at year-end, with Canadian T4 employment and interest only, a verified RRSP deduction and verified payroll CPP/EI credit amounts. Federal and provincial basic personal amounts, the Canada employment amount and CPP/EI credits only. All other 2025-scope income, deductions and credits are rejected until their 2026 values are sourced. Not a filing.";
 /// Fields allowed in the 2026 basic scope; any other non-zero/true 2025 field is rejected.
-const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable","born_1961_or_earlier","medical_expenses_cents","credits_verified","spouse_adjusted_net_income_cents","family_income_verified","eligible_dependant_net_income_cents","infirm_dependant_18_plus_net_income_cents","dependants_verified"];
+const T1_2026_FIELDS: &[&str] = &["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_verified","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","payroll_verified","tax_withheld_cents","instalments_cents","full_year_resident","provincial_adjustments_not_applicable","born_1961_or_earlier","medical_expenses_cents","credits_verified","spouse_adjusted_net_income_cents","family_income_verified","eligible_dependant_net_income_cents","infirm_dependant_18_plus_net_income_cents","dependants_verified","claim_spouse_amount","disability_tax_credit_approved","eligible_pension_income_cents","tuition_cents","donations_cents","home_buyers_amount_cents","adoption_expenses_cents","student_loan_interest_cents"];
 /// 2026 basic T1: federal (CRA current-year brackets, 14% credit rate, BPA $16,452 phasing to $14,829
 /// between $181,440 and $258,482, CEA $1,501) plus AB or a PROVINCES_2026 province. CPP/EI maxima
 /// from T4127-JAN 2026 Tables 8.4-8.7. Anything not sourced for 2026 blocks instead of being guessed.
@@ -136,7 +136,8 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
         require(c,obj,"payroll_verified","Enter only verified Schedule 8 base CPP/enhanced CPP deduction and eligible EI credit amounts.")?;
         if sum(&[cpp,enhanced,ei])?>employment { return Err("Declared payroll claims exceed employment income".into()); }
     }
-    let income=sum(&[employment,interest])?; let deductions=sum(&[rrsp,enhanced])?;
+    let pension=money(obj,"eligible_pension_income_cents")?;
+    let income=sum(&[employment,interest,pension])?; let deductions=sum(&[rrsp,enhanced])?;
     if deductions>income { return Err("Deductions exceed current income; loss and carryforward treatment is outside this scope".into()); }
     let taxable=income-deductions;
     let span=25_848_200-18_144_000;
@@ -165,7 +166,27 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let ed_amount=ed.map(|n| (bpa-n.max(0)).max(0)).unwrap_or(0);
     let cg_amount=cg.map(|n| (877_300-(n.max(0)-2_060_100).max(0)).max(0)).unwrap_or(0);
     if ed.is_some() { c.line("30400","Amount for an eligible dependant (2026)",ed_amount); } if cg.is_some() { c.line("30450","Canada caregiver amount for infirm dependant 18+ (2026)",cg_amount); }
-    let federal_credits=rounded_ratio(sum(&[bpa,cea,cpp,ei,age_amount,medical,ed_amount,cg_amount])?,t.federal_credit_rate_bps,10000)?;
+    // Other 2026 federal amounts (CRA indexation page 2026 column; statutory amounts cited):
+    // 30300 spouse = line 30000 amount less spouse net income; 31600 disability $10,341; 31400 pension max $2,000 (ITA 118(3));
+    // 32300 current-year T2202 tuition; 34900 donations (lowest rate on first $200, 29%, 33% to the extent income exceeds $258,482, ITA 118.1(3));
+    // 31270 home buyers' $10,000 (ITA 118.05); 31300 adoption max $19,972; 31900 student loan interest (ITA 118.62).
+    let spouse_claim=boolean(obj,"claim_spouse_amount")?; let disabled=boolean(obj,"disability_tax_credit_approved")?;
+    let (tui,don,hb,adopt,sli)=(money(obj,"tuition_cents")?,money(obj,"donations_cents")?,money(obj,"home_buyers_amount_cents")?,money(obj,"adoption_expenses_cents")?,money(obj,"student_loan_interest_cents")?);
+    let others=spouse_claim||disabled||pension>0||tui>0||don>0||hb>0||adopt>0||sli>0;
+    if others {
+        require(c,obj,"credits_verified","Verify spouse net income, CRA-approved T2201, eligible pension income (age/type), T2202 tuition (current year only), official donation receipts, home buyers', adoption and student-loan receipts.")?;
+        c.diagnostic("provincial_credits_2026_unsourced","2026 provincial counterparts of these credits are not yet sourced; only federal amounts are calculated.",None,true);
+    }
+    if spouse_claim && ed.is_some() { return Err("Lines 30300 and 30400 cannot both be claimed".into()); }
+    if hb>1_000_000 { return Err("home_buyers_amount_cents exceeds the $10,000 maximum".into()); }
+    if adopt>1_997_200 { return Err("adoption_expenses_cents exceeds the 2026 per-child maximum of $19,972".into()); }
+    if don>rounded_ratio(taxable,7500,10000)? { return Err("Donations exceed 75% of net income; carryforward is outside scope".into()); }
+    let spouse_amt=if spouse_claim { (bpa-money(obj,"spouse_adjusted_net_income_cents")?.max(0)).max(0) } else { 0 };
+    let dis=if disabled { 1_034_100 } else { 0 }; let pen=pension.min(200_000);
+    let first=don.min(20_000); let rest=don-first; let at33=rest.min((taxable-25_848_200).max(0));
+    let don_credit=sum(&[rounded_ratio(first,t.federal_credit_rate_bps,10000)?,rounded_ratio(rest-at33,2900,10000)?,rounded_ratio(at33,3300,10000)?])?;
+    for (k,lbl,v,on) in [("11500","Eligible pension income",pension,pension>0),("30300","Spouse or common-law partner amount (2026)",spouse_amt,spouse_claim),("31600","Disability amount (2026)",dis,disabled),("31400","Pension income amount",pen,pension>0),("32300","T2202 tuition (current year)",tui,tui>0),("34900","Donations",don,don>0),("donation_credit","Federal donation credit (2026)",don_credit,don>0),("31270","Home buyers' amount",hb,hb>0),("31300","Adoption expenses (2026)",adopt,adopt>0),("31900","Student loan interest",sli,sli>0)] { if on { c.line(k,lbl,v); } }
+    let federal_credits=sum(&[rounded_ratio(sum(&[bpa,cea,cpp,ei,age_amount,medical,ed_amount,cg_amount,spouse_amt,dis,pen,tui,hb,adopt,sli])?,t.federal_credit_rate_bps,10000)?,don_credit])?;
     let federal=(federal_before-federal_credits).max(0);
     let (pbpa,pbefore,pcredits)=match prov {
         None => {
@@ -820,7 +841,7 @@ mod tests {
         // BPA phase-out midpoint and gates.
         let hi=calculate("T1",2026,"SK",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":25_848_200})).unwrap();
         assert_eq!(l(&hi,"30000"),1_482_900);
-        assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"donations_cents":100})).is_err());
+        assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"rental_gross_cents":100})).is_err());
         let mut ob=base.clone(); ob["family_income_verified"]=json!(true); let o=calculate("T1",2026,"ON",&ob).unwrap(); assert!(o.supported,"{:?}",o.diagnostics);
         // ON: 53,891*5.05% + 26,109*9.15% less 12,989*5.05%; below the $5,818 surtax threshold; OHP $750 at $80,000.
         assert_eq!(l(&o,"on_before_credits"),272_150+238_897); assert_eq!(l(&o,"ON61500"),65_594);
@@ -838,6 +859,9 @@ mod tests {
         assert_eq!(l(&rich,"ON_surtax"),rounded_ratio(basic-581_800,2000,10000).unwrap()+rounded_ratio(basic-744_600,3600,10000).unwrap()); assert_eq!(b,basic+l(&rich,"ON_surtax"));
         assert!(!calculate("T1",2026,"PE",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap().supported);
         assert!(!calculate("T2",2026,"AB",&json!({})).unwrap().supported);
+        let f=calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"employment_income_cents":5_000_000,"eligible_pension_income_cents":300_000,"claim_spouse_amount":true,"spouse_adjusted_net_income_cents":500_000,"disability_tax_credit_approved":true,"tuition_cents":100_000,"donations_cents":120_000})).unwrap();
+        assert_eq!(l(&f,"30300"),1_645_200-500_000); assert_eq!(l(&f,"31600"),1_034_100); assert_eq!(l(&f,"31400"),200_000); assert_eq!(l(&f,"donation_credit"),2_800+29_000); assert!(!f.supported);
+        assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"credits_verified":true,"adoption_expenses_cents":1_997_201})).is_err());
         let d=calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"dependants_verified":true,"employment_income_cents":5_000_000,"eligible_dependant_net_income_cents":200_000,"infirm_dependant_18_plus_net_income_cents":2_200_000})).unwrap();
         assert_eq!(l(&d,"30400"),1_645_200-200_000); assert_eq!(l(&d,"30450"),877_300-139_900); assert!(!d.supported);
         assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"dependants_verified":true,"eligible_dependant_net_income_cents":0,"spouse_adjusted_net_income_cents":100})).is_err());
