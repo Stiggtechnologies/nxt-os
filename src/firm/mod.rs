@@ -4,8 +4,9 @@
 pub mod models;
 mod reports;
 mod routes;
+pub mod staff;
 mod xlsx;
-pub use routes::router;
+pub fn router(firm: std::sync::Arc<Firm>) -> axum::Router { routes::router(firm).merge(staff::router()) }
 
 use crate::{ledger::engine::Ledger, referral::routes::ApiError, store::Store};
 use axum::http::StatusCode;
