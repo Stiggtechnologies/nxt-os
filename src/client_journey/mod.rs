@@ -1,14 +1,18 @@
-//! Automated NXT Accounting client journey: step definitions, gated state
-//! machine, and a per-client status ledger.
+//! NXT Accounting guided client walk: step definitions, gated state machine,
+//! progress view, a per-client append-only status ledger, and the value ladder
+//! (see `ladder.rs`).
 //!
-//! The step list adapts the AIMOS "CVI 20/40" guided-process pattern. That
-//! process could not be located in Stiggtechnologies/AIMOS, so the 20-step
-//! structure (each step = execute + verify, 40 sub-steps) is an assumption.
-//! Only legally required steps are human-gated; everything else is automatable.
-//! External hooks (e-sign, filing, payment) are interfaces with stubs only.
+//! Guided client walk principle: the client is walked one step at a time, and
+//! every step has one clear action, a visible outcome / value delivered, a gate
+//! that must pass before the next step, and a progress indicator. Only legally
+//! required steps are human-gated. External hooks (e-sign, filing, payment,
+//! offer sending) are interfaces with stubs only.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+pub mod ladder;
+pub use ladder::*;
 
 pub const JOURNEY_JSON: &str = include_str!("journey.json");
 
@@ -23,21 +27,46 @@ pub enum Gate {
 pub struct StepDef {
     pub n: u32,
     pub key: String,
-    pub cvi_step: String,
+    pub phase: String,
     pub title: String,
+    /// The one clear action the client (or firm) takes at this step.
+    pub action: String,
+    /// The visible outcome / value delivered to the client.
+    pub outcome: String,
+    /// What must be true before the next step can start.
+    pub gate_check: String,
     pub gate: Gate,
     #[serde(default)]
     pub human_reason: Option<String>,
     pub skippable: bool,
     pub executor: String,
+    /// If set, this is a natural point to surface the next value-ladder rung
+    /// above the given tier. Offers always need human approval before sending.
+    #[serde(default)]
+    pub offer_point_after_tier: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JourneyDef {
     pub journey_id: String,
     pub version: u32,
-    pub source_pattern: String,
+    pub principle: String,
+    pub phases: Vec<String>,
     pub steps: Vec<StepDef>,
+}
+
+/// What the client sees: where they are, what to do, what is next.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Progress {
+    pub done: usize,
+    pub total: usize,
+    pub percent: u32,
+    pub phase: Option<String>,
+    pub current_step: Option<String>,
+    pub current_action: Option<String>,
+    pub current_outcome: Option<String>,
+    pub gate_check: Option<String>,
+    pub next_step: Option<String>,
 }
 
 impl JourneyDef {
@@ -53,6 +82,14 @@ impl JourneyDef {
             }
             if s.gate == Gate::Human && s.human_reason.as_deref().unwrap_or("").is_empty() {
                 return Err(format!("human gate {} needs a legal reason", s.key));
+            }
+            for (field, v) in [("action", &s.action), ("outcome", &s.outcome), ("gate_check", &s.gate_check)] {
+                if v.trim().is_empty() {
+                    return Err(format!("step {} needs a {field}", s.key));
+                }
+            }
+            if !self.phases.contains(&s.phase) {
+                return Err(format!("step {} has unknown phase {}", s.key, s.phase));
             }
         }
         Ok(())
@@ -106,12 +143,15 @@ pub struct ClientJourney {
     pub client_id: String,
     pub status: BTreeMap<String, StepStatus>,
     pub ledger: Vec<LedgerEntry>,
+    /// Append-only value-ladder offer events.
+    #[serde(default)]
+    pub offers: Vec<OfferEvent>,
 }
 
 impl ClientJourney {
     pub fn new(def: &JourneyDef, client_id: &str) -> Self {
         let status = def.steps.iter().map(|s| (s.key.clone(), StepStatus::Pending)).collect();
-        Self { client_id: client_id.to_string(), status, ledger: Vec::new() }
+        Self { client_id: client_id.to_string(), status, ledger: Vec::new(), offers: Vec::new() }
     }
 
     pub fn status_of(&self, key: &str) -> Option<StepStatus> {
@@ -123,6 +163,24 @@ impl ClientJourney {
         def.steps.iter().find(|s| {
             !matches!(self.status_of(&s.key), Some(StepStatus::Completed | StepStatus::Skipped))
         })
+    }
+
+    pub fn progress(&self, def: &JourneyDef) -> Progress {
+        let done = def.steps.iter().filter(|s| matches!(self.status_of(&s.key), Some(StepStatus::Completed | StepStatus::Skipped))).count();
+        let total = def.steps.len();
+        let cur = self.current_step(def);
+        let next = cur.and_then(|c| def.steps.iter().find(|s| s.n > c.n && !matches!(self.status_of(&s.key), Some(StepStatus::Completed | StepStatus::Skipped))));
+        Progress {
+            done,
+            total,
+            percent: if total == 0 { 100 } else { (done * 100 / total) as u32 },
+            phase: cur.map(|c| c.phase.clone()),
+            current_step: cur.map(|c| c.key.clone()),
+            current_action: cur.map(|c| c.action.clone()),
+            current_outcome: cur.map(|c| c.outcome.clone()),
+            gate_check: cur.map(|c| c.gate_check.clone()),
+            next_step: next.map(|n| n.key.clone()),
+        }
     }
 
     pub fn is_complete(&self, def: &JourneyDef) -> bool {
