@@ -33,20 +33,27 @@ pub const MAPPED: &[(&str, &str, &str, &str)] = &[
 /// Recorded boxes that are informational because the claim is entered separately
 /// as a verified amount (they do not block review).
 pub const NON_BLOCKING: &[(&str, &str)] = &[("T4", "16"), ("T4", "18"), ("RRSP", "contribution"), ("RRSP", "first60"), ("T2202", "24"), ("T2202", "25")];
+/// T3 box labels verified against CRA, "T3 Statement of Trust Income Allocations and Designations – slip information for individuals":
+/// https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/tax-slips/understand-your-tax-slips/t3-statement-trust-income-allocations-designations-slip-information-individuals.html
+pub const CRA_T3_SLIP_INFO: &str = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/tax-slips/understand-your-tax-slips/t3-statement-trust-income-allocations-designations-slip-information-individuals.html";
 /// Boxes recognised for entry and totalling but not applied by the 2025 engine.
 pub const RECORDED: &[(&str, &str, &str)] = &[
     ("T4", "16", "CPP contributions (Schedule 8 base/enhanced split must be verified)"),
     ("T4", "18", "EI premiums (line 31200 must be verified)"),
     ("T4", "20", "RPP contributions (line 20700)"),
     ("T4", "44", "Union dues (line 21200)"),
-    ("T3", "21", "Capital gains (Schedule 3 line 17600; enter via capital proceeds after review)"),
+    ("T3", "21", "Capital gains (less box 30, Schedule 3 line 17600; footnoted foreign portion to T2209 line 43300)"),
     ("T3", "23", "Actual amount of other-than-eligible dividends"),
-    ("T3", "26", "Other income (line 13000)"),
-    ("T3", "49", "Actual amount of eligible dividends"),
+    ("T3", "26", "Other income (less box 31, line 13000)"),
+    ("T3", "49", "Actual amount of eligible dividends (gross-up reported in box 50)"),
     ("T3", "50", "Taxable amount of eligible dividends (line 12000)"),
     ("T3", "32", "Taxable amount of other-than-eligible dividends (line 12010)"),
-    ("T3", "25", "Foreign non-business income"),
-    ("T3", "34", "Foreign non-business tax paid"),
+    ("T3", "25", "Foreign non-business income (line 12100 and T2209 line 43300)"),
+    ("T3", "30", "Capital gains eligible for deduction (included in box 21; Schedule 3)"),
+    ("T3", "31", "Qualifying pension income (included in box 26; line 11500 and line 31400)"),
+    ("T3", "39", "Federal dividend tax credit on other-than-eligible dividends (line 40425)"),
+    ("T3", "51", "Federal dividend tax credit on eligible dividends (line 40425)"),
+    ("T3", "34", "Foreign non-business income tax paid (T2209 line 1)"),
     ("T5008", "15", "Type of security code (record only)"),
     ("T5008", "16", "Quantity (record only)"),
     ("RRSP", "contribution", "RRSP contribution receipt, Mar 3 - Dec 31 2025 (Schedule 7; deduction entered separately against verified limit)"),
