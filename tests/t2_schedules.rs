@@ -98,7 +98,7 @@ fn reg_1100_2_factors_and_zev() {
     assert!(codes(&build(&i).unwrap()).contains(&"cca_factor_unsourced".to_string()));
     i.tax_year_start = "2024-06-01".into(); i.tax_year_end = "2025-05-31".into();
     i.cca[0].class = "8".into();
-    assert!(codes(&build(&i).unwrap()).contains(&"cca_tax_year".to_string()));
+    assert!(codes(&build(&i).unwrap()).contains(&"cca_straddle_split".to_string()));
     i.tax_year_start = "2024-06-01".into(); i.tax_year_end = "2024-12-31".into();
     assert!(codes(&build(&i).unwrap()).contains(&"cca_short_year".to_string()));
 }
@@ -123,4 +123,34 @@ fn straight_line_classes_13_14() {
     assert_eq!(build(&i).unwrap()["schedule_8"]["schedule1_line_403_cca_cents"], 1_500_00);
     i.cca[0].leaseholds.clear();
     assert!(codes(&build(&i).unwrap()).contains(&"cca_class13_parts".to_string()));
+}
+
+#[test]
+fn accelerated_classes_after_2023_and_straddle_years() {
+    let mut i = base();
+    // Reg 1100(2) A(c.1): Class 44 acquired and available after April 15, 2024: A = 3; 1,000 × 4 × 25% = 1,000
+    i.cca = vec![CcaClass { class: "44".into(), additions_cents: 1_000_00, aiip_additions_cents: 1_000_00, acquired_after_april_15_2024: Some(true), ..Default::default() }];
+    let out = build(&i).unwrap();
+    assert_eq!(out["schedule_8"]["schedule1_line_403_cca_cents"], 1_000_00, "{out}");
+    // Acquired before April 16, 2024: A(a)(ii) nil; 1,000 × 25% = 250
+    i.cca[0].acquired_after_april_15_2024 = Some(false);
+    assert_eq!(build(&i).unwrap()["schedule_8"]["schedule1_line_403_cca_cents"], 250_00);
+    // A(c.2) Class 46: 2 1/3 → 1,000 × 10/3 × 30% = 1,000; A(c.3) Class 50: 9/11 → 1,000 × 20/11 × 55% = 1,000
+    i.cca[0].acquired_after_april_15_2024 = Some(true);
+    for c in ["46", "50"] { i.cca[0].class = c.into(); assert_eq!(build(&i).unwrap()["schedule_8"]["schedule1_line_403_cca_cents"], 999_99, "{c} (floored to the cent)"); }
+    // Class 43 RIIP available in 2026: blocks without the Class 53 answer; A.1(f)(ii) 2 1/3 if it would have been 53
+    i.tax_year_start = "2026-01-01".into(); i.tax_year_end = "2026-12-31".into();
+    i.cca = vec![CcaClass { class: "43".into(), additions_cents: 300_00, riip_additions_cents: 300_00, ..Default::default() }];
+    assert!(codes(&build(&i).unwrap()).contains(&"cca_factor_unsourced".to_string()));
+    i.cca[0].would_have_been_class_53 = Some(true);
+    assert_eq!(build(&i).unwrap()["schedule_8"]["schedule1_line_403_cca_cents"], 300_00); // 300 × 10/3 × 30%
+    i.cca[0].would_have_been_class_53 = Some(false);
+    assert_eq!(build(&i).unwrap()["schedule_8"]["schedule1_line_403_cca_cents"], 135_00); // A.1(a)(i): 300 × 1.5 × 30%
+    // Straddle 2023-24 (Reg 1100(2.01)(a)): Class 8 AIIP, 600 available in 2023 (A = 1/2), 400 in 2024 (nil)
+    i.tax_year_start = "2023-07-01".into(); i.tax_year_end = "2024-06-30".into();
+    i.cca = vec![CcaClass { class: "8".into(), additions_cents: 1_000_00, aiip_additions_cents: 1_000_00, aiip_second_year_cents: Some(400_00), ..Default::default() }];
+    let out = build(&i).unwrap();
+    assert_eq!(out["schedule_8"]["schedule1_line_403_cca_cents"], 260_00, "{out}"); // (1,000 + 300) × 20%
+    assert_eq!(out["schedule_8"]["classes"][0]["factor_a"], "2023: 1/2, 2024: 0/1");
+    assert!(!codes(&out).iter().any(|c| c.starts_with("cca_tax_year") || c == "cca_straddle_split"));
 }
