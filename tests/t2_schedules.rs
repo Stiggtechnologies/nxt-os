@@ -203,3 +203,25 @@ fn immediate_expensing_ccpc_reg_1100_0_1() {
     let mut j = i.clone(); j.cca[0].class = "1".into(); let mut d = vec![]; schedule8(&j, &mut d); assert!(d.iter().any(|x| x["code"] == "cca_immediate_expensing_class"));
     let mut j = i.clone(); j.cca[0].aiip_additions_cents = 1_00; assert!(validate(&j).is_err());
 }
+
+#[test]
+fn e_reduction_proceeds_reduce_accelerated_additions() {
+    let mut i = base();
+    // Class 43.1, 2024: F = 1,000 regular, G = 3,000 → E = 2,000 reduces AIIP 4,000 to 2,000 × 3/2.
+    i.cca = vec![CcaClass { class: "43.1".into(), opening_ucc_cents: 10_000_00, additions_cents: 5_000_00, aiip_additions_cents: 4_000_00, proceeds_cents: 3_000_00, ..Default::default() }];
+    let mut d = vec![];
+    let s8 = schedule8(&i, &mut d);
+    assert!(!d.iter().any(|x| x["blocks_review"] == true), "{d:?}");
+    assert_eq!(s8["classes"][0]["e_reduction_cents"], 2_000_00);
+    // (12,000 + 3,000) × 30% = 4,500
+    assert_eq!(s8["classes"][0]["maximum_cca_cents"], 4_500_00);
+    // RIIP takes what AIIP cannot absorb (T4002 column 16).
+    i.cca[0].aiip_additions_cents = 1_000_00; i.cca[0].riip_additions_cents = 3_000_00;
+    let mut d = vec![]; let s8 = schedule8(&i, &mut d);
+    assert_eq!(s8["classes"][0]["e1_reduction_cents"], 1_000_00);
+    // AIIP 0 × 3/2 + RIIP 2,000 × 7/3 = 4,666.66; (12,000 + 4,666.66) × 30% = 4,999.99
+    assert_eq!(s8["classes"][0]["maximum_cca_cents"], 4_999_99);
+    i.cca[0].half_year_exempt_additions_cents = 1_00;
+    let mut d = vec![]; schedule8(&i, &mut d);
+    assert!(d.iter().any(|x| x["code"] == "cca_proceeds_exceed_regular_additions"));
+}
