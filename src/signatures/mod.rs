@@ -1,5 +1,6 @@
 //! Original NXT internal agreement preparation. No send, signing or connector credentials.
 pub mod models;
+pub mod esign;
 mod routes;
 use crate::{referral::routes::ApiError, store::Store};
 use axum::http::StatusCode;

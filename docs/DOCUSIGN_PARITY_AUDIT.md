@@ -4,6 +4,19 @@ Assessment date: 2026-10-26. Source requested: `https://apps.docusign.com/send/h
 
 **Overall: incomplete; no verified parity.** NXT has an original internal preparation foundation. External sending/signing are disabled and DocuSign is unconfigured. Authenticated source Home accessibility evidence has been reviewed. Source action workflows, other views and REA artifact/runtime evidence remain pending. Official documentation supplies further capability candidates; it does not establish this account's plan, permissions or workflow behavior.
 
+## Update 2026-10-29: native e-sign inside src/signatures
+
+| Area | Before | Now | Still open |
+|---|---|---|---|
+| Documents | Text drafts only | Partial native (test delivery only): PDF upload up to 3 MiB, page-count check against the field layout | Official CRA PDFs and field placement |
+| Sending | Rehearsal only | Partial native (test delivery only): routing order, expiring tokenized links, reissue, void, bulk prepare / review / send of up to 25 envelopes per request, outbox mode | A real email provider; reminders |
+| Signing | None | Partial native (test delivery only): email one-time code with throttling, consent, typed or drawn adoption, decline | IP-level rate limits, pen-test |
+| Evidence | SHA-chained audit log | Partial native (test delivery only): flattened PDF, SHA-256 hashes, certificate with time, IP and user agent per event | Legal sign-off, retention policy |
+| Templates | Generic templates | Partial native (test delivery only): engagement letter, T183, T183CORP | Official form layouts |
+| Context integration | None | Partial native (test delivery only): completed ceremony can satisfy a client-journey human gate; automation refused | Journey persistence route |
+
+See docs/ESIGN_LEGAL_BASIS.md. None of this is cleared for real clients.
+
 Status definitions: **Partial native** means a bounded original implementation exists but equivalent source behavior is unverified; **Missing** means there is no native implementation; **Unverified** means source runtime and/or paired acceptance evidence is absent. No row below means a certified or complete replacement.
 
 | Capability | Documentation evidence | NXT behavior / limitation | Status and next verification |
