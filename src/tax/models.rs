@@ -66,6 +66,9 @@ pub struct TaxReturn {
     /// Operator-entered prior-year amounts. Empty is omitted. They are not applied to the current calculation.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub prior_lines: Vec<PriorLine>,
+    /// Preparer sign-off recorded when the return enters review; cleared on reopen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preparer_signoff: Option<SignOff>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -129,7 +132,13 @@ pub struct AuditEvent {
     pub at: String,
     pub action: String,
     pub detail: String,
+    /// Hash chain: each event commits to the previous event's hash. Absent on pre-chain events.
+    #[serde(default, skip_serializing_if = "String::is_empty")] pub prev_hash: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")] pub hash: String,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SignOff { pub by: String, pub at: String }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ImportPreview {

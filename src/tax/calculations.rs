@@ -11,10 +11,10 @@ pub const T2_SCOPE: &str = "2025 federal and Alberta ordinary active-business ta
 pub const T3_SCOPE: &str = "2025 federal-only ordinary-income trust workpaper: income less verified deductible expenses and deductible ordinary-income allocations. Ordinary trust rate or verified GRE/QDT graduated rates; no basic personal credit. Provincial tax, capital gains, dividends, AMT, QDT recovery tax, special trusts and other credits/elections are outside scope.";
 pub const T5013_SCOPE: &str = "2025 ordinary domestic general-partnership income reconciliation and contractual partner allocation workpaper. Verified general partners and fixed shares only; no limited/at-risk, non-resident, SIFT, multi-tier, special income categories, ACB, CCA, credits or filing XML. Allocation rounding reconciles exactly to net income/loss.";
 const MAX_MONEY: i64 = 100_000_000_000_000;
-const FEDERAL: &[(i64, i64)] = &[(5_737_500,1450),(11_475_000,2050),(17_788_200,2600),(25_341_400,2900),(i64::MAX,3300)];
-const ALBERTA: &[(i64, i64)] = &[(6_000_000,800),(15_123_400,1000),(18_148_100,1200),(24_197_400,1300),(36_296_100,1400),(i64::MAX,1500)];
+const FEDERAL: &[(i64, i64)] = super::rates::CA_2025.federal_brackets;
+const ALBERTA: &[(i64, i64)] = super::rates::CA_2025.alberta_brackets;
 /// 2025 Form ON428 Part A ceilings in cents and rates in basis points.
-const ONTARIO: &[(i64, i64)] = &[(5_288_600,505),(10_577_500,915),(15_000_000,1116),(22_000_000,1216),(i64::MAX,1316)];
+const ONTARIO: &[(i64, i64)] = super::rates::CA_2025.ontario_brackets;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CalculationLine { pub code: String, pub label: String, pub amount: i64 }
@@ -27,9 +27,12 @@ pub struct Calculation {
     pub ruleset: String, pub program: String, pub tax_year: i32, pub jurisdiction: String,
     pub lines: Vec<CalculationLine>, pub totals: BTreeMap<String,i64>, pub diagnostics: Vec<Diagnostic>,
     pub supported: bool, pub scope: String, pub sources: Vec<Source>,
+    /// Rate table version and per-line validation status (validated/unvalidated against CRA examples).
+    #[serde(default)] pub rate_table: String,
+    #[serde(default)] pub line_validation: BTreeMap<String,String>,
 }
 impl Calculation {
-    fn line(&mut self, code: &str, label: &str, amount: i64) { self.lines.push(CalculationLine { code: code.into(), label: label.into(), amount }); }
+    fn line(&mut self, code: &str, label: &str, amount: i64) { self.line_validation.insert(code.into(), super::rates::line_status(&self.rate_table, code).into()); self.lines.push(CalculationLine { code: code.into(), label: label.into(), amount }); }
     fn total(&mut self, key: &str, amount: i64) { self.totals.insert(key.into(), amount); }
     fn diagnostic(&mut self, code: &str, message: &str, field: Option<&str>, blocking: bool) {
         self.diagnostics.push(Diagnostic { code:code.into(), severity:(if blocking {"error"} else {"info"}).into(), message:message.into(), field:field.map(str::to_owned), blocks_review:blocking });
@@ -115,7 +118,7 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
     let jurisdiction_ok = matches!((program, jurisdiction), ("T1","AB") | ("T1","ON") | ("T2","AB") | ("T3","CA-FED") | ("T5013","CA"));
     let expected = match program { "T1" => "AB or ON", "T2" => "AB", "T3" => "CA-FED", "T5013" => "CA", _ => "" };
     let obj = inputs.as_object().ok_or("inputs must be an object")?;
-    let mut c = Calculation { ruleset:RULESET.into(),program:program.into(),tax_year:year,jurisdiction:jurisdiction.into(),lines:vec![],totals:BTreeMap::new(),diagnostics:vec![],supported:true,scope:scope.into(),sources:sources(program) };
+    let mut c = Calculation { ruleset:RULESET.into(),program:program.into(),tax_year:year,jurisdiction:jurisdiction.into(),lines:vec![],totals:BTreeMap::new(),diagnostics:vec![],supported:true,scope:scope.into(),sources:sources(program),rate_table:super::rates::CA_2025.id.into(),line_validation:BTreeMap::new() };
     c.diagnostic("workpaper_only","Independent native workpaper; not a complete tax return, CRA-certified software, or filing authorization. Relationship parties are routing metadata; only explicit calculator inputs affect amounts.",None,false);
     if year != 2025 { c.diagnostic("unsupported_year","Only the versioned 2025 calculation scope is implemented.",None,true); }
     if !jurisdiction_ok { c.diagnostic("unsupported_jurisdiction",&format!("This program currently supports {expected} only."),None,true); }

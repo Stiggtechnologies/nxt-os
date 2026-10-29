@@ -4,6 +4,9 @@ pub mod catalog;
 pub mod corporate;
 pub mod models;
 pub mod parallel;
+pub mod rates;
+pub mod slips;
+pub mod gifi_map;
 mod routes;
 pub use routes::router;
 
@@ -95,10 +98,25 @@ fn assert_revision(r: &TaxReturn, expected: u64) -> TResult<()> {
     if r.revision != expected { Err(conflict("return changed; reload before trying again")) } else { Ok(()) }
 }
 fn audit(s: &mut TaxState, return_id: &str, action: &str, detail: impl Into<String>) {
-    s.audit.insert(0,AuditEvent { id:id("taxaudit"), return_id:return_id.into(), at:now(), action:action.into(), detail:detail.into() }); s.audit.truncate(1000);
+    // Append-only, newest first. Events are never truncated or edited; capacity is bounded by the state size limit.
+    let prev_hash=s.audit.first().map(|e|if e.hash.is_empty(){"pre-chain".to_string()}else{e.hash.clone()}).unwrap_or_else(||"genesis".into());
+    let mut e=AuditEvent { id:id("taxaudit"), return_id:return_id.into(), at:now(), action:action.into(), detail:detail.into(), prev_hash, hash:String::new() };
+    e.hash=audit_hash(&e); s.audit.insert(0,e);
+}
+fn audit_hash(e: &AuditEvent) -> String { hex::encode(Sha256::digest(format!("{}|{}|{}|{}|{}|{}",e.id,e.return_id,e.at,e.action,e.detail,e.prev_hash).as_bytes())) }
+/// Verifies the audit hash chain from oldest to newest. Pre-chain events (saved before hashing existed) are reported, not verified.
+pub fn verify_audit(events: &[AuditEvent]) -> Value {
+    let mut prev: Option<String>=None; let mut chained=0; let mut legacy=0;
+    for e in events.iter().rev() {
+        if e.hash.is_empty() { legacy+=1; prev=None; continue; }
+        let expected_prev=prev.clone().unwrap_or_else(||if chained==0 && legacy==0 {"genesis".into()} else {"pre-chain".into()});
+        if e.prev_hash!=expected_prev || audit_hash(e)!=e.hash { return json!({"valid":false,"broken_at":e.id,"chained":chained,"pre_chain":legacy}); }
+        chained+=1; prev=Some(e.hash.clone());
+    }
+    json!({"valid":true,"chained":chained,"pre_chain":legacy})
 }
 fn record(input: &ReturnInput, record_id: &str, at: &str) -> TaxReturn {
-    TaxReturn { id:record_id.into(), program:input.program.clone(), tax_year:input.tax_year, jurisdiction:input.jurisdiction.clone(), name:input.name.clone(), client_ref:input.client_ref.clone(), period_start:input.period_start.clone(), period_end:input.period_end.clone(), inputs:input.inputs.clone(), parties:input.parties.clone(), corporate:input.corporate.clone(), notes:input.notes.clone(), revision:1, input_revision:1, status:"draft".into(), calculation:None, calculations:Vec::new(), review:None, reviews:Vec::new(), rollforward_from:None, created_at:at.into(), updated_at:at.into(), parallel_comparisons:Vec::new(), prior_lines:Vec::new() }
+    TaxReturn { id:record_id.into(), program:input.program.clone(), tax_year:input.tax_year, jurisdiction:input.jurisdiction.clone(), name:input.name.clone(), client_ref:input.client_ref.clone(), period_start:input.period_start.clone(), period_end:input.period_end.clone(), inputs:input.inputs.clone(), parties:input.parties.clone(), corporate:input.corporate.clone(), notes:input.notes.clone(), revision:1, input_revision:1, status:"draft".into(), calculation:None, calculations:Vec::new(), review:None, reviews:Vec::new(), rollforward_from:None, created_at:at.into(), updated_at:at.into(), parallel_comparisons:Vec::new(), prior_lines:Vec::new(), preparer_signoff:None }
 }
 
 impl Tax {
@@ -234,7 +252,7 @@ impl Tax {
             let r=s.returns.iter_mut().find(|r|r.id==record_id).ok_or_else(missing)?; assert_revision(r,input.expected_revision)?;
             if input.status==r.status { return Ok(r.clone()); }
             if input.status=="draft" {
-                if input.note.trim().is_empty(){return Err(bad("a reason is required to reopen a return"));} r.review=None; r.calculation=None;
+                if input.note.trim().is_empty(){return Err(bad("a reason is required to reopen a return"));} r.review=None; r.calculation=None; r.preparer_signoff=None;
             } else if input.status=="archived" {
                 if input.note.trim().is_empty(){return Err(bad("an archive reason is required"));}
             } else {
@@ -242,9 +260,14 @@ impl Tax {
                 if c.input_revision!=r.input_revision || c.input_hash!=input_hash(r)? || c.input_document.as_ref().map(hash).transpose()?.as_deref()!=Some(c.input_hash.as_str()) || c.output_hash!=hash(&c.result)? { return Err(conflict("calculation is stale or invalid")); }
                 if c.result["supported"]!=true || c.result["diagnostics"].as_array().is_none_or(|a|a.iter().any(|d|d["blocks_review"]==true || d["severity"]=="error")) { return Err(conflict("resolve blocking calculation diagnostics before review")); }
                 if input.status=="in_review" && r.status!="calculated" { return Err(conflict("only a calculated return can enter review")); }
+                if input.status=="in_review" {
+                    if input.reviewer.trim().is_empty() { return Err(bad("preparer sign-off label is required to send a return to review")); }
+                    r.preparer_signoff=Some(SignOff{by:input.reviewer.trim().into(),at:at.clone()});
+                }
                 if input.status=="approved" {
                     if r.status!="in_review" { return Err(conflict("return must enter review before approval")); }
                     if input.note.trim().is_empty() || input.reviewer.trim().is_empty(){return Err(bad("reviewer label and review note are required"));}
+                    if r.preparer_signoff.as_ref().is_some_and(|p|p.by.trim().eq_ignore_ascii_case(input.reviewer.trim())) { return Err(conflict("reviewer must be a different person from the preparer")); }
                     if r.reviews.len()>=20 { return Err(conflict("review history capacity reached (20)")); }
                     let review=Review{at:at.clone(),reviewer:input.reviewer.trim().into(),note:input.note.trim().into(),input_hash:c.input_hash.clone(),output_hash:c.output_hash.clone()};
                     r.reviews.push(review.clone()); r.review=Some(review);
