@@ -140,12 +140,13 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
 }
 
 fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
-    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
+    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_prior_year_earned_income_cents","rrsp_unused_room_cents","rrsp_pension_adjustment_cents","rrsp_par_cents","rrsp_net_pspa_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident","Confirm full-year Canadian residence and Alberta residence at year-end; newcomer, emigrant and deemed-resident rules are outside scope.")?;
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
     let rrsp=money(obj,"rrsp_deduction_cents")?; let limit=money(obj,"rrsp_deduction_limit_cents")?;
     let cpp=money(obj,"cpp_base_credit_cents")?; let enhanced=money(obj,"cpp_enhanced_deduction_cents")?; let ei=money(obj,"ei_credit_cents")?;
     if rrsp>limit { return Err("RRSP deduction exceeds the declared verified deduction limit".into()); }
+    rrsp_limit_check(c,obj,limit)?;
     if rrsp>0 { require(c,obj,"rrsp_verified","Verify the RRSP deduction and available deduction limit against source documents; this engine does not calculate contribution room.")?; }
     if cpp>335_610 || enhanced>107_400 || ei>107_748 { return Err("CPP/EI claim exceeds the applicable 2025 employee maximum".into()); }
     if cpp>0 || enhanced>0 || ei>0 {
@@ -190,13 +191,14 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
 }
 
 fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::Province) -> Result<(),String> {
-    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
+    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_prior_year_earned_income_cents","rrsp_unused_room_cents","rrsp_pension_adjustment_cents","rrsp_par_cents","rrsp_net_pspa_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident",&format!("Confirm full-year Canadian residence and {} residence at December 31; part-year, multi-jurisdiction and business-income allocation are outside scope.",p.name))?;
     require(c,obj,"provincial_adjustments_not_applicable",&format!("The generic engine does not calculate: {}. Confirm none apply to this return, or prepare those amounts outside NXT.",p.not_calculated))?;
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
     let rrsp=money(obj,"rrsp_deduction_cents")?; let limit=money(obj,"rrsp_deduction_limit_cents")?;
     let cpp=money(obj,"cpp_base_credit_cents")?; let enhanced=money(obj,"cpp_enhanced_deduction_cents")?; let ei=money(obj,"ei_credit_cents")?;
     if rrsp>limit { return Err("RRSP deduction exceeds the declared verified deduction limit".into()); }
+    rrsp_limit_check(c,obj,limit)?;
     if rrsp>0 { require(c,obj,"rrsp_verified","Verify the RRSP deduction and available deduction limit against source documents; this engine does not calculate contribution room.")?; }
     if cpp>335_610 || enhanced>107_400 || ei>107_748 { return Err("CPP/EI claim exceeds the applicable 2025 employee maximum".into()); }
     if cpp>0 || enhanced>0 || ei>0 {
@@ -264,6 +266,22 @@ fn t1_foreign_and_flags(c: &mut Calculation, obj: &Map<String,Value>, federal: i
     c.diagnostic("amt_not_calculated","Alternative minimum tax (Form T691) is not calculated. Review if there are large capital gains, donations of securities, tax-shelter losses, or high income with significant credits.",None,false);
     if boolean(obj,"cwb_may_apply")? { c.diagnostic("canada_workers_benefit_not_calculated","Canada workers benefit (Schedule 6) is refundable and not calculated; prepare it outside NXT.",Some("cwb_may_apply"),false); }
     Ok((federal-ftc).max(0))
+}
+
+/// RRSP deduction limit cross-check (CRA "How contributions affect your RRSP deduction limit";
+/// Guide T4040 Chart 3). When the prior-year inputs are supplied, recomputes the limit as
+/// unused room + max(0, min(18% x prior-year earned income, annual dollar limit) - PA) + PAR - net PSPA
+/// and blocks review if it disagrees with the declared (Notice of Assessment) limit.
+fn rrsp_limit_check(c: &mut Calculation, obj: &Map<String,Value>, declared: i64) -> Result<(),String> {
+    if !obj.contains_key("rrsp_prior_year_earned_income_cents") { return Ok(()); }
+    let earned=money(obj,"rrsp_prior_year_earned_income_cents")?;
+    let unused=match obj.get("rrsp_unused_room_cents") { None=>0, Some(v)=>v.as_i64().filter(|x| x.abs()<=100_000_000_000).ok_or("rrsp_unused_room_cents must be integer cents (may be negative)")? };
+    let (pa,par,pspa)=(money(obj,"rrsp_pension_adjustment_cents")?,money(obj,"rrsp_par_cents")?,money(obj,"rrsp_net_pspa_cents")?);
+    let new_room=(rounded_ratio(earned,1800,10000)?.min(3_249_000)-pa).max(0);
+    let computed=unused+new_room+par-pspa;
+    c.line("rrsp_limit_computed","RRSP deduction limit recomputed (T4040 Chart 3)",computed);
+    if computed!=declared { c.diagnostic("rrsp_limit_mismatch",&format!("Declared RRSP deduction limit {declared} cents differs from recomputed {computed} cents; check the Notice of Assessment and inputs."),Some("rrsp_deduction_limit_cents"),true); }
+    Ok(())
 }
 
 fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i64) -> Result<T1Extra,String> {
@@ -400,12 +418,13 @@ fn ontario_health_premium(taxable: i64) -> Result<i64,String> {
 }
 
 fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
-    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
+    check_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_prior_year_earned_income_cents","rrsp_unused_room_cents","rrsp_pension_adjustment_cents","rrsp_par_cents","rrsp_net_pspa_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified","capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident","Confirm full-year Canadian residence and Ontario residence at year-end; newcomer, emigrant and deemed-resident rules are outside scope.")?;
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
     let rrsp=money(obj,"rrsp_deduction_cents")?; let limit=money(obj,"rrsp_deduction_limit_cents")?;
     let cpp=money(obj,"cpp_base_credit_cents")?; let enhanced=money(obj,"cpp_enhanced_deduction_cents")?; let ei=money(obj,"ei_credit_cents")?;
     if rrsp>limit { return Err("RRSP deduction exceeds the declared verified deduction limit".into()); }
+    rrsp_limit_check(c,obj,limit)?;
     if rrsp>0 { require(c,obj,"rrsp_verified","Verify the RRSP deduction and available deduction limit against source documents; this engine does not calculate contribution room.")?; }
     if cpp>335_610 || enhanced>107_400 || ei>107_748 { return Err("CPP/EI claim exceeds the applicable 2025 employee maximum".into()); }
     if cpp>0 || enhanced>0 || ei>0 {
@@ -652,6 +671,13 @@ mod tests {
         assert_eq!(lr("23500"),218_190); assert_eq!(lr("23600"),10_800_000-218_190);
         assert_eq!(r.totals["income_tax"],r.totals["federal_tax"]+r.totals["provincial_tax"]+218_190);
         assert!(!calc("T1","BC",json!({"scope_confirmed":true,"full_year_resident":true,"oas_pension_cents":800_000})).supported);
+    }
+    #[test]fn rrsp_limit_recomputed(){
+        let base=|lim:i64|calc("T1","AB",json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":8_000_000,"rrsp_deduction_cents":500_000,"rrsp_verified":true,"rrsp_deduction_limit_cents":lim,"rrsp_prior_year_earned_income_cents":10_000_000,"rrsp_unused_room_cents":200_000,"rrsp_pension_adjustment_cents":300_000}));
+        // 2,000 + min(18,000, 32,490) - 3,000 = 17,000.
+        let ok=base(1_700_000); assert!(ok.supported,"{:?}",ok.diagnostics);
+        assert_eq!(ok.lines.iter().find(|l|l.code=="rrsp_limit_computed").unwrap().amount,1_700_000);
+        assert!(!base(1_800_000).supported);
     }
     #[test]fn foreign_tax_credit_basic(){
         let c=calc("T1","AB",json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":8_000_000,"foreign_non_business_income_cents":1_000_000,"foreign_non_business_tax_cents":250_000,"foreign_tax_verified":true}));
