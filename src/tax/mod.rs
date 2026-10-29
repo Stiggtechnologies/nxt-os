@@ -98,7 +98,7 @@ fn audit(s: &mut TaxState, return_id: &str, action: &str, detail: impl Into<Stri
     s.audit.insert(0,AuditEvent { id:id("taxaudit"), return_id:return_id.into(), at:now(), action:action.into(), detail:detail.into() }); s.audit.truncate(1000);
 }
 fn record(input: &ReturnInput, record_id: &str, at: &str) -> TaxReturn {
-    TaxReturn { id:record_id.into(), program:input.program.clone(), tax_year:input.tax_year, jurisdiction:input.jurisdiction.clone(), name:input.name.clone(), client_ref:input.client_ref.clone(), period_start:input.period_start.clone(), period_end:input.period_end.clone(), inputs:input.inputs.clone(), parties:input.parties.clone(), corporate:input.corporate.clone(), notes:input.notes.clone(), revision:1, input_revision:1, status:"draft".into(), calculation:None, calculations:Vec::new(), review:None, reviews:Vec::new(), rollforward_from:None, created_at:at.into(), updated_at:at.into(), parallel_comparisons:Vec::new() }
+    TaxReturn { id:record_id.into(), program:input.program.clone(), tax_year:input.tax_year, jurisdiction:input.jurisdiction.clone(), name:input.name.clone(), client_ref:input.client_ref.clone(), period_start:input.period_start.clone(), period_end:input.period_end.clone(), inputs:input.inputs.clone(), parties:input.parties.clone(), corporate:input.corporate.clone(), notes:input.notes.clone(), revision:1, input_revision:1, status:"draft".into(), calculation:None, calculations:Vec::new(), review:None, reviews:Vec::new(), rollforward_from:None, created_at:at.into(), updated_at:at.into(), parallel_comparisons:Vec::new(), prior_lines:Vec::new() }
 }
 
 impl Tax {
@@ -147,10 +147,33 @@ impl Tax {
                 assert_revision(&previous,input.expected_revision.unwrap())?;
                 if ["approved","archived"].contains(&previous.status.as_str()) { return Err(conflict("reopen the return to draft before editing")); }
                 if previous.program != input.program || previous.tax_year != input.tax_year { return Err(bad("program and year are immutable; create or roll forward a return")); }
-                r.revision=previous.revision+1; r.input_revision=previous.input_revision+1; r.created_at=previous.created_at; r.rollforward_from=previous.rollforward_from; r.calculations=previous.calculations; r.reviews=previous.reviews; r.parallel_comparisons=previous.parallel_comparisons;
+                r.revision=previous.revision+1; r.input_revision=previous.input_revision+1; r.created_at=previous.created_at; r.rollforward_from=previous.rollforward_from; r.calculations=previous.calculations; r.reviews=previous.reviews; r.parallel_comparisons=previous.parallel_comparisons; r.prior_lines=previous.prior_lines;
             }
             s.returns.retain(|x|x.id!=record_id); s.returns.push(r.clone()); audit(s,&record_id,if existing.is_some(){"edited"}else{"created"},"Input revision saved; prior calculation/review invalidated"); Ok(r)
         }).await
+    }
+    pub async fn set_prior_lines(&self, record_id: &str, expected: u64, lines: Vec<PriorLine>) -> TResult<Value> {
+        if lines.len() > 40 { return Err(bad("at most 40 prior-year lines are allowed")); }
+        let mut seen = HashSet::new();
+        for line in &lines {
+            if line.code.is_empty() || line.code.len() > 16 || !line.code.chars().all(|c| c.is_ascii_alphanumeric()) || !seen.insert(line.code.clone()) {
+                return Err(bad("prior-year line codes must be unique short alphanumeric labels"));
+            }
+        }
+        let stored = lines.clone();
+        let record = self.mutate(|s| {
+            let r = s.returns.iter_mut().find(|r| r.id == record_id).ok_or_else(missing)?;
+            assert_revision(r, expected)?;
+            if r.program != "T1" { return Err(bad("prior-year columns are stored on T1 returns")); }
+            if ["approved", "archived"].contains(&r.status.as_str()) { return Err(conflict("reopen the return to draft before editing prior-year columns")); }
+            r.prior_lines = stored.clone();
+            r.revision += 1;
+            r.updated_at = now();
+            let out = r.clone();
+            audit(s, record_id, "prior_lines", "Stored operator prior-year amounts. Credits were not transferred and filing stays off.");
+            Ok(out)
+        }).await?;
+        Ok(json!({"return": record, "transfers_credits": false, "filing_enabled": false, "keywords_loaded": false, "write_back": false, "authoritative_system": "dtmax"}))
     }
     pub async fn calculate(&self, record_id: &str, request: RevisionInput) -> TResult<TaxReturn> {
         if let Some(key)=&request.idempotency_key { text(key,"idempotency key",160,true)?; }

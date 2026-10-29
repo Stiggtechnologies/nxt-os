@@ -63,6 +63,16 @@ pub struct TaxReturn {
     /// Prior parallel comparisons. Absent on records saved before this field existed.
     #[serde(default)]
     pub parallel_comparisons: Vec<Value>,
+    /// Operator-entered prior-year amounts. Empty is omitted. They are not applied to the current calculation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prior_lines: Vec<PriorLine>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PriorLine {
+    pub code: String,
+    pub cents: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

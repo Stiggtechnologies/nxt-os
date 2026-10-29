@@ -157,7 +157,7 @@ JavaScript evidence: parent `ev_3deb2236bdd90583e633e925a1ea3fc9dab2aba54839b672
 
 ## DT Max to Tax
 
-Fidelity: **36%** after the parallel-compare closure (was **30%**). Now 0 copied & tested, 8 partial, 3 missing, 0 wrong; 11 rows. `(0.5×8) / 11`. The previous 10-row score was `(0.5×6) / 10`.
+Fidelity: **36%** after prior-year columns (was **36%**). Still 0 copied & tested, 8 partial, 3 missing, 0 wrong; 11 rows. `(0.5×8) / 11`. The score does not move: prior-year amounts are stored on the same partial row, and the keyword catalog is still missing.
 Public 29.30 page `ev_ddbee565a24e632b00519b95f8ce51210593d0ea319ca40e8afbc6ea146076b7` (accessibility headings only; the page body was not copied here). Headings name T1, T2, T3, and T5013; several provinces; Quebec; a 2026 planner caveat; prescribed-form printing; new and deleted keywords; T2 program certification; federal Web Access Code; charity T3010; provincial small-business schedules; and T5013 CCA measures from Bill C-15. That is vendor documentation, not an executed return.
 
 NXT tests that passed: `t1_alberta_2025_workpaper_uses_new_rates_and_verified_claims`, `t2_general_small_and_51week_proration`, `t3_retained_income_and_gre_do_not_claim_personal_exemption`, `partnership_largest_remainders_reconcile_signed_cents_and_stable_ids`, six corporate GIFI/bridge tests, `independent_tax_workpaper_lifecycle`, `dtmax_vendor_backup_and_filing_stay_blocked`, `dtmax_six_thousand_accounts_resume_and_reconcile`.
@@ -165,7 +165,7 @@ NXT tests that passed: `t1_alberta_2025_workpaper_uses_new_rates_and_verified_cl
 | Original feature | NXT status | Evidence |
 | --- | --- | --- |
 | T1 for 2015–2026, planner, and the provinces named on the 29.30 page | partial | 2025 Alberta remains. 2025 Ontario now follows published ON428 brackets, the 5.05% credit rate, surtax, the basic reduction, and the health-premium chart (`t1_ontario_2025_uses_on428_brackets_surtax_reduction_and_health_premium`). Other provinces, Quebec, and the planner are still outside scope. |
-| T1 keyword entry, family compare, and prior-year columns | partial | Family view shows two calculated T1 totals side by side and does not transfer credits (`parallel_source_lines_and_ontario_family_do_not_file_or_transfer_credits`). Keywords and prior-year columns are still missing. |
+| T1 keyword entry, family compare, and prior-year columns | partial | Family view shows two calculated T1 totals side by side and does not transfer credits. Operator prior-year lines are stored beside the current return and do not change its calculation (`prior_year_columns_do_not_transfer_or_file`). Keywords are still missing. |
 | T2 calculation, certification, CO-17, AT1, and the provincial schedules named on the page | partial | Federal 15%/9% and Alberta 8%/2%, plus a short-year business limit, are unit-tested. Certification, Web Access Code, T3010, and Schedules 33/307/500/508 are not generated. Filing stays false. |
 | T2 GIFI and book-to-tax | partial | Corporate tests require totals 2599/3499/3620 and 8299/9368/9999 and block a silent taxable-income inference. Optional detail rollup requires rows 8000–8298 and 8521–9367 to add to those totals (`requested_gifi_detail_rows_must_add_to_the_total_without_inventing_subtotals`). Full GIFI and Schedule 1 are not produced. |
 | T3 forms, provincial tax, and beneficiary slips | partial | Federal ordinary income and GRE/QDT rates are tested. The 29.30 heading says 2026 federal and provincial calculation forms. Slips and provincial tax are not implemented. |
@@ -195,7 +195,7 @@ Impact is how badly a side-by-side period would diverge or be unsafe if someone 
 
 | Rank | Gap | Why it dominates a parallel run |
 | --- | --- | --- |
-| 1 | No vendor-byte DT Max or WebTaxT2 tie-out | A parallel line diff now exists, and 2025 Ontario plus GIFI detail rollup are tested. A real DT Max or WebTax output file is still not on this machine, so no row is a copied vendor match. Keywords, year engines, and filing remain blocked. Filing stays disabled. |
+| 1 | No vendor-byte DT Max or WebTaxT2 tie-out | A parallel line diff now exists, 2025 Ontario and GIFI detail rollup are tested, and T1 prior-year amounts can be stored beside the current return. A real DT Max or WebTax output file is still not on this machine, so no row is a copied vendor match. Keywords, year engines, and filing remain blocked. Filing stays disabled. |
 | 2 | QuickBooks payroll and live sync | Parallel invoices, payments, classes, items, budgets, employees, and sales-tax preference now exist and do not write back. Payroll calculation and OAuth sync are still missing, so a parallel close still will not match a live QuickBooks company. |
 | 3 | Caseware engines and file format | Engagements can hold a cent-exact trial balance, local adjustments, text workpapers, 14/45-day lockdown spacing, a non-TaxCycle GIFI list, and file metadata. CaseView, automatic documents, Word/Excel, SmartSync, Xero transfer, iXBRL, and the 2025 program binaries are missing. Reviewers still need Working Papers for the file the client already has. |
 | 4 | DocuSign external send and sign | NXT can rehearse send, resend, correct, void, decline, folders, edit lock, and bulk copy inside the workspace, with no delivery and no legal effect. External send, recipient authentication, certificates, and Connect are still missing. |
