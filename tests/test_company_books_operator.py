@@ -475,6 +475,16 @@ class OperatorTests(unittest.TestCase):
                 client.request("POST", "/api/company-books/synthetic/imports/commit", {})
             self.assertNotIn("SECRET", str(caught.exception))
 
+    def test_test_copy_target_is_local_only_and_uses_its_own_key(self):
+        base = ["preview", "--target", "test-copy", "--request-id", "r"] + [x for n in ("private-root", "controls-manifest", "controls-sha256", "acquisition-manifest", "company", "evidence", "evidence-sha256", "receipt") for x in ("--" + n, "x")]
+        err = io.StringIO()
+        with mock.patch.dict(op.os.environ, {"NXT_TEST_COMPANY_BOOKS_KEY": "", "NXT_COMPANY_BOOKS_KEY": "SYNTHETIC"}), mock.patch.object(op.sys, "stderr", err):
+            self.assertEqual(op.main(base + ["--origin", "https://os.nxtcorporation.ca"]), 2)
+            self.assertIn("TEST_COPY_TARGET_MUST_BE_LOCAL", err.getvalue())
+            # The production key is never used for the test copy.
+            self.assertEqual(op.main(base), 2)
+            self.assertIn("NXT_COMPANY_BOOKS_KEY_REQUIRED", err.getvalue())
+
     def test_private_paths_and_float_metadata_fail_closed(self):
         files = op.PrivateFiles(self.root)
         with self.assertRaises(op.OperatorError):
