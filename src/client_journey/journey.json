@@ -1,0 +1,27 @@
+{
+  "journey_id": "nxt-accounting-client-journey",
+  "version": 1,
+  "source_pattern": "AIMOS 'CVI 20/40' guided process (NOT FOUND in Stiggtechnologies/AIMOS; generic 20-step guided structure ASSUMED, each step = execute + verify = 40 sub-steps)",
+  "steps": [
+    {"n":1,"key":"website_visit","cvi_step":"Awareness / entry","title":"Website visit and intent capture","gate":"auto","skippable":false,"executor":"web analytics + intake widget"},
+    {"n":2,"key":"lead_capture","cvi_step":"Capture","title":"Lead capture and contact record","gate":"auto","skippable":false,"executor":"firm CRM intake"},
+    {"n":3,"key":"needs_discovery","cvi_step":"Discover","title":"Needs discovery questionnaire","gate":"auto","skippable":false,"executor":"guided intake questionnaire"},
+    {"n":4,"key":"service_scoping","cvi_step":"Define","title":"Service definition and scoping","gate":"auto","skippable":false,"executor":"scope rules engine"},
+    {"n":5,"key":"proposal_pricing","cvi_step":"Offer","title":"Proposal and fixed-fee pricing","gate":"auto","skippable":false,"executor":"pricing rules"},
+    {"n":6,"key":"engagement_letter","cvi_step":"Commit","title":"Engagement letter signature","gate":"human","human_reason":"Engagement letter must be signed by the client and accepted by the responsible professional (CPA Canada / CPA Alberta practice standards).","skippable":false,"executor":"ESignProvider (stub)"},
+    {"n":7,"key":"client_onboarding","cvi_step":"Onboard","title":"Onboarding and client identity verification","gate":"auto","skippable":false,"executor":"identity verification service"},
+    {"n":8,"key":"data_collection","cvi_step":"Collect","title":"Data and document collection","gate":"auto","skippable":false,"executor":"secure document request"},
+    {"n":9,"key":"data_migration","cvi_step":"Transfer","title":"Data migration from prior system","gate":"auto","skippable":true,"executor":"scripts/autonomous-client-path.py (migration orchestrator)"},
+    {"n":10,"key":"bookkeeping","cvi_step":"Execute","title":"Bookkeeping and adjustments","gate":"auto","skippable":true,"executor":"company_books / ledger"},
+    {"n":11,"key":"reconciliation","cvi_step":"Verify","title":"Bank and subledger reconciliation","gate":"auto","skippable":false,"executor":"ledger reconciliation"},
+    {"n":12,"key":"automated_review","cvi_step":"Quality check","title":"Automated review and exception checks","gate":"auto","skippable":false,"executor":"review rules"},
+    {"n":13,"key":"deliverable_preparation","cvi_step":"Prepare","title":"Financial statements / return preparation","gate":"auto","skippable":false,"executor":"engagement + tax modules"},
+    {"n":14,"key":"client_review","cvi_step":"Confirm","title":"Client review of deliverables","gate":"auto","skippable":false,"executor":"client portal"},
+    {"n":15,"key":"filing_authorization","cvi_step":"Authorize","title":"Filing authorization (e.g. CRA T183 / T183CORP)","gate":"human","human_reason":"CRA requires the client's signed authorization before electronic filing.","skippable":true,"executor":"ESignProvider (stub)"},
+    {"n":16,"key":"filing_submission","cvi_step":"Submit","title":"Return filing","gate":"human","human_reason":"Filing is submitted under the preparer's EFILE credentials; a human preparer must submit.","skippable":true,"executor":"FilingProvider (stub)"},
+    {"n":17,"key":"delivery","cvi_step":"Deliver","title":"Deliverable package to client","gate":"auto","skippable":false,"executor":"client portal"},
+    {"n":18,"key":"invoicing","cvi_step":"Bill","title":"Invoice issued","gate":"auto","skippable":false,"executor":"firm billing"},
+    {"n":19,"key":"payment","cvi_step":"Collect payment","title":"Payment received","gate":"auto","skippable":false,"executor":"PaymentProvider (stub)"},
+    {"n":20,"key":"client_feedback","cvi_step":"Feedback / close","title":"Client feedback and close-out","gate":"auto","skippable":false,"executor":"feedback survey"}
+  ]
+}

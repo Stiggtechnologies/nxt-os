@@ -15,6 +15,7 @@ pub mod signatures;
 pub mod company_books;
 pub mod source_import;
 pub mod import_parsers;
+pub mod client_journey;
 
 use axum::Router;
 use std::sync::Arc;
