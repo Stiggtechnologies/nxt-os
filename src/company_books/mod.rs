@@ -137,6 +137,17 @@ fn aggregate(s: &str) -> Result<i128> {
     s.parse::<i128>()
         .map_err(|_| bad("Aggregate proof exceeds checked integer bound"))
 }
+/// Labelled QuickBooks year-end close derived from source journal activity.
+pub const DERIVED_CLOSE_FORMAT: &str = "qbo-derived-year-end-close/v1";
+
+fn is_derived_close(value: &Option<Value>) -> bool {
+    value
+        .as_ref()
+        .and_then(|v| v.get("format"))
+        .and_then(Value::as_str)
+        == Some(DERIVED_CLOSE_FORMAT)
+}
+
 fn metadata(value: &Option<Value>) -> Result<()> {
     fn walk(v: &Value, depth: usize, nodes: &mut usize) -> bool {
         *nodes += 1;
@@ -337,6 +348,9 @@ impl CompanyBooks {
         if accounts.is_empty() || entries.is_empty() {
             blockers.push("source_journal_empty".into());
         }
+        // Derived year-end closes (labelled, no source row) are tallied apart
+        // from source journal rows so each proof stays exact.
+        let mut closes: BTreeMap<String, (i128, i128, u32)> = BTreeMap::new();
         let (mut ids, mut source_ids, mut rows) = (HashSet::new(), HashSet::new(), HashSet::new());
         let (mut td, mut tc, mut count) = (0i128, 0i128, 0usize);
         for e in entries {
@@ -356,14 +370,16 @@ impl CompanyBooks {
                 return Err(bad("Invalid, duplicate or out-of-period journal entry"));
             }
             let (mut d, mut cr) = (0i128, 0i128);
+            let derived_close = is_derived_close(&e.source_metadata);
             for l in &e.lines {
                 metadata(&l.source_metadata)?;
                 count += 1;
-                if count > 500_000
-                    || l.source_row == 0
-                    || !rows.insert(l.source_row)
-                    || !text(&l.memo, 2000)
-                {
+                let row_ok = if derived_close {
+                    l.source_row == 0 && is_derived_close(&l.source_metadata)
+                } else {
+                    l.source_row != 0 && rows.insert(l.source_row)
+                };
+                if count > 500_000 || !row_ok || !text(&l.memo, 2000) {
                     return Err(bad("Invalid or duplicated source journal row"));
                 }
                 let ld = money(&l.debit_cents)?;
@@ -376,7 +392,14 @@ impl CompanyBooks {
                     .ok_or_else(|| bad("Journal references an undefined account"))?;
                 t.1 = t.1.checked_add(ld).ok_or_else(|| bad("Amount overflow"))?;
                 t.2 = t.2.checked_add(lc).ok_or_else(|| bad("Amount overflow"))?;
-                *account_rows.entry(l.account_id.clone()).or_default() += 1;
+                if derived_close {
+                    let y = closes.entry(l.account_id.clone()).or_default();
+                    y.0 = y.0.checked_add(ld).ok_or_else(|| bad("Amount overflow"))?;
+                    y.1 = y.1.checked_add(lc).ok_or_else(|| bad("Amount overflow"))?;
+                    y.2 += 1;
+                } else {
+                    *account_rows.entry(l.account_id.clone()).or_default() += 1;
+                }
                 d = d.checked_add(ld).ok_or_else(|| bad("Amount overflow"))?;
                 cr = cr.checked_add(lc).ok_or_else(|| bad("Amount overflow"))?;
             }
@@ -450,8 +473,38 @@ impl CompanyBooks {
                             if *journal_sha256 != s.journal_sha256
                                 || *source_row_count == 0
                                 || *source_row_count != account_rows.get(&id).copied().unwrap_or(0)
+                                || closes.contains_key(&id)
                                 || aggregate(journal_debit_cents)? != d
                                 || aggregate(journal_credit_cents)? != c
+                                || d != c
+                                || *sd != 0
+                                || *sc != 0
+                            {
+                                blockers.push(format!("derived_zero_proof_mismatch:{id}"));
+                                provenance_complete = false;
+                            } else if matches {
+                                derived += 1;
+                            }
+                        }
+                        Some(ControlBasis::DerivedZeroAfterYearEndClose {
+                            journal_sha256,
+                            source_row_count,
+                            journal_debit_cents,
+                            journal_credit_cents,
+                            close_line_count,
+                            close_debit_cents,
+                            close_credit_cents,
+                        }) => {
+                            let (yd, yc, yn) = closes.get(&id).copied().unwrap_or((0, 0, 0));
+                            if *journal_sha256 != s.journal_sha256
+                                || *source_row_count == 0
+                                || *source_row_count != account_rows.get(&id).copied().unwrap_or(0)
+                                || *close_line_count == 0
+                                || *close_line_count != yn
+                                || aggregate(journal_debit_cents)? != d - yd
+                                || aggregate(journal_credit_cents)? != c - yc
+                                || aggregate(close_debit_cents)? != yd
+                                || aggregate(close_credit_cents)? != yc
                                 || d != c
                                 || *sd != 0
                                 || *sc != 0
