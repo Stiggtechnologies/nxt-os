@@ -75,7 +75,9 @@ def derive_year_end_closes(journal, closed_opening, reconciliation, as_of, journ
     as_of_date = dt.date.fromisoformat(as_of)
     cut = dt.date(as_of_date.year - (month > as_of_date.month), month, 1)
     per_year = {}
-    for group in journal["groups"]:
+    # Held-for-review entries are in QuickBooks' close too; they are carried
+    # by the labelled held residual, never posted.
+    for group in journal["groups"] + journal.get("held_groups", []):
         for line in group["lines"]:
             if line["label"] not in closed:
                 continue
@@ -249,13 +251,17 @@ def build(data, date_order, prior_data=None, first_year=False, window=None):
         for line in close["lines"]:
             t = close_totals.setdefault(line["account_id"], [0, 0, 0])
             t[0] += int(line["debit_cents"]); t[1] += int(line["credit_cents"]); t[2] += 1
+    held_residual = report.get("_held_residual") or {}
+    if held_residual and (set(held_residual) - set(accounts) or sum(held_residual.values())):
+        raise qbo.AssessmentError("held_residual_unattributed")
     controls = []
     used_tb_rows = set()
     for label, account in sorted(accounts.items(), key=lambda item: item[1]["id"]):
         journal_row = account.get("journal")
         debit = int(journal_row["debit_cents"]) if journal_row else 0
         credit = int(journal_row["credit_cents"]) if journal_row else 0
-        net = debit - credit + (closed_opening or {}).get(label, 0)
+        residual = held_residual.get(label, 0)
+        net = debit - credit + (closed_opening or {}).get(label, 0) + residual
         presented = (str(max(net, 0)), str(max(-net, 0)))
         tb = account.get("tb")
         # Exact TB = opening + journal applies when the year reconciles. A year
@@ -288,7 +294,10 @@ def build(data, date_order, prior_data=None, first_year=False, window=None):
             used_tb_rows.add(tb["row"])
             basis = {"kind": "source_report_row", "report_sha256": trial_sha, "row": tb["row"]}
             presented = (tb["debit_cents"], tb["credit_cents"])
-        controls.append({"account_id": account["id"], "debit_cents": presented[0], "credit_cents": presented[1], "basis": basis})
+        control = {"account_id": account["id"], "debit_cents": presented[0], "credit_cents": presented[1], "basis": basis}
+        if residual:
+            control["held_residual"] = {"debit_cents": str(max(residual, 0)), "credit_cents": str(max(-residual, 0))}
+        controls.append(control)
     account_rows = [{"id": account["id"], "name": account["name"], "kind": None} for _, account in sorted(accounts.items(), key=lambda item: item[1]["id"])]
     chunks = split_chunks(account_rows, entries)
     return_chunks = [(chunk, op.chunk_bytes(chunk)) for chunk in chunks]

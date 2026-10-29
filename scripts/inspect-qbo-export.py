@@ -1195,6 +1195,32 @@ def reconcile_year(report, parsed, profile, prior, journal_book, order='auto'):
         lines = [(g['date'], l['label'], l['debit'] - l['credit']) for g in postings['groups'] for l in g['lines']]
         before_month = activity_before_months(lines, profile['period_start'])
     result = reconcile_opening(tb, gl, opening, before_month)
+    if result['status'] == 'unreconciled' and held:
+        # Entries held for review are never posted, but QuickBooks' trial
+        # balance includes them. Retry with their labelled lines counted as an
+        # explicit held residual; unlabelled amounts are never attributed, so
+        # those books stay unreconciled pending review.
+        postings = journal_postings(journal_book, order)
+        held_lines = [(g['date'], l['label'], l['debit'] - l['credit']) for g in postings.get('held_groups', []) for l in g['lines']]
+        residual = {}
+        for _, label, net in held_lines:
+            residual[label] = residual.get(label, 0) + net
+        residual = {l: n for l, n in residual.items() if n}
+        if residual and not sum(residual.values()):
+            with_held = {l: gl.get(l, 0) + residual.get(l, 0) for l in gl.keys() | residual.keys()}
+            months = None
+            if before_month is not None:
+                months = {m: dict(v) for m, v in before_month.items()}
+                as_of = dt.date.fromisoformat(profile['as_of']) if profile['kind'] == 'all_dates_journal_with_tb_as_of' else None
+                for m, acc in months.items():
+                    cut = dt.date(as_of.year - (m > as_of.month), m, 1).isoformat() if as_of else dt.date(dt.date.fromisoformat(profile['period_start']).year, m, 1).isoformat()
+                    for date, label, net in held_lines:
+                        if date < cut:
+                            acc[label] = acc.get(label, 0) + net
+            retry = reconcile_opening(tb, with_held, opening, months)
+            if retry['status'] != 'unreconciled':
+                result = dict(retry, status=retry['status'] + '_and_held_residual', held_residual_accounts=len(residual))
+                report['_held_residual'] = residual
     rec.update({k: v for k, v in result.items() if k != 'closed_opening'})
     report['_closed_opening'] = result['closed_opening']
     if result['status'] == 'unreconciled':

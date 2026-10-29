@@ -117,12 +117,15 @@ def preview_bytes(value):
     if "period_lock" in s:
         s["period_lock"] = ordered(s["period_lock"], ["verified", "closed_through", "evidence_sha256"])
     i["source"] = s
-    i["trial_balance"] = [ordered(c, ["account_id", "debit_cents", "credit_cents", "basis"], ["basis"]) for c in i["trial_balance"]]
+    i["trial_balance"] = [ordered(c, ["account_id", "debit_cents", "credit_cents", "basis", "held_residual"], ["basis", "held_residual"]) for c in i["trial_balance"]]
+    for c in i["trial_balance"]:
+        if "held_residual" in c:
+            c["held_residual"] = ordered(c["held_residual"], ["debit_cents", "credit_cents"])
     for c in i["trial_balance"]:
         if "basis" in c:
             c["basis"] = basis(c["basis"])
     p["input"] = i
-    a = ordered(p["analysis"], ["accounts", "entries", "lines", "total_debit_cents", "total_credit_cents", "balances", "blockers", "classified_reports_ready", "controls_passed", "independent_trial_balance_accounts", "derived_zero_accounts", "control_provenance_complete", "chart_of_accounts_complete"])
+    a = ordered(p["analysis"], ["accounts", "entries", "lines", "total_debit_cents", "total_credit_cents", "balances", "blockers", "classified_reports_ready", "controls_passed", "independent_trial_balance_accounts", "derived_zero_accounts", "held_residual_accounts", "control_provenance_complete", "chart_of_accounts_complete"], ["held_residual_accounts"])
     a["balances"] = [ordered(b, ["account_id", "name", "kind", "debit_cents", "credit_cents", "journal_debit_cents", "journal_credit_cents", "source_control_basis"]) for b in a["balances"]]
     for b in a["balances"]:
         b["source_control_basis"] = basis(b["source_control_basis"])
@@ -506,14 +509,24 @@ class Bundle:
         checks = {c["account_id"]: c for c in self.input["trial_balance"]}
         need(len(checks) == len(self.input["trial_balance"]) and set(checks) == set(totals), "SOURCE_CONTROL_ACCOUNT_COVERAGE")
         balances, used_tb_rows = [], set()
-        independent = derived = 0
+        independent = derived = held_accounts = held_net = 0
         for key in sorted(totals):
             sd, sc, count = totals[key]
             yd, yc, ycount = closes[key]
             d, c = sd + yd, sc + yc
             control = checks[key]
             net = d - c
-            need((cents(control["debit_cents"]), cents(control["credit_cents"])) == (max(net, 0), max(-net, 0)), "SOURCE_ACCOUNT_RECONCILIATION_MISMATCH")
+            # Held-for-review entries are never posted; a trial-balance row they
+            # carry is reconciled only through an explicit, labelled residual.
+            held = control.get("held_residual")
+            residual = 0
+            if held is not None:
+                rd, rc = cents(held["debit_cents"]), cents(held["credit_cents"])
+                need(not (rd and rc) and rd != rc, "HELD_RESIDUAL_INVALID")
+                residual = rd - rc
+                held_accounts += 1; held_net += residual
+            expected = net + residual
+            need((cents(control["debit_cents"]), cents(control["credit_cents"])) == (max(expected, 0), max(-expected, 0)), "SOURCE_ACCOUNT_RECONCILIATION_MISMATCH")
             proof = basis(control.get("basis"))
             need(proof is not None, "SOURCE_CONTROL_PROVENANCE_MISSING")
             if proof["kind"] == "source_report_row":
@@ -523,20 +536,22 @@ class Bundle:
                 need(proof["journal_sha256"] == self.input["source"]["journal_sha256"] and proof["source_row_count"] == count and
                      cents(proof["journal_debit_cents"], True) == sd and cents(proof["journal_credit_cents"], True) == sc and
                      proof["close_line_count"] == ycount > 0 and cents(proof["close_debit_cents"], True) == yd and cents(proof["close_credit_cents"], True) == yc and
-                     d == c, "SOURCE_DERIVED_ZERO_PROOF_MISMATCH")
+                     expected == 0, "SOURCE_DERIVED_ZERO_PROOF_MISMATCH")
                 derived += 1
             else:
                 need(proof["journal_sha256"] == self.input["source"]["journal_sha256"] and proof["source_row_count"] == count and ycount == 0 and
-                     cents(proof["journal_debit_cents"], True) == d and cents(proof["journal_credit_cents"], True) == c and d == c, "SOURCE_DERIVED_ZERO_PROOF_MISMATCH")
+                     cents(proof["journal_debit_cents"], True) == d and cents(proof["journal_credit_cents"], True) == c and expected == 0, "SOURCE_DERIVED_ZERO_PROOF_MISMATCH")
                 derived += 1
             account = self.accounts[key]
             balances.append({"account_id": key, "name": account["name"], "kind": account["kind"],
                              "debit_cents": str(max(net, 0)), "credit_cents": str(max(-net, 0)),
                              "journal_debit_cents": str(d), "journal_credit_cents": str(c), "source_control_basis": proof})
+        need(held_net == 0, "HELD_RESIDUAL_UNBALANCED")
         return {"accounts": len(totals), "entries": len(self.entries), "lines": lines,
                 "total_debit_cents": str(debit), "total_credit_cents": str(credit), "balances": balances, "blockers": [],
                 "classified_reports_ready": all(a["kind"] is not None for a in self.accounts.values()), "controls_passed": True,
                 "independent_trial_balance_accounts": independent, "derived_zero_accounts": derived,
+                **({"held_residual_accounts": held_accounts} if held_accounts else {}),
                 "control_provenance_complete": True, "chart_of_accounts_complete": False}
 
 
