@@ -122,7 +122,7 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
     let obj = inputs.as_object().ok_or("inputs must be an object")?;
     let mut c = Calculation { ruleset:RULESET.into(),program:program.into(),tax_year:year,jurisdiction:jurisdiction.into(),lines:vec![],totals:BTreeMap::new(),diagnostics:vec![],supported:true,scope:scope.into(),sources:sources(program),rate_table:super::rates::CA_2025.id.into(),line_validation:BTreeMap::new() };
     c.diagnostic("workpaper_only","Independent native workpaper; not a complete tax return, CRA-certified software, or filing authorization. Relationship parties are routing metadata; only explicit calculator inputs affect amounts.",None,false);
-    if year != 2025 { c.diagnostic("unsupported_year","Only the versioned 2025 calculation scope is implemented.",None,true); }
+    if year != 2025 { c.diagnostic("unsupported_year","Only the versioned 2025 calculation scope is implemented. The 2026 rate table (ca-2026.1) is loaded and constant-tested for reference but is not yet wired into calculations.",None,true); }
     if !jurisdiction_ok { c.diagnostic("unsupported_jurisdiction",&format!("This program currently supports {expected} only."),None,true); }
     if year != 2025 || !jurisdiction_ok { return Ok(c); }
     require(&mut c,obj,"scope_confirmed",scope)?;

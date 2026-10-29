@@ -52,7 +52,32 @@ pub const CA_2025: RateTable = RateTable {
     ],
 };
 
-pub const TABLES: &[RateTable] = &[CA_2025];
+pub const CA_2026: RateTable = RateTable {
+    id: "ca-2026.1",
+    tax_year: 2026,
+    federal_brackets: &[(5_852_300,1400),(11_704_500,2050),(18_144_000,2600),(25_848_200,2900),(i64::MAX,3300)],
+    alberta_brackets: &[(6_120_000,800),(15_425_900,1000),(18_511_100,1200),(24_681_300,1300),(37_022_000,1400),(i64::MAX,1500)],
+    ontario_brackets: &[(5_389_100,505),(10_778_500,915),(15_000_000,1116),(22_000_000,1216),(i64::MAX,1316)],
+    federal_credit_rate_bps: 1400,
+    federal_bpa_max_cents: 1_645_200,
+    federal_bpa_min_cents: 1_482_900,
+    canada_employment_amount_cents: 150_100,
+    alberta_bpa_cents: 2_276_900,
+    ontario_bpa_cents: 1_298_900,
+    // T2 rates are not re-sourced for 2026; the T2 calculator stays 2025-only.
+    t2_federal_general_bps: 1500,
+    t2_federal_small_bps: 900,
+    t2_alberta_general_bps: 800,
+    t2_alberta_small_bps: 200,
+    business_limit_cents: 50_000_000,
+    sources: &[
+        ("CRA current-year (2026) tax rates and brackets", CRA_CURRENT_YEAR),
+        ("CRA T4127-JAN 2026 (122nd edition) Tables 8.1-8.7", CRA_T4127_JAN_2026),
+        ("CRA indexation adjustment amounts", CRA_INDEXATION),
+    ],
+};
+
+pub const TABLES: &[RateTable] = &[CA_2025, CA_2026];
 
 pub const MB_FINANCE_2025: &str = "https://www.gov.mb.ca/finance/personal/ptaxes.html";
 
@@ -88,9 +113,28 @@ pub const PROVINCES_2025: &[Province] = &[
     Province { code:"NT", name:"Northwest Territories", brackets:&[(5_196_400,590),(10_393_000,860),(16_896_700,1220),(i64::MAX,1405)], credit_rate_bps:590, bpa_cents:Some(1_784_200), employment_amount:false, bracket_source:CRA_LAST_YEAR, bpa_source:CRA_T4127_JUL_2025, t4127_kp:&[1_403,5_145,8_270], not_calculated:"NT428 credits other than BPA/CPP/EI, cost of living credits" },
     Province { code:"NU", name:"Nunavut", brackets:&[(5_470_700,400),(10_941_300,700),(17_788_100,900),(i64::MAX,1150)], credit_rate_bps:400, bpa_cents:Some(1_927_400), employment_amount:false, bracket_source:CRA_LAST_YEAR, bpa_source:CRA_T4127_JUL_2025, t4127_kp:&[1_641,3_829,8_276], not_calculated:"NU428 credits other than BPA/CPP/EI, cost of living credit" },
 ];
+
+/// 2026 generic-engine provinces. Data only: the T1 calculator is still gated to
+/// 2025. Included only where CRA's current-year page and T4127-JAN 2026 agree.
+/// Excluded because official sources conflict (stay unvalidated, not loaded):
+/// BC (lowest rate 5.6% on the CRA page vs 5.06% in T4127-JAN), MB (CRA page
+/// $47,564/$101,200 vs T4127-JAN/Manitoba freeze $47,000/$100,000), PE (CRA page
+/// adds a 20% bracket over $200,000; T4127-JAN 5-bracket table marked "updated May 2026").
+pub const PROVINCES_2026: &[Province] = &[
+    Province { code:"SK", name:"Saskatchewan", brackets:&[(5_453_200,1050),(15_580_500,1250),(i64::MAX,1450)], credit_rate_bps:1050, bpa_cents:Some(2_038_100), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[1_091,4_207], not_calculated:"2026 T1 calculation not wired" },
+    Province { code:"NB", name:"New Brunswick", brackets:&[(5_233_300,940),(10_466_600,1400),(19_386_100,1600),(i64::MAX,1950)], credit_rate_bps:940, bpa_cents:Some(1_366_400), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[2_407,4_501,11_286], not_calculated:"2026 T1 calculation not wired" },
+    Province { code:"NS", name:"Nova Scotia", brackets:&[(3_099_500,879),(6_199_100,1495),(9_741_700,1667),(15_712_400,1750),(i64::MAX,2100)], credit_rate_bps:879, bpa_cents:Some(1_193_200), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[1_909,2_976,3_784,9_283], not_calculated:"2026 T1 calculation not wired" },
+    Province { code:"NL", name:"Newfoundland and Labrador", brackets:&[(4_467_800,870),(8_935_400,1450),(15_952_800,1580),(22_334_000,1780),(28_531_900,1980),(57_063_800,2080),(114_127_500,2130),(i64::MAX,2180)], credit_rate_bps:870, bpa_cents:Some(1_118_800), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[2_591,3_753,6_943,11_410,14_263,17_117,22_823], not_calculated:"2026 T1 calculation not wired" },
+    Province { code:"YT", name:"Yukon", brackets:&[(5_852_300,640),(11_704_500,900),(18_144_000,1090),(50_000_000,1280),(i64::MAX,1500)], credit_rate_bps:640, bpa_cents:None, employment_amount:true, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[1_522,3_745,7_193,18_193], not_calculated:"2026 T1 calculation not wired" },
+    Province { code:"NT", name:"Northwest Territories", brackets:&[(5_300_300,590),(10_600_900,860),(17_234_600,1220),(i64::MAX,1405)], credit_rate_bps:590, bpa_cents:Some(1_819_800), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[1_431,5_247,8_436], not_calculated:"2026 T1 calculation not wired" },
+    Province { code:"NU", name:"Nunavut", brackets:&[(5_580_100,400),(11_160_200,700),(18_143_900,900),(i64::MAX,1150)], credit_rate_bps:400, bpa_cents:Some(1_965_900), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[1_674,3_906,8_442], not_calculated:"2026 T1 calculation not wired" },
+];
+
 pub fn province(code: &str) -> Option<&'static Province> { PROVINCES_2025.iter().find(|p| p.code == code) }
 pub fn for_year(year: i32) -> Option<&'static RateTable> { TABLES.iter().find(|t| t.tax_year == year) }
 
+pub const CRA_CURRENT_YEAR: &str = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/tax-rates-brackets/current-year.html";
+pub const CRA_T4127_JAN_2026: &str = "https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jan/t4127-jan-payroll-deductions-formulas-computer-programs.html";
 pub const CRA_LAST_YEAR: &str = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/tax-rates-brackets/last-year.html";
 pub const CRA_T4127_JUL_2025: &str = "https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/payroll-deductions-t4127-payroll-deductions-formulas/t4127-jul-121st-edition-effective-july-1-2025/t4127-jul-payroll-deductions-formulas.html";
 pub const CRA_INDEXATION: &str = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/frequently-asked-questions-individuals/adjustment-personal-income-tax-benefit-amounts.html";
@@ -117,13 +161,31 @@ pub const RATE_SOURCES: &[(&str, &str, &str, &str, &str)] = &[
     ("ca-2025.1","ontario_spouse_amount","$10,823 max, reduced by spouse net income over $1,082",CRA_T4127_JUL_2025,"unvalidated"),
     ("ca-2025.1","cpp_base_max_cents","$3,356.10 base CPP credit maximum",CRA_T4127_JUL_2025,"sourced"),
     ("ca-2025.1","ei_max_cents","$1,077.48 EI premium maximum",CRA_T4127_JUL_2025,"sourced"),
-    ("ca-2025.1","cpp_enhanced_max_cents","$1,074.00 (first + second additional CPP deduction maximum, derived)",CRA_T4127_JUL_2025,"unvalidated"),
+    ("ca-2025.1","cpp_enhanced_max_cents","$1,074.00 = first additional $678.00 (T4127-JAN 2026 Table 8.26) + second additional $396.00 (Table 8.27)",CRA_T4127_JAN_2026,"sourced"),
     ("ca-2025.1","medical_threshold_cents","$2,834 (3% of net income ceiling)",CRA_INDEXATION,"sourced"),
     ("ca-2025.1","rrsp_dollar_limit_cents","$32,490",CRA_RRSP_LIMITS,"sourced"),
     ("ca-2025.1","capital_gains_inclusion","1/2 for 2025 (2/3 increase cancelled 21 March 2025)","https://www.canada.ca/en/department-finance/news/2025/03/government-of-canada-cancels-capital-gains-tax-increase.html","unvalidated"),
     ("ca-2025.1","pension_income_amount_cents","$2,000 maximum (line 31400, not indexed)","https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-31400-pension-income-amount.html","unvalidated"),
-    ("ca-2025.1","donation_credit_rates","14.5% on first $200 (2025 blended lowest rate, unconfirmed), 29% above, 33% on income over $253,414","https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-34900-donations-gifts.html","unvalidated"),
-    ("ca-2025.1","tuition_credit_rate","14.5% of eligible T2202 tuition (current year)","https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-32300-your-tuition-education-textbook-amounts.html","unvalidated"),
+    ("ca-2025.1","donation_credit_rates","14.5% on first $200, 29% above, 33% on the part matched to taxable income over $253,414 (Schedule 9 (2025) lines 13-22)","https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s9/5000-s9-25e.pdf","sourced"),
+    ("ca-2025.1","tuition_credit_rate","14.5% of eligible tuition (Schedule 11 (2025) uses the 14.5% federal credit rate)","https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s11/5000-s11-25e.pdf","sourced"),
+    ("ca-2026.1","federal_brackets","14% to $58,523; 20.5% to $117,045; 26% to $181,440; 29% to $258,482; 33% above",CRA_CURRENT_YEAR,"sourced"),
+    ("ca-2026.1","federal_credit_rate_bps","14% (T4127-JAN 2026: lowest rate 14% for 2026 and later)",CRA_T4127_JAN_2026,"sourced"),
+    ("ca-2026.1","federal_bpa_max_cents","$16,452 (net income <= $181,440)",CRA_INDEXATION,"sourced"),
+    ("ca-2026.1","federal_bpa_min_cents","$14,829 (net income >= $258,482)",CRA_INDEXATION,"sourced"),
+    ("ca-2026.1","canada_employment_amount_cents","$1,501",CRA_INDEXATION,"sourced"),
+    ("ca-2026.1","alberta_brackets","8% to $61,200; 10% to $154,259; 12% to $185,111; 13% to $246,813; 14% to $370,220; 15% above",CRA_CURRENT_YEAR,"sourced"),
+    ("ca-2026.1","alberta_bpa_cents","$22,769 (T4127-JAN 2026 Table 8.2)",CRA_T4127_JAN_2026,"sourced"),
+    ("ca-2026.1","ontario_brackets","5.05% to $53,891; 9.15% to $107,785; 11.16% to $150,000; 12.16% to $220,000; 13.16% above",CRA_CURRENT_YEAR,"sourced"),
+    ("ca-2026.1","ontario_bpa_cents","$12,989 (T4127-JAN 2026 Table 8.2)",CRA_T4127_JAN_2026,"sourced"),
+    ("ca-2026.1","ontario_surtax","20% of basic ON tax over $5,818; 36% over $7,446 (T4127-JAN 2026 Table 8.2)",CRA_T4127_JAN_2026,"sourced"),
+    ("ca-2026.1","ontario_tax_reduction_basic","$300 (T4127-JAN 2026 Table 8.2 S2)",CRA_T4127_JAN_2026,"sourced"),
+    ("ca-2026.1","cpp_base_max_cents","$3,519.45 base CPP maximum (YMPE $74,600, T4127-JAN 2026 Table 8.4)",CRA_T4127_JAN_2026,"sourced"),
+    ("ca-2026.1","cpp_enhanced_max_cents","$1,127.00 = first additional $711.00 (Table 8.5) + second additional $416.00 (Table 8.6, YAMPE $85,000)",CRA_T4127_JAN_2026,"sourced"),
+    ("ca-2026.1","ei_max_cents","$1,123.07 EI premium maximum (insurable $68,900 at 1.63%, Table 8.7)",CRA_T4127_JAN_2026,"sourced"),
+    ("ca-2026.1","medical_threshold_cents","$2,890 (3% of net income ceiling)",CRA_INDEXATION,"sourced"),
+    ("ca-2026.1","age_amount_cents","$9,208, net income threshold $46,432",CRA_INDEXATION,"sourced"),
+    ("ca-2026.1","bc_mb_pe_2026","Not loaded: CRA current-year page conflicts with T4127-JAN 2026 for BC (5.6% vs 5.06%), MB thresholds and PE top bracket",CRA_CURRENT_YEAR,"unvalidated"),
+    ("ca-2026.1","alberta_supplemental_credit_2026","2026 Alberta supplemental-credit threshold not re-sourced",CRA_T4127_JAN_2026,"unvalidated"),
     ("ca-2025.1","t2_rates","Federal 15%/9%, Alberta 8%/2%, $500,000 business limit","https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/corporations/corporation-tax-rates.html","unvalidated"),
 ];
 
@@ -143,18 +205,23 @@ pub const VALIDATIONS: &[(&str, &str, &str)] = &[
     ("ca-2025.1","31260","CRA indexation table: Canada employment amount $1,471"),
     ("ca-2025.1","AB58040","T4127-JUL 2025: Alberta basic personal amount $22,323"),
     ("ca-2025.1","ON58040","T4127-JUL 2025: Ontario basic personal amount $12,747"),
+    ("ca-2026.1","federal_before_credits","T4127-JAN 2026 Table 8.1 federal constants K = 3,804 / 10,241 / 15,685 / 26,024 (test rates::tests::table_2026_reproduces_t4127_jan_constants)"),
+    ("ca-2026.1","ab_before_credits","T4127-JAN 2026 Table 8.1 Alberta KP = 1,224 / 4,309 / 6,160 / 8,628 / 12,331"),
+    ("ca-2026.1","on_before_credits","T4127-JAN 2026 Table 8.1 Ontario KP = 2,210 / 4,376 / 5,876 / 8,076"),
 ];
 
 /// Generic-engine provinces are validated on `{xx}_before_credits` because a test
 /// reproduces every T4127 Table 8.1 KP constant from the brackets.
 pub fn line_status(table: &str, code: &str) -> &'static str {
     if table == "ca-2025.1" && let Some(p) = code.strip_suffix("_before_credits") && province(&p.to_uppercase()).is_some() { return "validated"; }
+    if table == "ca-2026.1" && let Some(p) = code.strip_suffix("_before_credits") && PROVINCES_2026.iter().any(|x| x.code == p.to_uppercase()) { return "validated"; }
     if VALIDATIONS.iter().any(|v| v.0 == table && v.1 == code) { "validated" } else { "unvalidated" }
 }
 
 pub fn catalog() -> Value {
     json!({"tables": TABLES, "validations": VALIDATIONS.iter().map(|v| json!({"table": v.0, "line": v.1, "example": v.2})).collect::<Vec<_>>(),
-        "provinces": PROVINCES_2025,
+        "provinces": PROVINCES_2025, "provinces_2026": PROVINCES_2026,
+        "calculation_years": [2025],
         "rate_sources": RATE_SOURCES.iter().map(|r| json!({"table": r.0, "key": r.1, "value": r.2, "url": r.3, "status": r.4})).collect::<Vec<_>>(),
         "statement": "Rates are transcribed from published CRA/provincial sources. Lines are 'unvalidated' unless reproduced against a published CRA example. Not certified."})
 }
@@ -201,6 +268,23 @@ mod tests {
         }
         assert_eq!(line_status("ca-2025.1","bc_before_credits"),"validated");
         assert_eq!(line_status("ca-2025.1","qc_before_credits"),"unvalidated");
+    }
+    #[test] fn table_2026_reproduces_t4127_jan_constants() {
+        assert_eq!(for_year(2026).unwrap().id, "ca-2026.1");
+        assert_eq!(constants(CA_2026.federal_brackets), vec![3_804, 10_241, 15_685, 26_024]);
+        assert_eq!(constants(CA_2026.alberta_brackets), vec![1_224, 4_309, 6_160, 8_628, 12_331]);
+        assert_eq!(constants(CA_2026.ontario_brackets), vec![2_210, 4_376, 5_876, 8_076]);
+        for p in PROVINCES_2026 {
+            assert_eq!(constants(p.brackets), p.t4127_kp.to_vec(), "{}", p.code);
+            assert_eq!(p.credit_rate_bps, p.brackets[0].1);
+            assert!(!["BC","MB","PE","QC"].contains(&p.code));
+        }
+        assert_eq!(line_status("ca-2026.1","sk_before_credits"),"validated");
+        assert_eq!(line_status("ca-2026.1","bc_before_credits"),"unvalidated");
+        assert_eq!(line_status("ca-2026.1","42000"),"unvalidated");
+        assert_eq!(rate_status("ca-2025.1","cpp_enhanced_max_cents"),"sourced");
+        assert_eq!(rate_status("ca-2025.1","donation_credit_rates"),"sourced");
+        assert_eq!(rate_status("ca-2025.1","tuition_credit_rate"),"sourced");
     }
     #[test] fn every_validated_line_has_only_sourced_inputs_and_urls_are_official() {
         for r in RATE_SOURCES { assert!(r.3.starts_with("https://www.canada.ca/"), "{}", r.1); assert!(["sourced","unvalidated"].contains(&r.4)); }

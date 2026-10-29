@@ -25,6 +25,9 @@ A new `src/tax_prep` workspace, which was drafted and then dropped. It would hav
 ## Accuracy
 Every 2025 rate has an entry in `rates::RATE_SOURCES` with the official URL it was checked against (checked 2026-10-29) and a status of `sourced` or `unvalidated`. Sources: CRA "Tax rates and income brackets, previous year", CRA T4127-JUL 2025 (121st ed.), the CRA indexation table, and the CRA RRSP/YMPE limits page.
 
+
+2026 reference table `ca-2026.1` (checked 2026-10-29 against the CRA current-year rates page, T4127-JAN 2026 122nd ed. and the indexation table). It reproduces every T4127-JAN 2026 Table 8.1 K/KP constant for federal, AB, ON, SK, NB, NS, NL, YT, NT and NU. BC, MB and PE are not loaded because the CRA current-year page conflicts with T4127-JAN. Calculations remain 2025-only and reject 2026 with a blocking diagnostic until 2026 credits and CPP/EI caps are wired. The 2025 enhanced CPP maximum ($1,074 = $678 + $396) is now sourced from T4127 Tables 8.26/8.27.
+
 A line is `validated` (`rates::VALIDATIONS`) only when its inputs are sourced and a repo test reproduces a figure CRA publishes. Today that covers:
 - federal, Alberta and Ontario tax before credits (the brackets reproduce the T4127 Option 2 constants K/KP to the dollar),
 - line 30000 BPA and its phase-out, line 31260, and AB/ON basic personal amounts.
