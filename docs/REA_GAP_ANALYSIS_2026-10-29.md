@@ -1,8 +1,8 @@
 # REA replica gap analysis, 2026-10-29
 
-This re-measures every row of `REA_REPLICA_AUDIT.md` against main at `35f95e3`, plus open PRs #34 and #35.
+This re-measures every row of `REA_REPLICA_AUDIT.md` against main at `3a0bfdd`, which includes merged PRs #34 and #35.
 
-Score = (copied & tested + 0.5 × partial) / rows. The "after" column only counts once #34 and #35 merge. No paired vendor golden files exist yet, so "copied & tested" means a test asserts the behaviour and, where noted, real staged files were checked.
+Score = (copied & tested + 0.5 × partial) / rows. The "after" column reflects #34 and #35, both merged. No paired vendor golden files exist yet, so "copied & tested" means a test asserts the behaviour and, where noted, real staged files were checked.
 
 ## Scores
 
@@ -32,7 +32,7 @@ Root cause: the data was already committed in full, but the UI never showed it. 
 
 | # | Gap | Closing item | Closes by |
 |---|---|---|---|
-| 1 | No flat GL / payroll view | #34 | code (open PR) |
+| 1 | No flat GL / payroll view | #34 (merged) | code, closed |
 | 2 | Payroll register cells (gross/net/deductions/employees) | #34 reader; still needs real payroll .xls from QBO/QBD for each company | **external: payroll exports** |
 | 3 | NXT Accounting books | QBO export of NXT Accounting | **external: Orville sign-in/export** |
 | 4 | QBO OAuth / realm sync | OAuth app plus tokens | **external: OAuth credentials** |
