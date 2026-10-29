@@ -125,7 +125,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let t=&super::rates::CA_2026;
     let name=prov.map(|p| p.name).unwrap_or("Alberta");
     require(c,obj,"full_year_resident",&format!("Confirm full-year Canadian residence and {name} residence at December 31, 2026."))?;
-    if prov.is_some() { require(c,obj,"provincial_adjustments_not_applicable",&format!("2026 {name} reductions, surtaxes and credits other than the basic personal amount and CPP/EI are not calculated. Confirm none apply."))?; }
+    if prov.is_some() { require(c,obj,"provincial_adjustments_not_applicable",&format!("2026 {name} reductions, surtaxes and credits other than the basic personal, age, spouse, eligible dependant, pension, disability and CPP/EI amounts are not calculated. Confirm none apply."))?; }
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
     let rrsp=money(obj,"rrsp_deduction_cents")?; let limit=money(obj,"rrsp_deduction_limit_cents")?;
     let cpp=money(obj,"cpp_base_credit_cents")?; let enhanced=money(obj,"cpp_enhanced_deduction_cents")?; let ei=money(obj,"ei_credit_cents")?;
@@ -161,7 +161,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     if ed.is_some() || cg.is_some() {
         require(c,obj,"dependants_verified","Verify line 30400 conditions (no spouse/common-law partner claimed, dependant related, living with you, not infirm) and line 30450 (infirm dependant 18+ who is not your spouse or eligible dependant; one claim per dependant). Infirm eligible dependants and caregiver top-ups are not handled.")?;
         if ed.is_some() && money(obj,"spouse_adjusted_net_income_cents")?>0 { return Err("Line 30400 cannot be claimed with a spouse or common-law partner in this scope".into()); }
-        c.diagnostic("provincial_dependant_2026_unsourced","2026 provincial eligible-dependant and caregiver amounts are not yet sourced; only federal amounts are calculated.",None,true);
+        if cg.is_some() { c.diagnostic("provincial_dependant_2026_unsourced","2026 provincial caregiver amounts for infirm dependants are not yet calculated; only the federal line 30450 amount is calculated.",None,true); }
     }
     let ed_amount=ed.map(|n| (bpa-n.max(0)).max(0)).unwrap_or(0);
     let cg_amount=cg.map(|n| (877_300-(n.max(0)-2_060_100).max(0)).max(0)).unwrap_or(0);
@@ -173,7 +173,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let spouse_claim=boolean(obj,"claim_spouse_amount")?; let disabled=boolean(obj,"disability_tax_credit_approved")?;
     let (tui,don,hb,adopt,sli)=(money(obj,"tuition_cents")?,money(obj,"donations_cents")?,money(obj,"home_buyers_amount_cents")?,money(obj,"adoption_expenses_cents")?,money(obj,"student_loan_interest_cents")?);
     let others=spouse_claim||disabled||pension>0||tui>0||don>0||hb>0||adopt>0||sli>0;
-    let prov_others=disabled||pension>0||tui>0||don>0||hb>0||adopt>0||sli>0;
+    let prov_others=tui>0||don>0||hb>0||adopt>0||sli>0;
     if others {
         require(c,obj,"credits_verified","Verify spouse net income, CRA-approved T2201, eligible pension income (age/type), T2202 tuition (current year only), official donation receipts, home buyers', adoption and student-loan receipts.")?;
         if prov_others { c.diagnostic("provincial_credits_2026_unsourced","2026 provincial counterparts of these credits are not yet sourced; only federal amounts are calculated.",None,true); }
@@ -191,7 +191,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let federal=(federal_before-federal_credits).max(0);
     let (pbpa,pbefore,pcredits)=match prov {
         None => {
-            let pa=sum(&[prov_age_2026(c,"AB",aged,taxable)?,prov_spouse_2026(c,"AB",t.alberta_bpa_cents,spouse_claim,obj)?])?;
+            let pa=sum(&[prov_age_2026(c,"AB",aged,taxable)?,prov_spouse_2026(c,"AB",t.alberta_bpa_cents,spouse_claim,obj)?,prov_dependant_2026(c,"AB",t.alberta_bpa_cents,ed)?,prov_pension_disability_2026(c,"AB",pension,disabled)?])?;
             let base=sum(&[t.alberta_bpa_cents,cpp,ei,pa])?;
             // CRA T4127-JAN 2026 K5P = ((K1P+K2P) - $4,896) x 0.25, i.e. 2% (25% of 8%) of Alberta credit amounts over
             // $61,200 ($4,896 / 8%); Alberta supplemental tax credit, AB428 line 61545 (alberta.ca: 2026 amounts rise 2%).
@@ -206,7 +206,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
             let mut b=p.bpa_cents.unwrap_or(bpa);
             // T4127-JAN 2026 BPAMB: $15,780 reduced by (NI - $200,000) x 15,780/200,000, nil at $400,000.
             if p.code=="MB" { b-=rounded_ratio((taxable-20_000_000).clamp(0,20_000_000),b,20_000_000)?; } let ce=if p.employment_amount { cea } else { 0 };
-            let pa=sum(&[prov_age_2026(c,p.code,aged,taxable)?,prov_spouse_2026(c,p.code,b,spouse_claim,obj)?])?;
+            let pa=sum(&[prov_age_2026(c,p.code,aged,taxable)?,prov_spouse_2026(c,p.code,b,spouse_claim,obj)?,prov_dependant_2026(c,p.code,b,ed)?,prov_pension_disability_2026(c,p.code,pension,disabled)?])?;
             (b,progressive(taxable,p.brackets)?,rounded_ratio(sum(&[b,ce,cpp,ei,pa])?,p.credit_rate_bps,10000)?)
         }
     };
@@ -245,7 +245,7 @@ pub fn on_health_premium_2026(taxable: i64) -> Result<i64,String> {
        else { (75_000+rounded_ratio(a-20_000_000,2500,10000)?).min(90_000) })
 }
 fn t1_2026_on(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
-    require(c,obj,"provincial_adjustments_not_applicable","2026 dependant amounts for the Ontario tax reduction and Ontario credits other than the basic personal amount and CPP/EI are not calculated. Confirm none apply.")?;
+    require(c,obj,"provincial_adjustments_not_applicable","2026 dependant amounts for the Ontario tax reduction and Ontario credits other than the basic personal, age, spouse, eligible dependant, pension, disability and CPP/EI amounts are not calculated. Confirm none apply.")?;
     let on=super::rates::Province { code:"ON", name:"Ontario", brackets:ON_2026_BRACKETS, credit_rate_bps:505, bpa_cents:Some(1_298_900), employment_amount:false, bracket_source:super::rates::CRA_T4127_JAN_2026, bpa_source:super::rates::CRA_T4127_JAN_2026, t4127_kp:&[], not_calculated:"" };
     t1_2026_with(c,obj,Some(&on))?;
     let basic=c.totals["provincial_tax"];
@@ -283,19 +283,52 @@ fn prov_age_2026(c: &mut Calculation, code: &str, aged: bool, net: i64) -> Resul
     Ok(a)
 }
 
-/// 2026 provincial spouse/common-law partner amounts from CRA's 2026 TD1 provincial forms (td1xx-26e.pdf):
-/// AB/NT/NU/YT: line 1 basic personal amount less spouse net income; MB: $9,134 less spouse net income;
-/// BC/NB/NL/NS/ON/PE/SK: the stated full amount when spouse net income is at or below the stated limit. The TD1
-/// does not give the reduced amount above that limit, so that case blocks. YT infirm top-up is not handled.
-const PROV_SPOUSE_FIXED_2026: &[(&str,i64,i64)] = &[("BC",1_131_700,113_200),("NB",1_070_900,107_200),("NL",914_200,91_500),("NS",1_193_200,88_800),("ON",1_102_900,110_300),("PE",1_274_000,127_400),("SK",2_038_100,203_800)];
+/// 2026 provincial spouse/common-law partner and eligible-dependant amounts from CRA's 2026 TD1 provincial forms
+/// (td1xx-26e.pdf, spouse and eligible-dependant lines; the same parameters apply to both lines in every province):
+/// AB/NT/NU/YT: line 1 basic personal amount less the spouse's/dependant's net income; MB: $9,134 less net income;
+/// BC/NB/NL/NS/ON/PE/SK: the stated full amount, or a partial amount for net income between the stated lower and
+/// upper limits, i.e. (upper limit - net income) capped at the full amount (e.g. TD1NS: $11,932 full, partial between
+/// $888 and $12,820). YT infirm top-up ($2,740) is not handled.
+const PROV_SPOUSE_FIXED_2026: &[(&str,i64,i64)] = &[
+    ("BC",1_131_700,1_244_900), // TD1BC-26: $11,317; partial between $1,132 and $12,449
+    ("NB",1_070_900,1_178_100), // TD1NB-26: $10,709; partial between $1,072 and $11,781
+    ("NL",914_200,1_005_700),   // TD1NL-26: $9,142; partial between $915 and $10,057
+    ("NS",1_193_200,1_282_000), // TD1NS-26: $11,932; partial between $888 and $12,820
+    ("ON",1_102_900,1_213_200), // TD1ON-26: $11,029; partial between $1,103 and $12,132
+    ("PE",1_274_000,1_401_400), // TD1PE-26: $12,740; partial between $1,274 and $14,014
+    ("SK",2_038_100,2_241_900), // TD1SK-26: $20,381; partial between $2,038 and $22,419
+];
+fn prov_partner_amount_2026(code: &str, bpa: i64, net: i64) -> i64 {
+    let net=net.max(0);
+    if let Some(&(_,full,upper))=PROV_SPOUSE_FIXED_2026.iter().find(|x| x.0==code) { (upper-net).clamp(0,full) }
+    else if code=="MB" { (913_400-net).max(0) } // TD1MB-26: $9,134 less net income
+    else { (bpa-net).max(0) }
+}
 fn prov_spouse_2026(c: &mut Calculation, code: &str, bpa: i64, claim: bool, obj: &Map<String,Value>) -> Result<i64,String> {
     if !claim { return Ok(0); }
-    let sni=money(obj,"spouse_adjusted_net_income_cents")?.max(0);
-    let a=if let Some(&(_,full,lim))=PROV_SPOUSE_FIXED_2026.iter().find(|x| x.0==code) {
-        if sni>lim { c.diagnostic("provincial_spouse_2026_unsourced",&format!("{code} 2026 TD1 gives the spouse amount only for spouse net income up to its stated limit; the reduced amount is not yet sourced."),None,true); 0 } else { full }
-    } else if code=="MB" { (913_400-sni).max(0) } else { (bpa-sni).max(0) };
+    let a=prov_partner_amount_2026(code,bpa,money(obj,"spouse_adjusted_net_income_cents")?);
     c.line(&format!("{code}58120"),&format!("{code} spouse or common-law partner amount (2026 TD1{code})"),a);
     Ok(a)
+}
+fn prov_dependant_2026(c: &mut Calculation, code: &str, bpa: i64, ed: Option<i64>) -> Result<i64,String> {
+    let Some(n)=ed else { return Ok(0) };
+    let a=prov_partner_amount_2026(code,bpa,n);
+    c.line(&format!("{code}58160"),&format!("{code} amount for an eligible dependant (2026 TD1{code})"),a);
+    Ok(a)
+}
+/// 2026 provincial pension income maximum and disability amount (self, 18+) from CRA's 2026 TD1 provincial forms
+/// (td1xx-26e.pdf pension income line "whichever is less" and disability line "enter $X").
+const PROV_PENSION_DISABILITY_2026: &[(&str,i64,i64)] = &[
+    ("AB",175_300,1_756_300),("BC",100_000,991_300),("MB",100_000,618_000),("NB",100_000,1_021_000),
+    ("NL",100_000,754_900),("NS",117_300,734_100),("NT",100_000,1_475_800),("NU",200_000,1_673_300),
+    ("ON",179_600,1_049_400),("PE",100_000,689_000),("SK",100_000,1_426_600),("YT",200_000,1_034_100),
+];
+fn prov_pension_disability_2026(c: &mut Calculation, code: &str, pension: i64, disabled: bool) -> Result<i64,String> {
+    let &(_,pmax,dis)=PROV_PENSION_DISABILITY_2026.iter().find(|x| x.0==code).ok_or("No 2026 provincial pension/disability amount")?;
+    let p=pension.clamp(0,pmax); let d=if disabled { dis } else { 0 };
+    if pension>0 { c.line(&format!("{code}58360"),&format!("{code} pension income amount (2026 TD1{code})"),p); }
+    if disabled { c.line(&format!("{code}58440"),&format!("{code} disability amount (2026 TD1{code})"),d); }
+    Ok(p+d)
 }
 
 pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -> Result<Calculation,String> {
@@ -918,8 +951,15 @@ mod tests {
         let base=json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"credits_verified":true,"claim_spouse_amount":true,"spouse_adjusted_net_income_cents":50_000,"interest_income_cents":5_000_000});
         let bc=calculate("T1",2026,"BC",&base).unwrap(); assert!(bc.supported,"{:?}",bc.diagnostics); assert_eq!(l(&bc,"BC58120"),1_131_700);
         let mb=calculate("T1",2026,"MB",&base).unwrap(); assert_eq!(l(&mb,"MB58120"),863_400);
-        let mut hi=base.clone(); hi["spouse_adjusted_net_income_cents"]=json!(500_000);
-        assert!(!calculate("T1",2026,"BC",&hi).unwrap().supported);
+        let mut hi=base.clone(); hi["spouse_adjusted_net_income_cents"]=json!(500_000); hi["interest_income_cents"]=json!(6_000_000);
+        let bh=calculate("T1",2026,"BC",&hi).unwrap(); assert!(bh.supported,"{:?}",bh.diagnostics); assert_eq!(l(&bh,"BC58120"),1_244_900-500_000);
+        for (code,amt) in [("NS",1_282_000-500_000),("SK",2_241_900-500_000),("NL",1_005_700-500_000),("NT",1_819_800-500_000),("MB",413_400),("PE",1_401_400-500_000),("NB",1_178_100-500_000)] {
+            let x=calculate("T1",2026,code,&hi).unwrap(); assert!(x.supported,"{code} {:?}",x.diagnostics); assert_eq!(l(&x,&format!("{code}58120")),amt,"{code}");
+        }
+        // TD1 pension/disability/eligible dependant (2026): NS pension cap $1,173, disability $7,341, dependant 12,820 - 2,000.
+        let ns=calculate("T1",2026,"NS",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"credits_verified":true,"dependants_verified":true,"interest_income_cents":6_000_000,"eligible_pension_income_cents":300_000,"disability_tax_credit_approved":true,"eligible_dependant_net_income_cents":200_000})).unwrap();
+        assert!(ns.supported,"{:?}",ns.diagnostics); assert_eq!(l(&ns,"NS58360"),117_300); assert_eq!(l(&ns,"NS58440"),734_100); assert_eq!(l(&ns,"NS58160"),1_082_000);
+        assert_eq!(l(&ns,"NS61500"),rounded_ratio(1_193_200+117_300+734_100+1_082_000,879,10000).unwrap());
         let t2=calculate("T2",2026,"AB",&json!({"scope_confirmed":true,"small_business_eligible":true,"sbd_eligibility_verified":true,"taxable_income_cents":60_000_000,"active_business_income_cents":60_000_000})).unwrap();
         assert!(t2.supported,"{:?}",t2.diagnostics); assert_eq!(t2.totals["income_tax"],7_800_000);
         let g=calculate("T2",2026,"AB",&json!({"scope_confirmed":true,"small_business_eligible":true,"sbd_eligibility_verified":true,"taxable_income_cents":60_000_000,"active_business_income_cents":60_000_000,"passive_income_cents":10_000_000})).unwrap();
