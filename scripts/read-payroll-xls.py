@@ -132,8 +132,17 @@ def read_xls(data):
     return {"format": "nxt-xls-cells/v1", "sheets": out}
 
 
+def _num(v):
+    return v if isinstance(v, float) else 0.0
+
+
 def summarize(book):
-    """Find a header row with gross and net columns and total the numeric rows below it."""
+    """Find a header row with gross and net columns and total the rows below it.
+
+    Returns the report's own Total row (when present) separately from the
+    sum of detail rows, and splits out QuickBooks "Historical Checks" rows,
+    which QBO reports outside its period Total.
+    """
     for s in book["sheets"]:
         for i, (r, cells) in enumerate(s["rows"]):
             hdr = {col: str(v).strip().lower() for col, v in cells if isinstance(v, str)}
@@ -141,19 +150,40 @@ def summarize(book):
             n = next((c for c, h in hdr.items() if h.startswith("net")), None)
             if g is None or n is None:
                 continue
-            ded = [c for c, h in hdr.items() if any(k in h for k in ("cpp", "ei", "tax", "deduct"))]
-            tot = {"gross": 0.0, "net": 0.0, "deductions": 0.0, "rows": 0}
+            # Employee-side deductions only. When a group has a "- total"
+            # column (QBO Payroll Details), use it instead of its components.
+            ded = []
+            for grp in ("pretax deduction", "employee tax", "aftertax deduction"):
+                cols = [(c, h) for c, h in hdr.items() if h.startswith(grp)]
+                totals = [c for c, h in cols if h.endswith("- total")]
+                ded += totals or [c for c, _ in cols]
+            name_col = next((c for c, h in hdr.items() if h in ("name", "employee")), None)
+            def blank():
+                return {"gross": 0.0, "net": 0.0, "deductions": 0.0, "rows": 0}
+            detail, historical, report_total, employees = blank(), blank(), None, set()
             for _, cs in s["rows"][i + 1:]:
                 d = dict(cs)
                 if not isinstance(d.get(g), float):
                     continue
-                label = next((v for v in d.values() if isinstance(v, str)), "")
-                if label.strip().lower().startswith("total"):
+                labels = [v.strip().lower() for v in d.values() if isinstance(v, str) and v.strip()]
+                row = {"gross": d[g], "net": _num(d.get(n)),
+                       "deductions": sum(_num(d.get(c)) for c in ded), "rows": 1}
+                if labels and labels[0].startswith("total"):
+                    report_total = {k: round(v, 2) for k, v in row.items() if k != "rows"}
                     continue
-                tot["gross"] += d[g]; tot["net"] += d.get(n) or 0.0
-                tot["deductions"] += sum(d.get(c) or 0.0 for c in ded if isinstance(d.get(c), float))
-                tot["rows"] += 1
-            return {"sheet": s["name"], "header_row": r, **{k: round(v, 2) if isinstance(v, float) else v for k, v in tot.items()}}
+                bucket = historical if any(l.startswith("historical") for l in labels) else detail
+                for k in row:
+                    bucket[k] += row[k]
+                if bucket is detail and name_col is not None and isinstance(d.get(name_col), str):
+                    employees.add(d[name_col].strip())
+            r2 = lambda t: {k: round(v, 2) if isinstance(v, float) else v for k, v in t.items()}
+            out = {"sheet": s["name"], "header_row": r, "detail_rows": r2(detail),
+                   "historical_rows": r2(historical), "report_total": report_total,
+                   "employees": len(employees)}
+            if report_total:
+                out["detail_matches_report_total"] = all(
+                    abs(detail[k] - report_total[k]) < 0.005 for k in ("gross", "net"))
+            return out
     return None
 
 
