@@ -842,27 +842,72 @@ def prior_trial_balance(data):
             'sha256': book.raw_hash, 'company_hash': book.company_hash}
 
 
-def reconcile_opening(tb, gl, opening):
+def reconcile_opening(tb, gl, opening, before_month=None):
     """Exact per-account check TB = opening + journal activity.
 
     Without an exact match, accept only QuickBooks' year-end close: every
-    differing account resets exactly (delta = -opening; income-statement
-    accounts) and exactly one other account absorbs their sum (retained
-    earnings). Returns the closed opening actually carried, or None."""
+    differing account resets exactly and exactly one other account (retained
+    earnings) absorbs their sum. The close is tested at the calendar boundary
+    (fiscal year starting January) and, when `before_month` is given
+    ({month: {label: net activity dated before that month}}), at each other
+    fiscal-year start month: an income-statement account then closes its
+    opening plus its activity before the fiscal-year start. A month is
+    accepted only if every differing account fits to the cent; nothing is
+    estimated. Mismatches list only the accounts the best close leaves
+    unexplained, so a single stray posting no longer reports every reset
+    income-statement account as mismatched. Returns the closed opening actually
+    carried, or None."""
     labels = sorted(tb.keys() | gl.keys() | opening.keys())
     delta = {l: tb.get(l, 0) - opening.get(l, 0) - gl.get(l, 0) for l in labels}
     diffs = [l for l in labels if delta[l]]
     if not diffs:
         return {'status': 'reconciled_exact', 'closed_opening': dict(opening), 'year_end_close_accounts': 0, 'mismatches': []}
-    receivers = [l for l in diffs if delta[l] != -opening.get(l, 0)]
-    if len(receivers) == 1 and len(diffs) >= 2 and sum(delta.values()) == 0:
-        closed = {l: (0 if l in diffs and l != receivers[0] else opening.get(l, 0)) for l in labels}
-        closed[receivers[0]] = opening.get(receivers[0], 0) + delta[receivers[0]]
+    best = None
+    for month in [1] + sorted(m for m in (before_month or {}) if m != 1):
+        pre = (before_month or {}).get(month, {})
+        closes = {l: opening.get(l, 0) + pre.get(l, 0) for l in labels}
+        reset = [l for l in diffs if closes[l] and delta[l] == -closes[l]]
+        rest = [l for l in diffs if l not in reset]
+        closed_sum = sum(closes[l] for l in reset)
+        receivers = [l for l in rest if delta[l] == closed_sum]
+        if reset and receivers:
+            rest = [l for l in rest if l != receivers[0]]
+        else:
+            receivers = []
+        candidate = (len(rest), month, reset, receivers, rest)
+        if best is None or candidate[0] < best[0]:
+            best = candidate
+    unexplained, month, reset, receivers, rest = best
+    if not unexplained and receivers:
+        receiver = receivers[0]
+        # closed_opening is the opening that, with this period's journal,
+        # yields the trial balance. For a January fiscal start it is the
+        # prior closing balance after QuickBooks' close; for another start
+        # month the close happens inside the period and is carried separately.
+        closed = {l: opening.get(l, 0) + (delta[l] if l in reset or l == receiver else 0) for l in labels}
         closed = {l: v for l, v in closed.items() if v or l in opening}
-        return {'status': 'reconciled_with_year_end_close', 'closed_opening': closed, 'year_end_close_accounts': len(diffs) - 1,
-                'retained_earnings_label_ref': sha(receivers[0].encode('utf-8')), 'mismatches': []}
-    return {'status': 'unreconciled', 'closed_opening': None, 'year_end_close_accounts': 0,
-            'mismatches': [{'label_ref': sha(l.encode('utf-8')), 'delta_cents': str(delta[l])} for l in diffs]}
+        out = {'status': 'reconciled_with_year_end_close', 'closed_opening': closed, 'year_end_close_accounts': len(reset),
+               'retained_earnings_label_ref': sha(receiver.encode('utf-8')), 'fiscal_year_start_month': month, 'mismatches': []}
+        if month != 1:
+            out['year_end_close'] = {l: delta[l] for l in reset + [receiver]}
+        return out
+    return {'status': 'unreconciled', 'closed_opening': None, 'year_end_close_accounts': len(reset) if receivers else 0,
+            'fiscal_year_start_month_tested': month if receivers else None,
+            'mismatches': [{'label_ref': sha(l.encode('utf-8')), 'delta_cents': str(delta[l])} for l in (rest if receivers else diffs)]}
+
+
+def activity_before_months(lines_by_date, period_start):
+    """{month: {label: net debit cents dated before that month}} for months 2-12."""
+    start = dt.date.fromisoformat(period_start)
+    out = {}
+    for month in range(2, 13):
+        cut = dt.date(start.year, month, 1).isoformat()
+        acc = {}
+        for date, label, net in lines_by_date:
+            if date < cut:
+                acc[label] = acc.get(label, 0) + net
+        out[month] = acc
+    return out
 
 
 def assess_export_bytes(data, order='auto', prior=None, first_year=False):
@@ -920,7 +965,7 @@ def assess_export_bytes(data, order='auto', prior=None, first_year=False):
                 if not (profile['period_start'] <= j['date_start'] and j['date_end'] <= profile['period_end']):
                     report['blockers'].append({'report': 'cross_report', 'code': 'journal_date_outside_period'})
             if not report['blockers'] and (prior is not None or first_year or parsed['journal']['assessment'].get('held_lines')):
-                reconcile_year(report, parsed, profile, prior, b)
+                reconcile_year(report, parsed, profile, prior, b, order)
             elif not report['blockers']:
                 tb = {a['label']: int(a['net_debit_cents']) for a in parsed['trial_balance']['assessment']['accounts']}
                 gl = {a['label']: int(a['net_debit_cents']) for a in parsed['journal']['assessment']['accounts']}
@@ -948,7 +993,7 @@ def assess_export_bytes(data, order='auto', prior=None, first_year=False):
     return report
 
 
-def reconcile_year(report, parsed, profile, prior, journal_book):
+def reconcile_year(report, parsed, profile, prior, journal_book, order='auto'):
     tb = {a['label']: int(a['net_debit_cents']) for a in parsed['trial_balance']['assessment']['accounts']}
     gl = {a['label']: int(a['net_debit_cents']) for a in parsed['journal']['assessment']['accounts']}
     held = bool(parsed['journal']['assessment'].get('held_lines'))
@@ -961,7 +1006,12 @@ def reconcile_year(report, parsed, profile, prior, journal_book):
         opening, rec['opening_source'] = prior['balances'], {'kind': 'prior_closing_trial_balance', 'sha256': prior['sha256'], 'as_of': prior['as_of']}
     else:
         opening, rec['opening_source'] = {}, {'kind': 'none_first_year_partial_history' if profile['kind'] != 'all_dates' else 'all_dates'}
-    result = reconcile_opening(tb, gl, opening)
+    before_month = None
+    if profile['kind'] != 'all_dates' and profile['period_start'][5:] == '01-01':
+        postings = journal_postings(journal_book, order)
+        lines = [(g['date'], l['label'], l['debit'] - l['credit']) for g in postings['groups'] for l in g['lines']]
+        before_month = activity_before_months(lines, profile['period_start'])
+    result = reconcile_opening(tb, gl, opening, before_month)
     rec.update({k: v for k, v in result.items() if k != 'closed_opening'})
     report['_closed_opening'] = result['closed_opening']
     if result['status'] == 'unreconciled':
