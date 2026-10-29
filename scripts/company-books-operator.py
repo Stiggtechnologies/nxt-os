@@ -12,6 +12,12 @@ files are not acceptance evidence. `--allow-native-adjustments` recomputes
 native deltas from returned entries and does not trust the server's delta
 fields. It still cannot authorize live cutover. Original systems remain
 authoritative.
+
+The workspace key is the HTTP gate, not a staff session and not a Supabase
+service-role key. The API persists company books with the service role. That
+credential is intentional. Each company-books key it reads or writes is
+appended to the company access audit. Staff SQL sessions are limited by
+row-level security to assigned companies.
 """
 import argparse
 import copy

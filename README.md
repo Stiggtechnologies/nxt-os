@@ -46,7 +46,7 @@ Open **Firm Operations** from the OS dock or command palette. The module uses th
 
 Reports use native NXT Ledger data. External QuickBooks OAuth, external Excel add-in connections, and client/company onboarding are not configured by this module. CSV spreadsheet feeds are read-only. The implementation does not claim full QuickBooks feature parity.
 
-Storage namespaces separate deployments; they do not implement company tenancy or individual staff authentication. The current workspace still uses the shared `ADMIN_API_KEY`. Adding Supabase storage does not enable Supabase Auth, verified staff roles, or per-company access control, and the repository does not provision or deploy a hosted Supabase project automatically.
+Storage namespaces separate deployments. The HTTP API still uses the shared `ADMIN_API_KEY`. Company-books import tables in Supabase enforce row-level security: assigned staff see only their client companies, and `nxt_company_admin` sees all. The API persists those books with the service role, the intended server credential, and each company touch is appended to the company access audit. This repository does not apply migrations to the hosted project automatically.
 
 See [module operations and feature coverage](docs/FIRM_OPERATIONS.md) for API contracts, acceptance checks, storage bounds, scheduler setup and the current shared-credential access model. To dispatch due workflows continuously, run `scripts/firm-worker.mjs` with `NXT_OS_URL` and `ADMIN_API_KEY` in a supervised Node.js process, or invoke it with `--once` from an external scheduler. No background schedule or live integration is silently activated by deployment.
 

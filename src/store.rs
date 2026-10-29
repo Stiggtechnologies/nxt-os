@@ -105,6 +105,8 @@ impl Store {
     async fn remote(&self, cmd: Vec<Value>) -> StoreResult<Value> {
         if let Store::Unavailable { reason } = self { return Err(reason.clone()); }
         if let Store::Supabase { url, token, namespace, http } = self {
+            // Service role is the intended server credential for this RPC. Company-books
+            // keys are catalogued and appended to the company access audit inside it.
             let mut request = http.post(format!("{url}/rest/v1/rpc/nxt_store_command"))
                 .header("apikey", token).json(&json!({"p_namespace": namespace, "p_command": cmd}));
             // Modern secret keys are API keys, not JWT bearer tokens.

@@ -24,15 +24,16 @@ PY
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 mapfile -t migrations < <(find "$root/supabase/migrations" -maxdepth 1 -type f -name '*.sql' | sort)
-if [[ "${#migrations[@]}" -ne 2 ]]; then
-  echo "expected exactly two store migrations, found ${#migrations[@]}" >&2
-  exit 2
-fi
 expected=(
   "20261025051013_nxt_store.sql"
   "20261026033000_nxt_backup_reader.sql"
+  "20261029140000_company_access.sql"
 )
-for index in 0 1; do
+if [[ "${#migrations[@]}" -ne "${#expected[@]}" ]]; then
+  echo "expected exactly ${#expected[@]} store migrations, found ${#migrations[@]}" >&2
+  exit 2
+fi
+for index in "${!expected[@]}"; do
   base="$(basename "${migrations[$index]}")"
   if [[ "$base" != "${expected[$index]}" ]]; then
     echo "migration order mismatch: $base" >&2
@@ -59,4 +60,5 @@ for migration in "${migrations[@]}"; do
   psql "$url" -v ON_ERROR_STOP=1 -f "$migration"
 done
 psql "$url" -v ON_ERROR_STOP=1 -f "$root/supabase/tests/store_contract.sql"
+psql "$url" -v ON_ERROR_STOP=1 -f "$root/supabase/tests/company_access_contract.sql"
 echo "local store migration contract passed; no production database was used"
