@@ -284,6 +284,11 @@ async fn print(State(e): S, Path(id): Path<String>) -> EResult<Response> {
         if p.document_type == WorkpaperType::Placeholder {
             html.push_str("<p class=\"notice\">Placeholder · pending planning material, not evidence. No body evidence, annotations, file versions or sign-offs are permitted. Convert to manual before adding evidence.</p>");
         }
+        if p.document_type == WorkpaperType::ExternalReference {
+            let url=p.reference_url.as_deref().ok_or_else(|| conflict("External reference URL is unavailable"))?;
+            analysis::validate_reference_url(url).map_err(conflict)?;
+            html.push_str(&format!("<p class=\"notice\"><strong>External HTTPS reference</strong> — destination content is not fetched, retained or verified. Checkpoints cover the saved URL and native note only.</p><p><a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\" referrerpolicy=\"no-referrer\">Open external reference: {}</a></p>",esc(url),esc(url)));
+        }
         if !p.annotations.is_empty() {
             html.push_str("<h3>Text-version tickmarks and notes</h3><p>Operator labels are unverified metadata. Account targets bind local account inputs and exact text, not group aggregates or certified balances. Check calculation diagnostics for stale text/account anchors. Custom meanings below are saved copies, independent of the current catalogue.</p><table><tr><th>Kind</th><th>Saved custom definition</th><th>Note</th><th>Operator label</th><th>Text SHA-256</th><th>Saved account target / context SHA-256</th></tr>");
             for annotation in &p.annotations {

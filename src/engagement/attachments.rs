@@ -89,6 +89,7 @@ fn metadata_hash(version: &AttachmentVersion) -> EResult<String> {
     hash(&json!({"format":"nxt-file-version/v1","version":copy}))
 }
 pub(super) fn validate_paper_shape(paper: &Workpaper) -> EResult<()> {
+    super::analysis::validate_document_shape(paper).map_err(bad)?;
     for annotation in &paper.annotations {
         super::text_ranges::validate(paper, annotation).map_err(bad)?;
     }
@@ -297,7 +298,7 @@ impl Engagements {
             }
             check_revision(&record,input.expected_revision)?;editable(&record)?;
             let paper=record.document.workpapers.iter_mut().find(|p|p.id==paper_id).ok_or_else(||bad("unknown workpaper"))?;
-            if paper.document_type == WorkpaperType::Placeholder {return Err(conflict("Convert the placeholder to a manual workpaper before uploading file versions"));}
+            if paper.document_type != WorkpaperType::Manual {return Err(conflict("Only manual workpapers can receive file versions; retain a separate manual workpaper for placeholder or external-reference evidence"));}
             if paper.attachment_versions.len()>=PAPER_MAX {return Err(conflict("workpaper file-version capacity reached (16)"));}
             if paper.attachment_versions.iter().any(|v|v.sha256==version.sha256) {return Err(conflict("these bytes are already retained for this workpaper"));}
             let mut stored=version.clone();stored.version=paper.attachment_versions.len() as u32+1;
