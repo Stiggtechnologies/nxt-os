@@ -494,7 +494,7 @@ impl Migrations {
     }
     pub async fn list(&self) -> MResult<Value> {
         let catalog = self.load().await?;
-        let summaries=catalog.snapshots.iter().map(|record|{let m=&record.manifest;json!({"id":m.id,"cohort_ref":m.cohort_ref,"company_name":m.company_name,"source_system":m.source_system,"captured_at":m.captured_at,"cutoff_date":m.cutoff_date,"reviewer_label":m.reviewer_label,"manifest_sha256":record.manifest_sha256,"published_at":record.published_at,"report_count":m.reports.len(),"row_count":m.reports.iter().map(|r|r.row_count).sum::<usize>(),"exception_count":m.exceptions.len(),"archive_bytes":m.source_archive.bytes})}).collect::<Vec<_>>();
+        let summaries=catalog.snapshots.iter().map(|record|{let m=&record.manifest;json!({"id":m.id,"client_ref":m.cohort_ref,"cohort_ref":m.cohort_ref,"company_name":m.company_name,"source_system":m.source_system,"captured_at":m.captured_at,"cutoff_date":m.cutoff_date,"reviewer_label":m.reviewer_label,"manifest_sha256":record.manifest_sha256,"published_at":record.published_at,"report_count":m.reports.len(),"row_count":m.reports.iter().map(|r|r.row_count).sum::<usize>(),"exception_count":m.exceptions.len(),"archive_bytes":m.source_archive.bytes})}).collect::<Vec<_>>();
         let response =
             controlled(json!({"snapshots":summaries,"storage":self.store.backend_name()}));
         if serde_json::to_vec(&response)
@@ -518,6 +518,11 @@ impl Migrations {
             .into_iter()
             .find(|record| record.manifest.id == id)
             .ok_or_else(missing)
+    }
+    /// Client label of a snapshot for staff scoping: the cohort reference, which is the
+    /// company id company books uses as the client label.
+    pub async fn client_of(&self, id: &str) -> Option<String> {
+        self.record(id).await.ok().map(|r| r.manifest.cohort_ref)
     }
     pub async fn detail(&self, id: &str) -> MResult<Value> {
         let record = self.record(id).await?;

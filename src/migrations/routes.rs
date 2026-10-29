@@ -20,6 +20,7 @@ pub fn router(state: Arc<Migrations>) -> Router {
         .route("/api/migrations/{id}/reports/{report_id}/rows", get(rows))
         .route("/api/migrations/{id}/archive", get(archive))
         .layer(DefaultBodyLimit::max(4 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(state.clone(), client_scope))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(
             |mut response: Response| async move {
@@ -35,6 +36,14 @@ pub fn router(state: Arc<Migrations>) -> Router {
             },
         ))
         .with_state(state)
+}
+/// Client scoping: a snapshot's client is its cohort reference. Uploading chunks and
+/// publishing snapshots are firm-wide operations.
+async fn client_scope(State(state): S, req: axum::extract::Request, next: middleware::Next) -> Response {
+    crate::firm::staff::scope_guard_reserved(req, next, "/api/migrations", &[], &["chunks", "snapshots"], |id| async move {
+        state.client_of(&id).await
+    })
+    .await
 }
 async fn list(State(state): S) -> R {
     Ok(Json(state.list().await?))
