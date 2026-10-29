@@ -136,6 +136,12 @@ class PeriodPairing(unittest.TestCase):
     def test_journal_dates_must_fall_inside_the_period(self):
         r = qbo.assess_export_bytes(canonical(journal(date='2026-01-02')))
         self.assertIn('journal_date_outside_period', x.codes(r))
+        self.assertFalse(r['financial_controls_passed'])
+        b = next(b for b in r['blockers'] if b['code'] == 'journal_date_outside_period')
+        self.assertEqual(b['entry_count'], 1)
+        self.assertEqual((b['entries'][0]['date'], b['entries'][0]['source_start_row']), ('2026-01-02', 6))
+        self.assertNotIn('100.01', str(b))
+        self.assertNotIn('Synthetic', str(b))
 
 
 class TitleRecognition(unittest.TestCase):

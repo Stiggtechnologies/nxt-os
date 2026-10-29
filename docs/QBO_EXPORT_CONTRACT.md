@@ -70,3 +70,8 @@ Use [MIGRATION_PREFLIGHT.md](MIGRATION_PREFLIGHT.md) to pin the pilot charter an
 `scripts/stage-qbo-journal.py` can turn a ZIP that passes this assessment into the company-book staging the operator already accepts. Account ids are label-hash prefixes, not QuickBooks ids. `--synthetic-evidence` is a fixture assertion only. The stager does not post, and it leaves `live_cutover_allowed` false.
 
 **All Dates journal with an as-of trial balance.** A full-history (`All Dates`) Journal may be paired with a Trial Balance `As of <date>` (full or three-letter month names). The journal must not be dated after the as-of date (`journal_date_outside_period`). Balances are reconciled from an empty opening; prior fiscal years closed by QuickBooks into retained earnings are accepted only when every differing account fits exactly at one fiscal start month. Staging refuses such a close (`year_end_close_without_prior_not_staged`) because it has no source entries to post; stage per year with `--prior-source` instead.
+
+## Journal layout variants and out-of-range dates
+
+- `qbo_modern_distribution`: QBO's Journal with an extra `Distribution account number` column in G. Account name is H, debit I, credit J, Adj K; group and grand totals are in I/J. The header must match exactly; every modern-layout control applies unchanged. The account number is retained as raw cell text only.
+- `journal_date_outside_period` still blocks. The blocker now lists each out-of-range entry for review (`entries[]`: source start/subtotal row, date, entry number; no amounts, names or accounts) with `resolution: review_in_source_no_auto_fix`. Nothing is re-dated or dropped.
