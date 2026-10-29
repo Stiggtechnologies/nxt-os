@@ -199,3 +199,55 @@ class FormulaLengthLocation(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ModernNoAdjAndFloatNoiseTests(unittest.TestCase):
+    def test_modern_layout_without_adj_column_is_accepted_with_unknown_flag(self):
+        header = {k: v for k, v in HEADER.items() if k != 'J'}
+        book = qbo.Workbook(x.xlsx('Journal', modern_rows(adj=None, header=header), JOURNAL_PERIOD), 'journal')
+        detail = qbo.journal_postings(book, 'auto')
+        self.assertEqual(detail['layout'], 'qbo_modern_no_adj')
+        self.assertIsNone(detail['adjusting_group_count'])
+        self.assertIsNone(detail['groups'][0]['adjusting'])
+        self.assertEqual(detail['debit_cents'], '10001')
+
+    def test_no_adj_layout_rejects_a_stray_j_column(self):
+        header = {k: v for k, v in HEADER.items() if k != 'J'}
+        book = qbo.Workbook(x.xlsx('Journal', modern_rows(adj='No', header=header), JOURNAL_PERIOD), 'journal')
+        with self.assertRaises(qbo.AssessmentError) as ctx:
+            qbo.journal_postings(book, 'auto')
+        self.assertEqual(str(ctx.exception), 'unexpected_journal_columns')
+
+    def test_binary_float_noise_reads_as_whole_cent_but_real_fraction_blocks(self):
+        self.assertEqual(qbo.binary_float_cents('2534.4399999999987'), 253444)
+        self.assertEqual(qbo.binary_float_cents('465529.42999999993'), 46552943)
+        self.assertIsNone(qbo.binary_float_cents('1.005'))
+        self.assertIsNone(qbo.binary_float_cents('2534.4350000000000'))
+
+    def test_trial_balance_with_float_noise_amounts(self):
+        book = qbo.Workbook(x.xlsx('Trial Balance', {
+            5: [x.string('B5', 'Debit'), x.string('C5', 'Credit')],
+            6: [x.string('A6', 'Synthetic cash'), x.number('B6', '2534.4399999999987')],
+            7: [x.string('A7', 'Synthetic capital'), x.number('C7', '2534.44')],
+            8: [x.string('A8', 'TOTAL'), x.number('B8', '2534.4400000000001'), x.number('C8', '2534.44')],
+        }, TB_AS_OF), 'trial_balance')
+        tb = qbo.trial_balance(book)
+        self.assertEqual(tb['debit_cents'], '253444')
+        self.assertTrue(any(w['code'] == 'stored_binary_float_noise' for w in book.warnings))
+
+    def test_trial_balance_genuine_fractional_cent_still_blocks(self):
+        book = qbo.Workbook(x.xlsx('Trial Balance', {
+            5: [x.string('B5', 'Debit'), x.string('C5', 'Credit')],
+            6: [x.string('A6', 'Synthetic cash'), x.number('B6', '1.005')],
+            7: [x.string('A7', 'Synthetic capital'), x.number('C7', '1.005')],
+            8: [x.string('A8', 'TOTAL'), x.number('B8', '1.005'), x.number('C8', '1.005')],
+        }, TB_AS_OF), 'trial_balance')
+        with self.assertRaises(qbo.AssessmentError) as ctx:
+            qbo.trial_balance(book)
+        self.assertEqual(str(ctx.exception), 'fractional_cent')
+
+    def test_e_notation_grand_total_within_one_cent(self):
+        rows = modern_rows()
+        rows[10] = [x.string('A10', 'TOTAL'), x.number('H10', '1.0000999999999E2'), x.number('I10', '1.0000999999999E2')]
+        detail = qbo.journal_postings(qbo.Workbook(x.xlsx('Journal', rows, JOURNAL_PERIOD), 'journal'), 'auto')
+        self.assertEqual(detail['debit_cents'], '10001')

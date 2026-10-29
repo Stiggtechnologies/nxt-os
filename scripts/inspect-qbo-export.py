@@ -23,8 +23,8 @@ MAX_MEMBER = 32 * 1024 * 1024
 MAX_EXPANDED = 128 * 1024 * 1024
 MAX_ENTRIES = 512
 MAX_RATIO = 200
-MAX_CELLS = 500_000
-MAX_ROWS = 100_000
+MAX_CELLS = 2_500_000
+MAX_ROWS = 250_000
 MAX_MONEY = 9_007_199_254_740_991
 MAX_EVAL_WORK = 1_000_000
 MAX_DEPENDENCY_DEPTH = 64
@@ -42,11 +42,18 @@ TITLES = {'trial_balance': 'trial balance', 'journal': 'journal', 'general_ledge
 LEGACY_JOURNAL_HEADER = {'B': 'Date', 'C': 'Transaction Type', 'D': '#', 'E': 'Name', 'F': 'Memo/Description', 'G': 'Account', 'H': 'Debit', 'I': 'Credit'}
 # QuickBooks Online's current Journal export. Column J ('Adj') flags adjusting entries.
 MODERN_JOURNAL_HEADER = {'B': 'Transaction date', 'C': 'Transaction type', 'D': '#', 'E': 'Name', 'F': 'Description', 'G': 'Account Name', 'H': 'Debit', 'I': 'Credit', 'J': 'Adj'}
+# The same export with the 'Adj' column turned off: nine columns A-I. The
+# adjusting flag is then unknown (None) and is never inferred.
+MODERN_NO_ADJ_JOURNAL_HEADER = {k: v for k, v in MODERN_JOURNAL_HEADER.items() if k != 'J'}
 ADJ_FLAGS = {'yes': True, 'no': False}
 # Member names that look like list exports are never opened, not even to read a title.
 NONFINANCIAL_NAME = re.compile(r'customer|employee|supplier|vendor|contact|payroll', re.I)
 MONTHS = {m: i for i, m in enumerate(('january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'), 1)}
 NUMBER = re.compile(r'[+-]?(?:\d+)(?:\.\d+)?\Z')
+# Excel writes some stored totals as binary-float noise in E notation
+# (e.g. 3.657448561999983E7). Accepted only when comparing a stored control
+# value against an exact line sum; never as a posted amount.
+CONTROL_NUMBER = re.compile(r'[+-]?\d+(?:\.\d+)?[eE][+-]?\d{1,3}\Z')
 ADDRESS = re.compile(r'([A-Z]{1,3})([1-9]\d{0,5})\Z')
 INSPECTOR_SCRIPT_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
@@ -143,6 +150,27 @@ def numeric(value):
             return int(cents)
     except InvalidOperation as exc:
         raise AssessmentError('invalid_decimal') from exc
+
+
+def binary_float_cents(value):
+    """Exact cents for a stored value that is a cent amount written as a
+    binary float's shortest repr (e.g. 2534.4399999999987 for 2534.44).
+
+    Only a 15-17 significant-digit token within 1e-4 cent of a whole cent
+    qualifies; a genuine fractional cent such as 1.005 still returns None and
+    blocks. Nothing is rounded to fit a control."""
+    if not isinstance(value, str) or NUMBER.fullmatch(value) is None:
+        return None
+    digits = len(value.lstrip('+-').replace('.', '').lstrip('0'))
+    if not 15 <= digits <= 17:
+        return None
+    with localcontext() as ctx:
+        ctx.prec = 80
+        cents = Decimal(value) * 100
+        whole = cents.to_integral_value()
+        if abs(cents - whole) > Decimal('0.0001') or abs(whole) > MAX_MONEY:
+            return None
+        return int(whole)
 
 
 def compile_formula(formula):
@@ -353,7 +381,13 @@ class Workbook:
         try:
             formula = c['formula']
             if formula is None:
-                result = self._located_numeric(address, c['value'], 'stored_value')
+                try:
+                    result = self._located_numeric(address, c['value'], 'stored_value')
+                except AssessmentError as exc:
+                    result = binary_float_cents(c['value'])
+                    if str(exc) != 'fractional_cent' or result is None:
+                        raise
+                    self.warn('stored_binary_float_noise', address)
             else:
                 values = []
                 for token in c['compiled']:
@@ -409,7 +443,8 @@ class Workbook:
         try:
             return 0 if self._located_numeric(address, value, 'formula_cached_value') == exact_cents else abs(Decimal(value) * 100 - exact_cents)
         except AssessmentError as exc:
-            require(str(exc) == 'fractional_cent', str(exc), exc.location)
+            sci = str(exc) == 'unsupported_numeric_token' and isinstance(value, str) and len(value) <= 64 and CONTROL_NUMBER.fullmatch(value) is not None
+            require(str(exc) == 'fractional_cent' or sci, str(exc), exc.location)
             with localcontext() as ctx:
                 ctx.prec = 80
                 return abs(Decimal(value) * 100 - exact_cents)
@@ -542,7 +577,7 @@ def journal_postings(book, choice):
     are retained here as original cell text. They are not durable source IDs.
     """
     layout = journal_layout(book)
-    if layout == 'qbo_modern':
+    if layout in ('qbo_modern', 'qbo_modern_no_adj'):
         return modern_journal_postings(book, choice)
     order, basis = date_order(book, choice)
     active, groups, accounts, total_row, footer_count = None, [], {}, None, 0
@@ -629,6 +664,8 @@ def journal_layout(book):
         return 'qbo_legacy'
     if header == MODERN_JOURNAL_HEADER:
         return 'qbo_modern'
+    if header == MODERN_NO_ADJ_JOURNAL_HEADER:
+        return 'qbo_modern_no_adj'
     raise AssessmentError('journal_header_mismatch')
 
 
@@ -643,6 +680,7 @@ def modern_journal_postings(book, choice):
     The column-A label is source report text, not a durable transaction id.
     """
     order, basis = date_order(book, choice)
+    has_adj = journal_layout(book) == 'qbo_modern'
     active, groups, accounts, total_row, footer_count, held, held_groups = None, [], {}, None, 0, [], []
     for row in sorted(r for r in book.rows if r > 5):
         cols = nonempty_columns(book, row)
@@ -652,7 +690,7 @@ def modern_journal_postings(book, choice):
             require(cols == {'A'}, 'financial_rows_after_journal_total')
             footer_count += 1
             continue
-        require(cols <= set('ABCDEFGHIJ'), 'unexpected_journal_columns')
+        require(cols <= set('ABCDEFGHIJ' if has_adj else 'ABCDEFGHI'), 'unexpected_journal_columns')
         if 'A' in cols:
             label = book.text(f'A{row}')
             missing = {'group_start_row': active['source_start_row'], 'boundary_row': row} if active else None
@@ -690,8 +728,10 @@ def modern_journal_postings(book, choice):
             continue
         require(active is not None, 'orphan_journal_account_line', {'row': row})
         require('B' in cols and 'C' in cols, 'journal_transaction_type_required', {'row': row})
-        require('J' in cols and book.text(f'J{row}').lower() in ADJ_FLAGS, 'journal_adjustment_flag_required', {'row': row})
-        date, ttype, adjusting = parse_date(book, f'B{row}', order), book.text(f'C{row}'), ADJ_FLAGS[book.text(f'J{row}').lower()]
+        if has_adj:
+            require('J' in cols and book.text(f'J{row}').lower() in ADJ_FLAGS, 'journal_adjustment_flag_required', {'row': row})
+        date, ttype = parse_date(book, f'B{row}', order), book.text(f'C{row}')
+        adjusting = ADJ_FLAGS[book.text(f'J{row}').lower()] if has_adj else None
         if active['date'] is None:
             active.update(date=date, transaction_type=ttype, adjusting=adjusting, number=optional_text(book, f'D{row}'), name=optional_text(book, f'E{row}'))
         require((date, ttype) == (active['date'], active['transaction_type']), 'journal_group_metadata_inconsistent', {'row': row})
@@ -723,7 +763,7 @@ def modern_journal_postings(book, choice):
     require(total == grand_total(book, total_row, total), 'journal_grand_total_mismatch')
     dates = [g['date'] for g in every]
     return {'status': 'supported_controls_passed', 'group_count': len(groups), 'line_count': sum(g['line_count'] for g in groups),
-            'held_lines': held, 'held_group_count': len(held_groups), 'held_groups': held_groups, 'warnings': book.warnings, 'date_start': min(dates), 'date_end': max(dates), 'date_order': order, 'date_order_basis': basis, 'total_row': total_row, 'debit_cents': str(total[0]), 'credit_cents': str(total[1]), 'groups': groups, 'accounts': [{'label': label, 'label_ref': sha(label.encode('utf-8')), 'line_count': v['line_count'], 'debit_cents': str(v['debit']), 'credit_cents': str(v['credit']), 'net_debit_cents': str(v['debit'] - v['credit'])} for label, v in sorted(accounts.items())], 'footer_rows': footer_count, 'adjusting_group_count': sum(g['adjusting'] for g in groups), 'durable_source_transaction_ids_available': False, 'identity_basis': 'Source workbook hash, report row locators and column-A group text only; no durable source transaction identity.', 'layout': 'qbo_modern'}
+            'held_lines': held, 'held_group_count': len(held_groups), 'held_groups': held_groups, 'warnings': book.warnings, 'date_start': min(dates), 'date_end': max(dates), 'date_order': order, 'date_order_basis': basis, 'total_row': total_row, 'debit_cents': str(total[0]), 'credit_cents': str(total[1]), 'groups': groups, 'accounts': [{'label': label, 'label_ref': sha(label.encode('utf-8')), 'line_count': v['line_count'], 'debit_cents': str(v['debit']), 'credit_cents': str(v['credit']), 'net_debit_cents': str(v['debit'] - v['credit'])} for label, v in sorted(accounts.items())], 'footer_rows': footer_count, 'adjusting_group_count': sum(bool(g['adjusting']) for g in groups) if has_adj else None, 'durable_source_transaction_ids_available': False, 'identity_basis': 'Source workbook hash, report row locators and column-A group text only; no durable source transaction identity.', 'layout': 'qbo_modern' if has_adj else 'qbo_modern_no_adj'}
 
 
 def journal(book, choice):
