@@ -241,3 +241,30 @@ fn class_14_1_additional_allowance_reg_1100_1_c1() {
     assert_eq!(mx(&i), 200_00);
     i.cca[0].class = "8".into(); assert!(validate(&i).is_err());
 }
+
+#[test]
+fn vehicle_caps_reg_7307() {
+    let mut i = base();
+    let v = Vehicle { acquired: "2024-06-01".into(), cost_cents: 60_000_00, sales_tax_on_limit_cents: Some(1_850_00) };
+    i.cca = vec![CcaClass { class: "10.1".into(), additions_cents: 38_850_00, vehicles: vec![v.clone()], ..Default::default() }];
+    let run = |i: &T2Input| { let mut d = vec![]; let s = schedule8(i, &mut d); (s, d) };
+    let (s8, d) = run(&i);
+    assert!(!d.iter().any(|x| x["blocks_review"] == true), "{d:?}");
+    // 2024: $37,000 + B $1,850
+    assert_eq!(s8["classes"][0]["vehicles"][0]["capital_cost_cents"], 38_850_00);
+    i.cca[0].additions_cents = 60_000_00;
+    assert!(run(&i).1.iter().any(|x| x["code"] == "cca_vehicle_limit"));
+    i.cca[0].vehicles[0].acquired = "2025-02-01".into(); i.cca[0].additions_cents = 39_850_00;
+    assert!(!run(&i).1.iter().any(|x| x["blocks_review"] == true)); // 2025: $38,000
+    i.cca[0].vehicles[0].cost_cents = 30_000_00; i.cca[0].additions_cents = 30_000_00;
+    assert!(run(&i).1.iter().any(|x| x["code"] == "cca_vehicle_class"));
+    let mut z = base();
+    z.cca = vec![CcaClass { class: "54".into(), additions_cents: 64_050_00, aiip_additions_cents: 64_050_00, vehicles: vec![Vehicle { acquired: "2023-03-01".into(), cost_cents: 80_000_00, sales_tax_on_limit_cents: Some(3_050_00) }], ..Default::default() }];
+    let (s8, d) = run(&z);
+    assert!(!d.iter().any(|x| x["code"] == "cca_vehicle_limit"), "{d:?}");
+    assert_eq!(s8["classes"][0]["vehicles"][0]["prescribed_amount_cents"], 64_050_00); // $61,000 + B
+    z.cca[0].vehicles[0].sales_tax_on_limit_cents = None;
+    assert!(run(&z).1.iter().any(|x| x["code"] == "cca_vehicle_limit"));
+    z.cca[0].vehicles[0].acquired = "2019-03-18".into();
+    assert!(run(&z).1.iter().any(|x| x["code"] == "cca_vehicle_limit"));
+}
