@@ -161,7 +161,7 @@ async fn independent_tax_workpaper_lifecycle() {
     let t1 = calculated[0].clone();
     fails(&router, "POST", &endpoint(&t1, "/transition"), Some(json!({"expected_revision":2,"status":"approved","reviewer":"Reviewer","note":"Skip review"})), 409).await;
     fails(&router, "POST", &endpoint(&t1, "/transition"), Some(json!({"expected_revision":1,"status":"in_review"})), 409).await;
-    let in_review = transition(&router, &t1, "in_review", "", "").await;
+    let in_review = transition(&router, &t1, "in_review", "", "Synthetic preparer").await;
     fails(&router, "POST", &endpoint(&in_review, "/transition"), Some(json!({"expected_revision":revision(&in_review),"status":"approved","note":"Checked"})), 400).await;
     let approved = transition(&router, &in_review, "approved", "Checked the declared bounded scope and source amounts.", "Synthetic reviewer").await;
     assert_eq!(approved["review"]["input_hash"], approved["calculation"]["input_hash"]);
@@ -362,7 +362,7 @@ async fn corporate_profile_lifecycle(router: &axum::Router) {
     assert_eq!(analysis["reconciliation"]["book_to_tax"]["matches"], true);
     assert_eq!(analysis["reconciliation"]["balance_sheets"][0]["balanced"], true);
     assert_eq!(calculated["calculation"]["input_document"]["corporate"], created["corporate"]);
-    let in_review = transition(router, &calculated, "in_review", "", "").await;
+    let in_review = transition(router, &calculated, "in_review", "", "Synthetic preparer").await;
     let approved = transition(router, &in_review, "approved", "Checked synthetic financial totals and explicit signed tax adjustments.", "Synthetic corporate reviewer").await;
     let reopened = transition(router, &approved, "draft", "Reopen synthetic corporate profile for a financial correction.", "").await;
     let mut unbalanced = editable(&reopened);
