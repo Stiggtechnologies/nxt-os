@@ -689,3 +689,58 @@ async fn parallel_source_archives_are_immutable_scoped_and_never_financial_write
         .await;
     assert_eq!(failure.err().unwrap().0.as_u16(), 409);
 }
+
+#[tokio::test]
+async fn client_scoped_staff_see_only_their_cohort_snapshots() {
+    use nxt_os::firm::staff;
+    unsafe {
+        std::env::set_var("ADMIN_API_KEY", "k");
+        std::env::set_var("NXT_STAFF_PBKDF2_ITERATIONS", "1000");
+    }
+    staff::install(Arc::new(staff::Staff::new(Store::memory())));
+    let router = app_with(Store::memory);
+    let (_, archive_chunks, _) = fixture();
+    upload(&router, &archive_chunks[..2]).await;
+    for client in 0..2 {
+        let (manifest, chunks, _) = roster_fixture(client);
+        upload(&router, &chunks[2..]).await;
+        call(&router, "POST", "/api/migrations/snapshots", Some(manifest), 200).await;
+    }
+    let pw = "synthetic-pass-phrase-1";
+    let pw2 = "synthetic-pass-phrase-2";
+    call(&router, "POST", "/api/staff/users", Some(json!({"username":"mig","display_name":"Synthetic Scoped","role":"preparer","clients":["synthetic-roster-000"],"temporary_password":pw})), 200).await;
+    let as_staff = |tok: String| {
+        let router = router.clone();
+        move |m: &'static str, url: String, body: Option<Value>| {
+            let (router, tok) = (router.clone(), tok.clone());
+            async move {
+                let mut q = Request::builder().method(m).uri(url).header("x-forwarded-for", "10.1.0.2");
+                if !tok.is_empty() { q = q.header("authorization", format!("Bearer {tok}")); }
+                let q = match body { Some(v) => q.header("content-type", "application/json").body(Body::from(v.to_string())), None => q.body(Body::empty()) }.unwrap();
+                let resp = router.oneshot(q).await.unwrap();
+                let s = resp.status().as_u16();
+                let b = axum::body::to_bytes(resp.into_body(), 8 << 20).await.unwrap();
+                (s, serde_json::from_slice::<Value>(&b).unwrap_or(Value::Null))
+            }
+        }
+    };
+    let anon = as_staff(String::new());
+    let tok = anon("POST", "/api/staff/login".into(), Some(json!({"username":"mig","password":pw}))).await.1["token"].as_str().unwrap().to_string();
+    let st = as_staff(tok);
+    let secret = st("POST", "/api/staff/mfa/enroll".into(), Some(json!({}))).await.1["secret"].as_str().unwrap().to_string();
+    assert_eq!(st("POST", "/api/staff/mfa/confirm".into(), Some(json!({"code":staff::totp_now(&secret).unwrap()}))).await.0, 200);
+    assert_eq!(st("POST", "/api/staff/me/password".into(), Some(json!({"current_password":pw,"new_password":pw2}))).await.0, 200);
+
+    let (s, list) = st("GET", "/api/migrations".into(), None).await;
+    assert_eq!(s, 200);
+    let ids: Vec<_> = list["snapshots"].as_array().unwrap().iter().map(|v| v["id"].as_str().unwrap().to_string()).collect();
+    assert_eq!(ids, vec!["synthetic-shadow-000"]);
+    assert_eq!(st("GET", "/api/migrations/synthetic-shadow-000".into(), None).await.0, 200);
+    assert_eq!(st("GET", "/api/migrations/synthetic-shadow-001".into(), None).await.0, 403);
+    assert_eq!(st("GET", "/api/migrations/synthetic-shadow-001/archive".into(), None).await.0, 403);
+    assert_eq!(st("GET", "/api/migrations/synthetic-shadow-001/reports/r1/rows".into(), None).await.0, 403);
+    assert_eq!(st("POST", "/api/migrations/chunks".into(), Some(json!({"sha256":"00","content":"x"}))).await.0, 403);
+    assert_eq!(st("POST", "/api/migrations/snapshots".into(), Some(json!({}))).await.0, 403);
+    // Break-glass still sees both.
+    assert_eq!(call(&router, "GET", "/api/migrations", None, 200).await["snapshots"].as_array().unwrap().len(), 2);
+}
