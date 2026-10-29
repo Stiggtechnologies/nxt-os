@@ -330,12 +330,16 @@ class Bundle:
         self._verify_archive_members(self.source_archive, self.input["source"])
         self.chunks, self.chunk_hashes, self.accounts, self.entries = [], [], {}, []
         local_bytes = 0
+        # Multi-chunk books: refs are an ordered inventory (the stager writes chunk-000, chunk-001, ...).
+        # Every chunk is loaded and bound before any trial-balance control is evaluated; _analysis()
+        # below runs only once, after the final chunk, over the whole all-dates journal.
+        need(len({r["file"] for r in refs}) == len(refs) and len({r["sha256"] for r in refs}) == len(refs), "CHUNK_INVENTORY_DUPLICATE")
         for ref in refs:
             raw = self.files.read(self.stage / ref["file"], MAX_CHUNK, ref["sha256"])
             need(len(raw) == ref["bytes"], "CHUNK_LENGTH_MISMATCH")
             chunk = parse(raw)
             canonical = chunk_bytes(chunk)
-            need(len(canonical) <= MAX_CHUNK and len(chunk["entries"]) == ref["entries"], "CHUNK_PAYLOAD_BOUND")
+            need(len(canonical) <= MAX_CHUNK and len(chunk["entries"]) == ref["entries"] and (chunk["entries"] or chunk["accounts"]), "CHUNK_PAYLOAD_BOUND")
             local_bytes += len(canonical)
             need(local_bytes <= MAX_BOOK, "BOOK_SIZE_BOUND")
             self.chunks.append(chunk)
@@ -345,6 +349,7 @@ class Bundle:
                 self.accounts[account["id"]] = account
             self.entries.extend(chunk["entries"])
         self._metadata_context(v4)
+        need(len(set(self.chunk_hashes)) == len(self.chunk_hashes), "DUPLICATE_CHUNK")
         need(len(self.entries) == expected_entries and sum(len(e["lines"]) for e in self.entries) == expected_rows, "SOURCE_ROW_COVERAGE_MISMATCH")
         need(self.input["source"]["journal_sha256"] == verification["journal_sha256"], "JOURNAL_HASH_MISMATCH")
         for ref in source_summary.get("artifact_refs", []):

@@ -142,13 +142,9 @@ def build(data, date_order):
             used_tb_rows.add(tb["row"])
             basis = {"kind": "source_report_row", "report_sha256": trial_sha, "row": tb["row"]}
         controls.append({"account_id": account["id"], "debit_cents": presented[0], "credit_cents": presented[1], "basis": basis})
-    chunk = {
-        "accounts": [{"id": account["id"], "name": account["name"], "kind": None} for _, account in sorted(accounts.items(), key=lambda item: item[1]["id"])],
-        "entries": entries,
-    }
-    raw = op.chunk_bytes(chunk)
-    if not entries or len(raw) > op.MAX_CHUNK:
-        raise qbo.AssessmentError("staged_journal_empty_or_over_chunk_bound")
+    account_rows = [{"id": account["id"], "name": account["name"], "kind": None} for _, account in sorted(accounts.items(), key=lambda item: item[1]["id"])]
+    chunks = split_chunks(account_rows, entries)
+    return_chunks = [(chunk, op.chunk_bytes(chunk)) for chunk in chunks]
     return {
         "company_name": company,
         "archive_sha256": archive_sha,
@@ -158,13 +154,45 @@ def build(data, date_order):
         "trial_balance_member": names["trial_balance"],
         "period_start": journal["date_start"],
         "period_end": journal["date_end"],
-        "chunk": chunk,
-        "chunk_raw": raw,
+        "chunks": return_chunks,
         "controls": controls,
         "entries": len(entries),
         "lines": len(used_rows),
         "accounts": len(accounts),
     }
+
+
+def split_chunks(account_rows, entries, limit=None):
+    """Pack whole journal entries, in source order, into chunks of at most MAX_CHUNK canonical bytes.
+
+    Accounts ride once, in the first chunk; a transaction is never split across chunks.
+    """
+    limit = op.MAX_CHUNK if limit is None else limit
+    if not entries:
+        raise qbo.AssessmentError("staged_journal_empty_or_over_chunk_bound")
+    base_first = len(op.chunk_bytes({"accounts": account_rows, "entries": []}))
+    base_rest = len(op.chunk_bytes({"accounts": [], "entries": []}))
+    chunks, current, size = [], [], base_first
+    for entry in entries:
+        entry_bytes = len(op.chunk_bytes({"accounts": [], "entries": [entry]})) - base_rest
+        cost = entry_bytes + (1 if current else 0)
+        if current and size + cost > limit:
+            chunks.append({"accounts": [] if chunks else account_rows, "entries": current})
+            current, size, cost = [], base_rest, entry_bytes
+        current.append(entry)
+        size += cost
+    chunks.append({"accounts": [] if chunks else account_rows, "entries": current})
+    total = 0
+    for chunk in chunks:
+        raw = op.chunk_bytes(chunk)
+        total += len(raw)
+        if not chunk["entries"] or len(raw) > limit:
+            raise qbo.AssessmentError("staged_journal_empty_or_over_chunk_bound")
+    if len(chunks) > 256 or total > op.MAX_BOOK:
+        raise qbo.AssessmentError("staged_journal_over_book_bound")
+    if [e["id"] for c in chunks for e in c["entries"]] != [e["id"] for e in entries]:
+        raise qbo.AssessmentError("staged_journal_chunk_order_mismatch")
+    return chunks
 
 
 def write_json(path, value):
@@ -181,9 +209,11 @@ def stage(data, out, cohort, date_order, synthetic_evidence):
     (out / "source.zip").write_bytes(data)
     stage_dir = out / "stage"
     stage_dir.mkdir(mode=0o700)
-    chunk_path = stage_dir / "chunk-000.json"
-    chunk_path.write_bytes(staged["chunk_raw"])
-    refs = [{"file": "chunk-000.json", "sha256": qbo.sha(staged["chunk_raw"]), "bytes": len(staged["chunk_raw"]), "entries": staged["entries"]}]
+    refs = []
+    for index, (chunk, raw) in enumerate(staged["chunks"]):
+        name = f"chunk-{index:03d}.json"
+        (stage_dir / name).write_bytes(raw)
+        refs.append({"file": name, "sha256": qbo.sha(raw), "bytes": len(raw), "entries": len(chunk["entries"])})
     source = {
         "system": "quickbooks_online",
         "archive_sha256": staged["archive_sha256"],
@@ -271,6 +301,8 @@ def stage(data, out, cohort, date_order, synthetic_evidence):
         "accounts": staged["accounts"],
         "entries": staged["entries"],
         "lines": staged["lines"],
+        "chunks": len(refs),
+        "chunk_bytes": [ref["bytes"] for ref in refs],
         "controls_sha256": controls_sha,
         "acquisition_sha256": acquisition_sha,
         "evidence_sha256": evidence_sha,
