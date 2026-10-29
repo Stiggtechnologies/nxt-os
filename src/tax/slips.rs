@@ -1,4 +1,4 @@
-//! Information-slip data entry (T4, T4A, T5) and aggregation into the T1
+//! Information-slip data entry (T4, T4A, T5, T3, T5008, RRSP receipts, T2202) and aggregation into the T1
 //! calculation inputs the native engine supports. Amounts are integer cents.
 //! Boxes the current engine cannot calculate are totalled and flagged, never
 //! silently dropped or folded into another line.
@@ -25,14 +25,34 @@ pub const MAPPED: &[(&str, &str, &str, &str)] = &[
     ("T4", "22", "tax_withheld_cents", "43700"),
     ("T4A", "22", "tax_withheld_cents", "43700"),
     ("T5", "13", "interest_income_cents", "12100"),
+    ("T5008", "21", "capital_proceeds_cents", "S3-proceeds"),
+    ("T5008", "20", "capital_acb_cents", "S3-acb"),
+    ("T2202", "23", "tuition_cents", "32300"),
+    ("T4A", "016", "pension_income_cents", "11500"),
 ];
+/// Recorded boxes that are informational because the claim is entered separately
+/// as a verified amount (they do not block review).
+pub const NON_BLOCKING: &[(&str, &str)] = &[("T4", "16"), ("T4", "18"), ("RRSP", "contribution"), ("RRSP", "first60"), ("T2202", "24"), ("T2202", "25")];
 /// Boxes recognised for entry and totalling but not applied by the 2025 engine.
 pub const RECORDED: &[(&str, &str, &str)] = &[
     ("T4", "16", "CPP contributions (Schedule 8 base/enhanced split must be verified)"),
     ("T4", "18", "EI premiums (line 31200 must be verified)"),
     ("T4", "20", "RPP contributions (line 20700)"),
     ("T4", "44", "Union dues (line 21200)"),
-    ("T4A", "016", "Pension or superannuation (line 11500)"),
+    ("T3", "21", "Capital gains (Schedule 3 line 17600; enter via capital proceeds after review)"),
+    ("T3", "23", "Actual amount of other-than-eligible dividends"),
+    ("T3", "26", "Other income (line 13000)"),
+    ("T3", "49", "Actual amount of eligible dividends"),
+    ("T3", "50", "Taxable amount of eligible dividends (line 12000)"),
+    ("T3", "32", "Taxable amount of other-than-eligible dividends (line 12010)"),
+    ("T3", "25", "Foreign non-business income"),
+    ("T3", "34", "Foreign non-business tax paid"),
+    ("T5008", "15", "Type of security code (record only)"),
+    ("T5008", "16", "Quantity (record only)"),
+    ("RRSP", "contribution", "RRSP contribution receipt, Mar 3 - Dec 31 2025 (Schedule 7; deduction entered separately against verified limit)"),
+    ("RRSP", "first60", "RRSP contribution receipt, Jan 1 - Mar 2 2026 (Schedule 7; deduction entered separately against verified limit)"),
+    ("T2202", "24", "Number of months part-time"),
+    ("T2202", "25", "Number of months full-time"),
     ("T4A", "018", "Lump-sum payments"),
     ("T4A", "020", "Self-employed commissions"),
     ("T4A", "028", "Other income (line 13000)"),
@@ -49,7 +69,7 @@ pub const RECORDED: &[(&str, &str, &str)] = &[
 pub fn validate(slips: &[Slip]) -> Result<(), String> {
     if slips.len() > 200 { return Err("at most 200 slips per return".into()); }
     for s in slips {
-        if !["T4", "T4A", "T5"].contains(&s.kind.as_str()) { return Err(format!("unsupported slip type {}", s.kind)); }
+        if !["T4", "T4A", "T5", "T3", "T5008", "RRSP", "T2202"].contains(&s.kind.as_str()) { return Err(format!("unsupported slip type {}", s.kind)); }
         if s.issuer.len() > 200 || s.issuer.chars().any(char::is_control) { return Err("invalid issuer label".into()); }
         if s.boxes.len() > 60 { return Err("too many boxes on one slip".into()); }
         for (b, v) in &s.boxes {
@@ -78,7 +98,7 @@ pub fn aggregate(slips: &[Slip]) -> Result<Value, String> {
                 let prior = recorded.get(&key).and_then(|x| x["cents"].as_i64()).unwrap_or(0);
                 recorded.insert(key, json!({"cents": prior + v, "meaning": r.2}));
                 if *v > 0 && !flags.iter().any(|f: &Value| f["box"] == format!("{} {}", r.0, r.1)) {
-                    flags.push(json!({"box": format!("{} {}", r.0, r.1), "blocks_review": !(r.1 == "16" || r.1 == "18") || r.0 != "T4",
+                    flags.push(json!({"box": format!("{} {}", r.0, r.1), "blocks_review": !NON_BLOCKING.contains(&(r.0, r.1)),
                         "message": format!("{} is recorded but not calculated by the native engine; verify and enter the claim manually or mark other_tax_situations.", r.2)}));
                 }
             }
@@ -101,11 +121,22 @@ mod tests {
         assert_eq!(out["lines"]["10100"], 6_000_000);
         assert_eq!(out["flags"][0]["blocks_review"], false);
     }
+    #[test] fn t3_t5008_rrsp_t2202_slips() {
+        let out = aggregate(&[slip("T5008", &[("21", 1_500_000), ("20", 1_000_000)]), slip("T2202", &[("23", 300_000), ("25", 8)]), slip("RRSP", &[("contribution", 500_000)]), slip("T3", &[("26", 2_000)]), slip("T4A", &[("016", 100)])]).unwrap();
+        assert_eq!(out["inputs"]["capital_proceeds_cents"], 1_500_000);
+        assert_eq!(out["inputs"]["capital_acb_cents"], 1_000_000);
+        assert_eq!(out["inputs"]["tuition_cents"], 300_000);
+        assert_eq!(out["inputs"]["pension_income_cents"], 100);
+        let flags = out["flags"].as_array().unwrap();
+        assert!(flags.iter().any(|f| f["box"] == "T3 26" && f["blocks_review"] == true));
+        assert!(flags.iter().any(|f| f["box"] == "RRSP contribution" && f["blocks_review"] == false));
+        assert!(flags.iter().any(|f| f["box"] == "T2202 25" && f["blocks_review"] == false));
+    }
     #[test] fn unsupported_boxes_are_flagged_or_rejected() {
         let out = aggregate(&[slip("T5", &[("25", 13_800)])]).unwrap();
         assert_eq!(out["flags"][0]["blocks_review"], true);
         assert!(aggregate(&[slip("T4", &[("99", 1)])]).is_err());
         assert!(aggregate(&[slip("T4", &[("14", -1)])]).is_err());
-        assert!(aggregate(&[slip("T3", &[])]).is_err());
+        assert!(aggregate(&[slip("T2125", &[])]).is_err());
     }
 }

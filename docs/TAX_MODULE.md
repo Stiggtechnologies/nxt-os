@@ -58,6 +58,16 @@ The T1 engine covers AB and ON, each with its own calculator. A generic engine (
 
 The RRSP deduction stays an input checked against a verified limit; the 2025 dollar limit of $32,490 is sourced. CPP/EI are verified inputs within the sourced 2025 maximums.
 
+## Slips (slips.rs)
+- **Mapped:**
+  - T4 14/22, T4A 22, T5 13 (unchanged);
+  - T4A 016 (line 11500);
+  - T5008 21/20 (Schedule 3 proceeds/ACB; still needs `schedule3_verified`);
+  - T2202 23 (line 32300 tuition).
+- **Recorded:**
+  - T3 boxes 21/23/25/26/32/34/49/50. These are flagged and block review because trust allocations are not calculated.
+  - RRSP receipts (contribution / first-60-days) and T2202 months. These don't block review, because the deduction is entered separately against a verified limit.
+
 ## External dependencies
 - CRA EFILE/NETFILE/Corporation Internet Filing software certification, renewed every year
 - An EFILE number and registration for the firm
