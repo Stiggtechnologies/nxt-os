@@ -56,7 +56,8 @@ The T1 engine covers AB and ON, each with its own calculator. A generic engine (
   - pension amount (31400, max $2,000);
   - medical (33099, threshold the lesser of 3% and $2,834, which is sourced);
   - donations (14.5%/29%/33%, Schedule 9);
-  - current-year T2202 tuition (32300).
+  - current-year T2202 tuition (32300);
+  - age (30100: $9,028 less 15% over $45,522, input `born_1960_or_earlier`), spouse (30300: BPA minus `spouse_net_income_cents`), disability for an adult (31600: $10,138, input `disability_tax_credit_approved`), with provincial counterparts from each 428 form (NS uses the $874 spouse-income floor; YT uses the federal amounts). Eligible dependant, caregiver and infirmity supplements are not handled.
 - **Provincial counterparts (2025)** are calculated for all 12 provinces/territories from each 428 form and worksheet (`rates::PROV_CREDITS_2025`, sourced): pension amount, medical (3% / provincial cap), donations (provincial low/high rates; BC 20.5% top tier), current-year tuition where it exists (none in AB, ON, SK), and SE CPP credit amount. AB amounts feed the supplemental credit (Worksheet AB428 line 61545). Not calculated: provincial education/textbook amounts and tuition carryforwards (flagged).
 
 The RRSP deduction stays an input checked against a verified limit; the 2025 dollar limit of $32,490 is sourced. CPP/EI are verified inputs within the sourced 2025 maximums.
