@@ -18,6 +18,13 @@ Outputs (new directory, refused if it exists):
   mapping.json             account -> Caseware map number / GIFI / class and
                            the mapping table (MP) rows
   report.json              checks, counts and warnings
+  documents.json           CaseView .cvw inventory: each document is an OLE2
+                           compound file; stream names, sizes and sha256 are
+                           listed. Content is NOT rendered or interpreted.
+  signoffs.json            procedure sign-offs (PR.dbf: done-by present, date),
+                           history events (HI.dbf category/type/date), issues
+                           (TS.dbf) and annotations (AN.dbf) as counts and
+                           per-row records. Role protection is not inferred.
 
 Table semantics established from 24 real engagements on R: (2026-10-29):
   <name>AM.dbf  account master: TYPE B (balance sheet) / I (income), AC_NO,
@@ -35,6 +42,9 @@ Unknown layouts fail visibly; nothing is guessed silently.
 import argparse, hashlib, json, os, shutil, struct, sys
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cfb  # noqa: E402  stdlib-only OLE2 reader shared with the payroll reader
 
 FORMAT_TB = "nxt-engagement-tb/v1"
 FORMAT_PRES = "nxt-caseware-preservation-batch/v1"
@@ -222,6 +232,62 @@ def read_engagement(folder):
             {"reader": READER, "accounts": mapping, "map_table": mp_rows}, report)
 
 
+def read_documents(folder):
+    docs, failed = [], []
+    for p in sorted(Path(folder).iterdir()):
+        if not (p.is_file() and p.suffix.lower() == ".cvw"):
+            continue
+        b = p.read_bytes()
+        row = {"file": p.name, "sha256": hashlib.sha256(b).hexdigest(), "size_bytes": len(b),
+               "rendered": False}
+        try:
+            c = cfb.Cfb(b)
+            row["streams"] = [{"name": n, "size": z, "sha256": hashlib.sha256(c.read(n)).hexdigest()}
+                              for n, z in c.streams()]
+            row["container"] = "ole2"
+        except cfb.CfbError as e:
+            row["container"] = "unreadable"; row["error"] = str(e); failed.append(p.name)
+        docs.append(row)
+    return {"reader": READER, "documents": docs, "unreadable": failed}
+
+
+def _date(v):
+    v = (v or "").strip()
+    return f"{v[:4]}-{v[4:6]}-{v[6:8]}" if len(v) >= 8 and v[:8].isdigit() else None
+
+
+def read_signoffs(folder):
+    out = {"reader": READER, "procedures": [], "history": [], "issues": [], "annotations": 0,
+           "role_protection_observed": False}
+    pr = find_table(folder, "pr")
+    if pr is not None:
+        for r in read_dbf(pr)["rows"]:
+            out["procedures"].append({
+                "document_guid": r.get("DOCGUID", ""), "number": r.get("NO", ""),
+                "wp_ref": r.get("WP_REF", ""), "done": bool(r.get("DONE_BY", "").strip()),
+                "done_by": r.get("DONE_BY", "").strip() or None, "date": _date(r.get("DATE")),
+                "check": r.get("CHECK", "").strip() or None})
+    hi = find_table(folder, "hi")
+    if hi is not None:
+        for r in read_dbf(hi)["rows"]:
+            out["history"].append({"category": r.get("CATEGORY", ""), "type": r.get("TYPE", ""),
+                                   "object_id": r.get("OBJECTID", ""), "user": r.get("USER", "") or None,
+                                   "at": _date(r.get("STARTDATE"))})
+    ts = find_table(folder, "ts")
+    if ts is not None:
+        for r in read_dbf(ts)["rows"]:
+            out["issues"].append({"document_id": r.get("DOCID", ""), "subject": r.get("SUBJECT", ""),
+                                  "priority": r.get("PRIORITY", ""), "resolved": bool(r.get("RESOLUTION", "").strip())})
+    an = find_table(folder, "an")
+    if an is not None:
+        out["annotations"] = len(read_dbf(an)["rows"])
+    out["counts"] = {"procedures": len(out["procedures"]),
+                     "procedures_signed": sum(1 for x in out["procedures"] if x["done"]),
+                     "history_events": len(out["history"]), "issues": len(out["issues"]),
+                     "open_issues": sum(1 for x in out["issues"] if not x["resolved"])}
+    return out
+
+
 def dump(p, obj):
     p.write_text(json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -251,6 +317,12 @@ def cmd_read(engagement, out, currency="CAD"):
                                      "synthetic": False, "records": rows})
     dump(out / "trial-balance.json", tb)
     dump(out / "mapping.json", mapping)
+    docs = read_documents(src)
+    so = read_signoffs(src)
+    report["documents"] = {"cvw": len(docs["documents"]), "unreadable": len(docs["unreadable"])}
+    report["signoffs"] = so["counts"]
+    dump(out / "documents.json", docs)
+    dump(out / "signoffs.json", so)
     dump(out / "report.json", report)
     return report
 
