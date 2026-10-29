@@ -27,3 +27,7 @@ Observed on the T1 database copied from the office share (DT Max 29.30):
 **Blocked: return content.** The payloads are not plaintext. Raw deflate, zlib, gzip and LZ4 all failed, and even sections whose packed size equals their unpacked size have ~6.6 bits/byte entropy. The payload is vendor-encoded (compressed and/or enciphered). Decoding it means reverse-engineering DT Max, which this repo does not do (`DTMAX_EXPORT_CONTRACT.md`). The test copy therefore keeps the year, save time, section count, size and SHA-256 per client and year, with `content_decoded: false`. Content needs a DT Max export (keyword export, SDK, or per-return PDF/print), which is a separate lane.
 
 One file per year with a non-numeric stem has no `DTMAX` header (template/default). It is skipped.
+
+## Loader
+
+`scripts/load-dtmax-test-copy.py` merges the DT Max client-list exports (xlsx plus Book1/Book2 csv) by `Client #`, with the xlsx taking precedence. It indexes `T1/<year>/*.Pyy` and posts batches of 1,000. It accepts only a loopback `--origin`, reads the admin key from `NXT_TEST_COMPANY_BOOKS_KEY` only, never sends SIN, comments or call feedback, and prints counts only. `--dry-run` posts nothing.
