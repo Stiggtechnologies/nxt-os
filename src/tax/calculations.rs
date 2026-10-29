@@ -154,7 +154,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let aged=boolean(obj,"born_1961_or_earlier")?; let med=money(obj,"medical_expenses_cents")?;
     if aged || med>0 {
         require(c,obj,"credits_verified","Verify the birth year (1961 or earlier) and medical receipts (12-month period ending in 2026).")?;
-        if med>0 && pc!="BC" { c.diagnostic("provincial_medical_2026_unsourced","2026 provincial medical expense thresholds are not yet sourced; only the federal medical credit is calculated.",None,true); }
+        if med>0 && pc!="BC" && prov_extra_2026(pc).is_none() { c.diagnostic("provincial_medical_2026_unsourced","2026 provincial medical expense thresholds are not yet sourced; only the federal medical credit is calculated.",None,true); }
     }
     let age_amount=if aged { (920_800-rounded_ratio((taxable-4_643_200).max(0),1500,10000)?).max(0) } else { 0 };
     let medical=(med-rounded_ratio(taxable,300,10000)?.min(289_000)).max(0);
@@ -180,7 +180,9 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let (tui,don,hb,adopt,sli)=(money(obj,"tuition_cents")?,money(obj,"donations_cents")?,money(obj,"home_buyers_amount_cents")?,money(obj,"adoption_expenses_cents")?,money(obj,"student_loan_interest_cents")?);
     let others=spouse_claim||disabled||pension>0||tui>0||don>0||hb>0||adopt>0||sli>0;
     // BC: tuition, donations, adoption and student-loan interest are calculated below (gov.bc.ca basic credits page).
-    let prov_others=if pc=="BC" { hb>0 } else { tui>0||don>0||hb>0||adopt>0||sli>0 };
+    let prov_others=if pc=="BC" { hb>0 } else { match prov_extra_2026(pc) {
+        Some(x) => hb>0 || (tui>0 && !x.tuition) || (don>0 && x.donations.is_none()) || (adopt>0 && x.adoption_max.is_none()) || (sli>0 && !x.student_loan),
+        None => tui>0||don>0||hb>0||adopt>0||sli>0 } };
     if others {
         require(c,obj,"credits_verified","Verify spouse net income, CRA-approved T2201, eligible pension income (age/type), T2202 tuition (current year only), official donation receipts, home buyers', adoption and student-loan receipts.")?;
         if prov_others { c.diagnostic("provincial_credits_2026_unsourced","2026 provincial counterparts of these credits are not yet sourced; only federal amounts are calculated.",None,true); }
@@ -230,6 +232,12 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
                 let r=don-first; let hi=r.min((taxable-26_554_500).max(0));
                 extra_credit=sum(&[rounded_ratio(first,p.credit_rate_bps,10000)?,rounded_ratio(r-hi,1680,10000)?,rounded_ratio(hi,2050,10000)?])?;
                 if don>0 { c.line("bc_donation_credit","BC donation credit (2026)",extra_credit); }
+            } else if let Some(x)=prov_extra_2026(p.code) {
+                let pmed=(med-rounded_ratio(taxable,300,10000)?.min(x.medical_ceiling)).max(0);
+                if med>0 { c.line(&format!("{}58689",p.code),&format!("{} allowable medical expenses (2026)",p.code),pmed); }
+                let ptui=if x.tuition { tui } else { 0 }; let padopt=x.adoption_max.map(|m| adopt.min(m)).unwrap_or(0); let psli=if x.student_loan { sli } else { 0 };
+                extra=sum(&[pmed,ptui,padopt,psli])?;
+                if let Some((lo,hi))=x.donations { extra_credit=sum(&[rounded_ratio(first,lo,10000)?,rounded_ratio(don-first,hi,10000)?])?; if don>0 { c.line(&format!("{}_donation_credit",p.code.to_lowercase()),&format!("{} donation credit (2026)",p.code),extra_credit); } }
             }
             (b,progressive(taxable,p.brackets)?,sum(&[rounded_ratio(sum(&[b,ce,cpp,ei,pa,extra])?,p.credit_rate_bps,10000)?,extra_credit])?)
         }
@@ -315,6 +323,19 @@ fn t1_2026_on(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
 /// equals threshold + full amount). TD1AB $13,180/$20,956; TD1MB $3,605/$12,312; TD1NB $5,957/$20,340; TD1NL $3,553/$17,364;
 /// TD1NS $4,898/$13,677; TD1NT $6,032/$20,601; TD1NU $6,032/$20,601; TD1PE $2,446/$11,953; TD1SK $14,266/$19,490;
 /// TD1YT $8,773/$20,601. BC is handled from gov.bc.ca; ON (TD1ON-WS formula) and non-resident dependants are unsupported.
+/// Other provincial 2026 credits from official provincial government publications (only where a 2026 figure is published):
+/// ON: data.ontario.ca "Personal income tax rates and credits" 2026 table - medical over lesser of 3% of net income and
+///     $2,940; donations 5.05% first $200, 11.16% above; adoption max $15,846. (No 2026 tuition/student-loan figure -> unsupported.)
+/// NL: gov.nl.ca/fin Personal Income Tax, 2026 column - medical threshold $2,437; tuition and student-loan interest at actual
+///     expense; adoption max $15,099; donations 8.7% first $200 / 21.8% above (NL lowest/top 2026 rates on the same page).
+/// SK: saskatchewan.ca "2026 Personal Income Tax Structure" - medical 3% of net income, ceiling $2,735; student-loan interest
+///     actual. (Donation rates, tuition and adoption not published for 2026 there -> unsupported.)
+struct ProvExtra2026 { medical_ceiling: i64, donations: Option<(i64,i64)>, tuition: bool, adoption_max: Option<i64>, student_loan: bool }
+fn prov_extra_2026(code:&str)->Option<ProvExtra2026> { match code {
+    "ON" => Some(ProvExtra2026{ medical_ceiling:294_000, donations:Some((505,1116)), tuition:false, adoption_max:Some(1_584_600), student_loan:false }),
+    "NL" => Some(ProvExtra2026{ medical_ceiling:243_700, donations:Some((870,2180)), tuition:true, adoption_max:Some(1_509_900), student_loan:true }),
+    "SK" => Some(ProvExtra2026{ medical_ceiling:273_500, donations:None, tuition:false, adoption_max:None, student_loan:true }),
+    _ => None } }
 const PROV_CAREGIVER_2026: &[(&str,i64,i64)] = &[("AB",1_318_000,2_095_600),("MB",360_500,1_231_200),("NB",595_700,2_034_000),("NL",355_300,1_736_400),("NS",489_800,1_367_700),("NT",603_200,2_060_100),("NU",603_200,2_060_100),("PE",244_600,1_195_300),("SK",1_426_600,1_949_000),("YT",877_300,2_060_100)];
 fn prov_caregiver_2026(c: &mut Calculation, code: &str, cg: Option<i64>, obj: &Map<String,Value>) -> Result<i64,String> {
     let Some(n)=cg else { return Ok(0) };
@@ -977,6 +998,15 @@ mod tests {
         for p in ["NL","NB","MB","YT"] { assert!(b(p,base.clone()).supported,"{p}"); }
         for p in ["AB","SK","NS","PE","NT","NU"] { assert!(!b(p,base.clone()).supported,"{p}"); }
         let mut u=base.clone(); u["dividends_verified"]=json!(false); assert!(!b("BC",u).supported);
+    }
+    #[test]fn t1_2026_provincial_medical_donations(){
+        let l=|c:&Calculation,k:&str|c.lines.iter().find(|x|x.code==k).unwrap().amount;
+        let v=|p:&str,don:i64| calculate("T1",2026,p,&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"credits_verified":true,"interest_income_cents":7_000_000,"medical_expenses_cents":400_000,"donations_cents":don})).unwrap();
+        // Medical: 4,000 - min(3% x 70,000 = 2,100, ceiling) = 1,900. NL gifts 8.7% x 200 + 21.8% x 1,000 = 235.40; ON 5.05%/11.16% = 121.70.
+        let nl=v("NL",120_000); assert!(nl.supported,"{:?}",nl.diagnostics); assert_eq!(l(&nl,"NL58689"),190_000); assert_eq!(l(&nl,"nl_donation_credit"),23_540);
+        let on=v("ON",120_000); assert!(on.supported,"{:?}",on.diagnostics); assert_eq!(l(&on,"ON58689"),190_000); assert_eq!(l(&on,"on_donation_credit"),12_170);
+        let sk=v("SK",0); assert!(sk.supported,"{:?}",sk.diagnostics); assert_eq!(l(&sk,"SK58689"),190_000);
+        assert!(!v("SK",120_000).supported); assert!(!v("NS",0).supported);
     }
     #[test]fn t1_2026_provincial_caregiver(){
         let l=|c:&Calculation,k:&str|c.lines.iter().find(|x|x.code==k).unwrap().amount;
