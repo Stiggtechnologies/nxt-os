@@ -36,6 +36,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/slips/aggregate",post(slips_aggregate))
         .route("/api/tax/gifi/from-trial-balance",post(gifi_from_tb))
         .route("/api/tax/t2/schedules",post(t2_schedules))
+        .route("/api/tax/t5013/cca",post(t5013_cca))
         .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(middleware::from_fn_with_state(tax.clone(), client_scope))
         .layer(middleware::from_fn(require_admin))
@@ -124,12 +125,13 @@ async fn gifi_from_tb(Json(input):Json<GifiInput>) -> R {
     ok(super::gifi_map::build(&input.balances,&input.mapping).map_err(super::bad)?)
 }
 
+async fn t5013_cca(Json(input):Json<super::t5013_cca::T5013CcaInput>) -> R { ok(super::t5013_cca::build(&input).map_err(super::bad)?) }
 async fn t2_schedules(Json(input):Json<super::t2_schedules::T2Input>) -> R { ok(super::t2_schedules::build(&input).map_err(super::bad)?) }
 
 /// Returns a src/signatures Draft (context module "tax"); POST it to /api/signatures to prepare the envelope.
 async fn t183_draft(State(t):S,Path(id):Path<String>) -> R { let r=t.get(&id).await?; ok(super::t183::draft(&r).map_err(|e|conflict(&e))?) }
 
 async fn client_scope(State(t): S, req: axum::extract::Request, next: middleware::Next) -> Response {
-    crate::firm::staff::scope_guard(req, next, "/api/tax/returns", &["/api/tax/catalog", "/api/tax/capabilities", "/api/tax/rates", "/api/tax/t2/schedules"],
+    crate::firm::staff::scope_guard(req, next, "/api/tax/returns", &["/api/tax/catalog", "/api/tax/capabilities", "/api/tax/rates", "/api/tax/t2/schedules", "/api/tax/t5013/cca"],
         |id| async move { t.get(&id).await.ok().map(|r| r.client_ref) }).await
 }
