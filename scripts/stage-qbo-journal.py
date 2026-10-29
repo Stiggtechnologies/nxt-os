@@ -17,6 +17,7 @@ source observations. Omit the flag for a real cohort and supply evidence
 separately.
 """
 import argparse
+import datetime as dt
 import importlib.util
 import json
 import sys
@@ -79,7 +80,29 @@ def build(data, date_order, prior_data=None, first_year=False):
         accounts[row["label"]]["journal"] = row
     reconciliation = report.get("opening_reconciliation")
     closed_opening = report.get("_closed_opening") if reconciliation and reconciliation["status"].startswith("reconciled") else None
-    opening_entry = None
+    opening_entry = close_entry = None
+    year_end_close = (reconciliation or {}).get("year_end_close") if closed_opening else None
+    if prior is not None and closed_opening and year_end_close:
+        # Fiscal year does not start in January: QuickBooks closes the income
+        # statement inside this calendar period. Carry the prior trial balance
+        # unchanged and post the close as its own entry on the fiscal year end,
+        # so balances before the close match the source.
+        start = int(reconciliation["fiscal_year_start_month"])
+        year = int(report["period_profile"]["period_start"][:4])
+        fy_end = (dt.date(year, start, 1) - dt.timedelta(days=1)).isoformat()
+        for label in list(prior["balances"]) + list(year_end_close):
+            accounts.setdefault(label, {"id": account_id(label), "name": label, "kind": None, "tb": None})
+        close_lines = [{"account_id": accounts[label]["id"], "debit_cents": str(max(net, 0)), "credit_cents": str(max(-net, 0)),
+                        "source_row": 0, "memo": "QuickBooks fiscal year-end close (derived from source trial balances)",
+                        "source_metadata": {"format": "qbo-fiscal-year-close/v1", "fiscal_year_start_month": start}}
+                       for label, net in sorted(year_end_close.items(), key=lambda item: account_id(item[0])) if net]
+        if sum(int(l["debit_cents"]) for l in close_lines) != sum(int(l["credit_cents"]) for l in close_lines):
+            raise qbo.AssessmentError("year_end_close_unbalanced")
+        close_entry = {"id": "c" + qbo.sha(f"{journal_sha}:{prior['sha256']}:close".encode("utf-8"))[:20], "date": fy_end,
+                       "source_id": f"fiscal-year-close:{fy_end}", "memo": "Fiscal year-end close", "lines": close_lines,
+                       "source_metadata": {"format": "qbo-fiscal-year-close/v1", "fiscal_year_start_month": start, "durable_source_id": False}}
+        closed_opening = {label: net for label, net in prior["balances"].items()}
+        closed_opening_for_controls = report.get("_closed_opening")
     if prior is not None and closed_opening:
         # Carry the prior year's closing trial balance forward as this year's
         # opening balance (after QuickBooks' year-end close, if any). Every
@@ -98,6 +121,8 @@ def build(data, date_order, prior_data=None, first_year=False):
                              "source_metadata": {"format": "qbo-opening-carry-forward/v1", "prior_trial_balance_sha256": prior["sha256"], "prior_as_of": prior["as_of"],
                                                  "year_end_close_accounts": reconciliation.get("year_end_close_accounts", 0), "durable_source_id": False}}
     entries = [opening_entry] if opening_entry else []
+    if close_entry:
+        closed_opening = closed_opening_for_controls
     used_rows = set()
     for group in journal["groups"]:
         lines = []
@@ -139,7 +164,9 @@ def build(data, date_order, prior_data=None, first_year=False):
                 **({"adjusting_entry": group["adjusting"], "source_group_label": group["source_group_label"]} if "adjusting" in group else {}),
             },
         })
-    if len(entries) - bool(opening_entry) != journal["group_count"] or len(used_rows) != journal["line_count"]:
+    if close_entry:
+        entries.append(close_entry)
+    if len(entries) - bool(opening_entry) - bool(close_entry) != journal["group_count"] or len(used_rows) != journal["line_count"]:
         raise qbo.AssessmentError("journal_line_coverage_mismatch")
     controls = []
     used_tb_rows = set()
@@ -187,7 +214,7 @@ def build(data, date_order, prior_data=None, first_year=False):
         "chunks": return_chunks,
         "controls": controls,
         "entries": len(entries),
-        "lines": len(used_rows) + (len(opening_entry["lines"]) if opening_entry else 0),
+        "lines": len(used_rows) + (len(opening_entry["lines"]) if opening_entry else 0) + (len(close_entry["lines"]) if close_entry else 0),
         "accounts": len(accounts),
         "warnings": report.get("warnings", []),
         "held_for_review": report.get("held_for_review", []),

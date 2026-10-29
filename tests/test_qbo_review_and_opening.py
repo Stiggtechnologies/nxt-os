@@ -272,6 +272,44 @@ class OpeningCarryForward(unittest.TestCase):
         # Without the multi-year flag, a mismatch still blocks as before.
         self.assertIn('account_net_balance_mismatch', codes(qbo.assess_export_bytes(y2)))
 
+    def test_fiscal_year_not_january_closes_at_fiscal_year_end(self):
+        # Fiscal year starts April: the 20.00 March revenue and the 30.00
+        # opening revenue close to retained earnings on March 31; the Dec 31
+        # trial balance shows no revenue. Exact to the cent, nothing estimated.
+        y2 = year_pack(2025, [('Synthetic cash', '150.00'), ('Synthetic capital', '-100.00'), ('Synthetic retained earnings', '-50.00')],
+                       'Synthetic cash', 'Synthetic revenue', '20.00')
+        prior = qbo.prior_trial_balance(self.y1)
+        r = qbo.assess_export_bytes(y2, prior=prior)
+        self.assertTrue(r['financial_controls_passed'], r['blockers'])
+        rec = r['opening_reconciliation']
+        self.assertEqual(rec['status'], 'reconciled_with_year_end_close')
+        self.assertEqual(rec['fiscal_year_start_month'], 4)
+        out = Path(tempfile.mkdtemp(prefix='nxt-fy-')) / 'staged'
+        summary = stage.stage(y2, out, 'synthetic-fy', 'auto', True, prior_data=self.y1)
+        self.assertEqual(summary['entries'], 3)
+        template = json.loads((out / 'template.json').read_text())
+        net, dates = {}, []
+        for path in (out / 'stage').glob('chunk-*.json'):
+            for entry in json.loads(path.read_text())['entries']:
+                dates.append(entry['date'])
+                for l in entry['lines']:
+                    net[l['account_id']] = net.get(l['account_id'], 0) + int(l['debit_cents']) - int(l['credit_cents'])
+        self.assertIn('2025-03-31', dates)
+        controls = {c['account_id']: int(c['debit_cents']) - int(c['credit_cents']) for c in template['input']['trial_balance']}
+        self.assertEqual({k: v for k, v in net.items() if v}, {k: v for k, v in controls.items() if v})
+
+    def test_stray_difference_reports_only_unexplained_accounts(self):
+        # Year-end close plus a 5.00 difference between two balance-sheet
+        # accounts (e.g. a sales-tax filing absent from the journal export):
+        # only the two unexplained accounts are reported, and the year still
+        # blocks instead of being forced to balance.
+        y2 = year_pack(2025, [('Synthetic cash', '145.00'), ('Synthetic tax suspense', '5.00'), ('Synthetic capital', '-100.00'), ('Synthetic retained earnings', '-30.00'), ('Synthetic revenue', '-20.00')],
+                       'Synthetic cash', 'Synthetic revenue', '20.00')
+        r = qbo.assess_export_bytes(y2, prior=qbo.prior_trial_balance(self.y1))
+        self.assertIn('account_net_balance_mismatch', codes(r))
+        rec = r['opening_reconciliation']
+        self.assertEqual((rec['status'], len(rec['mismatches']), rec['year_end_close_accounts']), ('unreconciled', 2, 1))
+
 
 import unittest.mock  # noqa: E402
 
