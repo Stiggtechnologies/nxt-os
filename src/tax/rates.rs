@@ -115,16 +115,20 @@ pub const PROVINCES_2025: &[Province] = &[
 ];
 
 /// 2026 generic-engine provinces. Data only: the T1 calculator is still gated to
-/// 2025. Included only where CRA's current-year page and T4127-JAN 2026 agree.
-/// Excluded because official sources conflict (stay unvalidated, not loaded):
-/// BC (lowest rate 5.6% on the CRA page vs 5.06% in T4127-JAN), MB (CRA page
-/// $47,564/$101,200 vs T4127-JAN/Manitoba freeze $47,000/$100,000), PE (CRA page
-/// adds a 20% bracket over $200,000; T4127-JAN 5-bracket table marked "updated May 2026").
+/// 2025. Included where CRA's current-year page and T4127-JAN 2026 agree, or where a
+/// conflict was resolved from the province's own official 2026 publication:
+/// BC 5.60% lowest rate (gov.bc.ca tax-rates page, Budget 2026; T4127-JAN predates it),
+/// MB $47,000/$100,000 and BPA $15,780 frozen (Manitoba Budget 2025 Information Bulletin 125;
+/// CRA current-year page shows indexed thresholds), PE 20% bracket over $200,000 and BPA
+/// $15,000 (princeedwardisland.ca provincial personal income tax page).
 pub const PROVINCES_2026: &[Province] = &[
     Province { code:"SK", name:"Saskatchewan", brackets:&[(5_453_200,1050),(15_580_500,1250),(i64::MAX,1450)], credit_rate_bps:1050, bpa_cents:Some(2_038_100), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[1_091,4_207], not_calculated:"2026 T1 calculation not wired" },
     Province { code:"NB", name:"New Brunswick", brackets:&[(5_233_300,940),(10_466_600,1400),(19_386_100,1600),(i64::MAX,1950)], credit_rate_bps:940, bpa_cents:Some(1_366_400), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[2_407,4_501,11_286], not_calculated:"2026 T1 calculation not wired" },
     Province { code:"NS", name:"Nova Scotia", brackets:&[(3_099_500,879),(6_199_100,1495),(9_741_700,1667),(15_712_400,1750),(i64::MAX,2100)], credit_rate_bps:879, bpa_cents:Some(1_193_200), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[1_909,2_976,3_784,9_283], not_calculated:"2026 T1 calculation not wired" },
     Province { code:"NL", name:"Newfoundland and Labrador", brackets:&[(4_467_800,870),(8_935_400,1450),(15_952_800,1580),(22_334_000,1780),(28_531_900,1980),(57_063_800,2080),(114_127_500,2130),(i64::MAX,2180)], credit_rate_bps:870, bpa_cents:Some(1_118_800), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[2_591,3_753,6_943,11_410,14_263,17_117,22_823], not_calculated:"2026 T1 calculation not wired" },
+    Province { code:"BC", name:"British Columbia", brackets:&[(5_036_300,560),(10_072_800,770),(11_564_800,1050),(14_043_000,1229),(19_040_500,1470),(26_554_500,1680),(i64::MAX,2050)], credit_rate_bps:560, bpa_cents:Some(1_321_600), employment_amount:false, bracket_source:BC_TAX_RATES, bpa_source:BC_BASIC_CREDITS, t4127_kp:&[], not_calculated:"2026 T1 calculation not wired" },
+    Province { code:"MB", name:"Manitoba", brackets:&[(4_700_000,1080),(10_000_000,1275),(i64::MAX,1740)], credit_rate_bps:1080, bpa_cents:Some(1_578_000), employment_amount:false, bracket_source:MB_BUDGET_2025, bpa_source:MB_BUDGET_2025, t4127_kp:&[], not_calculated:"2026 T1 calculation not wired" },
+    Province { code:"PE", name:"Prince Edward Island", brackets:&[(3_392_800,950),(6_582_000,1347),(10_689_000,1660),(14_252_000,1762),(20_000_000,1900),(i64::MAX,2000)], credit_rate_bps:950, bpa_cents:Some(1_500_000), employment_amount:false, bracket_source:PE_PIT, bpa_source:PE_PIT, t4127_kp:&[], not_calculated:"2026 T1 calculation not wired" },
     Province { code:"YT", name:"Yukon", brackets:&[(5_852_300,640),(11_704_500,900),(18_144_000,1090),(50_000_000,1280),(i64::MAX,1500)], credit_rate_bps:640, bpa_cents:None, employment_amount:true, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[1_522,3_745,7_193,18_193], not_calculated:"2026 T1 calculation not wired" },
     Province { code:"NT", name:"Northwest Territories", brackets:&[(5_300_300,590),(10_600_900,860),(17_234_600,1220),(i64::MAX,1405)], credit_rate_bps:590, bpa_cents:Some(1_819_800), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[1_431,5_247,8_436], not_calculated:"2026 T1 calculation not wired" },
     Province { code:"NU", name:"Nunavut", brackets:&[(5_580_100,400),(11_160_200,700),(18_143_900,900),(i64::MAX,1150)], credit_rate_bps:400, bpa_cents:Some(1_965_900), employment_amount:false, bracket_source:CRA_CURRENT_YEAR, bpa_source:CRA_T4127_JAN_2026, t4127_kp:&[1_674,3_906,8_442], not_calculated:"2026 T1 calculation not wired" },
@@ -135,6 +139,11 @@ pub fn for_year(year: i32) -> Option<&'static RateTable> { TABLES.iter().find(|t
 
 pub const CRA_CURRENT_YEAR: &str = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/tax-rates-brackets/current-year.html";
 pub const CRA_T4127_JAN_2026: &str = "https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jan/t4127-jan-payroll-deductions-formulas-computer-programs.html";
+/// Provincial official 2026 publications (used only to resolve CRA source conflicts).
+pub const BC_TAX_RATES: &str = "https://www2.gov.bc.ca/gov/content/taxes/income-taxes/personal/tax-rates";
+pub const BC_BASIC_CREDITS: &str = "https://www2.gov.bc.ca/gov/content/taxes/income-taxes/personal/credits/basic";
+pub const MB_BUDGET_2025: &str = "https://www.gov.mb.ca/finance/taxation/pubs/bulletins/2025budget.pdf";
+pub const PE_PIT: &str = "https://www.princeedwardisland.ca/en/information/finance-and-affordability/provincial-personal-income-tax";
 pub const CRA_LAST_YEAR: &str = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/tax-rates-brackets/last-year.html";
 pub const CRA_T4127_JUL_2025: &str = "https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/payroll-deductions-t4127-payroll-deductions-formulas/t4127-jul-121st-edition-effective-july-1-2025/t4127-jul-payroll-deductions-formulas.html";
 pub const CRA_INDEXATION: &str = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/frequently-asked-questions-individuals/adjustment-personal-income-tax-benefit-amounts.html";
@@ -262,7 +271,9 @@ pub const RATE_SOURCES: &[(&str, &str, &str, &str, &str)] = &[
     ("ca-2026.1","ei_max_cents","$1,123.07 EI premium maximum (insurable $68,900 at 1.63%, Table 8.7)",CRA_T4127_JAN_2026,"sourced"),
     ("ca-2026.1","medical_threshold_cents","$2,890 (3% of net income ceiling)",CRA_INDEXATION,"sourced"),
     ("ca-2026.1","age_amount_cents","$9,208, net income threshold $46,432",CRA_INDEXATION,"sourced"),
-    ("ca-2026.1","bc_mb_pe_2026","Not loaded: CRA current-year page conflicts with T4127-JAN 2026 for BC (5.6% vs 5.06%), MB thresholds and PE top bracket",CRA_CURRENT_YEAR,"unvalidated"),
+    ("ca-2026.1","bc_2026","5.6% to $50,363; 7.7% to $100,728; 10.5% to $115,648; 12.29% to $140,430; 14.7% to $190,405; 16.8% to $265,545; 20.5% above; BPA $13,216 (matches CRA current-year page)",BC_TAX_RATES,"sourced"),
+    ("ca-2026.1","mb_2026","10.8% to $47,000; 12.75% to $100,000; 17.4% above; BPA $15,780 (indexation frozen from 2025; matches CRA T4008-MB 2026)",MB_BUDGET_2025,"sourced"),
+    ("ca-2026.1","pe_2026","9.5% to $33,928; 13.47% to $65,820; 16.6% to $106,890; 17.62% to $142,520; 19% to $200,000; 20% above; BPA $15,000 (matches CRA current-year page)",PE_PIT,"sourced"),
     ("ca-2026.1","alberta_supplemental_credit_2026","2026 Alberta supplemental-credit threshold not re-sourced",CRA_T4127_JAN_2026,"unvalidated"),
     ("ca-2025.1","t2_rates","Federal 15%/9%, Alberta 8%/2%, $500,000 business limit","https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/corporations/corporation-tax-rates.html","unvalidated"),
 ];
@@ -353,19 +364,22 @@ mod tests {
         assert_eq!(constants(CA_2026.alberta_brackets), vec![1_224, 4_309, 6_160, 8_628, 12_331]);
         assert_eq!(constants(CA_2026.ontario_brackets), vec![2_210, 4_376, 5_876, 8_076]);
         for p in PROVINCES_2026 {
-            assert_eq!(constants(p.brackets), p.t4127_kp.to_vec(), "{}", p.code);
+            // BC/PE/MB come from provincial publications; T4127-JAN constants don't apply.
+            if !["BC","MB","PE"].contains(&p.code) { assert_eq!(constants(p.brackets), p.t4127_kp.to_vec(), "{}", p.code); }
             assert_eq!(p.credit_rate_bps, p.brackets[0].1);
-            assert!(!["BC","MB","PE","QC"].contains(&p.code));
+            assert!(p.code != "QC");
         }
         assert_eq!(line_status("ca-2026.1","sk_before_credits"),"validated");
-        assert_eq!(line_status("ca-2026.1","bc_before_credits"),"unvalidated");
+        assert_eq!(line_status("ca-2026.1","bc_before_credits"),"validated");
+        // T4008-MB 2026 Chart 2 KP constants for the frozen Manitoba brackets.
+        assert_eq!(constants(PROVINCES_2026.iter().find(|p|p.code=="MB").unwrap().brackets), vec![917, 5_567]);
         assert_eq!(line_status("ca-2026.1","42000"),"unvalidated");
         assert_eq!(rate_status("ca-2025.1","cpp_enhanced_max_cents"),"sourced");
         assert_eq!(rate_status("ca-2025.1","donation_credit_rates"),"sourced");
         assert_eq!(rate_status("ca-2025.1","tuition_credit_rate"),"sourced");
     }
     #[test] fn every_validated_line_has_only_sourced_inputs_and_urls_are_official() {
-        for r in RATE_SOURCES { assert!(r.3.starts_with("https://www.canada.ca/"), "{}", r.1); assert!(["sourced","unvalidated"].contains(&r.4)); }
+        for r in RATE_SOURCES { assert!(["https://www.canada.ca/","https://www2.gov.bc.ca/","https://www.gov.mb.ca/","https://www.princeedwardisland.ca/"].iter().any(|u| r.3.starts_with(u)), "{}", r.1); assert!(["sourced","unvalidated"].contains(&r.4)); }
         for k in ["federal_brackets","alberta_brackets","ontario_brackets","federal_bpa_max_cents","alberta_bpa_cents","ontario_bpa_cents","alberta_credit_rate_bps"] { assert_eq!(rate_status("ca-2025.1", k), "sourced", "{k}"); }
         assert_eq!(rate_status("ca-2025.1", "missing"), "unvalidated");
     }
