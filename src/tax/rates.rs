@@ -384,3 +384,7 @@ mod tests {
         assert_eq!(rate_status("ca-2025.1", "missing"), "unvalidated");
     }
 }
+
+pub const CRA_CORP_RATES: &str = "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/corporations/corporation-tax-rates.html";
+pub const AB_CORP_RATES: &str = "https://www.alberta.ca/about-tax-levy-rates-prescribed-interest-rates";
+pub const ITA_125: &str = "https://laws-lois.justice.gc.ca/eng/acts/I-3.3/section-125.html";

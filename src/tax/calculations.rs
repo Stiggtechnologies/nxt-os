@@ -307,9 +307,16 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
         if boolean(obj,"other_tax_situations")? { c.diagnostic("unsupported_situation","Additional income, credits, elections or special regimes need a separately implemented ruleset; this calculation cannot be reviewed as supported.",Some("other_tax_situations"),true); }
         t1_2026(&mut c,obj,jurisdiction)?; return Ok(c);
     }
-    if year != 2025 { c.diagnostic("unsupported_year",if year==2026 { "2026 is implemented only for the basic T1 scope (not Quebec); T2/T3/T5013 2026 are not wired." } else { "Only the versioned 2025 calculation scope (and the basic 2026 T1 scope) is implemented." },None,true); }
+    if year==2026 && program=="T2" {
+        // 2026 rates: CRA corporation-tax-rates page (federal 15% net / 9% SBD) and alberta.ca tax-levy rates (AB 8% / 2%, $500,000 threshold);
+        // business-limit reductions per ITA 125(5.1) (laws-lois.justice.gc.ca/eng/acts/I-3.3/section-125.html). Unchanged from 2025.
+        c.sources.push(source("CRA corporation tax rates",super::rates::CRA_CORP_RATES));
+        c.sources.push(source("Alberta corporate income tax rates",super::rates::AB_CORP_RATES));
+        c.sources.push(source("Income Tax Act s.125",super::rates::ITA_125));
+    }
+    if year != 2025 && !(year==2026 && program=="T2") { c.diagnostic("unsupported_year",if year==2026 { "2026 is implemented for the basic T1 scope (not Quebec) and T2 Alberta; T3/T5013 2026 are not wired." } else { "Only the versioned 2025 calculation scope (and the basic 2026 T1 scope) is implemented." },None,true); }
     if !jurisdiction_ok { c.diagnostic("unsupported_jurisdiction",&format!("This program currently supports {expected} only."),None,true); }
-    if year != 2025 || !jurisdiction_ok { return Ok(c); }
+    if (year != 2025 && !(year==2026 && program=="T2")) || !jurisdiction_ok { return Ok(c); }
     require(&mut c,obj,"scope_confirmed",scope)?;
     if boolean(obj,"other_tax_situations")? { c.diagnostic("unsupported_situation","Additional income, credits, elections or special regimes need a separately implemented ruleset; this calculation cannot be reviewed as supported.",Some("other_tax_situations"),true); }
     match (program, jurisdiction) {
@@ -681,14 +688,20 @@ fn t2(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
     let capital=money(obj,"taxable_capital_cents")?; let passive=money(obj,"passive_income_cents")?;
     if small {
         require(c,obj,"sbd_eligibility_verified","Verify CCPC status throughout the year, ordinary active-business eligibility, both federal and Alberta business limits, no assigned limit, and prior-year capital/passive-income amounts.")?;
-        if capital>1_000_000_000 || passive>5_000_000 { c.diagnostic("sbd_reduction_unsupported","Taxable-capital or passive-income business-limit reductions are outside scope; no reduced-limit claim is validated.",None,true); }
+        if capital>1_000_000_000 || passive>5_000_000 { c.diagnostic("ab_business_limit_reduction_unsourced","The federal business limit is reduced per ITA 125(5.1); whether and how Alberta's $500,000 small business threshold is reduced for taxable capital or passive income is not yet sourced.",None,true); }
         if abi!=taxable { c.diagnostic("sbd_income_reconciliation","This narrow SBD case requires active-business income equal to taxable income. Other sources or adjustments require an expanded ruleset.",Some("active_business_income_cents"),true); }
     }
     // ITA125(5): shorter than51weeks, not every year shorter than365days.
     let annual_limit=if days<357 { rounded_ratio(limit,days,365)? } else { limit };
     let eligible=if small { taxable.min(abi).min(annual_limit) } else {0};
     let general=taxable-eligible;
-    let federal=sum(&[rounded_ratio(eligible,900,10000)?,rounded_ratio(general,1500,10000)?])?;
+    // ITA 125(5.1): limit reduced by the greater of (a) A x 0.225%(C - $10M) / $90,000 and (b) A/$500,000 x 5(E - $50,000).
+    let red_a=rounded_ratio(annual_limit,((capital-1_000_000_000).max(0)).min(4_000_000_000),4_000_000_000)?;
+    let red_b=rounded_ratio(annual_limit,(5*(passive-5_000_000).max(0)).min(50_000_000),50_000_000)?;
+    let fed_limit=(annual_limit-red_a.max(red_b)).max(0);
+    let fed_eligible=if small { eligible.min(fed_limit) } else {0};
+    if fed_eligible!=eligible { c.line("fed_business_limit","Federal business limit after ITA 125(5.1) reduction",fed_limit); }
+    let federal=sum(&[rounded_ratio(fed_eligible,900,10000)?,rounded_ratio(taxable-fed_eligible,1500,10000)?])?;
     let provincial=sum(&[rounded_ratio(eligible,200,10000)?,rounded_ratio(general,800,10000)?])?;
     let tax=sum(&[federal,provincial])?; let paid=money(obj,"tax_paid_cents")?;
     for(code,label,amount)in[("360","Declared federal and Alberta taxable income",taxable),("400","Declared active-business income",abi),("410","Business limit after applicable short-year proration",annual_limit),("sbd_income","Income eligible for scoped lower rates",eligible),("general_income","Income at scoped general rates",general),("federal_tax","Federal Part I tax, stated ordinary-business scope",federal),("alberta_tax","Alberta ordinary-business tax",provincial)]{c.line(code,label,amount);}
@@ -877,6 +890,11 @@ mod tests {
         assert_eq!(l(&rich,"ON_surtax"),rounded_ratio(basic-581_800,2000,10000).unwrap()+rounded_ratio(basic-744_600,3600,10000).unwrap()); assert_eq!(b,basic+l(&rich,"ON_surtax"));
         assert!(!calculate("T1",2026,"PE",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap().supported);
         assert!(!calculate("T2",2026,"AB",&json!({})).unwrap().supported);
+        let t2=calculate("T2",2026,"AB",&json!({"scope_confirmed":true,"small_business_eligible":true,"sbd_eligibility_verified":true,"taxable_income_cents":60_000_000,"active_business_income_cents":60_000_000})).unwrap();
+        assert!(t2.supported,"{:?}",t2.diagnostics); assert_eq!(t2.totals["income_tax"],7_800_000);
+        let g=calculate("T2",2026,"AB",&json!({"scope_confirmed":true,"small_business_eligible":true,"sbd_eligibility_verified":true,"taxable_income_cents":60_000_000,"active_business_income_cents":60_000_000,"passive_income_cents":10_000_000})).unwrap();
+        // AAII $100k -> federal limit $250,000: 9%x250k + 15%x350k = 75,000; AB still blocked.
+        assert_eq!(g.totals["federal_tax"],7_500_000); assert!(!g.supported);
         let ag=calculate("T1",2026,"NS",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"credits_verified":true,"born_1961_or_earlier":true,"interest_income_cents":7_000_000})).unwrap();
         assert!(ag.supported,"{:?}",ag.diagnostics); assert_eq!(l(&ag,"NS58080"),0);
         let ab=calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"born_1961_or_earlier":true,"interest_income_cents":5_000_000})).unwrap();
