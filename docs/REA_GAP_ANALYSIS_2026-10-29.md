@@ -77,7 +77,7 @@ Still not 100% anywhere. Every remaining row needs either vendor files or creden
 3. **Outbound delivery.** E-sign links, OTP codes and reminders queue in the outbox and nothing is emailed. Closing it needs an email/SMS provider key and approval to send. The hourly cron now exists (#60, `GET /api/cron/esign-sweep`, dry-run by default); it stays inert until `CRON_SECRET` (16+ chars) is set in Vercel, and queues reminders only with `NXT_SWEEP_CRON_MODE=queue`. Hourly crons may need a Vercel Pro plan. **External plus Orville's env step.**
 4. **Production staff cutover.** Create the staff accounts, enroll MFA, then set `NXT_BREAK_GLASS=off`. This is an operational step for Orville.
 5. ~~Client scoping for migrations.~~ Done in #64 (cohort reference is the client label; chunk upload and publish are firm-wide).
-6. **Tax coverage.** T2 Schedules 1, 8, 50 and Schedule 100/125 cross-checks are now computed (#66, filed:false; straight-line CCA classes, AIIP factors and other schedules still open). QC TP-1 and years other than 2025 (T1); T3 slips and provincial tax; T5013 CCA. **Code, plus published forms.**
+6. **Tax coverage.** T2 Schedules 1, 8, 50 and Schedule 100/125 cross-checks are now computed (#66, filed:false; straight-line CCA classes, AIIP factors and other schedules still open). The Schedule 8 work in #75 adds the Reg 1100(2) AIIP/RIIP factors, Classes 13, 14 and 54–56, and 43.1/43.2/44; straddle and short years, immediate expensing and separate-class elections still block). QC TP-1 and years other than 2025 (T1); T3 slips and provincial tax; T5013 CCA. **Code, plus published forms.**
 7. **QBO OAuth and payroll exports** for the remaining companies. **External.**
 8. **Caseware CaseView/iXBRL/TaxCycle file and Xero.** **External: formats and accounts.**
 
@@ -95,3 +95,14 @@ Measured-commit note: the evening pass above was measured at the main of #58, no
 
 
 Human and production steps are listed in plain language in [OPERATOR_STEPS.md](OPERATOR_STEPS.md).
+
+## Re-score after #71 and #75 (2026-10-29, morning pass)
+
+Same formula, measured against main after #71 and #75. Nothing changed status, so the scores hold.
+
+| Module | Previous | Now | What moved |
+|---|---|---|---|
+| DT Max | 41.7% | **41.7%** (12: 1/8/3) | The T2 row stays partial. Schedule 8 now applies the Reg 1100(2) A/A.1 factors, Class 13 (Reg 1100(1)(b), Schedule III), Class 14 (Reg 1100(1)(c)) and Classes 43.1, 43.2, 44, 54, 55 and 56 at their Reg 1100(1)(a) rates (#75). Class 17 at 8% is cited to Reg 1100(1)(a)(xiv) (#71). These cases block instead of guessing: straddle years (Reg 1100(2.01)/(2.011)), short years (1100(3)), Class 44/46/50 AIIP after 2023, Class 43 RIIP after 2025, the E reduction, and immediate expensing. There is no DT Max tie-out (external). |
+| Firm, DocuSign, QuickBooks, Caseware, WebTax | 45.8 / 40.6 / 56.5 / 47.4 / 41.7% | unchanged | OPERATOR_STEPS.md now lists the real staff API routes (#71); there is no staff UI. |
+
+Source: Income Tax Regulations, C.R.C., c. 945, https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html (s. 1100) and page-105 (Schedule III).
