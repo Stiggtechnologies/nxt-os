@@ -44,6 +44,20 @@ The T1 engine covers AB and ON, each with its own calculator. A generic engine (
 - **Not calculated:** low-income reductions (BC, NB, NS, PE, NL), the MB BPA phase-out (blocked above $200,000), and all other provincial credits. The preparer must confirm `provincial_adjustments_not_applicable`.
 - **Quebec:** not supported. See docs/TAX_QC_TP1_SCOPING.md.
 
+## Additional T1 income and credits (API inputs; all require preparer verification)
+- **T2125** (13500): gross minus expenses minus CCA. CCA cannot create a loss. Self-employed CPP is not calculated: enter a verified line 22200/31000 amount, otherwise review is blocked at $5,000 or more.
+- **Schedule 3** (12700): proceeds minus ACB minus outlays, with 50% inclusion. A net loss is reported only. There is no ACB tracking, LCGE or principal-residence handling.
+- **T776** (12600): gross minus expenses minus CCA. CCA cannot create a loss.
+- **T1032**: lines 11500, 11600 and 21000. Line 21000 is capped at 50%.
+- **Federal credits:**
+  - pension amount (31400, max $2,000);
+  - medical (33099, threshold the lesser of 3% and $2,834, which is sourced);
+  - donations (14.5%/29%/33%, with the 14.5% on the first $200 unconfirmed);
+  - current-year T2202 tuition (32300).
+- **Provincial counterparts** of these credits are not calculated. Any such credit therefore blocks review.
+
+The RRSP deduction stays an input checked against a verified limit; the 2025 dollar limit of $32,490 is sourced. CPP/EI are verified inputs within the sourced 2025 maximums.
+
 ## External dependencies
 - CRA EFILE/NETFILE/Corporation Internet Filing software certification, renewed every year
 - An EFILE number and registration for the firm
