@@ -49,6 +49,9 @@ ADJ_FLAGS = {'yes': True, 'no': False}
 # Member names that look like list exports are never opened, not even to read a title.
 NONFINANCIAL_NAME = re.compile(r'customer|employee|supplier|vendor|contact|payroll', re.I)
 MONTHS = {m: i for i, m in enumerate(('january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'), 1)}
+# QuickBooks also writes three-letter month names (e.g. `As of Dec 31, 2026`).
+MONTHS.update({m[:3]: i for m, i in list(MONTHS.items())})
+MONTHS['sept'] = 9
 NUMBER = re.compile(r'[+-]?(?:\d+)(?:\.\d+)?\Z')
 # Excel writes some stored totals as binary-float noise in E notation
 # (e.g. 3.657448561999983E7). Accepted only when comparing a stored control
@@ -862,6 +865,11 @@ def period_profile(tb_label, journal_label):
         require(tb_label.strip().lower() == 'all dates', 'only_all_dates_cross_report_profile_supported')
         return {'kind': 'all_dates'}
     tb, jr = parse_period(tb_label), parse_period(journal_label)
+    if journal_label.strip().lower() == 'all dates' and tb is not None and tb[0] is None:
+        # Full-history journal paired with a trial balance as of a date: the
+        # journal must not run past that date (checked once dates are known);
+        # QuickBooks year-end closes are then tested from an empty opening.
+        return {'kind': 'all_dates_journal_with_tb_as_of', 'as_of': tb[1].isoformat()}
     require(tb is not None and jr is not None and tb[0] is None and jr[0] is not None and tb[1] == jr[1], 'financial_period_heading_mismatch')
     return {'kind': 'journal_period_with_tb_as_of_period_end', 'period_start': jr[0].isoformat(), 'period_end': jr[1].isoformat()}
 
@@ -1000,11 +1008,14 @@ def assess_export_bytes(data, order='auto', prior=None, first_year=False):
             profile = period_profile(a.period_label, b.period_label)
             report['period_profile'] = profile
             parsed = {r['report']: r for r in report['reports']}
-            if profile['kind'] != 'all_dates' and 'journal' in parsed and parsed['journal']['assessment'].get('status') == 'supported_controls_passed':
+            if profile['kind'] == 'all_dates_journal_with_tb_as_of' and 'journal' in parsed and parsed['journal']['assessment'].get('status') == 'supported_controls_passed':
+                if not parsed['journal']['assessment']['date_end'] <= profile['as_of']:
+                    report['blockers'].append({'report': 'cross_report', 'code': 'journal_date_outside_period'})
+            elif profile['kind'] != 'all_dates' and 'journal' in parsed and parsed['journal']['assessment'].get('status') == 'supported_controls_passed':
                 j = parsed['journal']['assessment']
                 if not (profile['period_start'] <= j['date_start'] and j['date_end'] <= profile['period_end']):
                     report['blockers'].append({'report': 'cross_report', 'code': 'journal_date_outside_period'})
-            if not report['blockers'] and (prior is not None or first_year or parsed['journal']['assessment'].get('held_lines')):
+            if not report['blockers'] and (prior is not None or first_year or parsed['journal']['assessment'].get('held_lines') or profile['kind'] == 'all_dates_journal_with_tb_as_of'):
                 reconcile_year(report, parsed, profile, prior, b, order)
             elif not report['blockers']:
                 tb = {a['label']: int(a['net_debit_cents']) for a in parsed['trial_balance']['assessment']['accounts']}
@@ -1040,14 +1051,31 @@ def reconcile_year(report, parsed, profile, prior, journal_book, order='auto'):
     review = report.setdefault('review_blockers', [])
     rec = {'basis': 'Exact report labels; trial balance = opening (prior closing trial balance) + journal activity, per account. Labels reported by hash only.'}
     if prior is not None:
-        require(profile['kind'] != 'all_dates', 'prior_trial_balance_requires_period_profile')
+        require(profile['kind'] not in ('all_dates', 'all_dates_journal_with_tb_as_of'), 'prior_trial_balance_requires_period_profile')
         require(prior['company_hash'] == journal_book.company_hash, 'prior_trial_balance_company_mismatch')
         require(dt.date.fromisoformat(prior['as_of']) + dt.timedelta(days=1) == dt.date.fromisoformat(profile['period_start']), 'prior_trial_balance_not_contiguous')
         opening, rec['opening_source'] = prior['balances'], {'kind': 'prior_closing_trial_balance', 'sha256': prior['sha256'], 'as_of': prior['as_of']}
     else:
-        opening, rec['opening_source'] = {}, {'kind': 'none_first_year_partial_history' if profile['kind'] != 'all_dates' else 'all_dates'}
+        full = profile['kind'] in ('all_dates', 'all_dates_journal_with_tb_as_of')
+        opening, rec['opening_source'] = {}, {'kind': profile['kind'] if full else 'none_first_year_partial_history'}
     before_month = None
-    if profile['kind'] != 'all_dates' and profile['period_start'][5:] == '01-01':
+    if profile['kind'] == 'all_dates_journal_with_tb_as_of':
+        # Every prior fiscal year was closed into retained earnings: for each
+        # candidate fiscal start month, an income-statement account carries
+        # only activity since the latest fiscal start on or before the as-of
+        # date. Exact cents only; a month is accepted only if all accounts fit.
+        postings = journal_postings(journal_book, order)
+        lines = [(g['date'], l['label'], l['debit'] - l['credit']) for g in postings['groups'] for l in g['lines']]
+        as_of = dt.date.fromisoformat(profile['as_of'])
+        before_month = {}
+        for month in range(1, 13):
+            cut = dt.date(as_of.year - (month > as_of.month), month, 1).isoformat()
+            acc = {}
+            for date, label, net in lines:
+                if date < cut:
+                    acc[label] = acc.get(label, 0) + net
+            before_month[month] = acc
+    elif profile['kind'] != 'all_dates' and profile['period_start'][5:] == '01-01':
         postings = journal_postings(journal_book, order)
         lines = [(g['date'], l['label'], l['debit'] - l['credit']) for g in postings['groups'] for l in g['lines']]
         before_month = activity_before_months(lines, profile['period_start'])
@@ -1057,7 +1085,7 @@ def reconcile_year(report, parsed, profile, prior, journal_book, order='auto'):
     if result['status'] == 'unreconciled':
         if held:
             rec['status'] = 'unreconciled_pending_review'
-        elif prior is None and profile['kind'] != 'all_dates':
+        elif prior is None and profile['kind'] not in ('all_dates', 'all_dates_journal_with_tb_as_of'):
             rec['status'] = 'partial_history_opening_unknown'
             review.append('OPENING_BALANCE_UNRECONCILED')
         else:

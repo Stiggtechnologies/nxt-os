@@ -82,6 +82,11 @@ def build(data, date_order, prior_data=None, first_year=False):
     closed_opening = report.get("_closed_opening") if reconciliation and reconciliation["status"].startswith("reconciled") else None
     opening_entry = close_entry = None
     year_end_close = (reconciliation or {}).get("year_end_close") if closed_opening else None
+    if prior is None and closed_opening and any(closed_opening.values()):
+        # A close reconciled from an empty opening (full-history journal with
+        # an as-of trial balance) has no source entries to post: refuse
+        # rather than stage books whose entries do not produce the TB.
+        raise qbo.AssessmentError("year_end_close_without_prior_not_staged")
     if prior is not None and closed_opening and year_end_close:
         # Fiscal year does not start in January: QuickBooks closes the income
         # statement inside this calendar period. Carry the prior trial balance
@@ -287,7 +292,7 @@ def stage(data, out, cohort, date_order, synthetic_evidence, prior_data=None, fi
         # Only an All Dates journal spans full history. A period journal paired
         # with an as-of trial balance is staged as partial history, which the
         # company-book operator refuses to import (SOURCE_HISTORY_INCOMPLETE).
-        "full_history": staged["period_profile"]["kind"] == "all_dates",
+        "full_history": staged["period_profile"]["kind"] in ("all_dates", "all_dates_journal_with_tb_as_of"),
         "record_id_coverage": "archive_row",
     }
     template = {
