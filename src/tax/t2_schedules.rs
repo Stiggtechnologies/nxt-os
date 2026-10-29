@@ -547,7 +547,7 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
 fn immediate_expensing_check(input: &T2Input, total: i64, diagnostics: &mut Vec<Value>) -> bool {
     use chrono::NaiveDate;
     let mut b = |m: String| { diag(diagnostics, "cca_immediate_expensing", m, true); false };
-    if input.corporation_type != "ccpc" { return b("Immediate expensing is modelled for CCPCs only (eligible person, Reg 1104(3.1)); other corporations need the 1100(0.1)(c) income limit and the post-2023 rules.".into()); }
+    if input.corporation_type != "ccpc" { return b("Only a corporation that was a CCPC throughout the year is an eligible person or partnership (Reg 1104(3.1), para. (a)); other corporations cannot claim immediate expensing. Remove the claim.".into()); }
     let Some(ie) = &input.immediate_expensing else { return b("Set immediate_expensing (association, designation and DIEP conditions under Reg 1104(3.1)–(3.5)).".into()) };
     if !ie.designated_on_prescribed_form { return b("DIEP must be designated on the prescribed form (Reg 1104(3.1)).".into()); }
     if !ie.diep_conditions_confirmed { return b("Confirm each DIEP meets Reg 1104(3.1): acquired after April 18, 2021, available for use before 2024 (CCPC), not Class 1–6, 14.1, 17, 47, 49 or 51, not previously used, not acquired non-arm's-length or by rollover.".into()); }
