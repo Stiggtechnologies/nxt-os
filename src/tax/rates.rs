@@ -166,8 +166,8 @@ pub const RATE_SOURCES: &[(&str, &str, &str, &str, &str)] = &[
     ("ca-2025.1","rrsp_dollar_limit_cents","$32,490",CRA_RRSP_LIMITS,"sourced"),
     ("ca-2025.1","capital_gains_inclusion","1/2 for 2025 (2/3 increase cancelled 21 March 2025)","https://www.canada.ca/en/department-finance/news/2025/03/government-of-canada-cancels-capital-gains-tax-increase.html","unvalidated"),
     ("ca-2025.1","pension_income_amount_cents","$2,000 maximum (line 31400, not indexed)","https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-31400-pension-income-amount.html","unvalidated"),
-    ("ca-2025.1","donation_credit_rates","14.5% on first $200 (2025 blended lowest rate, unconfirmed), 29% above, 33% on income over $253,414","https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-34900-donations-gifts.html","unvalidated"),
-    ("ca-2025.1","tuition_credit_rate","14.5% of eligible T2202 tuition (current year)","https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-32300-your-tuition-education-textbook-amounts.html","unvalidated"),
+    ("ca-2025.1","donation_credit_rates","14.5% on first $200, 29% above, 33% on the part matched to taxable income over $253,414 (Schedule 9 (2025) lines 13-22)","https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s9/5000-s9-25e.pdf","sourced"),
+    ("ca-2025.1","tuition_credit_rate","14.5% of eligible tuition (Schedule 11 (2025) uses the 14.5% federal credit rate)","https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s11/5000-s11-25e.pdf","sourced"),
     ("ca-2026.1","federal_brackets","14% to $58,523; 20.5% to $117,045; 26% to $181,440; 29% to $258,482; 33% above",CRA_CURRENT_YEAR,"sourced"),
     ("ca-2026.1","federal_credit_rate_bps","14% (T4127-JAN 2026: lowest rate 14% for 2026 and later)",CRA_T4127_JAN_2026,"sourced"),
     ("ca-2026.1","federal_bpa_max_cents","$16,452 (net income <= $181,440)",CRA_INDEXATION,"sourced"),
@@ -283,6 +283,8 @@ mod tests {
         assert_eq!(line_status("ca-2026.1","bc_before_credits"),"unvalidated");
         assert_eq!(line_status("ca-2026.1","42000"),"unvalidated");
         assert_eq!(rate_status("ca-2025.1","cpp_enhanced_max_cents"),"sourced");
+        assert_eq!(rate_status("ca-2025.1","donation_credit_rates"),"sourced");
+        assert_eq!(rate_status("ca-2025.1","tuition_credit_rate"),"sourced");
     }
     #[test] fn every_validated_line_has_only_sourced_inputs_and_urls_are_official() {
         for r in RATE_SOURCES { assert!(r.3.starts_with("https://www.canada.ca/"), "{}", r.1); assert!(["sourced","unvalidated"].contains(&r.4)); }
