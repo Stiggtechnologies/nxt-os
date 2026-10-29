@@ -12,10 +12,11 @@ Decision (2026-10-29): NXT OS carries out tax preparation itself. There are no l
 | GIFI Schedule 100/125 | Existed: `corporate.rs` GifiRow plus total checks. **Added** `src/tax/gifi_map.rs` and `POST /api/tax/gifi/from-trial-balance`, which takes company-books trial-balance rows and an explicit account→GIFI mapping |
 | Rate tables | Hard-coded before. **Added** `src/tax/rates.rs` (`ca-2025.1`) and `GET /api/tax/rates`. Every line reports `validated`/`unvalidated` |
 | Diagnostics | Existed in calculations.rs. Slip and GIFI issues added |
-| Prior-year carryforward | Existed: rollforward and prior_lines. Assessed-balance carryforward (e.g. non-capital losses) is still to do |
+| Prior-year carryforward | Existed: rollforward and prior_lines. **Added:** `*_closing_cents` inputs (e.g. non-capital losses, unused RRSP room) carry into the next year as `*_opening_cents`, to be verified against the notice of assessment |
 | Printable summary | Existed: `/print` HTML workpaper |
-| T183 / T183CORP | Still to do: generate as a `src/signatures` Document with ContextLink{module:"tax"}, gated by the client-journey `filing_authorization` step |
-| EFILE / NETFILE / Corporation Internet Filing | Stub only. `/filing` always returns 409 |
+| T183 / T183CORP | **Added** `GET /api/tax/returns/{id}/t183`, which returns a native `src/signatures` Draft (ContextLink module "tax") for approved T1/T2 returns. The client-journey `filing_authorization` gate references it. Wording still needs legal review |
+| Filed status | **Added** `filed`: a human's record of filing done outside NXT. Requires an approved return, the signed T183 envelope id and the CRA reference. Locks the return |
+| EFILE / NETFILE / Corporation Internet Filing | Stub only. `NXT_TAX_EFILE_ENABLED` is reported in capabilities, but `/filing` always returns 409 and nothing is ever transmitted |
 | Auto-fill, WAC, AT1/CO-17, T1135 | Not built. These need CRA/provincial certification |
 
 ## What would have been duplicated
@@ -35,5 +36,5 @@ No rate line is marked validated, because no CRA worked example has been reprodu
 3. Calculate and clear the diagnostics.
 4. Preparer submits for review, recording their sign-off label.
 5. A different reviewer approves.
-6. Print the summary. (T183 e-sign is still to come.)
-7. A human files outside NXT. NXT never files.
+6. Print the summary and prepare the T183 draft, then create the envelope in Signatures.
+7. A human files outside NXT, then records `filed` with the reference. NXT never files.

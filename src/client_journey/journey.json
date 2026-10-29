@@ -228,11 +228,11 @@
       "title": "Filing authorization (T183 / T183CORP)",
       "action": "Client signs the CRA filing authorization",
       "outcome": "Signed authorization on file",
-      "gate_check": "Signed T183 / T183CORP received and verified by a human",
+      "gate_check": "Signed T183 / T183CORP received and verified by a human (draft from GET /api/tax/returns/{id}/t183, envelope in src/signatures; its id is required to record the return as filed)",
       "gate": "human",
       "human_reason": "CRA requires the client's signed authorization before electronic filing.",
       "skippable": true,
-      "executor": "ESignProvider (stub)"
+      "executor": "NXT signatures (preparation-only)"
     },
     {
       "n": 19,

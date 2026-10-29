@@ -69,6 +69,9 @@ pub struct TaxReturn {
     /// Preparer sign-off recorded when the return enters review; cleared on reopen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preparer_signoff: Option<SignOff>,
+    /// A human's record that the return was filed OUTSIDE NXT. NXT never transmits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filed_record: Option<FiledRecord>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -115,6 +118,10 @@ pub struct TransitionInput {
     pub status: String,
     #[serde(default)] pub note: String,
     #[serde(default)] pub reviewer: String,
+    /// Only for status "filed": the reference a human received when filing outside NXT.
+    #[serde(default)] pub filing_reference: String,
+    /// Only for status "filed": the src/signatures envelope holding the signed T183/T183CORP.
+    #[serde(default)] pub t183_envelope_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -170,3 +177,6 @@ pub struct TaxState {
     #[serde(default)]
     pub families: Vec<FamilyLink>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FiledRecord { pub by: String, pub at: String, pub reference: String, pub t183_envelope_id: String }
