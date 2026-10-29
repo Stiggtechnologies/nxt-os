@@ -199,3 +199,99 @@ class FormulaLengthLocation(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ModernNoAdjAndFloatNoiseTests(unittest.TestCase):
+    def test_modern_layout_without_adj_column_is_accepted_with_unknown_flag(self):
+        header = {k: v for k, v in HEADER.items() if k != 'J'}
+        book = qbo.Workbook(x.xlsx('Journal', modern_rows(adj=None, header=header), JOURNAL_PERIOD), 'journal')
+        detail = qbo.journal_postings(book, 'auto')
+        self.assertEqual(detail['layout'], 'qbo_modern_no_adj')
+        self.assertIsNone(detail['adjusting_group_count'])
+        self.assertIsNone(detail['groups'][0]['adjusting'])
+        self.assertEqual(detail['debit_cents'], '10001')
+
+    def test_no_adj_layout_rejects_a_stray_j_column(self):
+        header = {k: v for k, v in HEADER.items() if k != 'J'}
+        book = qbo.Workbook(x.xlsx('Journal', modern_rows(adj='No', header=header), JOURNAL_PERIOD), 'journal')
+        with self.assertRaises(qbo.AssessmentError) as ctx:
+            qbo.journal_postings(book, 'auto')
+        self.assertEqual(str(ctx.exception), 'unexpected_journal_columns')
+
+    def test_binary_float_noise_reads_as_whole_cent_but_real_fraction_blocks(self):
+        self.assertEqual(qbo.binary_float_cents('2534.4399999999987'), 253444)
+        self.assertEqual(qbo.binary_float_cents('465529.42999999993'), 46552943)
+        self.assertIsNone(qbo.binary_float_cents('1.005'))
+        self.assertIsNone(qbo.binary_float_cents('2534.4350000000000'))
+
+    def test_trial_balance_with_float_noise_amounts(self):
+        book = qbo.Workbook(x.xlsx('Trial Balance', {
+            5: [x.string('B5', 'Debit'), x.string('C5', 'Credit')],
+            6: [x.string('A6', 'Synthetic cash'), x.number('B6', '2534.4399999999987')],
+            7: [x.string('A7', 'Synthetic capital'), x.number('C7', '2534.44')],
+            8: [x.string('A8', 'TOTAL'), x.number('B8', '2534.4400000000001'), x.number('C8', '2534.44')],
+        }, TB_AS_OF), 'trial_balance')
+        tb = qbo.trial_balance(book)
+        self.assertEqual(tb['debit_cents'], '253444')
+        self.assertTrue(any(w['code'] == 'stored_binary_float_noise' for w in book.warnings))
+
+    def test_trial_balance_genuine_fractional_cent_still_blocks(self):
+        book = qbo.Workbook(x.xlsx('Trial Balance', {
+            5: [x.string('B5', 'Debit'), x.string('C5', 'Credit')],
+            6: [x.string('A6', 'Synthetic cash'), x.number('B6', '1.005')],
+            7: [x.string('A7', 'Synthetic capital'), x.number('C7', '1.005')],
+            8: [x.string('A8', 'TOTAL'), x.number('B8', '1.005'), x.number('C8', '1.005')],
+        }, TB_AS_OF), 'trial_balance')
+        with self.assertRaises(qbo.AssessmentError) as ctx:
+            qbo.trial_balance(book)
+        self.assertEqual(str(ctx.exception), 'fractional_cent')
+
+    def test_e_notation_grand_total_within_one_cent(self):
+        rows = modern_rows()
+        rows[10] = [x.string('A10', 'TOTAL'), x.number('H10', '1.0000999999999E2'), x.number('I10', '1.0000999999999E2')]
+        detail = qbo.journal_postings(qbo.Workbook(x.xlsx('Journal', rows, JOURNAL_PERIOD), 'journal'), 'auto')
+        self.assertEqual(detail['debit_cents'], '10001')
+
+
+class AllDatesJournalWithAsOfTrialBalance(unittest.TestCase):
+    def test_full_history_journal_with_as_of_tb_reconciles_exactly(self):
+        r = qbo.assess_export_bytes(canonical(journal(period='All Dates'), tb()))
+        self.assertEqual(r['blockers'], [], r['blockers'])
+        self.assertEqual(r['period_profile'], {'kind': 'all_dates_journal_with_tb_as_of', 'as_of': '2025-12-31'})
+        self.assertEqual(r['opening_reconciliation']['status'], 'reconciled_exact')
+
+    def test_journal_dated_after_as_of_blocks(self):
+        r = qbo.assess_export_bytes(canonical(journal(period='All Dates', date='2026-01-02'), tb()))
+        self.assertIn('journal_date_outside_period', x.codes(r))
+
+    def test_prior_year_close_into_retained_earnings_is_detected_but_not_staged(self):
+        j = journal(period='All Dates', date='2024-06-01', second_line=line(8, 'Synthetic revenue', 'I', '100.01', date='2024-06-01'))
+        t = x.xlsx('Trial Balance', {
+            5: [x.string('B5', 'Debit'), x.string('C5', 'Credit')],
+            6: [x.string('A6', 'Synthetic cash'), x.number('B6', '100.01')],
+            7: [x.string('A7', 'Synthetic retained earnings'), x.number('C7', '100.01')],
+            8: [x.string('A8', 'TOTAL'), x.number('B8', '100.01'), x.number('C8', '100.01')]}, TB_AS_OF)
+        r = qbo.assess_export_bytes(canonical(j, t))
+        self.assertEqual(r['blockers'], [], r['blockers'])
+        self.assertEqual(r['opening_reconciliation']['status'], 'reconciled_with_year_end_close')
+        self.assertEqual(r['opening_reconciliation']['fiscal_year_start_month'], 1)
+        with self.assertRaises(Exception) as ctx:
+            stage.build(canonical(j, t), 'auto')
+        self.assertEqual(type(ctx.exception).__name__, 'AssessmentError')
+        self.assertEqual(str(ctx.exception), 'year_end_close_without_prior_not_staged')
+
+    def test_unexplained_difference_blocks(self):
+        t = x.xlsx('Trial Balance', {
+            5: [x.string('B5', 'Debit'), x.string('C5', 'Credit')],
+            6: [x.string('A6', 'Synthetic cash'), x.number('B6', '100.02')],
+            7: [x.string('A7', 'Synthetic capital'), x.number('C7', '100.02')],
+            8: [x.string('A8', 'TOTAL'), x.number('B8', '100.02'), x.number('C8', '100.02')]}, TB_AS_OF)
+        r = qbo.assess_export_bytes(canonical(journal(period='All Dates'), t))
+        self.assertIn('account_net_balance_mismatch', x.codes(r))
+
+    def test_abbreviated_month_headings_parse(self):
+        self.assertEqual(qbo.parse_period('As of Dec 31, 2026')[1].isoformat(), '2026-12-31')
+        self.assertEqual(qbo.parse_period('Jan - Dec, 2025')[1].isoformat(), '2025-12-31')
+        self.assertIsNone(qbo.parse_period('As of Decem 31, 2026'))
+        r = qbo.assess_export_bytes(canonical(journal(period='All Dates'), tb('As of Dec 31, 2025')))
+        self.assertEqual(r['blockers'], [], r['blockers'])
