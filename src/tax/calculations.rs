@@ -149,7 +149,7 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let aged=boolean(obj,"born_1961_or_earlier")?; let med=money(obj,"medical_expenses_cents")?;
     if aged || med>0 {
         require(c,obj,"credits_verified","Verify the birth year (1961 or earlier) and medical receipts (12-month period ending in 2026).")?;
-        c.diagnostic("provincial_age_medical_2026_unsourced","2026 provincial age and medical expense credit amounts are not yet sourced; only the federal credits are calculated.",None,true);
+        if med>0 { c.diagnostic("provincial_medical_2026_unsourced","2026 provincial medical expense thresholds are not yet sourced; only the federal medical credit is calculated.",None,true); }
     }
     let age_amount=if aged { (920_800-rounded_ratio((taxable-4_643_200).max(0),1500,10000)?).max(0) } else { 0 };
     let medical=(med-rounded_ratio(taxable,300,10000)?.min(289_000)).max(0);
@@ -190,7 +190,8 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
     let federal=(federal_before-federal_credits).max(0);
     let (pbpa,pbefore,pcredits)=match prov {
         None => {
-            let base=sum(&[t.alberta_bpa_cents,cpp,ei])?;
+            let pa=prov_age_2026(c,"AB",aged,taxable)?;
+            let base=sum(&[t.alberta_bpa_cents,cpp,ei,pa])?;
             if base>6_000_000 { c.diagnostic("ab_supplemental_2026_unsourced","Alberta credit amounts exceed $60,000; the 2026 Alberta supplemental tax credit is not yet sourced.",None,true); }
             (t.alberta_bpa_cents,progressive(taxable,t.alberta_brackets)?,rounded_ratio(base,800,10000)?)
         }
@@ -201,7 +202,8 @@ fn t1_2026_with(c: &mut Calculation, obj: &Map<String,Value>, prov: Option<&supe
             let mut b=p.bpa_cents.unwrap_or(bpa);
             // T4127-JAN 2026 BPAMB: $15,780 reduced by (NI - $200,000) x 15,780/200,000, nil at $400,000.
             if p.code=="MB" { b-=rounded_ratio((taxable-20_000_000).clamp(0,20_000_000),b,20_000_000)?; } let ce=if p.employment_amount { cea } else { 0 };
-            (b,progressive(taxable,p.brackets)?,rounded_ratio(sum(&[b,ce,cpp,ei])?,p.credit_rate_bps,10000)?)
+            let pa=prov_age_2026(c,p.code,aged,taxable)?;
+            (b,progressive(taxable,p.brackets)?,rounded_ratio(sum(&[b,ce,cpp,ei,pa])?,p.credit_rate_bps,10000)?)
         }
     };
     let pcode=prov.map(|p| p.code).unwrap_or("AB"); let lc=pcode.to_lowercase();
@@ -262,6 +264,19 @@ fn t1_2026_on(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
     let federal=c.totals["federal_tax"]; let paid=c.totals["payments"]; let tax=federal+provincial;
     c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("balance",tax-paid);
     Ok(())
+}
+
+/// 2026 provincial/territorial age amounts (max, net-income threshold) from CRA's 2026 TD1 provincial forms
+/// (td1xx-26e.pdf, line 2/3): each is reduced by 15% of net income over the threshold (consistent with the stated upper limits).
+/// SK also has the Senior Supplementary amount ($2,569, TD1SK-26 line 3).
+const PROV_AGE_2026: &[(&str,i64,i64)] = &[("AB",634_500,4_723_400),("BC",592_700,4_411_900),("MB",372_800,2_774_900),("NB",615_800,4_584_400),("NL",714_200,3_913_800),("NS",582_600,3_082_800),("NT",890_200,4_643_200),("NU",1_255_000,4_643_200),("ON",634_200,4_721_000),("PE",651_000,3_660_000),("SK",590_100,4_392_700),("YT",920_800,4_643_200)];
+fn prov_age_2026(c: &mut Calculation, code: &str, aged: bool, net: i64) -> Result<i64,String> {
+    if !aged { return Ok(0); }
+    let (_,max,thr)=*PROV_AGE_2026.iter().find(|x| x.0==code).ok_or("No 2026 provincial age amount")?;
+    let mut a=(max-rounded_ratio((net-thr).max(0),1500,10000)?).max(0);
+    c.line(&format!("{code}58080"),&format!("{code} age amount (2026 TD1{code})"),a);
+    if code=="SK" { c.line("SK58085","SK senior supplementary amount (TD1SK 2026)",256_900); a+=256_900; }
+    Ok(a)
 }
 
 pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -> Result<Calculation,String> {
@@ -859,6 +874,10 @@ mod tests {
         assert_eq!(l(&rich,"ON_surtax"),rounded_ratio(basic-581_800,2000,10000).unwrap()+rounded_ratio(basic-744_600,3600,10000).unwrap()); assert_eq!(b,basic+l(&rich,"ON_surtax"));
         assert!(!calculate("T1",2026,"PE",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap().supported);
         assert!(!calculate("T2",2026,"AB",&json!({})).unwrap().supported);
+        let ag=calculate("T1",2026,"NS",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"credits_verified":true,"born_1961_or_earlier":true,"interest_income_cents":7_000_000})).unwrap();
+        assert!(ag.supported,"{:?}",ag.diagnostics); assert_eq!(l(&ag,"NS58080"),0);
+        let ab=calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"born_1961_or_earlier":true,"interest_income_cents":5_000_000})).unwrap();
+        assert_eq!(l(&ab,"AB58080"),634_500-41_490); assert!(ab.supported,"{:?}",ab.diagnostics);
         let f=calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"employment_income_cents":5_000_000,"eligible_pension_income_cents":300_000,"claim_spouse_amount":true,"spouse_adjusted_net_income_cents":500_000,"disability_tax_credit_approved":true,"tuition_cents":100_000,"donations_cents":120_000})).unwrap();
         assert_eq!(l(&f,"30300"),1_645_200-500_000); assert_eq!(l(&f,"31600"),1_034_100); assert_eq!(l(&f,"31400"),200_000); assert_eq!(l(&f,"donation_credit"),2_800+29_000); assert!(!f.supported);
         assert!(calculate("T1",2026,"AB",&json!({"scope_confirmed":true,"credits_verified":true,"adoption_expenses_cents":1_997_201})).is_err());
