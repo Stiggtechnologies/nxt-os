@@ -8,7 +8,7 @@ def rec(t, b): return struct.pack("<HH", t, len(b)) + b
 def ustr(s): return struct.pack("<HB", len(s), 0) + s.encode("latin-1")
 
 def workbook():
-    strings = ["Employee", "Gross Pay", "CPP", "EI", "Income Tax", "Net Pay", "Synthetic A", "Synthetic B", "Total"]
+    strings = ["Employee", "Gross Pay", "Employee taxes - total", "Employee taxes - CPP", "Pretax deductions", "Net Pay", "Synthetic A", "Synthetic B", "Total", "Historical Checks"]
     sst = rec(0x00FC, struct.pack("<II", len(strings), len(strings)) + b"".join(ustr(x) for x in strings))
     def lab(r, c, i): return rec(0x00FD, struct.pack("<HHHI", r, c, 0, i))
     def num(r, c, v): return rec(0x0203, struct.pack("<HHHd", r, c, 0, v))
@@ -16,7 +16,8 @@ def workbook():
     body = b"".join([lab(0,0,0), lab(0,1,1), lab(0,2,2), lab(0,3,3), lab(0,4,4), lab(0,5,5),
         lab(1,0,6), num(1,1,1000.0), num(1,2,50.0), num(1,3,16.5), num(1,4,100.0), num(1,5,833.5),
         lab(2,0,7), rk(2,1,200050), num(2,2,99.0), num(2,3,33.0), num(2,4,250.0), rk(2,5,161855),
-        lab(3,0,8), num(3,1,3000.5), num(3,5,2452.05)])
+        lab(3,0,8), num(3,1,3000.5), num(3,5,2452.05),
+        lab(4,0,9), num(4,1,700.0), num(4,5,600.0)])
     bof = rec(0x0809, struct.pack("<HHHHII", 0x600, 5, 0, 0, 0, 0)); eof = rec(0x000A, b"")
     name = b"Payroll"
     def glob(off): return bof + sst + rec(0x0085, struct.pack("<IBB", off, 0, 0) + bytes([len(name), 0]) + name) + eof
@@ -48,8 +49,12 @@ class T(unittest.TestCase):
         rows = dict((r, dict(c)) for r, c in book["sheets"][0]["rows"])
         self.assertEqual(rows[0][1], "Gross Pay"); self.assertEqual(rows[2][1], 2000.5); self.assertEqual(rows[2][5], 1618.55)
         s = rpx.summarize(book)
-        self.assertEqual((s["rows"], s["gross"], s["net"]), (2, 3000.5, 2452.05))
-        self.assertEqual(s["deductions"], 548.5)
+        self.assertEqual((s["detail_rows"]["rows"], s["detail_rows"]["gross"], s["detail_rows"]["net"]), (2, 3000.5, 2452.05))
+        self.assertEqual(s["report_total"]["gross"], 3000.5)
+        self.assertTrue(s["detail_matches_report_total"])
+        self.assertEqual((s["historical_rows"]["rows"], s["historical_rows"]["gross"]), (1, 700.0))
+        self.assertEqual(s["employees"], 2)
+        self.assertEqual(s["detail_rows"]["deductions"], 499.0)  # group total used, CPP component not double counted
     def test_rejects_non_ole(self):
         with self.assertRaises(rpx.XlsError): rpx.read_xls(b"PK\x03\x04" + b"\0" * 600)
 
