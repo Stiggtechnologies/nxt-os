@@ -23,9 +23,10 @@ Sources: CaseWare public docs ([Adjusting Entry worksheet](https://documentation
 | Document manager, index, folders, tags, attachments | Workpapers, folders, tags, attachment versions | Existed |
 | Procedures/checklists, tickmarks, sign-offs, history, issues/review notes | Workpapers + annotations/tickmarks, sign-offs, audit history, issues | Existed |
 | Draft financial statements | Draft ASPE balance sheet, income statement, retained earnings, indirect cash flow, note skeletons | **Added** |
-| Compilation report and engagement letter templates | See follow-up PR | Planned in series |
-| PDF export | See follow-up PR | Planned in series |
-| GIFI handoff to tax | Existing `tax/preview` bridge and `gifi` lines; CSV handoff in follow-up PR matches PR #42 input | Planned in series |
+| Compilation report and engagement letter templates | `GET .../templates/{compilation_report|engagement_letter}` (+ `/pdf`); all text flagged CPA REVIEW REQUIRED | **Added** |
+| PDF export | `GET .../statements/pdf`, `.../templates/{name}/pdf` (dependency-free PDF writer) | **Added** |
+| GIFI handoff to tax | Existing `tax/preview` bridge and `gifi` lines; `GET .../gifi-handoff` CSV in the `scripts/import-gifi-csv.py` input format (PR #42). Detail lines only; GIFI totals left to tax | **Added** |
+| Engagement letter to e-sign | `GET .../esign-handoff` returns a `signatures::models::Draft`-shaped payload, `submitted:false`; recipients/fields left to the e-sign module. Nothing is created or sent | **Added** |
 | Eliminating/consolidation, tax-basis entries, CaseView, SmartSync | Not built | Gap |
 
 ## Statement classification
@@ -35,3 +36,19 @@ Groups roll into statement lines by GIFI range (CRA RC4088) when set, otherwise 
 ## Tests
 
 `tests/engagement_statements.rs` (synthetic data only).
+
+## Endpoints (all read-only)
+
+- `GET /api/engagements/{id}/statements` leadsheets, draft statements, uncorrected misstatements, notes, diagnostics
+- `GET /api/engagements/{id}/statements/pdf`
+- `GET /api/engagements/{id}/templates/{compilation_report|engagement_letter}` and `/pdf`
+- `GET /api/engagements/{id}/esign-handoff`
+- `GET /api/engagements/{id}/gifi-handoff`
+
+## Open items
+
+- CPA review of all report, letter and note wording (external dependency).
+- Cash flow: separate amortization and other non-cash items.
+- UI views for statements, templates and PDF download.
+- E-sign: the e-sign worker loads the handoff into `src/signatures`; no e-sign PR was open on 2026-10-29.
+- Eliminating/consolidation and tax-basis entries.
