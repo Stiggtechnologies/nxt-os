@@ -14,8 +14,11 @@ Never paste secret values into GitHub, chat or docs.
 6. Hourly crons may need a Vercel Pro plan. On Hobby, Vercel runs crons at most once a day.
 
 ## 2. Staff cutover (move off the shared admin key)
-1. Sign in with the break-glass admin key and create one staff account per person under Firm → Staff. Use their real work emails; give each the smallest role and only the clients they work on.
-2. Each person signs in, changes the temporary password (they are forced to), and enrolls MFA. Leave `NXT_STAFF_REQUIRE_MFA` unset (MFA required).
+1. There is no staff screen in the app yet; accounts are created through the API with the break-glass admin key (`Authorization: Bearer <ADMIN_API_KEY>`):
+   - `POST /api/staff/users` with `{"username", "display_name", "role", "clients", "temporary_password"}`. `role` is one of `admin`, `preparer`, `reviewer`, `front_desk`, `read_only`; `clients` lists the client references the person may open (empty = firm-wide).
+   - `GET /api/staff/users` lists accounts; `POST /api/staff/users/{id}` changes role, clients, `disabled`, `reset_mfa` or issues a new temporary password; `GET /api/staff/audit` shows the log.
+   - Give each person the smallest role and only the clients they work on. Send the temporary password to them yourself, outside NXT.
+2. Each person signs in (`POST /api/staff/login`), changes the temporary password (`POST /api/staff/me/password`; every other call is refused until they do), and enrolls MFA (`POST /api/staff/mfa/enroll`, then `POST /api/staff/mfa/confirm`). Leave `NXT_STAFF_REQUIRE_MFA` unset (MFA required).
 3. Confirm every person can open their own clients and is refused on others.
 4. Set `NXT_BREAK_GLASS=off`. The shared `ADMIN_API_KEY` then stops working for the app. Keep it stored safely for emergencies, and rotate it.
 

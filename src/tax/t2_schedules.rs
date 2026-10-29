@@ -12,6 +12,7 @@ use super::corporate::GifiRow;
 pub const SOURCES: &[(&str, &str)] = &[
     ("T2 Schedule 1, Net Income (Loss) for Income Tax Purposes (t2sch1-25e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch1.html"),
     ("T2 Schedule 8, Capital Cost Allowance (t2sch8-26e), columns 10, 17, 19, 20, 21 and notes 12, 14, 15", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch8.html"),
+    ("Income Tax Regulations (C.R.C., c. 945) s. 1100(1)(a) rates (incl. (xiv) Class 17, 8%), 1100(1)(b) Class 13, 1100(1)(c) Class 14, 1100(2) factors A/A.1, Schedule III", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html"),
     ("CRA classes of depreciable property and CCA rates", "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/sole-proprietorships-partnerships/report-business-income-expenses/claiming-capital-cost-allowance/classes-depreciable-property.html"),
     ("T2 Schedule 50, Shareholder Information (t2sch50-19e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch50.html"),
     ("CRA GIFI (RC4088): Schedule 100/125 codes 2599, 3499, 3620, 3640, 8299, 8670, 9368, 9990, 9995, 9999", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4088/general-index-financial-information-gifi.html"),
@@ -47,7 +48,8 @@ pub fn line_label(line: &str) -> Option<(&'static str, bool)> {
         .or_else(|| DEDUCTIONS.iter().find(|(l, _)| *l == line).map(|(_, n)| (*n, false)))
 }
 
-/// Declining-balance CCA rates (percent) from the CRA classes page.
+/// Declining-balance CCA rates (percent), each checked against Income Tax Regulations s. 1100(1)(a)
+/// (laws-lois.justice.gc.ca, C.R.C., c. 945): Class 17 is 1100(1)(a)(xiv), 8 per cent. The CRA classes page agrees for the others.
 const RATES: &[(&str, u32)] = &[
     ("1", 4), ("3", 5), ("6", 10), ("8", 20), ("10", 30), ("10.1", 30), ("12", 100), ("14.1", 5),
     ("16", 40), ("17", 8), ("43", 30), ("45", 45), ("46", 30), ("50", 55), ("53", 50),
