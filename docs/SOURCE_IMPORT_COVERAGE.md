@@ -10,6 +10,7 @@ Old systems stay the source of truth. NXT holds read-only copies. `decommission_
 | NXT Engagements | Caseware | Bulk declared file copy. Vendor files blocked | Caseware schema is not verified. 6,000 rows in 350 ms. |
 | Prepare signatures | DocuSign signed document and audit trail | Bulk declared archive. Vendor files blocked | No Connect payload or envelope export. Does not send or sign. 6,000 rows in 358 ms. |
 | NXT Tax | DT Max | Bulk declared accounts | Vendor backup, database, keyword file, and SDK XML are blocked. 6,000 rows in 311 ms on the re-run. |
+| NXT Tax | DT Max original client files | Immutable hash-deduped attachments, client-linked, unmatched queue | Synthetic only. See [DTMAX_SOURCE_FILES.md](DTMAX_SOURCE_FILES.md). |
 | NXT Tax | WebTaxT2 | Bulk declared archive members | No WebTax export is pinned. Not decoded. Not filed. 6,000 rows in 352 ms. |
 | NXT Referrals | None found | No importer | No cloned export in this repository. |
 

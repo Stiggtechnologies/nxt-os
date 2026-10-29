@@ -1,3 +1,4 @@
+use super::files::{ClientLinkInput, FileInput, ResolveInput};
 use super::{ImportError, OpenBatch, ParallelInput, SourceImport};
 use axum::{
     Json, Router,
@@ -42,6 +43,14 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/{lane}/batches/{batch}/commit", post(commit))
         .route("/api/source-imports/{lane}/batches/{batch}/recovery", get(recover))
         .route("/api/source-imports/{lane}/batches/{batch}/parallel", post(parallel).get(latest_parallel))
+        .route("/api/source-imports/dtmax/companies/{company}/clients", post(register_clients))
+        .route("/api/source-imports/dtmax/companies/{company}/clients/{client}/files", get(client_files))
+        .route("/api/source-imports/dtmax/companies/{company}/files", post(preserve_file))
+        .route("/api/source-imports/dtmax/companies/{company}/files/unmatched", get(unmatched))
+        .route("/api/source-imports/dtmax/companies/{company}/files/{sha}", get(source_file))
+        .route("/api/source-imports/dtmax/companies/{company}/files/{sha}/content", get(source_bytes))
+        .route("/api/source-imports/dtmax/companies/{company}/files/{sha}/link", post(resolve))
+        .layer(axum::extract::DefaultBodyLimit::max(super::files::MAX_FILE_BYTES * 2 + 64 * 1024))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|mut response: Response| async move {
             response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
@@ -81,4 +90,33 @@ async fn parallel(State(state): S, Path((lane, batch)): Path<(String, String)>, 
 
 async fn latest_parallel(State(state): S, Path((lane, batch)): Path<(String, String)>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.latest_parallel(&lane, &batch).await?))
+}
+
+async fn register_clients(State(state): S, Path(company): Path<String>, Json(body): Json<ClientLinkInput>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.register_client_links(&company, body).await?))
+}
+
+async fn preserve_file(State(state): S, Path(company): Path<String>, Json(body): Json<FileInput>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.preserve_file(&company, body).await?))
+}
+
+async fn unmatched(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.unmatched_files(&company).await?))
+}
+
+async fn source_file(State(state): S, Path((company, sha)): Path<(String, String)>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.source_file(&company, &sha).await?))
+}
+
+async fn source_bytes(State(state): S, Path((company, sha)): Path<(String, String)>) -> Result<Response, ImportError> {
+    let bytes = state.source_file_bytes(&company, &sha).await?;
+    Ok(([(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"))], bytes).into_response())
+}
+
+async fn resolve(State(state): S, Path((company, sha)): Path<(String, String)>, Json(body): Json<ResolveInput>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.resolve_file(&company, &sha, body).await?))
+}
+
+async fn client_files(State(state): S, Path((company, client)): Path<(String, String)>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.client_files(&company, &client).await?))
 }
