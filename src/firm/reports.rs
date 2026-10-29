@@ -34,6 +34,19 @@ fn rows<'a>(v: &'a Value, name: &str) -> impl Iterator<Item=&'a Value> { v[name]
 
 impl Firm {
     pub(super) async fn prepare_export(&self, input: ExportInput, export_id: Option<String>) -> FResult<StoredExport> {
+        if input.report == "contact-list" {
+            let state = self.snapshot().await?;
+            let today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
+            let mut csv = String::new();
+            row(&mut csv, ["kind", "name", "source"].map(str::to_string));
+            for contact in &state.directory {
+                row(&mut csv, [contact.kind.clone(), contact.name.clone(), "nxt_parallel_not_quickbooks".into()]);
+            }
+            let count = state.directory.len();
+            if count > 10000 || csv.len() > 1024 * 1024 { return Err(bad("report exceeds 10,000 rows or 1 MiB; narrow the report period")); }
+            let export_id = export_id.unwrap_or_else(|| id("export"));
+            return Ok(StoredExport { metadata: ExportJob { id: export_id.clone(), report: input.report, from: today.clone(), to: today, status: "ready".into(), created_at: now(), download_url: format!("/api/firm/exports/{export_id}/download"), source: "nxt_firm_directory".into(), row_count: count }, csv });
+        }
         let (from, to) = validate_range(&input.report, input.from, input.to)?;
         let mut csv = String::new(); let mut count = 0;
         match input.report.as_str() {

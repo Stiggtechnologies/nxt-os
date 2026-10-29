@@ -32,6 +32,9 @@ pub fn router(firm: Arc<Firm>) -> Router {
         .route("/api/firm/account-templates", get(account_templates).post(create_account_template))
         .route("/api/firm/account-templates/{id}", get(account_template).put(update_account_template))
         .route("/api/firm/account-templates/{id}/preview", post(preview))
+        .route("/api/firm/account-templates/{id}/apply", post(apply_chart))
+        .route("/api/firm/contacts", get(contacts).post(create_contact))
+        .route("/api/firm/playbooks", post(playbook))
         .route("/api/firm/exports", get(exports).post(create_export))
         .route("/api/firm/exports/{id}", axum::routing::delete(delete_export))
         .route("/api/firm/exports/{id}/download", get(download))
@@ -77,6 +80,10 @@ async fn account_template(State(f): S, Path(id): Path<String>) -> R { ok(f.snaps
 async fn create_account_template(State(f): S, Json(input): Json<AccountTemplateInput>) -> R { ok(f.save_account_template(None, input).await?) }
 async fn update_account_template(State(f): S, Path(id): Path<String>, Json(input): Json<AccountTemplateInput>) -> R { ok(f.save_account_template(Some(&id), input).await?) }
 async fn preview(State(f): S, Path(id): Path<String>, Json(input): Json<PreviewInput>) -> R { ok(f.preview_account_template(&id, input).await?) }
+async fn apply_chart(State(f): S, Path(id): Path<String>, Json(input): Json<ApplyChartInput>) -> R { ok(f.apply_account_template(&id, input).await?) }
+async fn contacts(State(f): S) -> R { ok(f.snapshot().await?.directory) }
+async fn create_contact(State(f): S, Json(input): Json<DirectoryInput>) -> R { ok(f.save_contact(input).await?) }
+async fn playbook(State(f): S, Json(input): Json<PlaybookInput>) -> R { ok(f.publish_playbook(input).await?) }
 async fn exports(State(f): S) -> R { let mut v: Vec<_> = f.snapshot().await?.exports.into_iter().map(|e| e.metadata).collect(); v.reverse(); ok(v) }
 async fn create_export(State(f): S, Json(input): Json<ExportInput>) -> R { ok(f.create_export(input).await?) }
 async fn delete_export(State(f): S, Path(id): Path<String>) -> R { ok(f.delete_export(&id).await?) }

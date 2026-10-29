@@ -206,7 +206,8 @@ impl Firm {
                 date(&due)?;
                 Ok(TaskInput { id: None, title: t.title.clone(), assignee: t.assignee.clone(), due_date: Some(due) })
             }).collect::<FResult<Vec<_>>>()?;
-            let p = Project { id: record_id.clone(), name: input.name.clone().unwrap_or_else(|| t.name.clone()), description: t.description.clone(), owner: input.owner.trim().into(), due_date: input.due_date.clone(), template_id: Some(template_id.into()), tasks: tasks(&task_inputs)?, status: "open".into(), created_at: at.clone(), updated_at: at.clone() };
+            let client_ref = match &input.client_ref { Some(value) => { text(value, "client reference", 120, false)?; value.trim().to_string() }, None => String::new() };
+            let p = Project { id: record_id.clone(), name: input.name.clone().unwrap_or_else(|| t.name.clone()), description: t.description.clone(), owner: input.owner.trim().into(), due_date: input.due_date.clone(), template_id: Some(template_id.into()), tasks: tasks(&task_inputs)?, status: "open".into(), created_at: at.clone(), updated_at: at.clone(), client_ref };
             s.projects.push(p.clone()); audit(s, "instantiated", "project", &record_id, format!("Template {template_id}")); Ok(p)
         }).await
     }
@@ -222,7 +223,8 @@ impl Firm {
             if prior.is_none() { capacity(s.projects.len(), 500, "projects")?; }
             let new_tasks = project_tasks(&input.tasks, prior.as_ref())?;
             let status = if !new_tasks.is_empty() && new_tasks.iter().all(|task| task.completed) {"completed"} else {"open"};
-            let p = Project { id: record_id.clone(), name: input.name.trim().into(), description: input.description.trim().into(), owner: input.owner.trim().into(), due_date: input.due_date.clone(), template_id: prior.as_ref().and_then(|p| p.template_id.clone()), tasks: new_tasks, status: status.into(), created_at: prior.map_or(at.clone(), |p| p.created_at), updated_at: at.clone() };
+            let client_ref = match &input.client_ref { Some(value) => { text(value, "client reference", 120, false)?; value.trim().to_string() }, None => prior.as_ref().map(|p| p.client_ref.clone()).unwrap_or_default() };
+            let p = Project { id: record_id.clone(), name: input.name.trim().into(), description: input.description.trim().into(), owner: input.owner.trim().into(), due_date: input.due_date.clone(), template_id: prior.as_ref().and_then(|p| p.template_id.clone()), tasks: new_tasks, status: status.into(), created_at: prior.map_or(at.clone(), |p| p.created_at), updated_at: at.clone(), client_ref };
             s.projects.retain(|p| p.id != record_id); s.projects.push(p.clone()); audit(s, if existing.is_some() {"updated"} else {"created"}, "project", &record_id, &p.name); Ok(p)
         }).await
     }
@@ -420,7 +422,7 @@ impl Firm {
                         capacity(p.tasks.len(), 100, "project tasks")?; p.tasks.push(task.clone()); p.status = "open".into(); p.updated_at = at.clone(); p.clone()
                     } else {
                         capacity(s.projects.len(), 500, "projects")?;
-                        let p = Project { id: format!("project_{run_id}"), name: title.clone(), description: "Created by an approved Firm Operations workflow".into(), owner: String::new(), due_date: None, template_id: None, tasks: vec![task.clone()], status: "open".into(), created_at: at.clone(), updated_at: at.clone() };
+                        let p = Project { id: format!("project_{run_id}"), name: title.clone(), description: "Created by an approved Firm Operations workflow".into(), owner: String::new(), due_date: None, template_id: None, tasks: vec![task.clone()], status: "open".into(), created_at: at.clone(), updated_at: at.clone(), client_ref: String::new() };
                         s.projects.push(p.clone()); p
                     };
                     audit(s, "task_created", "project", &project.id, format!("Run {run_id}; task {}", task.id));
@@ -572,6 +574,60 @@ impl Firm {
         self.mutate(|s| {
             capacity(s.exports.len(), 100, "export artifacts")?;
             s.exports.push(export.clone()); audit(s, "generated", "export", &export.metadata.id, &export.metadata.report); Ok(export.metadata.clone())
+        }).await
+    }
+
+    pub async fn save_contact(&self, input: DirectoryInput) -> FResult<DirectoryEntry> {
+        if !["customer", "employee", "supplier"].contains(&input.kind.as_str()) { return Err(bad("contact kind must be customer, employee, or supplier")); }
+        text(&input.name, "contact name", 160, true)?;
+        let record_id = id("contact");
+        self.mutate(|s| {
+            capacity(s.directory.len(), 500, "directory contacts")?;
+            let record = DirectoryEntry { id: record_id.clone(), kind: input.kind.clone(), name: input.name.trim().into() };
+            s.directory.push(record.clone());
+            audit(s, "saved", "directory", &record_id, &format!("{} {}", record.kind, record.name));
+            Ok(record)
+        }).await
+    }
+
+    pub async fn apply_account_template(&self, template_id: &str, input: ApplyChartInput) -> FResult<Value> {
+        text(&input.company_label, "company label", 120, true)?;
+        self.mutate(|s| {
+            let template = s.account_templates.iter().find(|t| t.id == template_id).ok_or_else(|| missing("account template"))?;
+            let version = input.version.unwrap_or(template.version);
+            let accounts = if version == template.version { template.accounts.clone() } else { template.history.iter().find(|r| r.version == version).ok_or_else(|| missing("template revision"))?.accounts.clone() };
+            if s.applied_charts.iter().any(|row| row.company_label == input.company_label && row.template_id == template_id && row.version == version) {
+                return Err(conflict("that chart version is already applied to this company label"));
+            }
+            capacity(s.applied_charts.len(), 200, "applied charts")?;
+            let record = AppliedChart { id: id("chart"), company_label: input.company_label.trim().into(), template_id: template_id.into(), version, account_count: accounts.len(), applied_at: now() };
+            s.applied_charts.push(record.clone());
+            audit(s, "applied", "account_template", template_id, &format!("{} version {version} on {}", record.account_count, record.company_label));
+            Ok(json!({"id": record.id, "company_label": record.company_label, "template_id": template_id, "version": version, "account_count": record.account_count, "ledger_mutated": false, "write_back": false, "authoritative_system": "quickbooks"}))
+        }).await
+    }
+
+    pub async fn publish_playbook(&self, input: PlaybookInput) -> FResult<Value> {
+        text(&input.name, "playbook name", 160, true)?;
+        if input.client_refs.is_empty() || input.client_refs.len() > 20 { return Err(bad("a playbook needs 1 to 20 client labels")); }
+        for client in &input.client_refs { text(client, "client reference", 120, true)?; }
+        let at = now();
+        self.mutate(|s| {
+            let template = s.templates.iter().find(|t| t.id == input.template_id).cloned().ok_or_else(|| missing("template"))?;
+            capacity(s.playbooks.len(), 100, "playbooks")?;
+            if s.projects.len() + input.client_refs.len() > 500 { return Err(conflict("project capacity reached")); }
+            let mut project_ids = Vec::new();
+            for client in &input.client_refs {
+                let record_id = id("project");
+                let task_inputs = template.tasks.iter().map(|task| TaskInput { id: None, title: task.title.clone(), assignee: task.assignee.clone(), due_date: None }).collect::<Vec<_>>();
+                let project = Project { id: record_id.clone(), name: format!("{} — {}", input.name.trim(), client.trim()), description: template.description.clone(), owner: String::new(), due_date: None, template_id: Some(template.id.clone()), tasks: tasks(&task_inputs)?, status: "open".into(), created_at: at.clone(), updated_at: at.clone(), client_ref: client.trim().into() };
+                s.projects.push(project);
+                project_ids.push(record_id);
+            }
+            let playbook = Playbook { id: id("play"), name: input.name.trim().into(), template_id: template.id.clone(), client_refs: input.client_refs.iter().map(|v| v.trim().to_string()).collect(), project_ids: project_ids.clone(), created_at: at.clone() };
+            s.playbooks.push(playbook.clone());
+            audit(s, "published", "playbook", &playbook.id, &format!("{} clients inside NXT", playbook.client_refs.len()));
+            Ok(json!({"id": playbook.id, "project_ids": project_ids, "external_publish": false, "write_back": false, "authoritative_system": "quickbooks"}))
         }).await
     }
 
