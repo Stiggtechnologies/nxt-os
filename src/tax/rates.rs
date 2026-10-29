@@ -53,6 +53,42 @@ pub const CA_2025: RateTable = RateTable {
 };
 
 pub const TABLES: &[RateTable] = &[CA_2025];
+
+pub const MB_FINANCE_2025: &str = "https://www.gov.mb.ca/finance/personal/ptaxes.html";
+
+/// 2025 T1 provincial/territorial tables for the generic engine (AB and ON have
+/// their own calculators). Brackets: CRA "previous year" rates page; basic personal
+/// amounts: CRA T4127-JUL 2025 (Manitoba: Manitoba Finance, indexation frozen).
+/// `not_calculated` lists provincial adjustments the generic engine does not apply.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct Province {
+    pub code: &'static str,
+    pub name: &'static str,
+    pub brackets: &'static [(i64, i64)],
+    pub credit_rate_bps: i64,
+    /// None = uses the federal BPA with its phase-out (Yukon).
+    pub bpa_cents: Option<i64>,
+    pub employment_amount: bool,
+    pub bracket_source: &'static str,
+    pub bpa_source: &'static str,
+    /// T4127 Table 8.1 KP constants (dollars) the brackets must reproduce.
+    pub t4127_kp: &'static [i64],
+    pub not_calculated: &'static str,
+}
+
+pub const PROVINCES_2025: &[Province] = &[
+    Province { code:"BC", name:"British Columbia", brackets:&[(4_927_900,506),(9_856_000,770),(11_315_800,1050),(13_740_700,1229),(18_630_600,1470),(25_982_900,1680),(i64::MAX,2050)], credit_rate_bps:506, bpa_cents:Some(1_293_200), employment_amount:false, bracket_source:CRA_LAST_YEAR, bpa_source:CRA_T4127_JUL_2025, t4127_kp:&[1_301,4_061,6_086,9_398,13_310,22_924], not_calculated:"BC tax reduction (low-income), BC428 credits other than BPA/CPP/EI" },
+    Province { code:"SK", name:"Saskatchewan", brackets:&[(5_346_300,1050),(15_275_000,1250),(i64::MAX,1450)], credit_rate_bps:1050, bpa_cents:Some(1_949_100), employment_amount:false, bracket_source:CRA_LAST_YEAR, bpa_source:CRA_T4127_JUL_2025, t4127_kp:&[1_069,4_124], not_calculated:"SK428 credits other than BPA/CPP/EI (e.g. dependant, age, pension, dividend)" },
+    Province { code:"MB", name:"Manitoba", brackets:&[(4_700_000,1080),(10_000_000,1275),(i64::MAX,1740)], credit_rate_bps:1080, bpa_cents:Some(1_578_000), employment_amount:false, bracket_source:MB_FINANCE_2025, bpa_source:MB_FINANCE_2025, t4127_kp:&[917,5_567], not_calculated:"Manitoba BPA phase-out for net income $200,000-$400,000 (blocked above $200,000), Family Tax Benefit, MB428 credits other than BPA/CPP/EI" },
+    Province { code:"NB", name:"New Brunswick", brackets:&[(5_130_600,940),(10_261_400,1400),(19_006_000,1600),(i64::MAX,1950)], credit_rate_bps:940, bpa_cents:Some(1_339_600), employment_amount:false, bracket_source:CRA_LAST_YEAR, bpa_source:CRA_T4127_JUL_2025, t4127_kp:&[2_360,4_412,11_064], not_calculated:"NB low-income tax reduction, NB428 credits other than BPA/CPP/EI" },
+    Province { code:"NS", name:"Nova Scotia", brackets:&[(3_050_700,879),(6_101_500,1495),(9_588_300,1667),(15_465_000,1750),(i64::MAX,2100)], credit_rate_bps:879, bpa_cents:Some(1_174_400), employment_amount:false, bracket_source:CRA_LAST_YEAR, bpa_source:CRA_T4127_JUL_2025, t4127_kp:&[1_879,2_929,3_725,9_137], not_calculated:"NS low-income tax reduction, age amount supplement, NS428 credits other than BPA/CPP/EI" },
+    Province { code:"PE", name:"Prince Edward Island", brackets:&[(3_332_800,950),(6_465_600,1347),(10_500_000,1660),(14_000_000,1762),(i64::MAX,1900)], credit_rate_bps:950, bpa_cents:Some(1_465_000), employment_amount:false, bracket_source:CRA_LAST_YEAR, bpa_source:CRA_T4127_JUL_2025, t4127_kp:&[1_323,3_347,4_418,6_350], not_calculated:"PE low-income tax reduction, PE428 credits other than BPA/CPP/EI" },
+    Province { code:"NL", name:"Newfoundland and Labrador", brackets:&[(4_419_200,870),(8_838_200,1450),(15_779_200,1580),(22_091_000,1780),(28_221_400,1980),(56_442_900,2080),(112_885_800,2130),(i64::MAX,2180)], credit_rate_bps:870, bpa_cents:Some(1_106_700), employment_amount:false, bracket_source:CRA_LAST_YEAR, bpa_source:CRA_T4127_JUL_2025, t4127_kp:&[2_563,3_712,6_868,11_286,14_108,16_930,22_575], not_calculated:"NL low-income tax reduction, NL428 credits other than BPA/CPP/EI" },
+    Province { code:"YT", name:"Yukon", brackets:&[(5_737_500,640),(11_475_000,900),(17_788_200,1090),(50_000_000,1280),(i64::MAX,1500)], credit_rate_bps:640, bpa_cents:None, employment_amount:true, bracket_source:CRA_LAST_YEAR, bpa_source:CRA_T4127_JUL_2025, t4127_kp:&[1_492,3_672,7_052,18_052], not_calculated:"YT428 credits other than BPA/CEA/CPP/EI, Yukon low-income family credit" },
+    Province { code:"NT", name:"Northwest Territories", brackets:&[(5_196_400,590),(10_393_000,860),(16_896_700,1220),(i64::MAX,1405)], credit_rate_bps:590, bpa_cents:Some(1_784_200), employment_amount:false, bracket_source:CRA_LAST_YEAR, bpa_source:CRA_T4127_JUL_2025, t4127_kp:&[1_403,5_145,8_270], not_calculated:"NT428 credits other than BPA/CPP/EI, cost of living credits" },
+    Province { code:"NU", name:"Nunavut", brackets:&[(5_470_700,400),(10_941_300,700),(17_788_100,900),(i64::MAX,1150)], credit_rate_bps:400, bpa_cents:Some(1_927_400), employment_amount:false, bracket_source:CRA_LAST_YEAR, bpa_source:CRA_T4127_JUL_2025, t4127_kp:&[1_641,3_829,8_276], not_calculated:"NU428 credits other than BPA/CPP/EI, cost of living credit" },
+];
+pub fn province(code: &str) -> Option<&'static Province> { PROVINCES_2025.iter().find(|p| p.code == code) }
 pub fn for_year(year: i32) -> Option<&'static RateTable> { TABLES.iter().find(|t| t.tax_year == year) }
 
 pub const CRA_LAST_YEAR: &str = "https://www.canada.ca/en/revenue-agency/services/tax/individuals/tax-rates-brackets/last-year.html";
@@ -105,12 +141,16 @@ pub const VALIDATIONS: &[(&str, &str, &str)] = &[
     ("ca-2025.1","ON58040","T4127-JUL 2025: Ontario basic personal amount $12,747"),
 ];
 
+/// Generic-engine provinces are validated on `{xx}_before_credits` because a test
+/// reproduces every T4127 Table 8.1 KP constant from the brackets.
 pub fn line_status(table: &str, code: &str) -> &'static str {
+    if table == "ca-2025.1" && let Some(p) = code.strip_suffix("_before_credits") && province(&p.to_uppercase()).is_some() { return "validated"; }
     if VALIDATIONS.iter().any(|v| v.0 == table && v.1 == code) { "validated" } else { "unvalidated" }
 }
 
 pub fn catalog() -> Value {
     json!({"tables": TABLES, "validations": VALIDATIONS.iter().map(|v| json!({"table": v.0, "line": v.1, "example": v.2})).collect::<Vec<_>>(),
+        "provinces": PROVINCES_2025,
         "rate_sources": RATE_SOURCES.iter().map(|r| json!({"table": r.0, "key": r.1, "value": r.2, "url": r.3, "status": r.4})).collect::<Vec<_>>(),
         "statement": "Rates are transcribed from published CRA/provincial sources. Lines are 'unvalidated' unless reproduced against a published CRA example. Not certified."})
 }
@@ -147,6 +187,16 @@ mod tests {
     }
     #[test] fn ontario_brackets_reproduce_t4127_constants() {
         assert_eq!(constants(CA_2025.ontario_brackets), vec![2_168, 4_294, 5_794, 7_994]);
+    }
+    #[test] fn all_province_brackets_reproduce_t4127_kp_constants() {
+        for p in PROVINCES_2025 {
+            assert_eq!(constants(p.brackets), p.t4127_kp.to_vec(), "{}", p.code);
+            assert_eq!(p.credit_rate_bps, p.brackets[0].1, "{} credit rate = lowest rate", p.code);
+            assert_eq!(p.brackets.last().unwrap().0, i64::MAX);
+            assert!(p.bracket_source.starts_with("https://www."));
+        }
+        assert_eq!(line_status("ca-2025.1","bc_before_credits"),"validated");
+        assert_eq!(line_status("ca-2025.1","qc_before_credits"),"unvalidated");
     }
     #[test] fn every_validated_line_has_only_sourced_inputs_and_urls_are_official() {
         for r in RATE_SOURCES { assert!(r.3.starts_with("https://www.canada.ca/"), "{}", r.1); assert!(["sourced","unvalidated"].contains(&r.4)); }

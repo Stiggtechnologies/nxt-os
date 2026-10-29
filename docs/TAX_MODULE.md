@@ -35,6 +35,15 @@ Alberta credit rate: 8% is correct for 2025. The engine previously omitted the 2
 
 Still unvalidated: the ON health premium chart, the ON spouse amount, the enhanced CPP max, and the T2 rates. NXT does not claim certified accuracy, and a qualified tax professional must review it.
 
+## Provinces and territories (2025)
+The T1 engine covers AB and ON, each with its own calculator. A generic engine (`rates::PROVINCES_2025`, `t1_province`) covers BC, SK, MB, NB, NS, PE, NL, YT, NT and NU:
+- **Brackets:** the CRA previous-year rates page. Manitoba comes from Manitoba Finance, because indexation is frozen at $47,000/$100,000. The CRA previous-year page lists indexed MB thresholds, which conflicts with Manitoba Finance and T4127, so we used Manitoba Finance.
+- **Basic personal amounts:** T4127-JUL 2025.
+- **Credit rate:** the lowest bracket rate.
+- **Validation:** every province's brackets reproduce the T4127 Table 8.1 KP constants (test), so `{xx}_before_credits` is validated. Net provincial tax (42800) is not validated.
+- **Not calculated:** low-income reductions (BC, NB, NS, PE, NL), the MB BPA phase-out (blocked above $200,000), and all other provincial credits. The preparer must confirm `provincial_adjustments_not_applicable`.
+- **Quebec:** not supported. See docs/TAX_QC_TP1_SCOPING.md.
+
 ## External dependencies
 - CRA EFILE/NETFILE/Corporation Internet Filing software certification, renewed every year
 - An EFILE number and registration for the firm
