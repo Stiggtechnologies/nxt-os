@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tower::ServiceExt;
 
 const PW: &str = "synthetic-pass-phrase-1";
+const PW2: &str = "synthetic-pass-phrase-2";
 
 async fn call(r: &axum::Router, m: &str, uri: &str, tok: Option<&str>, body: Option<Value>, ip: &str) -> (u16, Value) {
     let mut q = Request::builder().method(m).uri(uri).header("x-forwarded-for", ip);
@@ -34,6 +35,10 @@ async fn onboard(r: &axum::Router, username: &str, name: &str, role: &str, clien
     assert_eq!(status(r, "GET", "/api/tax/returns", &tok, None).await.0, 403);
     let secret = ok(r, "POST", "/api/staff/mfa/enroll", &tok, Some(json!({}))).await["secret"].as_str().unwrap().to_string();
     ok(r, "POST", "/api/staff/mfa/confirm", &tok, Some(json!({"code":staff::totp_now(&secret).unwrap()}))).await;
+    // The temporary password must be changed before any work.
+    assert_eq!(status(r, "GET", "/api/tax/returns", &tok, None).await.0, 403);
+    ok(r, "GET", "/api/staff/me", &tok, None).await;
+    ok(r, "POST", "/api/staff/me/password", &tok, Some(json!({"current_password":PW,"new_password":PW2}))).await;
     (u["id"].as_str().unwrap().to_string(), tok)
 }
 

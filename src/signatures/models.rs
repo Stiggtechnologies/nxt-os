@@ -71,6 +71,9 @@ pub struct SaveInput {
     pub expected_revision: Option<u64>,
     pub operator_label: String,
     pub draft: Draft,
+    /// NXT client label for access scoping. Kept when omitted on update.
+    #[serde(default)]
+    pub client_ref: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -133,6 +136,10 @@ pub struct Envelope {
     pub resend_count: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub field_values: Vec<FieldValue>,
+    /// NXT client label used for staff access scoping. Empty on older envelopes,
+    /// which only unrestricted staff can see.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub client_ref: String,
 }
 fn is_zero(value: &u32) -> bool { *value == 0 }
 
