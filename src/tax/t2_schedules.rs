@@ -16,12 +16,12 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("Income Tax Regulations (C.R.C., c. 945) s. 1103(2g) transfer of elected 1101(5p)/(5s) classes in the fifth taxation year", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-19.html"),
     ("Income Tax Regulations (C.R.C., c. 945) s. 1104(3.1) designated immediate expensing property, (3.2) $1,500,000 limit, (3.3)–(3.4) associated allocation, (3.5)(a) several years ending in one calendar year while associated, (3.5)(b) years under 51 weeks", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-19.html"),
     ("CRA T4002 ch. 4, Schedule 8 columns 4, 9, 10, 14–18 and 21 (immediate expensing; proceeds reducing AIIP then RIIP)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/t4002/t4002-6.html"),
-    ("Income Tax Regulations (C.R.C., c. 945) s. 7307(1) passenger vehicle and 7307(1.1) zero-emission passenger vehicle prescribed amounts; s. 1101(1af), (1ac), (5b.1), (5p), (5q), (5s) separate classes; 1100(1)(a.1)/(a.2) additional allowances; 1104(2) eligible non-residential building", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/FullText.html"),
+    ("Income Tax Regulations (C.R.C., c. 945) s. 7307(1) passenger vehicle and 7307(1.1) zero-emission passenger vehicle prescribed amounts; s. 1101(1af), (1ac), (1ac.1), (1ag), (5a), (5b.1), (5k), (5p), (5q), (5s) separate classes; 1100(1)(a.1)/(a.2)/(a.4) additional allowances; 1104(2) eligible non-residential building", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/FullText.html"),
     ("CRA classes of depreciable property and CCA rates", "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/sole-proprietorships-partnerships/report-business-income-expenses/claiming-capital-cost-allowance/classes-depreciable-property.html"),
     ("T2 Schedule 50, Shareholder Information (t2sch50-19e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch50.html"),
     ("CRA GIFI (RC4088): Schedule 100/125 codes 2599, 3499, 3620, 3640, 8299, 8670, 9368, 9990, 9995, 9999", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4088/general-index-financial-information-gifi.html"),
 ];
-pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule and the Reg 1100(3) short-year proration (days/365) and the Reg 1100(2) E/E.1 reduction for proceeds (T4002 columns 14–17) and the Class 14.1 additional allowance (Reg 1100(1)(c.1)); the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled, as is CCPC immediate expensing (Reg 1100(0.1), 1104(3.1)–(3.5)) for DIEP available before 2024; per-vehicle cost caps for Classes 10.1 and 54 (Reg 7307(1), (1.1)) are checked; Reg 1101 separate classes ((1af), (1ac), (5p), (5s), (5b.1) with the 1100(1)(a.1)/(a.2) building allowances) are modelled, with the Reg 1103(2g) fifth-year transfer of (5p)/(5s) classes; other separate classes are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
+pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule and the Reg 1100(3) short-year proration (days/365) and the Reg 1100(2) E/E.1 reduction for proceeds (T4002 columns 14–17) and the Class 14.1 additional allowance (Reg 1100(1)(c.1)); the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled, as is CCPC immediate expensing (Reg 1100(0.1), 1104(3.1)–(3.5)) for DIEP available before 2024; per-vehicle cost caps for Classes 10.1 and 54 (Reg 7307(1), (1.1)) are checked; Reg 1101 separate classes ((1af), (1ac), (1ac.1) with the 1100(1)(a.4) allowance, (1ag), (5a), (5k), (5p), (5s), (5b.1) with the 1100(1)(a.1)/(a.2) building allowances) are modelled, with the Reg 1103(2g) fifth-year transfer of (5p)/(5s) classes; other separate classes are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
 
 /// Schedule 1 lines copied from t2sch1-25e. Additions: 101–199 on page 1 plus 201–296
 /// (summed to amount D, line 199). Deductions: 401–499 plus 300–3xx (amount E, line 499).
@@ -116,15 +116,19 @@ pub struct CcaClass {
     pub vehicles: Vec<Vehicle>,
     /// Separate class prescribed by Reg 1101: "" (none), "1101(1af)" (Class 10.1), "1101(1ac)"
     /// (rental property of $50,000 or more), "1101(5p)" (Class 8, elected), "1101(5s)" (Class 43
-    /// para. (a), elected) or "1101(5b.1)" (Class 1 eligible non-residential building, elected).
+    /// para. (a), elected) or "1101(5b.1)" (Class 1 eligible non-residential building, elected), "1101(1ac.1)" (each new
+    /// purpose-built residential rental), "1101(1ag)" (13(4.2) elected property), "1101(5a)" (Class 10
+    /// para. (f.2) spacecraft) or "1101(5k)" (Class 10 para. (w)).
     pub separate_class: String,
     /// Distinguishes several separate classes of the same Schedule II class.
     pub separate_class_label: String,
     /// Elected separate classes: the election letter is attached to the return for the year of
-    /// acquisition (Reg 1101(5q) / (5b.1)).
+    /// acquisition (Reg 1101(5q) / (5b.1)); for 1101(1ag), the ITA 13(4.2) election was made.
     pub separate_class_election_filed: bool,
     /// 1101(5b.1) only: "manufacturing" (Reg 1100(1)(a.1), 6%) or "non_residential" ((a.2), 2%)
-    /// when at least 90% of the floor space is so used at year end; "" for none.
+    /// when at least 90% of the floor space is so used at year end; 1101(1ac.1) only:
+    /// "purpose_built_rental" ((a.4), 6%) when it is a new purpose-built residential rental
+    /// (Reg 1104(2)) throughout the year; "" for none.
     pub building_additional_use: String,
     /// 1101(5p)/(5s) only (Reg 1103(2g)): how many taxation years have begun after the end of the
     /// first taxation year in which a property of the class became available for use (ITA 13(26)),
@@ -141,6 +145,14 @@ fn separate_class_rule(code: &str) -> Option<(&'static [&'static str], bool)> {
         "1101(5s)" => (&["43"], true),
         "1101(5b.1)" => (&["1"], true),
         "1101(1ac)" => (&[], false),
+        // Each new purpose-built residential rental (Class 1), with the 1100(1)(a.4) 6% allowance.
+        "1101(1ac.1)" => (&["1"], false),
+        // Each elected property of a 13(4.2) transferee; the 13(4.2) election is the trigger.
+        "1101(1ag)" => (&[], true),
+        // Each unmanned telecommunication spacecraft of Class 10 para. (f.2) (Class 30 is not modelled).
+        "1101(5a)" => (&["10"], false),
+        // All Class 10 para. (w) property.
+        "1101(5k)" => (&["10"], false),
         _ => return None,
     })
 }
@@ -316,12 +328,12 @@ pub fn validate(input: &T2Input) -> Result<(), String> {
     let mut classes = BTreeSet::new();
     for c in &input.cca {
         if !c.separate_class.is_empty() {
-            let Some((allowed, _)) = separate_class_rule(&c.separate_class) else { return Err(format!("Class {}: separate_class must be one of 1101(1af), 1101(1ac), 1101(5p), 1101(5s), 1101(5b.1)", c.class)) };
+            let Some((allowed, _)) = separate_class_rule(&c.separate_class) else { return Err(format!("Class {}: separate_class must be one of 1101(1af), 1101(1ac), 1101(1ac.1), 1101(1ag), 1101(5a), 1101(5k), 1101(5p), 1101(5s), 1101(5b.1)", c.class)) };
             if !allowed.is_empty() && !allowed.contains(&c.class.as_str()) { return Err(format!("Class {}: {} applies to Class {}", c.class, c.separate_class, allowed.join("/"))); }
             if c.separate_class == "1101(1ac)" && matches!(c.class.as_str(), "1" | "3" | "6" | "13") { return Err(format!("Class {}: Reg 1101(1ac) excludes buildings and leasehold interests in buildings", c.class)); }
         }
         if c.years_after_first_available.is_some() && !matches!(c.separate_class.as_str(), "1101(5p)" | "1101(5s)") { return Err("years_after_first_available is only for a 1101(5p)/(5s) separate class (Reg 1103(2g))".into()); }
-        if !matches!(c.building_additional_use.as_str(), "" | "manufacturing" | "non_residential") || (!c.building_additional_use.is_empty() && c.separate_class != "1101(5b.1)") { return Err("building_additional_use is manufacturing|non_residential and only for a 1101(5b.1) separate class".into()); }
+        if !matches!((c.building_additional_use.as_str(), c.separate_class.as_str()), ("", _) | ("manufacturing" | "non_residential", "1101(5b.1)") | ("purpose_built_rental", "1101(1ac.1)")) { return Err("building_additional_use is manufacturing|non_residential for a 1101(5b.1) class, or purpose_built_rental for a 1101(1ac.1) class".into()); }
         if c.separate_class_label.len() > 80 { return Err("separate_class_label is limited to 80 characters".into()); }
         if !classes.insert((c.class.as_str(), c.separate_class.as_str(), c.separate_class_label.as_str())) { return Err(format!("duplicate CCA class {} (use separate_class and separate_class_label for separate classes)", c.class)); }
     }
@@ -481,7 +493,7 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
         }
         let mut row_pre: Option<Value> = None;
         if let Some((_, elected)) = separate_class_rule(&c.separate_class) {
-            if elected && !c.separate_class_election_filed { diag(diagnostics, "cca_separate_class_election", format!("Class {}: {} applies only if elected by letter attached to the return for the year of acquisition (Reg 1101(5q)/(5b.1)).", c.class, c.separate_class), true); }
+            if elected && !c.separate_class_election_filed { diag(diagnostics, "cca_separate_class_election", format!("Class {}: {} applies only if elected by letter attached to the return for the year of acquisition (Reg 1101(5q)/(5b.1); for 1101(1ag), the ITA 13(4.2) election).", c.class, c.separate_class), true); }
         }
         let zev = matches!(c.class.as_str(), "54" | "55" | "56");
         let ie = if ie_ok { c.immediate_expensing_cents } else { 0 };
@@ -556,7 +568,7 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
                 row["column_17_half_year_cents"] = json!((f - g).max(0) / 2);
                 let basis = (i128::from(col10) + adj).max(0);
                 // Reg 1100(1)(a.1)/(a.2): extra 6% or 2% of the same UCC for a 1101(5b.1) building.
-                let extra = match c.building_additional_use.as_str() { "manufacturing" => 6, "non_residential" => 2, _ => 0 };
+                let extra = match c.building_additional_use.as_str() { "manufacturing" => 6, "non_residential" => 2, "purpose_built_rental" => 6, _ => 0 };
                 if extra > 0 { row["additional_allowance_percent"] = json!(extra); }
                 let regular_max = basis * i128::from(r + extra) / 100;
                 regular_max as i64 + class_14_1_additional(c, input, basis, regular_max, &mut row, diagnostics)

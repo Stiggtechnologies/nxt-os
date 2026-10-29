@@ -342,3 +342,22 @@ fn reg_1103_2g_fifth_year_transfer() {
     i.cca = vec![general.clone(), sep(None)]; assert!(blocks(&i));
     i.cca = vec![CcaClass { years_after_first_available: Some(1), ..general }]; assert!(validate(&i).is_err());
 }
+
+#[test]
+fn more_reg_1101_separate_classes() {
+    let mut i = base();
+    // 1101(1ac.1) new purpose-built residential rental: 4% + 6% (Reg 1100(1)(a.4)).
+    i.cca = vec![CcaClass { class: "1".into(), opening_ucc_cents: 100_000_00, separate_class: "1101(1ac.1)".into(), building_additional_use: "purpose_built_rental".into(), ..Default::default() }];
+    assert!(validate(&i).is_ok());
+    let mut d = vec![]; let s = schedule8(&i, &mut d);
+    assert_eq!(s["classes"][0]["maximum_cca_cents"], 10_000_00);
+    assert!(!d.iter().any(|x| x["blocks_review"] == true), "{d:?}");
+    i.cca[0].building_additional_use = "manufacturing".into(); assert!(validate(&i).is_err());
+    i.cca[0].building_additional_use.clear(); i.cca[0].class = "8".into(); assert!(validate(&i).is_err());
+    // 1101(1ag) needs the 13(4.2) election; 1101(5k)/(5a) are Class 10 only.
+    i.cca = vec![CcaClass { class: "8".into(), opening_ucc_cents: 1_000_00, separate_class: "1101(1ag)".into(), ..Default::default() }];
+    let mut d = vec![]; schedule8(&i, &mut d); assert!(d.iter().any(|x| x["code"] == "cca_separate_class_election"));
+    i.cca = vec![CcaClass { class: "10".into(), opening_ucc_cents: 1_000_00, separate_class: "1101(5k)".into(), ..Default::default() }]; assert!(validate(&i).is_ok());
+    i.cca[0].class = "8".into(); assert!(validate(&i).is_err());
+    i.cca[0].class = "10".into(); i.cca[0].separate_class = "1101(5a)".into(); assert!(validate(&i).is_ok());
+}
