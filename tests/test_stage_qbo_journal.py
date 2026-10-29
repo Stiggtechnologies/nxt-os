@@ -168,4 +168,10 @@ def load_tests(loader, standard_tests, pattern):
     _m = _u.module_from_spec(_s)
     _s.loader.exec_module(_m)
     standard_tests.addTests(loader.loadTestsFromModule(_m))
+    # Tolerance, held-for-review, over-length total and opening carry-forward.
+    _p = Path(__file__).with_name('test_qbo_review_and_opening.py')
+    _s = _u.spec_from_file_location('test_qbo_review_and_opening_ci', _p)
+    _m = _u.module_from_spec(_s)
+    _s.loader.exec_module(_m)
+    standard_tests.addTests(loader.loadTestsFromModule(_m))
     return standard_tests

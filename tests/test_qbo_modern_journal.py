@@ -88,8 +88,9 @@ class ModernJournalLayout(unittest.TestCase):
         cases = {
             'journal_adjustment_flag_required': journal(adj=None),
             'journal_adjustment_flag_inconsistent': journal(adj='No', second_adj='Yes'),
-            'source_control_missing_amount_or_subtotal': journal(second_line=[x.string('B8', '2025-03-04'), x.string('C8', 'Journal Entry'), x.string('G8', 'Synthetic capital'), x.string('J8', 'No')]),
-            'journal_account_label_required': journal(second_line=[x.string('B8', '2025-03-04'), x.string('C8', 'Journal Entry'), x.number('I8', '100.01'), x.string('J8', 'No')]),
+            # A blank amount is held, never imputed: the group's present
+            # amounts then fail its subtotal/balance control.
+            'unbalanced_journal_group': journal(second_line=[x.string('B8', '2025-03-04'), x.string('C8', 'Journal Entry'), x.string('G8', 'Synthetic capital'), x.string('J8', 'No')]),
             'journal_group_metadata_inconsistent': journal(second_line=line(8, 'Synthetic capital', 'I', '100.01', date='2025-03-05')),
             'journal_header_mismatch': journal(header={**HEADER, 'J': 'Adjusted'}),
         }
@@ -164,14 +165,16 @@ class TitleRecognition(unittest.TestCase):
 
 class FormulaLengthLocation(unittest.TestCase):
     def test_formula_length_limit_unchanged_and_located_without_values(self):
+        # Only the journal's grand-total (TOTAL row) formula may exceed the
+        # limit; a group subtotal formula over it still blocks, located.
         long_formula = '+'.join(f'H{r}' for r in range(7, 1300))
         self.assertGreater(len(long_formula), 4096)
         rows = modern_rows()
-        rows[10] = [x.string('A10', 'TOTAL'), x.number('H10', '100.01', formula=long_formula), x.number('I10', '0', formula='I9', cache='100.01')]
+        rows[9] = [x.string('A9', 'Total for 9001'), x.number('H9', '100.01', formula=long_formula), x.number('I9', '0', formula='I7+I8', cache='100.01')]
         r = qbo.assess_export_bytes(canonical(x.xlsx('Journal', rows, JOURNAL_PERIOD)))
         blocker = next(b for b in r['blockers'] if b['code'] == 'formula_length_limit')
         loc = blocker['location']
-        self.assertEqual((loc['sheet'], loc['cell']), ('Report', 'H10'))
+        self.assertEqual((loc['sheet'], loc['cell']), ('Report', 'H9'))
         self.assertEqual(loc['formula_length'], len(long_formula))
         self.assertEqual(loc['cell_reference_count'], 1293)
         self.assertEqual((loc['referenced_columns'], loc['operator_characters'], loc['numeric_literal_count']), (['H'], ['+'], 0))
@@ -180,10 +183,10 @@ class FormulaLengthLocation(unittest.TestCase):
     def test_formula_length_located_when_found_by_title_probe(self):
         long_formula = '+'.join(f'H{r}' for r in range(7, 1300))
         rows = modern_rows()
-        rows[10] = [x.string('A10', 'TOTAL'), x.number('H10', '100.01', formula=long_formula), x.number('I10', '0', formula='I9', cache='100.01')]
+        rows[9] = [x.string('A9', 'Total for 9001'), x.number('H9', '100.01', formula=long_formula), x.number('I9', '0', formula='I7+I8', cache='100.01')]
         r = qbo.assess_export_bytes(pack([('Trial_Balance.xlsx', tb()), ('Client_Journal_2025.xlsx', x.xlsx('Journal', rows, JOURNAL_PERIOD))]))
         blocker = next(b for b in r['blockers'] if b['code'] == 'formula_length_limit')
-        self.assertEqual((blocker['location']['sheet'], blocker['location']['cell']), ('Report', 'H10'))
+        self.assertEqual((blocker['location']['sheet'], blocker['location']['cell']), ('Report', 'H9'))
         self.assertFalse(r['financial_controls_passed'])
 
     def test_fractional_cent_still_blocks_and_is_located_without_value(self):
