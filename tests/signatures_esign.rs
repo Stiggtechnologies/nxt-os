@@ -117,8 +117,10 @@ async fn engagement_letter_full_ceremony_routing_flatten_certificate_and_gate() 
     let def = JourneyDef::load().ok().unwrap();
     let bot = || Actor::Automation { executor: "test".into() };
     let mut j = ClientJourney::new(&def, "synthetic");
-    for k in ["website_visit", "lead_capture", "needs_discovery", "service_scoping", "proposal_pricing", "engagement_letter"] {
+    let keys: Vec<String> = def.steps.iter().map(|s| s.key.clone()).take_while(|k| k != "engagement_letter").chain(["engagement_letter".to_string()]).collect();
+    for k in keys.iter().map(String::as_str) {
         j.start(&def, k, bot(), "t").ok().unwrap(); j.finish_work(&def, k, bot(), "t").ok().unwrap();
+        if k != "engagement_letter" { let _ = j.approve(&def, k, human(), "t", "synthetic review"); }
     }
     assert!(esign::approve_journey_gate(&mut j, &def, &c, bot(), "t").is_err());
     let mut tampered = c.clone();
