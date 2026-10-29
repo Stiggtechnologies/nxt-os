@@ -298,14 +298,14 @@ fn validate_state(state: &SignatureState) -> SResult<()> {
             resource_id(&record.id, "sig_")
                 && record_ids.insert(record.id.as_str())
                 && (1..=2000).contains(&record.revision)
-                && ["draft", "in_review", "approved", "parallel_sent", "parallel_signed", "cancelled"]
+                && ["draft", "in_review", "approved", "parallel_sent", "parallel_signed", "parallel_voided", "parallel_declined", "cancelled"]
                     .contains(&record.status.as_str())
                 && nonempty(&record.created_by_label, 120)
                 && timestamp(&record.created_at)
                 && timestamp(&record.updated_at)
                 && record.content_hash == hash(&record.draft)?,
         )?;
-        if ["approved", "parallel_sent", "parallel_signed"].contains(&record.status.as_str()) {
+        if ["approved", "parallel_sent", "parallel_signed", "parallel_voided", "parallel_declined"].contains(&record.status.as_str()) {
             invariant(
                 record.reviewed_content_hash.as_deref() == Some(record.content_hash.as_str())
                     && record
@@ -318,11 +318,27 @@ fn validate_state(state: &SignatureState) -> SResult<()> {
                 record.reviewed_content_hash.is_none() && record.reviewed_by_label.is_none(),
             )?;
         }
-        if ["in_review", "approved", "parallel_sent", "parallel_signed"].contains(&record.status.as_str()) {
+        if ["in_review", "approved", "parallel_sent", "parallel_signed", "parallel_voided", "parallel_declined"].contains(&record.status.as_str()) {
             invariant(readiness(&record.draft).is_empty())?;
         }
         if let Some(template_id) = &record.template_id {
             invariant(state.templates.iter().any(|t| t.id == *template_id))?;
+        }
+        if let Some(token) = &record.lock_token {
+            invariant(token.starts_with("sigl_") && nonempty(token, 80))?;
+        }
+        for value in &record.field_values {
+            invariant(record.draft.fields.iter().any(|field| field.id == value.field_id && !matches!(field.kind.as_str(), "signature" | "initials")) && nonempty(&value.value, 200))?;
+        }
+    }
+    if state.folders.len() > 50 { return Err(bad("inconsistent preparation state")); }
+    let mut folder_ids = HashSet::new();
+    for folder in &state.folders {
+        invariant(resource_id(&folder.id, "sigf_") && folder_ids.insert(folder.id.as_str()) && nonempty(&folder.name, 80))?;
+    }
+    for record in &state.envelopes {
+        if let Some(folder_id) = &record.folder_id {
+            invariant(folder_ids.contains(folder_id.as_str()))?;
         }
     }
     for template in &state.templates {
@@ -400,35 +416,42 @@ fn validate_state(state: &SignatureState) -> SResult<()> {
                 ("in_review", "approve") => "approved",
                 ("approved", "parallel_send") => "parallel_sent",
                 ("parallel_sent", "parallel_sign") => "parallel_signed",
-                ("in_review" | "approved" | "parallel_sent" | "parallel_signed", "return_to_draft") => "draft",
-                ("draft" | "in_review" | "approved" | "parallel_sent" | "parallel_signed", "cancel") => "cancelled",
+                ("parallel_sent", "parallel_resend") => "parallel_sent",
+                ("parallel_sent", "parallel_correct") => "draft",
+                ("parallel_sent", "parallel_void") => "parallel_voided",
+                ("parallel_sent", "parallel_decline") => "parallel_declined",
+                (status @ ("draft" | "in_review" | "approved" | "parallel_sent" | "parallel_signed" | "parallel_voided" | "parallel_declined"), "parallel_lock" | "parallel_unlock" | "assign_folder") => status,
+                ("in_review" | "approved" | "parallel_sent" | "parallel_signed" | "parallel_voided" | "parallel_declined", "return_to_draft") => "draft",
+                ("draft" | "in_review" | "approved" | "parallel_sent" | "parallel_signed" | "parallel_voided" | "parallel_declined", "cancel") => "cancelled",
                 _ => return Err(bad("inconsistent preparation state")),
             };
             projection.revision = event.revision;
             projection.content_hash = &event.content_hash;
             if event.action == "approve" {
                 projection.reviewed_by = Some(event.operator_label.as_str());
-            } else if !matches!(projection.status, "approved" | "parallel_sent" | "parallel_signed") {
+            } else if !matches!(projection.status, "approved" | "parallel_sent" | "parallel_signed" | "parallel_voided" | "parallel_declined") {
                 projection.reviewed_by = None;
             }
         } else {
+            let bulk = event.action == "parallel_bulk_created";
             invariant(
                 event.revision == 1
-                    && event.action
-                        == if record.template_id.is_some() {
-                            "template_instantiated"
-                        } else {
-                            "draft_created"
-                        },
+                    && (bulk
+                        || event.action
+                            == if record.template_id.is_some() {
+                                "template_instantiated"
+                            } else {
+                                "draft_created"
+                            }),
             )?;
             projections.insert(
                 &event.record_id,
                 Projection {
                     revision: 1,
-                    status: "draft",
+                    status: if bulk { "parallel_sent" } else { "draft" },
                     content_hash: &event.content_hash,
                     creator: &event.operator_label,
-                    reviewed_by: None,
+                    reviewed_by: if bulk { Some(event.operator_label.as_str()) } else { None },
                 },
             );
         }
@@ -492,7 +515,7 @@ impl Signatures {
     }
     pub fn catalog() -> Value {
         controlled(
-            json!({"module":"NXT Signatures","native_scope":["original text document pages","recipient roles and routing order","page-relative placeholders","internal review","role-only templates","parallel send rehearsal","parallel sign rehearsal","audit and preparation export"],"views":["home","drafts","review","approved","templates","audit","connector"],"limits":{"envelopes":100,"templates":30,"audit_events":2000,"document_pages":20,"documents":10,"recipients":30,"fields":200,"draft_bytes":ENVELOPE_MAX,"state_bytes":STATE_MAX},"parallel_rehearsal":"parallel_sent and parallel_signed stay inside NXT. No email, DocuSign API call, legal effect, or completion certificate.","unsupported":["PDF upload/rendering","external send","recipient authentication","signature execution","signed-document evidence","completion certificates","webhooks","external envelope import","bulk send","reminders","payments","conditional routing","independent user identities"]}),
+            json!({"module":"NXT Signatures","native_scope":["original text document pages","recipient roles and routing order","page-relative placeholders","internal review","role-only templates","parallel send rehearsal","parallel sign rehearsal","internal folders","edit lock","bulk rehearsal","audit and preparation export"],"views":["home","drafts","review","approved","templates","audit","connector"],"limits":{"envelopes":100,"templates":30,"folders":50,"audit_events":2000,"document_pages":20,"documents":10,"recipients":30,"fields":200,"draft_bytes":ENVELOPE_MAX,"state_bytes":STATE_MAX},"parallel_rehearsal":"parallel_sent, parallel_signed, parallel_voided, and parallel_declined stay inside NXT. Resend, correct, and bulk rehearsal do not send email. No DocuSign API call, legal effect, or completion certificate.","unsupported":["PDF upload/rendering","external send","recipient authentication","signature execution","signed-document evidence","completion certificates","webhooks","external envelope import","external bulk delivery","mailbox sharing","reminders","payments","conditional routing","independent user identities"]}),
         )
     }
     pub async fn list(&self) -> SResult<Value> {
@@ -536,6 +559,9 @@ impl Signatures {
                         .ok_or_else(|| bad("expected_revision is required"))?,
                     None,
                 )?;
+                if record.lock_token.is_some() {
+                    return Err(conflict("preparation is locked; unlock it before editing"));
+                }
                 if record.status != "draft" {
                     return Err(conflict("return the preparation to draft before editing"));
                 }
@@ -564,6 +590,10 @@ impl Signatures {
                     reviewed_by_label: None,
                     template_id: None,
                     draft: input.draft.clone(),
+                    folder_id: None,
+                    lock_token: None,
+                    resend_count: 0,
+                    field_values: Vec::new(),
                 };
                 state.envelopes.push(record.clone());
                 record
@@ -623,14 +653,36 @@ impl Signatures {
                     record.status = "parallel_sent".into();
                 }
                 ("parallel_sent", "parallel_sign") => {
+                    for value in &input.field_values {
+                        let field = record.draft.fields.iter().find(|field| field.id == value.field_id).ok_or_else(|| bad("unknown field"))?;
+                        if matches!(field.kind.as_str(), "signature" | "initials") {
+                            return Err(conflict("signature and initials placeholders stay unfilled; this rehearsal has no legal effect"));
+                        }
+                        if !nonempty(&value.value, 200) { return Err(bad("field value is invalid")); }
+                    }
+                    record.field_values = input.field_values.iter().map(|value| FieldValue { field_id: value.field_id.clone(), value: value.value.trim().into() }).collect();
                     record.status = "parallel_signed".into();
                 }
-                ("in_review" | "approved" | "parallel_sent" | "parallel_signed", "return_to_draft") => {
+                ("parallel_sent", "parallel_resend") => {
+                    record.resend_count = record.resend_count.saturating_add(1);
+                }
+                ("parallel_sent", "parallel_correct") => {
                     record.status = "draft".into();
                     record.reviewed_content_hash = None;
                     record.reviewed_by_label = None;
                 }
-                ("draft" | "in_review" | "approved" | "parallel_sent" | "parallel_signed", "cancel") => {
+                ("parallel_sent", "parallel_void") => {
+                    record.status = "parallel_voided".into();
+                }
+                ("parallel_sent", "parallel_decline") => {
+                    record.status = "parallel_declined".into();
+                }
+                ("in_review" | "approved" | "parallel_sent" | "parallel_signed" | "parallel_voided" | "parallel_declined", "return_to_draft") => {
+                    record.status = "draft".into();
+                    record.reviewed_content_hash = None;
+                    record.reviewed_by_label = None;
+                }
+                ("draft" | "in_review" | "approved" | "parallel_sent" | "parallel_signed" | "parallel_voided" | "parallel_declined", "cancel") => {
                     record.status = "cancelled".into();
                     record.reviewed_content_hash = None;
                     record.reviewed_by_label = None;
@@ -665,7 +717,7 @@ impl Signatures {
             if record.status=="cancelled" { return Err(conflict("cancelled preparation cannot create a template")); }
             let mut draft=record.draft.clone(); draft.context=None;
             for r in &mut draft.recipients { r.name.clear(); r.email.clear(); }
-            let template=Template {id:template_id.clone(),name:input.name.clone(),version:1,created_at:now(),created_by_label:input.operator_label.clone(),content_hash:hash(&draft)?,draft};
+            let template=Template {id:template_id.clone(),name:input.name.clone(),version:1,created_at:now(),created_by_label:input.operator_label.clone(),content_hash:hash(&draft)?,draft,favorite:false};
             event(state,&template.id,"template_created",&input.operator_label,1,&template.content_hash,"Recipient names, emails and NXT context removed. Native document text and proposed message retained.")?;
             state.templates.push(template.clone());
             Ok(controlled(json!({"template":template})))
@@ -727,6 +779,10 @@ impl Signatures {
                 reviewed_by_label: None,
                 template_id: Some(template_id.into()),
                 draft,
+                folder_id: None,
+                lock_token: None,
+                resend_count: 0,
+                field_values: Vec::new(),
             };
             event(
                 state,
@@ -750,6 +806,84 @@ impl Signatures {
         Ok(controlled(
             json!({"total":state.events.len(),"offset":offset,"events":state.events.iter().skip(offset).take(limit).collect::<Vec<_>>(),"integrity_scope":"SHA-256 chained workspace events; not an external tamper-proof timestamp or signing certificate"}),
         ))
+    }
+    pub async fn create_folder(&self, name: &str) -> SResult<Value> {
+        if !nonempty(name, 80) { return Err(bad("folder name is required")); }
+        let folder_id = id("sigf");
+        self.mutate(|state| {
+            if state.folders.len() >= 50 { return Err(conflict("folder capacity reached")); }
+            state.folders.push(Folder { id: folder_id.clone(), name: name.trim().into() });
+            Ok(controlled(json!({"id": folder_id, "mailbox_sharing": false, "external_delivery": false})))
+        }).await
+    }
+    pub async fn assign_folder(&self, record_id: &str, input: TransitionInput) -> SResult<Value> {
+        if !nonempty(&input.operator_label, 120) || !nonempty(&input.note, 80) { return Err(bad("operator label and folder id are required")); }
+        self.mutate(|state| {
+            if !state.folders.iter().any(|folder| folder.id == input.note) { return Err(bad("unknown folder")); }
+            let record = state.envelopes.iter_mut().find(|record| record.id == record_id).ok_or_else(missing)?;
+            check(record, input.expected_revision, Some(&input.expected_content_hash))?;
+            if record.status == "cancelled" { return Err(conflict("cancelled preparation cannot be filed")); }
+            record.folder_id = Some(input.note.clone());
+            record.revision += 1;
+            record.updated_at = now();
+            let record = record.clone();
+            event(state, &record.id, "assign_folder", &input.operator_label, record.revision, &record.content_hash, &input.note)?;
+            Ok(detail(&record))
+        }).await
+    }
+    pub async fn set_lock(&self, record_id: &str, input: TransitionInput, lock: bool) -> SResult<Value> {
+        if !nonempty(&input.operator_label, 120) || !nonempty(&input.note, 2000) { return Err(bad("operator label and note are required")); }
+        self.mutate(|state| {
+            let record = state.envelopes.iter_mut().find(|record| record.id == record_id).ok_or_else(missing)?;
+            check(record, input.expected_revision, Some(&input.expected_content_hash))?;
+            if record.status == "cancelled" { return Err(conflict("cancelled preparation cannot be locked")); }
+            if lock {
+                if record.lock_token.is_some() { return Err(conflict("preparation is already locked")); }
+                record.lock_token = Some(id("sigl"));
+            } else if record.lock_token.is_none() {
+                return Err(conflict("preparation is not locked"));
+            } else {
+                record.lock_token = None;
+            }
+            record.revision += 1;
+            record.updated_at = now();
+            let record = record.clone();
+            event(state, &record.id, if lock { "parallel_lock" } else { "parallel_unlock" }, &input.operator_label, record.revision, &record.content_hash, &input.note)?;
+            Ok(detail(&record))
+        }).await
+    }
+    pub async fn favorite_template(&self, template_id: &str, favorite: bool) -> SResult<Value> {
+        self.mutate(|state| {
+            let template = state.templates.iter_mut().find(|template| template.id == template_id).ok_or_else(missing)?;
+            template.favorite = favorite;
+            Ok(controlled(json!({"template": template.clone(), "external_share": false})))
+        }).await
+    }
+    pub async fn bulk_rehearse(&self, record_id: &str, input: TransitionInput, copies: u8) -> SResult<Value> {
+        if !nonempty(&input.operator_label, 120) || !nonempty(&input.note, 2000) || !(1..=10).contains(&copies) {
+            return Err(bad("operator label, note, or copy count is invalid"));
+        }
+        self.mutate(|state| {
+            let source = state.envelopes.iter().find(|record| record.id == record_id).cloned().ok_or_else(missing)?;
+            check(&source, input.expected_revision, Some(&input.expected_content_hash))?;
+            if source.status != "approved" || source.reviewed_content_hash.as_deref() != Some(source.content_hash.as_str()) {
+                return Err(conflict("approve the preparation before a bulk rehearsal"));
+            }
+            if state.envelopes.len() + usize::from(copies) > 100 { return Err(conflict("envelope capacity reached")); }
+            let mut ids = Vec::new();
+            for _ in 0..copies {
+                let record = Envelope {
+                    id: id("sig"), revision: 1, status: "parallel_sent".into(), created_at: now(), updated_at: now(),
+                    created_by_label: input.operator_label.clone(), content_hash: source.content_hash.clone(),
+                    reviewed_content_hash: Some(source.content_hash.clone()), reviewed_by_label: Some(input.operator_label.clone()),
+                    template_id: None, draft: source.draft.clone(), folder_id: None, lock_token: None, resend_count: 0, field_values: Vec::new(),
+                };
+                event(state, &record.id, "parallel_bulk_created", &input.operator_label, 1, &record.content_hash, &input.note)?;
+                ids.push(record.id.clone());
+                state.envelopes.push(record);
+            }
+            Ok(controlled(json!({"ids": ids, "external_delivery": false, "legal_effect": false, "email_sent": false})))
+        }).await
     }
     pub async fn package(&self, record_id: &str) -> SResult<Value> {
         let (_, state) = self.read().await?;
