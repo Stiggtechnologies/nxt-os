@@ -164,6 +164,7 @@ pub enum WorkpaperType {
     #[default]
     Manual,
     Placeholder,
+    ExternalReference,
 }
 impl WorkpaperType {
     pub fn is_manual(&self) -> bool {
@@ -176,9 +177,15 @@ impl<'de> Deserialize<'de> for WorkpaperType {
         match value.as_str() {
             "manual" => Ok(Self::Manual),
             "placeholder" => Ok(Self::Placeholder),
-            _ => Err(serde::de::Error::unknown_variant(&value, &["manual", "placeholder"])),
+            "external_reference" => Ok(Self::ExternalReference),
+            _ => Err(serde::de::Error::unknown_variant(&value, &["manual", "placeholder", "external_reference"])),
         }
     }
+}
+
+// A missing URL is legacy absence; a present URL must be a string, never null.
+fn present_reference_url<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -213,6 +220,8 @@ pub struct Workpaper {
     /// A text reference. It is not a URL and nothing is fetched.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present_reference_url")]
+    pub reference_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

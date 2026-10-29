@@ -33,6 +33,34 @@ fn text(
     Ok(())
 }
 
+/// Validate the stored spelling without canonicalizing or retrieving the destination.
+pub fn validate_reference_url(value: &str) -> Result<(), String> {
+    let invalid = || "External reference URL must be 1..2048 UTF-8 bytes, absolute HTTPS with a host and without credentials, whitespace, controls or backslashes".to_string();
+    if value.is_empty() || value.len() > 2048 || !value.get(..8).is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"))
+        || value.chars().any(|c| c.is_control() || c.is_whitespace() || c == '\\') {
+        return Err(invalid());
+    }
+    let authority=value[8..].split(['/', '?', '#']).next().unwrap_or_default();
+    let parsed=url::Url::parse(value).map_err(|_| invalid())?;
+    if authority.is_empty() || authority.contains('@') || parsed.scheme() != "https" || parsed.host_str().is_none_or(str::is_empty)
+        || !parsed.username().is_empty() || parsed.password().is_some() || parsed.cannot_be_a_base() {
+        return Err(invalid());
+    }
+    Ok(())
+}
+pub(super) fn validate_document_shape(paper: &Workpaper) -> Result<(), String> {
+    if paper.document_type == WorkpaperType::ExternalReference {
+        validate_reference_url(paper.reference_url.as_deref().ok_or("External reference requires a reference_url")?)?;
+        text(&paper.body,"External reference native note",16*1024,false,true)?;
+        if !paper.annotations.is_empty() || !paper.attachment_versions.is_empty() {
+            return Err("External references cannot retain annotations or file versions; retain a separate manual workpaper for evidence".into());
+        }
+    } else if paper.reference_url.is_some() {
+        return Err("Only external_reference workpapers may contain reference_url; URLs are never silently discarded".into());
+    }
+    Ok(())
+}
+
 fn id(value: &str, label: &str) -> Result<(), String> {
     if value.is_empty()
         || value.len() > 64
@@ -363,6 +391,7 @@ pub fn validate(input: &EngagementInput) -> Result<(), String> {
                 return Err("A link label is stored text. It cannot be a URL or path, and it is not fetched.".into());
             }
         }
+        validate_document_shape(paper)?;
         if paper.document_type == WorkpaperType::Placeholder
             && (!paper.body.is_empty() || !paper.annotations.is_empty() || !paper.attachment_versions.is_empty())
         {
@@ -711,6 +740,13 @@ fn calculate(input: &EngagementInput) -> Result<Value, String> {
                 format!("{} placeholder workpaper {} is pending planning material, not evidence; convert it to manual and add evidence before sign-off.", if paper.required { "Required" } else { "Optional" }, paper.reference),
                 paper.required,
             );
+            continue;
+        }
+        if paper.document_type == WorkpaperType::ExternalReference {
+            diagnostic(&mut diagnostics,"external_content_unretained",format!("External reference {} retains only its HTTPS URL and native note. Destination content is not fetched, retained or verified; checkpoints cover saved metadata only.",paper.reference),false);
+            if paper.body.trim().is_empty() {
+                diagnostic(&mut diagnostics,"missing_external_reference_note",format!("External reference {} needs a native review note before any checkpoint.",paper.reference),paper.required);
+            }
             continue;
         }
         let body_hash = hex::encode(Sha256::digest(paper.body.as_bytes()));
