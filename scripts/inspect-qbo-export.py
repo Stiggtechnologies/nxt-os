@@ -30,6 +30,12 @@ MAX_EVAL_WORK = 1_000_000
 MAX_DEPENDENCY_DEPTH = 64
 MAX_FORMULA_NESTING = 256
 MAX_FORMULA_LENGTH = 4096
+# QuickBooks writes long subtotals ("Total for <account>", journal TOTAL) as a
+# flat sum of single cells in the same column, e.g. I109+I110+...+I1587. Only
+# that exact shape may exceed MAX_FORMULA_LENGTH, up to Excel's own 8,192
+# character formula limit; it is compiled by the same restricted parser and
+# never executed. Every other formula keeps the 4,096 cap.
+MAX_REFERENCE_CHAIN_LENGTH = 8192
 # A cached (stored) QuickBooks subtotal or total may differ from the exact sum
 # of its lines by binary floating-point noise. Accept at most one cent, with a
 # located warning. Individual stored line amounts must still be exact.
@@ -176,16 +182,28 @@ def binary_float_cents(value):
         return int(whole)
 
 
-def compile_formula(formula):
+def reference_chain(formula, address):
+    """True only for `<col><row>+<col><row>+...` in the cell's own column,
+    every referenced row above the cell, within MAX_REFERENCE_CHAIN_LENGTH."""
+    m = ADDRESS.fullmatch(address)
+    if not (m and isinstance(formula, str) and MAX_FORMULA_LENGTH < len(formula) <= MAX_REFERENCE_CHAIN_LENGTH):
+        return False
+    col = m[1]
+    if re.fullmatch(col + r'[1-9][0-9]{0,5}(?:\+' + col + r'[1-9][0-9]{0,5})*', formula) is None:
+        return False
+    return all(int(r) < int(m[2]) for r in re.findall(r'[0-9]+', formula))
+
+
+def compile_formula(formula, chain=False):
     """Iterative restricted arithmetic -> RPN; no Python/Excel execution."""
-    require(isinstance(formula, str) and 0 < len(formula) <= MAX_FORMULA_LENGTH, 'formula_length_limit')
+    require(isinstance(formula, str) and 0 < len(formula) <= (MAX_REFERENCE_CHAIN_LENGTH if chain else MAX_FORMULA_LENGTH), 'formula_length_limit')
     output, operators, at, depth, tokens, expect_value = [], [], 0, 0, 0, True
     while at < len(formula):
         if formula[at] in ' \t\r\n':
             at += 1
             continue
         tokens += 1
-        require(tokens <= 2048, 'formula_token_limit')
+        require(tokens <= (2 * MAX_REFERENCE_CHAIN_LENGTH if chain else 2048), 'formula_token_limit')
         part = formula[at:]
         sum_match = re.match(r'SUM\(([A-Z]{1,3})([1-9][0-9]{0,5}):\1([1-9][0-9]{0,5})\)', part, re.I)
         cell_match = re.match(r'[A-Z]{1,3}[1-9][0-9]{0,5}', part, re.I)
@@ -308,7 +326,10 @@ class Workbook:
                     formula = None if f is None else f.text or ''
                     require(f is None or not f.attrib, 'shared_array_formula_unsupported')
                     try:
-                        if f is not None and isinstance(formula, str) and len(formula) > MAX_FORMULA_LENGTH:
+                        if f is not None and reference_chain(formula, address):
+                            compiled = compile_formula(formula, chain=True)
+                            self.warnings.append({'code': 'long_reference_chain_formula', 'sheet': self.sheet_name, 'cell': address, 'formula_length': len(formula)})
+                        elif f is not None and isinstance(formula, str) and len(formula) > MAX_FORMULA_LENGTH:
                             # Deferred: allowed only as a journal grand-total cell
                             # (checked below), where it is ignored, never evaluated.
                             compiled = None

@@ -39,6 +39,7 @@ The observed export can encode ordinary amounts as formulas such as `<f>100.01</
 - decimal literals, local cell references and same-column `SUM(B6:B20)` ranges;
 - addition, subtraction, unary signs and parentheses;
 - no multiplication/division, external references, arbitrary functions, macros, shared/array formulas or external execution.
+- formulas are capped at 4,096 characters. The single exception is a QBO subtotal written as a pure same-column chain of backward references (`I10+I11+...`, no literals, functions, minus signs, other columns or references at/below the cell), which is compiled by the same restricted interpreter up to Excel's own 8,192-character limit and disclosed as a `long_reference_chain_formula` warning. Any other over-long formula still blocks with `formula_length_limit`.
 
 Formula values are calculated only with this restricted interpreter. Trial-balance results retain the counts/locations of differing or missing numeric caches and the categories evaluated. A cache difference is disclosed; the supported formula expression supplies the value. GL/BS/P&L formulas receive syntax validation only and are not evaluated as accounting statements.
 
