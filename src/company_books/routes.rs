@@ -58,6 +58,8 @@ pub fn router(state: Arc<CompanyBooks>) -> Router {
             get(register),
         )
         .route("/api/company-books/{company}/trial-balance", get(tb))
+        .route("/api/company-books/{company}/general-ledger", get(general_ledger))
+        .route("/api/company-books/{company}/payroll", get(payroll_view))
         .layer(DefaultBodyLimit::max(4 * 1024 * 1024))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|mut r: Response| async move {
@@ -166,6 +168,11 @@ async fn register(State(s): S, Path((c, a)): Path<(String, String)>, Query(p): Q
             .await?,
     ))
 }
+async fn general_ledger(State(s): S, Path(c): Path<String>, Query(p): Query<Page>) -> R {
+    p.check(&format!("company-books/{c}/general-ledger"))?;
+    Ok(Json(s.general_ledger_page(&c, p.offset, p.limit).await?))
+}
+async fn payroll_view(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.payroll_view(&c).await?)) }
 async fn tb(State(s): S, Path(c): Path<String>, Query(p): Query<Page>) -> R {
     p.check(&format!("company-books/{c}/trial-balance"))?;
     Ok(Json(
