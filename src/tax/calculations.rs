@@ -323,6 +323,8 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
         if boolean(obj,"other_tax_situations")? { c.diagnostic("unsupported_situation","Additional income, credits, elections or special regimes need a separately implemented ruleset; this calculation cannot be reviewed as supported.",Some("other_tax_situations"),true); }
         t1_2026(&mut c,obj,jurisdiction)?; return Ok(c);
     }
+    let y26=year==2026 && matches!(program,"T2"|"T3"|"T5013");
+    if year==2026 && program=="T3" { c.sources.push(source("CRA current-year (2026) federal rates",super::rates::CRA_CURRENT_YEAR)); }
     if year==2026 && program=="T2" {
         // 2026 rates: CRA corporation-tax-rates page (federal 15% net / 9% SBD) and alberta.ca tax-levy rates (AB 8% / 2%, $500,000 threshold);
         // business-limit reductions per ITA 125(5.1) (laws-lois.justice.gc.ca/eng/acts/I-3.3/section-125.html). Unchanged from 2025.
@@ -330,9 +332,9 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
         c.sources.push(source("Alberta corporate income tax rates",super::rates::AB_CORP_RATES));
         c.sources.push(source("Income Tax Act s.125",super::rates::ITA_125));
     }
-    if year != 2025 && !(year==2026 && program=="T2") { c.diagnostic("unsupported_year",if year==2026 { "2026 is implemented for the basic T1 scope (not Quebec) and T2 Alberta; T3/T5013 2026 are not wired." } else { "Only the versioned 2025 calculation scope (and the basic 2026 T1 scope) is implemented." },None,true); }
+    if year != 2025 && !y26 { c.diagnostic("unsupported_year",if year==2026 { "2026 is not wired for this program/jurisdiction." } else { "Only the versioned 2025 calculation scope (and the basic 2026 T1 scope) is implemented." },None,true); }
     if !jurisdiction_ok { c.diagnostic("unsupported_jurisdiction",&format!("This program currently supports {expected} only."),None,true); }
-    if (year != 2025 && !(year==2026 && program=="T2")) || !jurisdiction_ok { return Ok(c); }
+    if (year != 2025 && !y26) || !jurisdiction_ok { return Ok(c); }
     require(&mut c,obj,"scope_confirmed",scope)?;
     if boolean(obj,"other_tax_situations")? { c.diagnostic("unsupported_situation","Additional income, credits, elections or special regimes need a separately implemented ruleset; this calculation cannot be reviewed as supported.",Some("other_tax_situations"),true); }
     match (program, jurisdiction) {
@@ -340,7 +342,7 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
         ("T1", j) if super::rates::province(j).is_some() => t1_province(&mut c,obj,super::rates::province(j).unwrap())?,
         ("T1", _) => t1(&mut c,obj)?,
         ("T2", _) => t2(&mut c,obj)?,
-        ("T3", _) => t3(&mut c,obj)?,
+        ("T3", _) => t3(&mut c,obj,if year==2026 { super::rates::CA_2026.federal_brackets } else { FEDERAL })?,
         ("T5013", _) => partnership(&mut c,obj)?,
         _ => unreachable!(),
     }
@@ -726,7 +728,9 @@ fn t2(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
     Ok(())
 }
 
-fn t3(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
+// 2026 T3: retained ordinary trust income at the 33% top federal rate (ITA 122(1)); GRE/QDT graduated 2026 federal
+// brackets from CRA current-year (2026) rates. T5013 allocation has no year-dependent rates.
+fn t3(c: &mut Calculation, obj: &Map<String,Value>, fed: &[(i64,i64)]) -> Result<(),String> {
     check_fields(obj,&["scope_confirmed","other_tax_situations","trust_type","income_cents","deductible_expenses_cents","beneficiary_allocations_cents","tax_paid_cents","classification_verified"])?;
     let kind=match obj.get("trust_type") {None=>"ordinary",Some(v)=>v.as_str().ok_or("trust_type must be text")?};
     if !["ordinary","gre","qdt"].contains(&kind) {return Err("trust_type must be ordinary, gre, or qdt".into());}
@@ -734,7 +738,7 @@ fn t3(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
     let income=money(obj,"income_cents")?;let expenses=money(obj,"deductible_expenses_cents")?;let allocated=money(obj,"beneficiary_allocations_cents")?;
     if sum(&[expenses,allocated])?>income{return Err("Expenses and deductible allocations exceed ordinary income; loss treatment is outside scope".into());}
     let net=income-expenses;let taxable=net-allocated;
-    let tax=if kind=="ordinary"{rounded_ratio(taxable,3300,10000)?}else{progressive(taxable,FEDERAL)?};
+    let tax=if kind=="ordinary"{rounded_ratio(taxable,3300,10000)?}else{progressive(taxable,fed)?};
     let paid=money(obj,"tax_paid_cents")?;
     for(code,label,amount)in[("ordinary_income","Ordinary trust income",income),("expenses","Verified deductible expenses",expenses),("net_income","Income before beneficiary deduction",net),("beneficiary_deduction","Verified deductible ordinary-income allocations",allocated),("taxable_income","Retained taxable ordinary income",taxable),("federal_tax","Federal income tax before excluded adjustments",tax)]{c.line(code,label,amount);}
     c.total("net_income",net);c.total("beneficiary_allocations",allocated);c.total("taxable_income",taxable);c.total("federal_tax",tax);c.total("payments",paid);c.total("federal_balance",tax-paid);
@@ -750,6 +754,7 @@ fn partnership(c:&mut Calculation,obj:&Map<String,Value>)->Result<(),String>{
     require(c,obj,"allocation_verified","Verify the partnership agreement, ordinary general-partner status, allocation shares, and tax adjustments. This engine does not determine legal entitlement, at-risk limits or partner tax.")?;
     let revenue=money(obj,"revenue_cents")?;let expenses=money(obj,"expenses_cents")?;let addbacks=money(obj,"addbacks_cents")?;let deductions=money(obj,"deductions_cents")?;
     let book=revenue-expenses;let net=sum(&[book,addbacks,-deductions])?;
+    if obj.get("partners").is_none(){c.diagnostic("partners_missing","Enter the partners and their allocation shares before this workpaper can be calculated.",Some("partners"),true);return Ok(());}
     let mut partners:Vec<Partner>=serde_json::from_value(obj.get("partners").cloned().unwrap_or(Value::Array(vec![]))).map_err(|_|"partners must be an array of {id,name,share_bps} with integer shares".to_string())?;
     if partners.is_empty()||partners.len()>100{return Err("Enter between 1 and 100 partners".into());}
     let mut ids=BTreeSet::new();let mut shares=0_i64;
@@ -906,6 +911,10 @@ mod tests {
         assert_eq!(l(&rich,"ON_surtax"),rounded_ratio(basic-581_800,2000,10000).unwrap()+rounded_ratio(basic-744_600,3600,10000).unwrap()); assert_eq!(b,basic+l(&rich,"ON_surtax"));
         assert!(!calculate("T1",2026,"PE",&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":3_000_000})).unwrap().supported);
         assert!(!calculate("T2",2026,"AB",&json!({})).unwrap().supported);
+        let g=calculate("T3",2026,"CA-FED",&json!({"scope_confirmed":true,"trust_type":"gre","classification_verified":true,"income_cents":5_000_000})).unwrap();
+        assert!(g.supported,"{:?}",g.diagnostics); assert_eq!(g.totals["federal_tax"],700_000);
+        let o=calculate("T3",2026,"CA-FED",&json!({"scope_confirmed":true,"income_cents":1_000_000})).unwrap(); assert_eq!(o.totals["federal_tax"],330_000);
+        let p=calculate("T5013",2026,"CA",&json!({"scope_confirmed":true,"allocation_verified":true,"revenue_cents":100,"partners":[{"id":"a","name":"A","share_bps":10000}]})).unwrap(); assert!(p.supported);
         let base=json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"credits_verified":true,"claim_spouse_amount":true,"spouse_adjusted_net_income_cents":50_000,"interest_income_cents":5_000_000});
         let bc=calculate("T1",2026,"BC",&base).unwrap(); assert!(bc.supported,"{:?}",bc.diagnostics); assert_eq!(l(&bc,"BC58120"),1_131_700);
         let mb=calculate("T1",2026,"MB",&base).unwrap(); assert_eq!(l(&mb,"MB58120"),863_400);
