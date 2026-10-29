@@ -214,7 +214,9 @@ fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::P
     let prov_cea=if p.employment_amount { employment_amount } else { 0 };
     let provincial_before=progressive(taxable,p.brackets)?;
     let provincial_credits=sum(&[rounded_ratio(sum(&[prov_bpa,prov_cea,cpp,ei,pbase])?,p.credit_rate_bps,10000)?,pdon])?;
-    let provincial=(provincial_before-provincial_credits).max(0);
+    let after_credits=(provincial_before-provincial_credits).max(0);
+    let low_income=provincial_low_income_reduction(c,obj,p.code,taxable)?;
+    let provincial=(after_credits-low_income).max(0);
     let tax=sum(&[federal,provincial])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?])?;
     let lc=p.code.to_lowercase();
     for (code,label,amount) in [
@@ -223,7 +225,7 @@ fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::P
         ("30000".into(),"Federal basic personal amount".into(),bpa),("30800".into(),"Verified base CPP credit amount".into(),cpp),("31200".into(),"Verified EI credit amount".into(),ei),("31260".into(),"Canada employment amount".into(),employment_amount),
         ("federal_before_credits".into(),"Federal tax before credits".into(),federal_before),("35000".into(),"Scoped federal non-refundable credits".into(),federal_credits),("42000".into(),"Scoped net federal income tax".into(),federal),
         (format!("{}58040",p.code),format!("{} basic personal amount",p.name),prov_bpa),(format!("{lc}_before_credits"),format!("{} tax on taxable income",p.name),provincial_before),
-        (format!("{}61500",p.code),format!("Scoped {} non-refundable credits",p.name),provincial_credits),("42800".into(),format!("Scoped {} income tax",p.name),provincial),
+        (format!("{}61500",p.code),format!("Scoped {} non-refundable credits",p.name),provincial_credits),(format!("{lc}_low_income_reduction"),format!("{} low-income tax reduction",p.name),low_income),("42800".into(),format!("Scoped {} income tax",p.name),provincial),
     ] { c.line(&code,&label,amount); }
     for (code,label,amount) in x.lines.iter().chain(xlines.iter()) { c.line(code,label,*amount); }
     c.total("taxable_income",taxable); c.total("federal_tax",federal); c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("payments",paid); c.total("balance",tax-paid);
@@ -278,6 +280,25 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     Ok(T1Extra{income,deductions:sum(&[out_split,se_ded])?,pension_for_credit:(pen-out_split).max(0)+in_split,se_cpp_credit:se_credit,lines})
 }
 /// Federal credits for medical (33099), donations (34900), pension (31400), tuition (32300).
+/// 2025 low-income tax reductions from the BC, NL, PE, NS and NB 428 forms. Family income is
+/// the filer's net income plus the supplied spouse net income. Child/dependant add-ons and
+/// spouse transfers of unused amounts are not handled (tax can only be overstated).
+fn provincial_low_income_reduction(c: &mut Calculation, obj: &Map<String,Value>, code: &str, net: i64) -> Result<i64,String> {
+    let spouse=optional_money(obj,"spouse_net_income_cents")?;
+    let family=sum(&[net,spouse.unwrap_or(0).max(0)])?;
+    let aged=obj.get("born_1960_or_earlier").is_some() && boolean(obj,"born_1960_or_earlier")?;
+    let (pool,income,base,rate)=match code {
+        "BC" => (56_200, net, 2_502_000, 356),
+        "NL" => (if spouse.is_some() { 155_400 } else { 99_700 }, family, if spouse.is_some() { 4_046_000 } else { 2_392_800 }, 1600),
+        "PE" => (35_000+if aged { 25_000 } else { 0 }+if spouse.is_some() { 35_000 } else { 0 }, family, 2_265_000, 500),
+        "NS" => (if spouse.is_some() { 60_000 } else { 30_000 }, family, 1_500_000, 500),
+        "NB" => (if spouse.is_some() { 160_400 } else { 80_200 }, family, 2_192_000, 300),
+        _ => return Ok(0),
+    };
+    let r=(pool-rounded_ratio((income-base).max(0),rate,10000)?).max(0);
+    if r>0 { c.diagnostic("low_income_reduction_scope",&format!("{code} low-income tax reduction uses the basic and spouse amounts only; eligible-dependant, dependent-child and spouse-age add-ons and transfers of unused amounts are not calculated (tax may be overstated)."),None,false); }
+    Ok(r)
+}
 /// Returns (federal credit, provincial credit amounts at the provincial rate, provincial donation credit, lines).
 fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, net: i64, bpa: i64, code: &str) -> Result<(i64,i64,i64,Vec<(String,String,i64)>),String> {
     let (med,don,tui)=(money(obj,"medical_expenses_cents")?,money(obj,"donations_cents")?,money(obj,"tuition_cents")?);
@@ -568,6 +589,16 @@ mod tests {
         // ON428 2025: medical cap $2,885 (3% = 1,500 applies); pension max $1,762; no current-year tuition; donations 5.05%/11.16%.
         assert_eq!(l("ON58689"),250_000); assert_eq!(l("ON58360"),176_200); assert!(c.lines.iter().all(|x|x.code!="ON58560"));
         assert_eq!(l("on_donation_credit"),1_010+11_160); assert_eq!(l("on_extra_credit_amounts"),426_200);
+    }
+    #[test]fn low_income_reductions_2025(){
+        let r=|j:&str,v:Value|{let c=calc("T1",j,v);c.lines.iter().find(|x|x.code==format!("{}_low_income_reduction",j.to_lowercase())).unwrap().amount};
+        // BC428: $562 - 3.56% x ($30,000 - $25,020) = 384.71.
+        assert_eq!(r("BC",json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":3_000_000})),38_471);
+        // NS428 with spouse (nil income): $600 - 5% x ($20,000 - $15,000) = 350.
+        assert_eq!(r("NS",json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"interest_income_cents":2_000_000,"spouse_net_income_cents":0})),35_000);
+        // NL428 single: $997 - 16% x ($25,000 - $23,928) = 825.48.
+        assert_eq!(r("NL",json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":2_500_000})),82_548);
+        assert_eq!(r("NB",json!({"scope_confirmed":true,"full_year_resident":true,"interest_income_cents":6_000_000})),0);
     }
     #[test]fn provincial_credits_2025_bc_top_donation_tier_and_tuition(){
         // BC428 worksheet line 58969: $200 at 5.06%, part matched to taxable income over $259,829 at 20.5%, rest 16.8%.
