@@ -12,12 +12,12 @@ use super::corporate::GifiRow;
 pub const SOURCES: &[(&str, &str)] = &[
     ("T2 Schedule 1, Net Income (Loss) for Income Tax Purposes (t2sch1-25e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch1.html"),
     ("T2 Schedule 8, Capital Cost Allowance (t2sch8-26e), columns 10, 17, 19, 20, 21 and notes 12, 14, 15", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch8.html"),
-    ("Income Tax Regulations (C.R.C., c. 945) s. 1100(1)(a) rates (incl. (xiv) Class 17, 8%), 1100(1)(b) Class 13, 1100(1)(c) Class 14, 1100(2) factors A/A.1, Schedule III", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html"),
+    ("Income Tax Regulations (C.R.C., c. 945) s. 1100(1)(a) rates (incl. (xiv) Class 17, 8%), 1100(1)(b) Class 13, 1100(1)(c) Class 14, 1100(2) factors A/A.1 (incl. A(c.1)–(c.3), A(d), A.1(f)), 1100(2.01)/(2.011) straddle years, Schedule III", "https://laws-lois.justice.gc.ca/eng/regulations/C.R.C.,_c._945/page-16.html"),
     ("CRA classes of depreciable property and CCA rates", "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/sole-proprietorships-partnerships/report-business-income-expenses/claiming-capital-cost-allowance/classes-depreciable-property.html"),
     ("T2 Schedule 50, Shareholder Information (t2sch50-19e)", "https://www.canada.ca/en/revenue-agency/services/forms-publications/forms/t2sch50.html"),
     ("CRA GIFI (RC4088): Schedule 100/125 codes 2599, 3499, 3620, 3640, 8299, 8670, 9368, 9990, 9995, 9999", "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4088/general-index-financial-information-gifi.html"),
 ];
-pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule; the Reg 1100(2) AIIP/RIIP factors (A, A.1) for single-calendar-year taxation years, Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled; immediate expensing, straddle and short years, separate-class elections, the Class 14.1 pre-2017 additional allowance and per-vehicle cost caps are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
+pub const SCOPE: &str = "Draft T2 schedule workpapers. Schedule 1 totals reviewer-classified items against GIFI 9999. Schedule 8 covers the declining-balance classes listed with their CRA rates and the 50% (half-year) rule; the Reg 1100(2) AIIP/RIIP factors (A, A.1) including Classes 44/46/50 after April 15, 2024 and Class 43 after 2025, taxation years spanning two calendar years (Reg 1100(2.01)/(2.011)), Classes 54 to 56, Class 13 leaseholds (Schedule III) and Class 14 limited-life property (Reg 1100(1)(c)) are modelled; immediate expensing, short years, separate-class elections, the Class 14.1 pre-2017 additional allowance and per-vehicle cost caps are not. Schedule 50 is structurally validated only. Not CRA-certified; nothing is filed.";
 
 /// Schedule 1 lines copied from t2sch1-25e. Additions: 101–199 on page 1 plus 201–296
 /// (summed to amount D, line 199). Deductions: 401–499 plus 300–3xx (amount E, line 499).
@@ -82,6 +82,18 @@ pub struct CcaClass {
     /// Part of `additions_cents` the preparer has classified as excluded from element F of
     /// Reg 1100(2) (e.g. Class 12 paragraphs (a)–(c), (e)–(i), (k), (l), (p)–(s)): no 50% rule.
     pub half_year_exempt_additions_cents: i64,
+    /// Taxation years spanning two calendar years only: the part of `aiip_additions_cents` /
+    /// `riip_additions_cents` that became available for use in the later calendar year. The rest is
+    /// taken as available in the earlier year; each part takes its own year's factor, as the
+    /// blended factor (A(B) + C(D))/(B + D) of Reg 1100(2.01)/(2.011) works out to.
+    pub aiip_second_year_cents: Option<i64>,
+    pub riip_second_year_cents: Option<i64>,
+    /// Classes 44, 46 and 50 AIIP available after 2023: was the property both acquired and
+    /// available for use after April 15, 2024 (Reg 1100(2) A(c.1)–(c.3))?
+    pub acquired_after_april_15_2024: Option<bool>,
+    /// Class 43 acquired after 2025: would it have been Class 53 if acquired in 2025
+    /// (Reg 1100(2) A(d) and A.1(f))?
+    pub would_have_been_class_53: Option<bool>,
     /// Class 13 only: each part of the capital cost of a leasehold interest (Schedule III).
     pub leaseholds: Vec<LeaseholdPart>,
     /// Class 14 only: each limited-life patent, franchise, concession or licence (Reg 1100(1)(c)).
@@ -168,6 +180,8 @@ pub fn validate(input: &T2Input) -> Result<(), String> {
         if c.accelerated_additions_cents > c.additions_cents { return Err(format!("Class {} accelerated additions exceed additions", c.class)); }
         for v in [c.aiip_additions_cents, c.riip_additions_cents, c.half_year_exempt_additions_cents] { if !(0..=MAX).contains(&v) { return Err(format!("Class {} amounts must be 0 to {MAX} cents", c.class)); } }
         if c.aiip_additions_cents + c.riip_additions_cents + c.half_year_exempt_additions_cents > c.additions_cents { return Err(format!("Class {}: AIIP, RIIP and half-year-exempt parts exceed additions", c.class)); }
+        for v in [c.aiip_second_year_cents, c.riip_second_year_cents] { if v.is_some_and(|v| v < 0) { return Err(format!("Class {} second-year parts cannot be negative", c.class)); } }
+        if c.aiip_second_year_cents.unwrap_or(0) > c.aiip_additions_cents || c.riip_second_year_cents.unwrap_or(0) > c.riip_additions_cents { return Err(format!("Class {}: second-year parts exceed the AIIP or RIIP additions", c.class)); }
         if c.leaseholds.len() > 100 || c.limited_life.len() > 100 { return Err("too many rows".into()); }
         if (!c.leaseholds.is_empty() && c.class != "13") || (!c.limited_life.is_empty() && c.class != "14") { return Err(format!("Class {}: leaseholds are Class 13 and limited-life property is Class 14", c.class)); }
         for l in &c.leaseholds {
@@ -211,9 +225,10 @@ const NIL: Frac = (0, 1);
 
 /// Reg 1100(2) factor A (AIIP, or Classes 54–56 acquired before 2025) or A.1 (RIIP, or
 /// Classes 54–56 acquired after 2024) for property available for use in calendar year `y`.
-/// Err = the factor depends on facts this workpaper does not capture.
-fn factor(class: &str, riip: bool, y: i32) -> Result<Frac, String> {
+/// Err = the factor depends on facts this workpaper does not have.
+fn factor(c: &CcaClass, riip: bool, y: i32) -> Result<Frac, String> {
     let tier = |a: Frac, b: Frac, c: Frac, t1: i32, t2: i32| if y < t1 { a } else if y <= t2 { b } else { c };
+    let class = c.class.as_str();
     Ok(match (class, riip) {
         ("12" | "13" | "14" | "15" | "59", _) => NIL,
         ("43.1", false) => tier((7, 3), (3, 2), (5, 6), 2024, 2025),
@@ -225,27 +240,38 @@ fn factor(class: &str, riip: bool, y: i32) -> Result<Frac, String> {
         ("54" | "56", true) => tier((7, 3), (3, 2), (5, 6), 2030, 2031),
         ("55", false) => tier((3, 2), (7, 8), (3, 8), 2024, 2025),
         ("55", true) => tier((3, 2), (7, 8), (3, 8), 2030, 2031),
-        ("44" | "46" | "50", false) if y >= 2024 => return Err(format!("Class {class} AIIP available for use after 2023: the factor depends on whether it was acquired after April 15, 2024 (Reg 1100(2) A(c.1)–(c.3)).")),
+        // A(c.1)–(c.3): 3, 2 1/3, 9/11 if acquired and available after April 15, 2024 and before
+        // 2027; otherwise A(a)(ii) nil after 2023; nil after 2026.
+        ("44" | "46" | "50", false) if (2024..=2026).contains(&y) => match c.acquired_after_april_15_2024 {
+            None => return Err(format!("Class {class} AIIP available for use in {y}: set acquired_after_april_15_2024 (Reg 1100(2) A(c.1)–(c.3)).")),
+            Some(false) => NIL,
+            Some(true) => match class { "44" => (3, 1), "46" => (7, 3), _ => (9, 11) },
+        },
         ("44", true) => if y < 2027 { (3, 1) } else { NIL },
         ("46", true) => if y < 2027 { (7, 3) } else { NIL },
         ("50", true) => if y < 2027 { (9, 11) } else { NIL },
-        ("43", true) if y >= 2026 => return Err("Class 43 RIIP available after 2025: the factor depends on whether it would have been Class 53 (Reg 1100(2) A.1(f)).".into()),
+        // A(d)(iii) / A.1(f)(ii)–(iv): Class 43 acquired after 2025 that would have been Class 53.
+        ("43", _) if y >= 2026 => match c.would_have_been_class_53 {
+            None => return Err(format!("Class 43 {} available for use in {y}: set would_have_been_class_53 (Reg 1100(2) A(d), A.1(f)).", if riip { "RIIP" } else { "AIIP" })),
+            Some(true) => if riip { tier((7, 3), (3, 2), (5, 6), 2030, 2031) } else { (5, 6) },
+            Some(false) => if riip { if y < 2030 { (1, 2) } else { NIL } } else { NIL },
+        },
         (_, false) => if y < 2024 { (1, 2) } else { NIL },
         (_, true) => if y < 2030 { (1, 2) } else { NIL },
     })
 }
 fn mul(v: i64, f: Frac) -> i128 { i128::from(v) * f.0 / f.1 }
 
-/// Taxation-year calendar year for the 1100(2) factors, or a blocking reason.
-fn factor_year(input: &T2Input) -> Result<i32, String> {
+/// Calendar years (start, end) of the taxation year for the 1100(2) factors, or a blocking reason.
+fn factor_year(input: &T2Input) -> Result<(i32, i32), String> {
     use chrono::{Datelike, NaiveDate};
     let p = |s: &str| NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok();
     let (Some(a), Some(b)) = (p(&input.tax_year_start), p(&input.tax_year_end)) else {
         return Err("Accelerated additions need tax_year_start and tax_year_end (YYYY-MM-DD): the Reg 1100(2) factors depend on the year.".into());
     };
     if b < a { return Err("tax_year_end is before tax_year_start.".into()); }
-    if a.year() != b.year() { return Err("Taxation year straddles two calendar years: the blended factor of Reg 1100(2.01)/(2.011) is not modelled.".into()); }
-    Ok(b.year())
+    if b.year() - a.year() > 1 { return Err("Taxation year spans more than two calendar years.".into()); }
+    Ok((a.year(), b.year()))
 }
 
 /// Schedule 8. Declining-balance classes use Reg 1100(1)(a) rates and the Reg 1100(2) formula
@@ -261,7 +287,9 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
     let needs_year = classes.iter().any(|c| c.aiip_additions_cents + c.riip_additions_cents > 0
         || c.leaseholds.iter().any(|l| l.incurred_in_year && l.acceleration != "none" && !l.acceleration.is_empty())
         || c.limited_life.iter().any(|l| l.available_in_year && l.acceleration != "none" && !l.acceleration.is_empty()));
-    let year = if needs_year { match factor_year(input) { Ok(y) => Some(y), Err(m) => { diag(diagnostics, "cca_tax_year", m, true); None } } } else { None };
+    let years = if needs_year { match factor_year(input) { Ok(y) => Some(y), Err(m) => { diag(diagnostics, "cca_tax_year", m, true); None } } } else { None };
+    // Classes 13 and 14 apply the acceleration to the year the cost is incurred; a straddle year is not split there.
+    let year = match years { Some((a, b)) if a == b => Some(b), Some(_) if classes.iter().any(|c| (c.class == "13" || c.class == "14") && (c.leaseholds.iter().any(|l| l.incurred_in_year && !matches!(l.acceleration.as_str(), "" | "none")) || c.limited_life.iter().any(|l| l.available_in_year && !matches!(l.acceleration.as_str(), "" | "none")))) => { diag(diagnostics, "cca_tax_year", "Class 13/14 accelerated property in a taxation year spanning two calendar years is not modelled.", true); None }, _ => None };
     for c in classes {
         let straight = c.class == "13" || c.class == "14";
         let rate = rate(&c.class);
@@ -298,13 +326,22 @@ pub fn schedule8(input: &T2Input, diagnostics: &mut Vec<Value>) -> Value {
                 let mut adj: i128 = -(i128::from((f - g).max(0)) / 2);
                 if accel > 0 {
                     if g > f { diag(diagnostics, "cca_proceeds_exceed_regular_additions", format!("Class {}: proceeds exceed regular additions alongside accelerated additions; the E reduction of Reg 1100(2) is not modelled.", c.class), true); }
-                    if let Some(y) = year {
-                        for (amt, riip) in [(c.aiip_additions_cents, false), (c.riip_additions_cents, true)] {
+                    if let Some((y1, y2)) = years {
+                        for (amt, second, riip) in [(c.aiip_additions_cents, c.aiip_second_year_cents, false), (c.riip_additions_cents, c.riip_second_year_cents, true)] {
                             if amt == 0 { continue; }
-                            match factor(&c.class, riip, y) {
-                                Ok(fac) => { adj += mul(amt, fac); row[if riip { "factor_a1" } else { "factor_a" }] = json!(format!("{}/{}", fac.0, fac.1)); }
-                                Err(m) => diag(diagnostics, "cca_factor_unsourced", m, true),
+                            let split = if y1 == y2 { vec![(amt, y2)] } else if let Some(s2) = second { vec![(amt - s2, y1), (s2, y2)] } else {
+                                diag(diagnostics, "cca_straddle_split", format!("Class {}: the taxation year spans {y1} and {y2}; set {} (the part available for use in {y2}) for the Reg 1100(2.01)/(2.011) blend.", c.class, if riip { "riip_second_year_cents" } else { "aiip_second_year_cents" }), true);
+                                continue;
+                            };
+                            let mut shown = vec![];
+                            for (part, y) in split {
+                                if part == 0 { continue; }
+                                match factor(c, riip, y) {
+                                    Ok(fac) => { adj += mul(part, fac); shown.push(if y1 == y2 { format!("{}/{}", fac.0, fac.1) } else { format!("{y}: {}/{}", fac.0, fac.1) }); }
+                                    Err(m) => diag(diagnostics, "cca_factor_unsourced", m, true),
+                                }
                             }
+                            row[if riip { "factor_a1" } else { "factor_a" }] = json!(shown.join(", "));
                         }
                     }
                 }
