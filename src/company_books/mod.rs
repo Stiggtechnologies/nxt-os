@@ -1234,7 +1234,7 @@ impl CompanyBooks {
         let mut baseline = serde_json::to_value(&source).map_err(|_| corrupt())?;
         baseline.as_object_mut().unwrap().remove("balances");
         Ok(
-            json!({"company_id":company,"company":p.input.company,"head":h,"source":p.input.source,"analysis":analysis,"source_baseline_analysis":baseline,"balances":rows,"offset":offset,"limit":limit,"total":total,"next_offset":next_offset,"has_more":next_offset.is_some(),"max_bytes":max_bytes,"page_bytes":page_bytes,"native_delta":{"entries":native.len(),"lines":nl,"total_debit_cents":nd.to_string(),"total_credit_cents":nc.to_string()},"reconciliation":{"source_baseline_unchanged":true,"source_controls_passed":p.analysis.controls_passed,"review_status":h.review.as_ref().map(|r|r.status.as_str()).unwrap_or("controls_passed"),"combined_balances_match_source":matches_source},"controls":controls()}),
+            json!({"company_id":company,"company":p.input.company,"head":h,"source":p.input.source,"analysis":analysis,"source_baseline_analysis":baseline,"balances":rows,"offset":offset,"limit":limit,"total":total,"next_offset":next_offset,"has_more":next_offset.is_some(),"max_bytes":max_bytes,"page_bytes":page_bytes,"native_delta":{"entries":native.len(),"lines":nl,"total_debit_cents":nd.to_string(),"total_credit_cents":nc.to_string()},"reconciliation":match &h.review { None => json!({"source_baseline_unchanged":true,"source_controls_passed":true,"combined_balances_match_source":matches_source}), Some(r) => json!({"source_baseline_unchanged":true,"source_controls_passed":p.analysis.controls_passed,"review_status":r.status,"combined_balances_match_source":matches_source}) },"controls":controls()}),
         )
     }
 }
