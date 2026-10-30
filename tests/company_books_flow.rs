@@ -19,6 +19,9 @@ fn commit(id: &str, request: &str) -> CommitInput {
         expected_head: None,
         request_id: request.into(),
         reviewer_label: "Synthetic reviewer, shared-key assertion".into(),
+        needs_review: false,
+        review_blockers: vec![],
+        suspense_account_id: None,
     }
 }
 fn adjustment(head: &str, request: &str) -> JournalInput {

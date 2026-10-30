@@ -39,7 +39,7 @@ async fn parallel_daily_lists_and_sales_tax_preference_do_not_write_back() {
     let uploaded = books.upload("co", chunk()).await.ok().unwrap();
     let preview = books.preview("co", preview(uploaded["sha256"].as_str().unwrap())).await.ok().unwrap();
     assert_eq!(preview["stage"], "preview_ready");
-    let committed = books.commit("co", CommitInput { preview_id: preview["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit-daily".into(), reviewer_label: "Synthetic reviewer".into() }).await.ok().unwrap();
+    let committed = books.commit("co", CommitInput { preview_id: preview["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit-daily".into(), reviewer_label: "Synthetic reviewer".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None }).await.ok().unwrap();
     let head = committed["head_sha256"].as_str().unwrap().to_string();
     let before = books.entries("co", 0, 50, None).await.ok().unwrap()["rows"].as_array().unwrap().len();
 

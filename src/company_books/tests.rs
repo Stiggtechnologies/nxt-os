@@ -18,6 +18,9 @@ async fn each_financial_read_loads_source_chunks_once() {
             expected_head: None,
             request_id: "commit".into(),
             reviewer_label: "Synthetic".into(),
+            needs_review: false,
+            review_blockers: vec![],
+            suspense_account_id: None,
         },
     )
     .await
@@ -43,7 +46,7 @@ async fn interrupted_local_staging_never_publishes_dangling_global_inventory() {
     let p = Preview {
         format: "nxt-company-book-preview/v1".into(),
         company_id: "test".into(),
-        analysis: CompanyBooks::analyze(&input, &a, &e).ok().unwrap(),
+        analysis: CompanyBooks::analyze_bounded(&input, &a, &e, 500_000).ok().unwrap(),
         input: input.clone(),
     };
     let id = hash(encoded(&p).ok().unwrap().as_bytes());
@@ -57,4 +60,64 @@ async fn interrupted_local_staging_never_publishes_dangling_global_inventory() {
     assert!(s.current("test").await.ok().unwrap().is_none());
     s.preview("test", input).await.ok().unwrap();
     assert_eq!(s.list().await.ok().unwrap()["total"], 1);
+}
+fn review_commit(id: &str, needs_review: bool) -> CommitInput {
+    CommitInput {
+        preview_id: id.into(),
+        expected_head: None,
+        request_id: "commit-review".into(),
+        reviewer_label: "Synthetic".into(),
+        needs_review,
+        review_blockers: if needs_review {
+            vec!["held_line:row=7:amount_without_account".into()]
+        } else {
+            vec![]
+        },
+        suspense_account_id: needs_review.then(|| "suspense".to_string()),
+    }
+}
+#[tokio::test]
+async fn needs_review_commits_blocked_books_on_test_copy_only() {
+    let (s, mut input) = staged().await;
+    // Break the trial-balance control so the preview is blocked.
+    input.trial_balance[0].debit_cents = "2".into();
+    let p = s.preview("test", input).await.ok().unwrap();
+    assert_eq!(p["stage"], "assessment_blocked");
+    let id = p["preview_id"].as_str().unwrap();
+    // Without the flag the strict gate is unchanged.
+    let e = s.commit("test", review_commit(id, false)).await.err().unwrap();
+    assert_eq!(e.0, StatusCode::CONFLICT);
+    let c = s.commit("test", review_commit(id, true)).await.ok().unwrap();
+    assert_eq!(c["head"]["review"]["status"], "needs_review");
+    let blockers = c["head"]["review"]["blockers"].as_array().unwrap();
+    assert!(blockers.iter().any(|b| b == "held_line:row=7:amount_without_account"));
+    assert!(blockers.len() > 1);
+    // Exact retry is idempotent; the book stays readable and labelled.
+    let r = s.commit("test", review_commit(id, true)).await.ok().unwrap();
+    assert_eq!(r["idempotent_replay"], true);
+    let tb = s.trial_balance("test").await.ok().unwrap();
+    assert_eq!(tb["reconciliation"]["review_status"], "needs_review");
+    assert_eq!(tb["reconciliation"]["source_controls_passed"], false);
+    let list = s.list().await.ok().unwrap();
+    assert_eq!(list["companies"][0]["head"]["review"]["status"], "needs_review");
+}
+#[tokio::test]
+async fn needs_review_is_refused_outside_test_copy() {
+    let s = CompanyBooks::new(Store::Unavailable { reason: "production".into() });
+    let e = s
+        .commit("test", review_commit(&"e".repeat(64), true))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(e.0, StatusCode::CONFLICT);
+    assert!(e.1.contains("test_copy_only"));
+    assert!(!s.test_copy());
+}
+#[tokio::test]
+async fn review_blockers_require_needs_review() {
+    let (s, input) = staged().await;
+    let p = s.preview("test", input).await.ok().unwrap();
+    let mut c = review_commit(p["preview_id"].as_str().unwrap(), false);
+    c.review_blockers = vec!["x".into()];
+    assert_eq!(s.commit("test", c).await.err().unwrap().0, StatusCode::BAD_REQUEST);
 }
