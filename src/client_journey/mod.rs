@@ -11,8 +11,13 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub mod capability;
 pub mod ladder;
+mod routes;
+pub mod service;
+pub mod sources;
 pub use ladder::*;
+pub use routes::router;
 
 pub const JOURNEY_JSON: &str = include_str!("journey.json");
 
