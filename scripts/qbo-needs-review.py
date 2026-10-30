@@ -380,7 +380,7 @@ def stage(zip_path, out, company_id, order_choice):
     template = {"request_id": "", "expected_head": None,
                 "company": {"name": company, "source_company_id": "synthetic-fixture", "currency": "CAD",
                             "identity_verified": True, "currency_verified": True},
-                "source": {"system": "quickbooks_online_export", "archive_sha256": archive_sha, "journal_sha256": jb.raw_hash,
+                "source": {"system": "quickbooks_online", "archive_sha256": archive_sha, "journal_sha256": jb.raw_hash,
                            "trial_balance_sha256": tb.raw_hash, "period_start": period_start, "period_end": period_end,
                            "full_history": True, "record_id_coverage": "archive_row",
                            "period_lock": {"verified": True, "closed_through": None,
