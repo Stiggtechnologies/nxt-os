@@ -104,3 +104,21 @@ async fn t5008_slips_load_replay_and_summarize() {
     assert_eq!((sum["t5008_slips"].as_u64(), sum["t5008_slips_unlinked"].as_u64()), (Some(3), Some(1)), "{sum}");
     assert_eq!(sum["t5008_by_year"]["2023"], 3);
 }
+
+#[tokio::test]
+async fn replace_if_newer_keeps_history_and_unsubscribed_flag() {
+    let r = router();
+    let (_, b) = call(&r, "POST", &format!("{BASE}/clients"), Some(json!({"test_copy": true, "clients": [
+        {"client_number": "101", "name": "Test Person A", "unsubscribed": true}, {"client_number": "102", "name": "B", "unsubscribed": "yes"}]}))).await;
+    assert_eq!(b["rejected"]["field_not_bool"], 1, "{b}");
+    call(&r, "POST", &format!("{BASE}/returns"), Some(json!({"test_copy": true, "returns": [ret("101", 2024)]}))).await;
+    let mut newer = ret("101", 2024); newer["sha256"] = json!("c".repeat(64)); newer["last_saved_epoch"] = json!(1_800_000_000u64);
+    let mut older = ret("101", 2024); older["sha256"] = json!("d".repeat(64)); older["last_saved_epoch"] = json!(1_600_000_000u64);
+    let (_, b) = call(&r, "POST", &format!("{BASE}/returns"), Some(json!({"test_copy": true, "returns": [newer.clone()]}))).await;
+    assert_eq!(b["rejected"]["conflicting_return_for_client_year"], 1, "default refuses");
+    let (_, b) = call(&r, "POST", &format!("{BASE}/returns"), Some(json!({"test_copy": true, "replace_if_newer": true, "returns": [newer, older]}))).await;
+    assert_eq!(b["replaced_newer"], 1, "{b}");
+    assert_eq!(b["rejected"]["conflicting_return_not_newer"], 1);
+    let (_, sum) = call(&r, "GET", &format!("{BASE}/summary"), None).await;
+    assert_eq!((sum["returns"].as_u64(), sum["returns_replaced_with_history"].as_u64(), sum["clients_unsubscribed"].as_u64()), (Some(1), Some(1), Some(1)), "{sum}");
+}

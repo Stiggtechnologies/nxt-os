@@ -41,5 +41,11 @@ class LoadDtMaxTestCopy(unittest.TestCase):
         self.assertEqual(stats['t5008_failures']['duplicate_file_same_bytes'], 1)
 
 
+    def test_sheet_tokens_and_name_keys(self):
+        self.assertEqual(ldt.xlsx_token('NXT Client List - June 06, 2024 - Copy.xlsx'), 'xlsx_copy')
+        self.assertEqual(ldt.xlsx_token('NXT Client List - Tatsiana 2887.xlsx'), 'xlsx_tatsiana')
+        self.assertEqual(ldt.name_key('Doe, Jane'), ldt.name_key('jane DOE'))
+
+
 if __name__ == '__main__':
     unittest.main()
