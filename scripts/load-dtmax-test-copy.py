@@ -60,6 +60,61 @@ def read_csv(path):
     return list(csv.reader(text.splitlines()))
 
 
+def xlsx_token(path):
+    base = os.path.basename(path).lower()
+    for k in ("copy", "hannah", "meron", "tatsiana"):
+        if k in base:
+            return "xlsx_" + k
+    return "xlsx_2024"
+
+
+def name_key(v):
+    return " ".join(sorted(re.sub(r"[^a-z0-9 ]", " ", clean(v).lower()).split()))
+
+
+def flag_lists(merged, friends, unsub, stats):
+    """Friends / Unsubscribed sheets carry no client number: match existing clients by name or email only."""
+    import openpyxl
+    by_name, by_email = {}, {}
+    for num, rec in merged.items():
+        by_name.setdefault(name_key(rec.get("name", "")), set()).add(num)
+        if rec.get("email"):
+            by_email.setdefault(rec["email"].lower(), set()).add(num)
+
+    def match(name, mail):
+        hits = by_email.get((mail or "").lower(), set()) if mail else set()
+        if not hits and name_key(name):
+            hits = by_name.get(name_key(name), set())
+        return hits if len(hits) == 1 else (None if hits else set())
+
+    for path, token, is_unsub in [(f, "xlsx_friends", False) for f in friends or []] + [(u, "xlsx_unsubscribed", True) for u in unsub or []]:
+        for ws in openpyxl.load_workbook(path, read_only=True).worksheets:
+            rows = list(ws.iter_rows(values_only=True))
+            if not rows:
+                continue
+            h = [clean(c).lower() for c in rows[0]]
+            ni = h.index("name") if "name" in h else 0
+            ei = next((i for i, c in enumerate(h) if "email" in c or "e-mail" in c), None)
+            for r in rows[1:]:
+                name = clean(r[ni]) if ni < len(r) else ""
+                mail = email(r[ei]) if ei is not None and ei < len(r) else ""
+                if not name and not mail:
+                    continue
+                stats[token + "_rows"] += 1
+                hits = match(name, mail)
+                if hits is None:
+                    stats[token + "_ambiguous_skipped"] += 1
+                    continue
+                if not hits:
+                    stats[token + "_unmatched_not_loaded"] += 1
+                    continue
+                rec = merged[next(iter(hits))]
+                rec["source_lists"] = sorted(set(rec["source_lists"]) | {token})
+                if is_unsub:
+                    rec["unsubscribed"] = True
+                stats[token + "_matched"] += 1
+
+
 def merge_clients(xlsx, book1, book2, stats):
     merged, source_rows, conflicted = {}, 0, set()
 
@@ -81,18 +136,29 @@ def merge_clients(xlsx, book1, book2, stats):
                 continue  # earlier (newer) source wins
             rec.setdefault(k, v)
 
-    if xlsx:
-        import openpyxl
-        ws = openpyxl.load_workbook(xlsx, read_only=True).active
-        rows = list(ws.iter_rows(values_only=True))
-        h = [clean(c) for c in rows[0]]
-        ix = {name: h.index(name) for name in h if name}
-        for r in rows[1:]:
-            source_rows += 1
-            g = lambda n: r[ix[n]] if n in ix and ix[n] < len(r) else None
-            put(g("Client #"), {"name": join_name(g("Name"), g("Column1")), "processing_status": clean(g("Processing status")),
-                                "home_phone": phone(g("Home phone number")), "work_phone": phone(g("Work phone number")),
-                                "cell_phone": phone(g("Cell phone number")), "email": email(g("Email address"))}, "xlsx_2024")
+    import openpyxl
+    for path in xlsx or []:
+        token = xlsx_token(path)
+        for ws in openpyxl.load_workbook(path, read_only=True).worksheets:
+            rows = [r for r in ws.iter_rows(values_only=True)]
+            if not rows:
+                continue
+            h = [clean(c) for c in rows[0]]
+            if "Client #" in h:
+                ix = {name: h.index(name) for name in h if name}
+                body = rows[1:]
+            else:  # headerless layout (Tatsiana): col0 row index, cols shifted right by one; SIN (col4) never read
+                ix = {"Client #": 1, "Name": 2, "Column1": 3, "Processing status": 5, "Home phone number": 6,
+                      "Work phone number": 7, "Cell phone number": 8, "Email address": 9}
+                body = rows[1:] if all(c is None for c in rows[0][:10]) else rows
+            for r in body:
+                g = lambda n: r[ix[n]] if n in ix and ix[n] < len(r) else None
+                if not clean(g("Client #")) and not clean(g("Name")):
+                    continue
+                source_rows += 1
+                put(g("Client #"), {"name": join_name(g("Name"), g("Column1")), "processing_status": clean(g("Processing status")),
+                                    "home_phone": phone(g("Home phone number")), "work_phone": phone(g("Work phone number")),
+                                    "cell_phone": phone(g("Cell phone number")), "email": email(g("Email address"))}, token)
     if book2:
         rows = read_csv(book2)
         for r in rows[1:]:
@@ -226,7 +292,7 @@ def get(origin, token, path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--company", required=True)
-    ap.add_argument("--xlsx"); ap.add_argument("--book1"); ap.add_argument("--book2"); ap.add_argument("--t1")
+    ap.add_argument("--xlsx", action="append", default=[]); ap.add_argument("--friends", action="append", default=[]); ap.add_argument("--unsubscribed", action="append", default=[]); ap.add_argument("--replace-if-newer", action="store_true"); ap.add_argument("--book1"); ap.add_argument("--book2"); ap.add_argument("--t1")
     ap.add_argument("--t5008", action="append", default=[], help="folder holding afr-prd T5008 CSVs (repeatable)")
     ap.add_argument("--skip-clients", action="store_true"); ap.add_argument("--skip-returns", action="store_true")
     ap.add_argument("--origin", default=os.environ.get("NXT_TEST_COMPANY_BOOKS_ORIGIN") or "http://127.0.0.1:3917")
@@ -241,6 +307,7 @@ def main():
     stats["client_rows_rejected"] = collections.Counter(); stats["return_failures"] = collections.Counter()
     stats["t5008_failures"] = collections.Counter()
     clients = merge_clients(a.xlsx, a.book1, a.book2, stats)
+    flag_lists(clients, a.friends, a.unsubscribed, stats)
     stats["clients_merged"] = len(clients)
     returns = index_returns(a.t1, stats) if a.t1 else []
     stats["returns_indexed"] = len(returns)
@@ -258,8 +325,8 @@ def main():
             for k in ("created", "updated", "unchanged"): server["clients_" + k] += res[k]
             reasons.update({"client:" + k: v for k, v in res["rejected"].items()})
         for i in range(0, len(returns), BATCH):
-            res = post(a.origin, token, base + "/returns", {"test_copy": True, "returns": returns[i:i + BATCH]})
-            for k in ("linked", "unlinked", "unchanged_replays"): server["returns_" + k] += res[k]
+            res = post(a.origin, token, base + "/returns", {"test_copy": True, "replace_if_newer": a.replace_if_newer, "returns": returns[i:i + BATCH]})
+            for k in ("linked", "unlinked", "unchanged_replays", "replaced_newer"): server["returns_" + k] += res.get(k, 0)
             reasons.update({"return:" + k: v for k, v in res["rejected"].items()})
         for i in range(0, len(slips), BATCH):
             res = post(a.origin, token, base + "/t5008", {"test_copy": True, "slips": slips[i:i + BATCH]})

@@ -31,6 +31,10 @@ pub struct ClientBatch {
 pub struct ReturnBatch {
     pub test_copy: bool,
     pub returns: Vec<Value>,
+    /// Test copy only: when a client/year already has different bytes, replace it only if the
+    /// new file's `last_saved_epoch` is strictly later. The prior row is kept in history.
+    #[serde(default)]
+    pub replace_if_newer: bool,
 }
 
 #[derive(Deserialize)]
@@ -117,7 +121,7 @@ impl super::SourceImport {
         self.test_copy_guard(company, batch.test_copy)?;
         if batch.returns.len() > MAX_BATCH { return Err(bad("At most 1,000 returns per batch")); }
         let clients: BTreeSet<String> = self.store.smembers(&k(company, "clients")).await.map_err(|e| s(&e))?.into_iter().collect();
-        let (mut linked, mut unlinked, mut unchanged) = (0u64, 0u64, 0u64);
+        let (mut linked, mut unlinked, mut unchanged, mut replaced) = (0u64, 0u64, 0u64, 0u64);
         let mut rejected = BTreeMap::new();
         for row in &batch.returns {
             let parsed: ReturnIndex = match serde_json::from_value(row.clone()) { Ok(r) => r, Err(_) => { reject(&mut rejected, "invalid_fields"); continue } };
@@ -127,15 +131,24 @@ impl super::SourceImport {
             let body = serde_json::to_string(&parsed).map_err(|_| s("encode failed"))?;
             match self.store.get(&key).await.map_err(|e| s(&e))? {
                 Some(old) if old == body => unchanged += 1,
-                Some(_) => { reject(&mut rejected, "conflicting_return_for_client_year"); continue }
+                Some(old) => {
+                    if !batch.replace_if_newer { reject(&mut rejected, "conflicting_return_for_client_year"); continue }
+                    let prior: ReturnIndex = match serde_json::from_str(&old) { Ok(p) => p, Err(_) => { reject(&mut rejected, "stored_return_unreadable"); continue } };
+                    let newer = match (parsed.last_saved_epoch, prior.last_saved_epoch) { (Some(n), Some(o)) => n > o, (Some(_), None) => true, _ => false };
+                    if !newer { reject(&mut rejected, "conflicting_return_not_newer"); continue }
+                    self.store.sadd(&k(company, &format!("return_history:{member}")), &old).await.map_err(|e| s(&e))?;
+                    self.store.sadd(&k(company, "returns_with_history"), &member).await.map_err(|e| s(&e))?;
+                    self.store.set(&key, &body).await.map_err(|e| s(&e))?;
+                    replaced += 1;
+                }
                 None => self.store.set(&key, &body).await.map_err(|e| s(&e))?,
             }
             self.store.sadd(&k(company, "returns"), &member).await.map_err(|e| s(&e))?;
             if clients.contains(&parsed.client_number) { linked += 1 } else { unlinked += 1 }
         }
         Ok(json!({"company_id": company, "test_copy": true, "submitted": batch.returns.len(),
-            "linked": linked, "unlinked": unlinked, "unchanged_replays": unchanged, "rejected": rejected,
-            "content_decoded": false}))
+            "linked": linked, "unlinked": unlinked, "unchanged_replays": unchanged, "replaced_newer": replaced,
+            "rejected": rejected, "content_decoded": false}))
     }
 
     /// Store T5008 slip rows. Identity is source-file SHA-256 plus row number, so a replay
@@ -169,13 +182,14 @@ impl super::SourceImport {
         if !valid_token(company) { return Err(bad("Invalid company id")); }
         let numbers = self.store.smembers(&k(company, "clients")).await.map_err(|e| s(&e))?;
         let set: BTreeSet<&str> = numbers.iter().map(String::as_str).collect();
-        let (mut with_address, mut with_email, mut with_phone) = (0u64, 0u64, 0u64);
+        let (mut with_address, mut with_email, mut with_phone, mut unsubscribed) = (0u64, 0u64, 0u64, 0u64);
         for chunk in numbers.chunks(500) {
             let keys: Vec<String> = chunk.iter().map(|n| k(company, &format!("client:{n}"))).collect();
             for v in self.store.mget(&keys).await.map_err(|e| s(&e))?.into_iter().flatten() {
                 let v: Value = serde_json::from_str(&v).unwrap_or(Value::Null);
                 if v.get("street").is_some() || v.get("city").is_some() { with_address += 1 }
                 if v.get("email").is_some() { with_email += 1 }
+                if v.get("unsubscribed") == Some(&Value::Bool(true)) { unsubscribed += 1 }
                 if ["home_phone", "work_phone", "cell_phone"].iter().any(|f| v.get(*f).is_some()) { with_phone += 1 }
             }
         }
@@ -204,6 +218,8 @@ impl super::SourceImport {
             "clients_with_address": with_address, "clients_with_email": with_email, "clients_with_phone": with_phone,
             "returns": total, "returns_unlinked": unlinked, "clients_with_returns": linked_clients.len(),
             "returns_by_year": by_year, "content_decoded": false,
+            "clients_unsubscribed": unsubscribed,
+            "returns_replaced_with_history": self.store.smembers(&k(company, "returns_with_history")).await.map_err(|e| s(&e))?.len(),
             "t5008_slips": slips, "t5008_slips_unlinked": slips_unlinked, "t5008_by_year": slips_by_year}))
     }
 }
@@ -213,6 +229,10 @@ fn clean_client(obj: &Map<String, Value>) -> std::result::Result<(String, Value)
     for (field, value) in obj {
         if field.eq_ignore_ascii_case("sin") { return Err("sin_not_accepted"); }
         if field == "client_number" || field == "source_lists" { continue; }
+        if field == "unsubscribed" {
+            match value { Value::Bool(true) => { out.insert("unsubscribed".into(), json!(true)); } Value::Bool(false) | Value::Null => {} _ => return Err("field_not_bool") }
+            continue;
+        }
         let Some((_, max)) = TEXT_FIELDS.iter().find(|(f, _)| f == field) else { return Err("unknown_field") };
         if value.is_null() { continue; }
         let Some(text) = value.as_str() else { return Err("field_not_text") };
@@ -225,7 +245,7 @@ fn clean_client(obj: &Map<String, Value>) -> std::result::Result<(String, Value)
     if !out.contains_key("name") { return Err("missing_name"); }
     if let Some(list) = obj.get("source_lists") {
         let list = list.as_array().ok_or("invalid_source_lists")?;
-        if list.len() > 8 || !list.iter().all(|v| v.as_str().is_some_and(valid_token)) { return Err("invalid_source_lists"); }
+        if list.len() > 16 || !list.iter().all(|v| v.as_str().is_some_and(valid_token)) { return Err("invalid_source_lists"); }
         out.insert("source_lists".into(), Value::Array(list.clone()));
     }
     out.insert("client_number".into(), json!(number));
