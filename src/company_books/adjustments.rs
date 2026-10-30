@@ -369,6 +369,7 @@ impl CompanyBooks {
             journal_chunks: chunks,
             locked_through: locked,
             operation: Some(op.clone()),
+            review: h.review.clone(),
         };
         let p = self.load_preview(company, &h.preview_id).await?;
         self.validate_chain(company, "prospective", &next, &p)

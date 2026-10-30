@@ -168,6 +168,21 @@ pub struct CommitInput {
     pub expected_head: Option<String>,
     pub request_id: String,
     pub reviewer_label: String,
+    /// Test-copy only: commit a book that fails financial controls, recorded as needs_review.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub needs_review: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub review_blockers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suspense_account_id: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Review {
+    pub status: String,
+    pub blockers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suspense_account_id: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Head {
@@ -184,6 +199,9 @@ pub struct Head {
     pub locked_through: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation: Option<Operation>,
+    /// Present only on test-copy books committed in needs_review mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<Review>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]

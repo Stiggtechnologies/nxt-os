@@ -21,6 +21,12 @@ use std::collections::{BTreeMap, HashSet};
 type Result<T> = std::result::Result<T, ApiError>;
 const MAX_CHUNK: usize = 512 * 1024;
 const MAX_BOOK: usize = 24 * 1024 * 1024;
+// Test-copy (memory store) only: larger historical books for migration review.
+const TEST_COPY_MAX_CHUNKS: usize = 4096;
+const TEST_COPY_MAX_BOOK: usize = 512 * 1024 * 1024;
+const TEST_COPY_MAX_ENTRIES: usize = 2_000_000;
+const TEST_COPY_MAX_LINES: usize = 8_000_000;
+pub const NEEDS_REVIEW: &str = "needs_review";
 const INDEX: &str = "company-books:companies:v1";
 pub const DEFAULT_PAGE_BYTES: usize = 768 * 1024;
 fn page_rows(
@@ -180,6 +186,20 @@ fn preview_value(id: &str, p: &Preview) -> Value {
     json!({"preview_id":id,"stage":if p.analysis.controls_passed {"preview_ready"} else {"assessment_blocked"},"preview":p,"controls":controls()})
 }
 impl CompanyBooks {
+    /// Test-copy guard: only the in-memory (optionally file-backed) dev store.
+    fn test_copy(&self) -> bool {
+        self.store.backend_name() == "memory"
+    }
+    fn review_ok(&self, h: &Head) -> bool {
+        self.test_copy() && h.review.as_ref().is_some_and(|r| r.status == NEEDS_REVIEW)
+    }
+    fn max_lines(&self) -> usize {
+        if self.test_copy() {
+            TEST_COPY_MAX_LINES
+        } else {
+            500_000
+        }
+    }
     pub fn new(store: Store) -> Self {
         Self {
             store,
@@ -234,8 +254,17 @@ impl CompanyBooks {
         #[cfg(test)]
         self.source_loads
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if chunks.is_empty() || chunks.len() > 256 {
-            return Err(bad("Book requires 1-256 chunks"));
+        let (max_chunks, max_book, max_entries) = if self.test_copy() {
+            (TEST_COPY_MAX_CHUNKS, TEST_COPY_MAX_BOOK, TEST_COPY_MAX_ENTRIES)
+        } else {
+            (256, MAX_BOOK, 100_000)
+        };
+        if chunks.is_empty() || chunks.len() > max_chunks {
+            return Err(bad(if self.test_copy() {
+                "Book requires 1-4096 chunks"
+            } else {
+                "Book requires 1-256 chunks"
+            }));
         }
         let mut seen = HashSet::new();
         let (mut accounts, mut entries, mut size) = (vec![], vec![], 0usize);
@@ -269,19 +298,24 @@ impl CompanyBooks {
                     return Err(corrupt());
                 }
                 size = size.checked_add(len).ok_or_else(corrupt)?;
-                if size > MAX_BOOK {
+                if size > max_book {
                     return Err(bad("Book exceeds 24 MiB bounded import limit"));
                 }
                 accounts.extend(c.accounts);
                 entries.extend(c.entries);
-                if accounts.len() > 20_000 || entries.len() > 100_000 {
+                if accounts.len() > 20_000 || entries.len() > max_entries {
                     return Err(bad("Book exceeds account or journal count limit"));
                 }
             }
         }
         Ok((accounts, entries))
     }
-    fn analyze(input: &PreviewInput, accounts: &[Account], entries: &[Entry]) -> Result<Analysis> {
+    fn analyze_bounded(
+        input: &PreviewInput,
+        accounts: &[Account],
+        entries: &[Entry],
+        max_lines: usize,
+    ) -> Result<Analysis> {
         if !valid_id(&input.request_id)
             || input.expected_head.as_deref().is_some_and(|s| !digest(s))
         {
@@ -379,7 +413,7 @@ impl CompanyBooks {
                 } else {
                     l.source_row != 0 && rows.insert(l.source_row)
                 };
-                if count > 500_000 || !row_ok || !text(&l.memo, 2000) {
+                if count > max_lines || !row_ok || !text(&l.memo, 2000) {
                     return Err(bad("Invalid or duplicated source journal row"));
                 }
                 let ld = money(&l.debit_cents)?;
@@ -571,7 +605,7 @@ impl CompanyBooks {
     pub async fn preview(&self, company: &str, input: PreviewInput) -> Result<Value> {
         Self::key(company, "preview", "")?;
         let (a, e) = self.data(company, &input.chunks).await?;
-        let analysis = Self::analyze(&input, &a, &e)?;
+        let analysis = Self::analyze_bounded(&input, &a, &e, self.max_lines())?;
         let p = Preview {
             format: "nxt-company-book-preview/v1".into(),
             company_id: company.into(),
@@ -611,7 +645,7 @@ impl CompanyBooks {
     async fn load_preview(&self, company: &str, id: &str) -> Result<Preview> {
         let p = self.load_preview_metadata(company, id).await?;
         let (a, e) = self.data(company, &p.input.chunks).await?;
-        if Self::analyze(&p.input, &a, &e)? != p.analysis {
+        if Self::analyze_bounded(&p.input, &a, &e, self.max_lines())? != p.analysis {
             return Err(corrupt());
         }
         Ok(p)
@@ -737,7 +771,7 @@ impl CompanyBooks {
                     corrupt()
                 }
             })?;
-        if !p.analysis.controls_passed
+        if !(p.analysis.controls_passed || self.review_ok(&h))
             || !valid_id(&h.commit_request_id)
             || h.reviewer_label.trim().is_empty()
             || chrono::DateTime::parse_from_rfc3339(&h.committed_at).is_err()
@@ -752,7 +786,9 @@ impl CompanyBooks {
                     corrupt()
                 }
             })?;
-        if Self::analyze(&p.input, &accounts, &source_entries).map_err(|_| corrupt())? != p.analysis
+        if Self::analyze_bounded(&p.input, &accounts, &source_entries, self.max_lines())
+            .map_err(|_| corrupt())?
+            != p.analysis
         {
             return Err(corrupt());
         }
@@ -775,6 +811,9 @@ impl CompanyBooks {
         {
             return Err(bad("Request id and reviewer label are required"));
         }
+        if input.needs_review && !self.test_copy() {
+            return Err(err(StatusCode::CONFLICT, "needs_review commits are test_copy_only"));
+        }
         let p = self.load_preview(company, &input.preview_id).await?;
         if p.input.expected_head != input.expected_head {
             return Err(err(
@@ -782,12 +821,29 @@ impl CompanyBooks {
                 "Commit expected head differs from immutable preview",
             ));
         }
-        if !p.analysis.controls_passed {
+        if input.review_blockers.len() > 10_000
+            || input.review_blockers.iter().any(|b| !text(b, 2000))
+            || input.suspense_account_id.as_ref().is_some_and(|a| !text(a, 200))
+            || (!input.needs_review
+                && (!input.review_blockers.is_empty() || input.suspense_account_id.is_some()))
+        {
+            return Err(bad("Invalid review blockers"));
+        }
+        if !p.analysis.controls_passed && !input.needs_review {
             return Err(err(
                 StatusCode::CONFLICT,
                 "Unresolved source identity, currency, completeness or reconciliation blockers",
             ));
         }
+        let review = input.needs_review.then(|| {
+            let mut blockers = p.analysis.blockers.clone();
+            blockers.extend(input.review_blockers.iter().cloned());
+            Review {
+                status: NEEDS_REVIEW.into(),
+                blockers,
+                suspense_account_id: input.suspense_account_id.clone(),
+            }
+        });
         // These are discovery hints only. Complete them before head publication;
         // an interrupted request is repaired by exact retry and never posts twice.
         self.stage_preview_references(company, &input.preview_id)
@@ -801,6 +857,7 @@ impl CompanyBooks {
                         && receipt.preview_id == input.preview_id
                         && receipt.previous_head == input.expected_head
                         && receipt.reviewer_label == input.reviewer_label
+                        && receipt.review == review
                     {
                         return Ok(
                             json!({"head_sha256":rid,"head":receipt,"current_head_sha256":raw,"idempotent_replay":true,"controls":controls()}),
@@ -840,6 +897,7 @@ impl CompanyBooks {
                 .as_ref()
                 .and_then(|p| p.closed_through.clone()),
             operation: None,
+            review,
         };
         let raw = encoded(&h)?;
         let head_id = hash(raw.as_bytes());
@@ -1001,7 +1059,10 @@ impl CompanyBooks {
                 if encoded(&p)? != raw
                     || p.company_id != *company
                     || p.format != "nxt-company-book-preview/v1"
-                    || heads.contains_key(company) && !p.analysis.controls_passed
+                    || heads
+                        .get(company)
+                        .is_some_and(|(_, h)| !self.review_ok(h))
+                        && !p.analysis.controls_passed
                 {
                     return Err(corrupt());
                 }
@@ -1012,7 +1073,7 @@ impl CompanyBooks {
         for id in selected {
             let (pid, p) = previews.remove(&id).ok_or_else(corrupt)?;
             let head = heads.remove(&id);
-            let head_summary=head.as_ref().map(|(_,h)|json!({"format":h.format,"company_id":h.company_id,"preview_id":h.preview_id,"revision":h.revision,"committed_at":h.committed_at,"locked_through":h.locked_through,"operation_kind":h.operation.as_ref().map(|o|match o{Operation::Journal{..}=>"journal",Operation::Reversal{..}=>"reversal",Operation::PeriodLock{..}=>"period_lock"})}));
+            let head_summary=head.as_ref().map(|(_,h)|json!({"format":h.format,"company_id":h.company_id,"preview_id":h.preview_id,"revision":h.revision,"committed_at":h.committed_at,"locked_through":h.locked_through,"review":h.review,"operation_kind":h.operation.as_ref().map(|o|match o{Operation::Journal{..}=>"journal",Operation::Reversal{..}=>"reversal",Operation::PeriodLock{..}=>"period_lock"})}));
             companies.push(json!({"company_id":id,"stage":if head.is_some(){"import_committed"}else{"staged"},"head_sha256":head.as_ref().map(|(id,_)|id),"head":head_summary,"head_truncated":true,"previews":[{"preview_id":pid,"company":p.input.company,"source":p.input.source,"accounts":p.analysis.accounts,"entries":p.analysis.entries,"lines":p.analysis.lines,"blockers":p.analysis.blockers,"stage":if p.analysis.controls_passed{"preview_ready"}else{"assessment_blocked"}}],"previews_truncated":true,"integrity_check":"metadata_only; full journal and history validation occurs on company book reads","controls":controls()}));
         }
         let v = json!({"companies":companies,"total":total,"offset":offset,"limit":limit,"has_more":offset.saturating_add(limit)<total,"integrity_check":"metadata_only; full journal and history validation occurs on company book reads","controls":controls()});
@@ -1173,7 +1234,7 @@ impl CompanyBooks {
         let mut baseline = serde_json::to_value(&source).map_err(|_| corrupt())?;
         baseline.as_object_mut().unwrap().remove("balances");
         Ok(
-            json!({"company_id":company,"company":p.input.company,"head":h,"source":p.input.source,"analysis":analysis,"source_baseline_analysis":baseline,"balances":rows,"offset":offset,"limit":limit,"total":total,"next_offset":next_offset,"has_more":next_offset.is_some(),"max_bytes":max_bytes,"page_bytes":page_bytes,"native_delta":{"entries":native.len(),"lines":nl,"total_debit_cents":nd.to_string(),"total_credit_cents":nc.to_string()},"reconciliation":{"source_baseline_unchanged":true,"source_controls_passed":true,"combined_balances_match_source":matches_source},"controls":controls()}),
+            json!({"company_id":company,"company":p.input.company,"head":h,"source":p.input.source,"analysis":analysis,"source_baseline_analysis":baseline,"balances":rows,"offset":offset,"limit":limit,"total":total,"next_offset":next_offset,"has_more":next_offset.is_some(),"max_bytes":max_bytes,"page_bytes":page_bytes,"native_delta":{"entries":native.len(),"lines":nl,"total_debit_cents":nd.to_string(),"total_credit_cents":nc.to_string()},"reconciliation":match &h.review { None => json!({"source_baseline_unchanged":true,"source_controls_passed":true,"combined_balances_match_source":matches_source}), Some(r) => json!({"source_baseline_unchanged":true,"source_controls_passed":p.analysis.controls_passed,"review_status":r.status,"combined_balances_match_source":matches_source}) },"controls":controls()}),
         )
     }
 }

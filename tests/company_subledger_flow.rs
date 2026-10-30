@@ -44,7 +44,7 @@ async fn parallel_subledger_posts_open_items_without_changing_source_rows() {
     let uploaded = books.upload("co", chunk()).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
     let preview = books.preview("co", preview(uploaded["sha256"].as_str().unwrap())).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
     assert_eq!(preview["stage"], "preview_ready");
-    let committed = books.commit("co", CommitInput { preview_id: preview["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit-sub".into(), reviewer_label: "Synthetic reviewer".into() }).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
+    let committed = books.commit("co", CommitInput { preview_id: preview["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit-sub".into(), reviewer_label: "Synthetic reviewer".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None }).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
     let head = committed["head_sha256"].as_str().unwrap().to_string();
     books.add_class("co", serde_json::from_value(json!({"request_id":"class-east","name":"East"})).unwrap()).await.ok().unwrap();
     let invoice = books.open_document("co", serde_json::from_value(json!({

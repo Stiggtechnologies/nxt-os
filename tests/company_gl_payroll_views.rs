@@ -28,7 +28,7 @@ async fn committed() -> CompanyBooks {
     let p: PreviewInput = serde_json::from_value(json!({"request_id":"p","expected_head":null,"company":{"name":"Synthetic","source_company_id":"s","currency":"CAD","identity_verified":true,"currency_verified":true},"source":{"system":"synthetic","archive_sha256":"a".repeat(64),"journal_sha256":"b".repeat(64),"trial_balance_sha256":"c".repeat(64),"period_start":"2023-01-01","period_end":"2024-12-31","full_history":true,"record_id_coverage":"archive_row","period_lock":{"verified":true,"closed_through":null,"evidence_sha256":"d".repeat(64)}},"chunks":[h],
       "trial_balance":[tb("bank","0","103000",1),tb("payx","105000","0",2),tb("payl","0","2000",3)]})).unwrap();
     let pv = s.preview("co", p).await.ok().unwrap();
-    s.commit("co", CommitInput{preview_id: pv["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "c".into(), reviewer_label: "Synthetic reviewer".into()}).await.ok().unwrap();
+    s.commit("co", CommitInput{preview_id: pv["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "c".into(), reviewer_label: "Synthetic reviewer".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None}).await.ok().unwrap();
     s
 }
 
