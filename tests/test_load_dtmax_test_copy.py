@@ -27,6 +27,19 @@ class LoadDtMaxTestCopy(unittest.TestCase):
         self.assertEqual(out[0]['content_state'], 'vendor_encoded_not_decoded')
         self.assertEqual(stats['return_failures']['header_year_does_not_match_extension'], 1)
 
+    def test_t5008_rows(self):
+        d = Path(tempfile.mkdtemp()); p = d / 'T1' / '2023' / 'afr-prd'; p.mkdir(parents=True)
+        body = 'sep=,\nBox 11,Box 20,Box 21,Box 16\n1,100.0,90.5,CAD\n'
+        (p / '0042-TEST_Person-20240301-T5008.csv').write_text(body)
+        (p / '0042-TEST_Person-20240302-T5008.csv').write_text(body)
+        (p / '7-20240301-T5008.csv').write_text('sep=,\nBox 11,Box 20\n1,5\n')
+        stats = collections.defaultdict(int); stats['t5008_failures'] = collections.Counter()
+        out = ldt.read_t5008([str(d)], stats)
+        self.assertEqual([(r['client_number'], r['tax_year'], r['recipient_name']) for r in out],
+                         [('42', 2023, 'TEST, Person'), ('7', 2023, 'DT Max client 7')])
+        self.assertEqual(out[0]['boxes'], {'11': '1', '20': '100.0', '21': '90.5', '16': 'CAD'})
+        self.assertEqual(stats['t5008_failures']['duplicate_file_same_bytes'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

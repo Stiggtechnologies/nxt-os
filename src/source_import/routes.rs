@@ -52,6 +52,7 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/files/{sha}/link", post(resolve))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients", post(test_copy_clients))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/returns", post(test_copy_returns))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/t5008", post(test_copy_slips))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/summary", get(test_copy_summary))
         .layer(axum::extract::DefaultBodyLimit::max(super::files::MAX_FILE_BYTES * 2 + 64 * 1024))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
@@ -130,6 +131,10 @@ async fn test_copy_clients(State(state): S, Path(company): Path<String>, Json(bo
 
 async fn test_copy_returns(State(state): S, Path(company): Path<String>, Json(body): Json<super::test_copy::ReturnBatch>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_returns(&company, body).await?))
+}
+
+async fn test_copy_slips(State(state): S, Path(company): Path<String>, Json(body): Json<super::test_copy::SlipBatch>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_slips(&company, body).await?))
 }
 
 async fn test_copy_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {

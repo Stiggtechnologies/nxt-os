@@ -78,3 +78,29 @@ async fn roster_upserts_by_client_number_and_counts_rejects() {
     assert_eq!(sum["returns_by_year"]["2024"], json!({"linked": 1, "unlinked": 1}));
     assert_eq!(sum["content_decoded"], false);
 }
+
+fn slip(num: &str, row: u32) -> Value {
+    json!({"client_number": num, "recipient_name": "TEST_Person", "tax_year": 2023, "source_file_sha256": "b".repeat(64), "row": row,
+           "boxes": {"20": "100.0", "21": "90.5", "16": "CAD", "17": "Test Security"}})
+}
+
+#[tokio::test]
+async fn t5008_slips_load_replay_and_summarize() {
+    let r = router();
+    let (s, _) = call(&r, "POST", &format!("{BASE}/t5008"), Some(json!({"test_copy": false, "slips": []}))).await;
+    assert_eq!(s, 409);
+    call(&r, "POST", &format!("{BASE}/clients"), Some(json!({"test_copy": true, "clients": [{"client_number": "101", "name": "Test Person A"}]}))).await;
+    let mut bad = slip("101", 3);
+    bad["boxes"]["99"] = json!("x");
+    let (s, b) = call(&r, "POST", &format!("{BASE}/t5008"), Some(json!({"test_copy": true, "slips": [slip("101", 1), slip("101", 2), slip("0", 1), bad, {"client_number": "101", "sin": "x"}]}))).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!((b["linked"].as_u64(), b["unlinked"].as_u64()), (Some(2), Some(1)), "{b}");
+    assert_eq!(b["rejected"]["unknown_box"], 1);
+    assert_eq!(b["rejected"]["invalid_fields"], 1);
+    assert!(!b.to_string().contains("TEST_Person"));
+    let (_, replay) = call(&r, "POST", &format!("{BASE}/t5008"), Some(json!({"test_copy": true, "slips": [slip("101", 1)]}))).await;
+    assert_eq!(replay["unchanged_replays"], 1);
+    let (_, sum) = call(&r, "GET", &format!("{BASE}/summary"), None).await;
+    assert_eq!((sum["t5008_slips"].as_u64(), sum["t5008_slips_unlinked"].as_u64()), (Some(3), Some(1)), "{sum}");
+    assert_eq!(sum["t5008_by_year"]["2023"], 3);
+}

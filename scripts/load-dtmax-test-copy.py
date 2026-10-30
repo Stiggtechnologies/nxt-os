@@ -164,6 +164,52 @@ def index_returns(t1, stats):
     return out
 
 
+T5008_RE = re.compile(r"^(?P<num>\d+)-(?:(?P<name>.+)-)?(?P<date>\d{8})-T5008\.csv$", re.I)
+YEAR_DIR_RE = re.compile(r"^(19|20)\d\d$")
+
+
+def read_t5008(dirs, stats):
+    """Rows from DT Max auto-fill ``<client#>-<LAST_First>-<yyyymmdd>-T5008.csv`` files.
+
+    Tax year is the ``T1/<year>/`` folder. Files are deduplicated by SHA-256, since the
+    office share keeps the same files in more than one tree.
+    """
+    out, seen = [], set()
+    for top in dirs:
+        for root, _dirs, files in os.walk(top):
+            for f in sorted(files):
+                if not f.lower().endswith("-t5008.csv"):
+                    continue
+                stats["t5008_files_seen"] += 1
+                m = T5008_RE.match(f)
+                years = [p for p in os.path.relpath(root, top).split(os.sep) + root.split(os.sep) if YEAR_DIR_RE.match(p)]
+                if not m or not years:
+                    stats["t5008_failures"]["unrecognized_file_name_or_year_folder"] += 1
+                    continue
+                path = os.path.join(root, f)
+                data = open(path, "rb").read()
+                sha = hashlib.sha256(data).hexdigest()
+                if sha in seen:
+                    stats["t5008_failures"]["duplicate_file_same_bytes"] += 1
+                    continue
+                seen.add(sha)
+                rows = [r for r in read_csv(path) if r and not r[0].startswith("sep=")]
+                if not rows or not rows[0][0].startswith("Box"):
+                    stats["t5008_failures"]["no_box_header"] += 1
+                    continue
+                header = [h.replace("Box", "").strip() for h in rows[0]]
+                num = m.group("num").lstrip("0") or "0"
+                name = (m.group("name") or "").replace("_", ", ", 1) or f"DT Max client {num}"
+                stats["t5008_files_loaded"] += 1
+                for i, r in enumerate(rows[1:], start=1):
+                    boxes = {header[j]: clean(v)[:200] for j, v in enumerate(r) if j < len(header) and clean(v)}
+                    if not boxes:
+                        continue
+                    out.append({"client_number": num, "recipient_name": name[:200], "tax_year": int(years[-1]),
+                                "source_file_sha256": sha, "row": i, "boxes": boxes})
+    return out
+
+
 def post(origin, token, path, body):
     req = urllib.request.Request(origin + path, data=json.dumps(body).encode(), method="POST",
                                  headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
@@ -181,6 +227,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--company", required=True)
     ap.add_argument("--xlsx"); ap.add_argument("--book1"); ap.add_argument("--book2"); ap.add_argument("--t1")
+    ap.add_argument("--t5008", action="append", default=[], help="folder holding afr-prd T5008 CSVs (repeatable)")
+    ap.add_argument("--skip-clients", action="store_true"); ap.add_argument("--skip-returns", action="store_true")
     ap.add_argument("--origin", default=os.environ.get("NXT_TEST_COMPANY_BOOKS_ORIGIN") or "http://127.0.0.1:3917")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
@@ -191,15 +239,20 @@ def main():
         sys.exit("NXT_TEST_COMPANY_BOOKS_KEY is required")
     stats = collections.defaultdict(int)
     stats["client_rows_rejected"] = collections.Counter(); stats["return_failures"] = collections.Counter()
+    stats["t5008_failures"] = collections.Counter()
     clients = merge_clients(a.xlsx, a.book1, a.book2, stats)
     stats["clients_merged"] = len(clients)
     returns = index_returns(a.t1, stats) if a.t1 else []
     stats["returns_indexed"] = len(returns)
+    slips = read_t5008(a.t5008, stats)
+    stats["t5008_rows"] = len(slips)
     stats["returns_matching_client_list"] = sum(1 for r in returns if r["client_number"] in clients)
     base = f"/api/source-imports/dtmax/companies/{a.company}/test-copy"
     server = collections.Counter(); reasons = collections.Counter()
     if not a.dry_run:
-        rows = sorted(clients.values(), key=lambda r: int(r["client_number"]))
+        rows = [] if a.skip_clients else sorted(clients.values(), key=lambda r: int(r["client_number"]))
+        if a.skip_returns:
+            returns = []
         for i in range(0, len(rows), BATCH):
             res = post(a.origin, token, base + "/clients", {"test_copy": True, "clients": rows[i:i + BATCH]})
             for k in ("created", "updated", "unchanged"): server["clients_" + k] += res[k]
@@ -208,6 +261,10 @@ def main():
             res = post(a.origin, token, base + "/returns", {"test_copy": True, "returns": returns[i:i + BATCH]})
             for k in ("linked", "unlinked", "unchanged_replays"): server["returns_" + k] += res[k]
             reasons.update({"return:" + k: v for k, v in res["rejected"].items()})
+        for i in range(0, len(slips), BATCH):
+            res = post(a.origin, token, base + "/t5008", {"test_copy": True, "slips": slips[i:i + BATCH]})
+            for k in ("linked", "unlinked", "unchanged_replays"): server["t5008_" + k] += res[k]
+            reasons.update({"t5008:" + k: v for k, v in res["rejected"].items()})
         summary = get(a.origin, token, base + "/summary")
     else:
         summary = None
