@@ -3,6 +3,7 @@
 //! (`client_journey`) is the spine: each step is done by a module capability
 //! (`client_journey::capability`) or recorded by staff, and human gates stay human.
 
+pub mod agent;
 pub mod ledger;
 pub mod firm;
 pub mod nixon_finance;
@@ -51,6 +52,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
             source_import: source_import.clone(),
         }));
     let journeys = Arc::new(client_journey::service::Journeys::new(journey_store, capabilities));
+    let agent = agent::Claude::from_env().map(|m| agent::Agent::new(journeys.clone(), Arc::new(m)));
     Router::new()
         .merge(ledger::routes::router(ledger.clone()))
         .merge(firm::router(firm.clone()))
@@ -73,7 +75,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
         .merge(source_import::router(source_import))
-        .merge(client_journey::router(journeys))
+        .merge(client_journey::router(journeys, agent))
 }
 
 /// Builds the app with storage chosen per-module by `make_store`.
