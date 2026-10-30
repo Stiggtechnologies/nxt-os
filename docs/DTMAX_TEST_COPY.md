@@ -31,3 +31,9 @@ One file per year with a non-numeric stem has no `DTMAX` header (template/defaul
 ## Loader
 
 `scripts/load-dtmax-test-copy.py` merges the DT Max client-list exports (xlsx plus Book1/Book2 csv) by `Client #`, with the xlsx taking precedence. It indexes `T1/<year>/*.Pyy` and posts batches of 1,000. It accepts only a loopback `--origin`, reads the admin key from `NXT_TEST_COMPANY_BOOKS_KEY` only, never sends SIN, comments or call feedback, and prints counts only. `--dry-run` posts nothing.
+
+## T5008 slips (DT Max auto-fill CSVs)
+
+`POST …/test-copy/t5008` takes `{test_copy, slips:[…]}`, at most 1,000 rows. Each row: `client_number` (digits; `0` is DT Max "no client" and stays unlinked), `recipient_name` (from the file name), `tax_year` (from the `T1/<year>/` folder), `source_file_sha256`, `row`, and `boxes` (T5008 box number → text, boxes 11, 13, 15–24 only). Identity is file SHA-256 plus row, so replays are `unchanged_replays`. The summary adds `t5008_slips`, `t5008_slips_unlinked` and `t5008_by_year`. Same guard as above: test copy only.
+
+Loader: `--t5008 <dir>` (repeatable) reads `<client#>-<LAST_First>-<yyyymmdd>-T5008.csv`, dedupes identical files across trees by SHA-256, and posts rows. `--skip-clients` / `--skip-returns` post only slips.
