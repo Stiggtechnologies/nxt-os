@@ -11,6 +11,7 @@ fn app() -> Router {
     unsafe {
         std::env::set_var("ADMIN_API_KEY", "k");
         std::env::remove_var("CRON_SECRET");
+        std::env::remove_var("ANTHROPIC_API_KEY");
     }
     nxt_os::app_with(nxt_os::store::Store::memory)
 }
@@ -152,4 +153,14 @@ async fn human_gates_and_cron_stay_guarded() {
     assert_eq!(v["moved"], json!([]), "advance never passes a human gate");
     let (s, _) = call(&r, "GET", "/api/cron/journey-tick", None).await;
     assert_eq!(s, 503, "cron refuses without CRON_SECRET");
+}
+
+#[tokio::test]
+async fn agent_route_refuses_without_a_model_and_reviews_start_empty() {
+    let r = app();
+    ok(&r, "POST", "/api/journeys", Some(json!({"client_id": "agentless"}))).await;
+    let (s, v) = call(&r, "POST", "/api/journeys/agentless/work", None).await;
+    assert_eq!(s, 503, "{v}");
+    assert_eq!(ok(&r, "GET", "/api/journeys/reviews", None).await["reviews"], json!([]));
+    assert_eq!(ok(&r, "GET", "/api/journeys/coverage", None).await["policy"]["modes"]["filing_submission"], "human");
 }

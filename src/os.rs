@@ -25,16 +25,16 @@ pub struct Os {
 const MAX_TOOL_ROUNDS: usize = 8;
 const MAX_TOOL_RESULT_CHARS: usize = 40_000;
 
-fn model() -> String {
+pub(crate) fn model() -> String {
     std::env::var("NXT_AI_MODEL").ok().filter(|m| !m.is_empty()).unwrap_or_else(|| "claude-opus-5-5".into())
 }
 
-fn api_url() -> String {
+pub(crate) fn api_url() -> String {
     let base = std::env::var("ANTHROPIC_BASE_URL").ok().filter(|b| !b.is_empty()).unwrap_or_else(|| "https://api.anthropic.com".into());
     format!("{}/v1/messages", base.trim_end_matches('/'))
 }
 
-fn api_key() -> Option<String> {
+pub(crate) fn api_key() -> Option<String> {
     std::env::var("ANTHROPIC_API_KEY").ok().filter(|k| !k.is_empty())
 }
 
