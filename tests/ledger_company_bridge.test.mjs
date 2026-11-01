@@ -74,6 +74,15 @@ test('native default, startup hooks and legacy Ledger API routes remain intact',
  assert.match(ledger,/Firm workspace · NXT native books/);assert.match(ledger,/data-qb-open-view="companies"/);assert.match(ledger,/pagehide/);
  for(const route of ['/api/ledger/accounts','/api/ledger/contacts','/api/ledger/invoices','/api/ledger/company'])assert.ok(ledger.includes(route));assert.ok(!code.includes('method:')&&!code.includes('POST')&&!code.includes('/api/ledger/'));
 });
+test('with openLedger a company choice opens its own ledger, including clients only Nixon lists',async()=>{
+  const h=harness();const opened=[];
+  h.setHandler(async path=>{if(path==='/api/nixon/clients')return {clients:[{client_id:'client-a',ledger_open:true}]};throw Object.assign(Error('firm-wide'),{status:403});});
+  await h.mount({openLedger:id=>opened.push(id)}).ready;
+  assert.match(h.host.innerHTML,/client-a — Ledger open/);
+  const select=h.host.querySelector('#ledger-company-choice');select.value='client-a';select.onchange();
+  assert.deepEqual(opened,['client-a']);
+});
+
 test('shared api forwards cancellation without altering legacy GET/body behavior',async()=>{
  const calls=[];const box={window:{parent:null},sessionStorage:{getItem:()=> 'SYNTHETIC',setItem(){},removeItem(){}},fetch:async(path,init)=>{calls.push({path,init});return{ok:true,status:200,json:async()=>({ok:true})};},document:{querySelector(){return null;},querySelectorAll(){return[];},documentElement:{dataset:{}}},console};box.window.parent=box.window;
  vm.runInNewContext(read('public/nxt/ui.js'),box);const c=new AbortController();await box.window.NXT.api('/synthetic',{signal:c.signal});await box.window.NXT.api('/synthetic',{body:{value:1}});
