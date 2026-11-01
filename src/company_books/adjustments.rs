@@ -552,7 +552,7 @@ impl CompanyBooks {
 fn p_hash(p: &Preview) -> Result<String> {
     Ok(hash(encoded(p)?.as_bytes()))
 }
-fn native(
+pub(super) fn native(
     company: &str,
     input: &JournalInput,
     reversal_of: Option<String>,
