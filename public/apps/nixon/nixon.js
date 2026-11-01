@@ -17,6 +17,29 @@ async function loadStatus() {
   if (!$("#asOf").value) $("#asOf").value = meta.today;
 }
 
+async function loadClients() {
+  const { clients } = await api("/api/nixon/clients");
+  if (!clients.length) { $("#clients").innerHTML = `<p class="meta">No clients to show for this account.</p>`; return; }
+  $("#clients").innerHTML = `<table><thead><tr><th>Client</th><th>Books</th><th>Journey step</th><th>Done</th><th></th></tr></thead><tbody>${clients.map((c) => `
+    <tr><td><button class="btn" data-client="${esc(c.client_id)}">${esc(c.client_id)}</button></td>
+    <td>${esc(c.books_stage || "none")}</td><td>${esc(c.current_step || "not started")}</td><td>${c.percent == null ? "" : esc(c.percent) + "%"}</td>
+    <td>${c.waiting_on_person ? "Waiting on a person" : ""}</td></tr>`).join("")}</tbody></table>`;
+}
+
+async function showClient(id) {
+  const v = await api(`/api/nixon/clients/${encodeURIComponent(id)}`);
+  const total = v.books?.trial_balance?.analysis;
+  $("#clientView").innerHTML = `<h3 style="font-size:16px">${esc(v.client_id)}</h3>
+    ${total ? `<p class="meta">Trial balance: ${esc(total.entries)} entries</p>` : ""}
+    ${v.findings.length ? `<ul>${v.findings.map((f) => `<li><b>${esc(f.severity)}</b>: ${esc(f.title)}</li>`).join("")}</ul>` : `<p class="meta">Nothing needs attention.</p>`}`;
+}
+
+$("#clients").addEventListener("click", (e) => {
+  const id = e.target.closest("[data-client]")?.dataset.client;
+  if (id) showClient(id).catch((err) => toast(err.message));
+});
+loadClients().catch((err) => { $("#clients").innerHTML = `<p class="meta">${esc(err.message)}</p>`; });
+
 function packetBody() {
   const lines = $("#tb").value.split("\n").map((row) => row.trim()).filter(Boolean).map((row) => {
     const [code, debit, credit] = row.split(",").map((p) => p.trim());

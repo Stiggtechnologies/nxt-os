@@ -549,14 +549,10 @@ impl CompanyBooks {
         .await
     }
 }
-/// The id `journal` gives this input, so a caller need not search the book for it.
-pub(super) fn native_id(company: &str, input: &JournalInput) -> Result<String> {
-    Ok(native(company, input, None)?.id)
-}
 fn p_hash(p: &Preview) -> Result<String> {
     Ok(hash(encoded(p)?.as_bytes()))
 }
-fn native(
+pub(super) fn native(
     company: &str,
     input: &JournalInput,
     reversal_of: Option<String>,

@@ -1,6 +1,5 @@
 //! Parallel AR/AP, classes, attachments, and native-journal sync.
 //! Imported QuickBooks rows stay authoritative. Nothing here writes back.
-use super::adjustments::native_id;
 use super::{bad, corrupt, date, err, hash, storage, text, valid_id, CompanyBooks, Result};
 use super::models::{Entry, JournalInput, NativeLine, ReverseInput};
 use axum::http::StatusCode;
@@ -225,7 +224,7 @@ impl CompanyBooks {
             memo: input.memo.clone(),
             lines,
         };
-        let entry_id = native_id(company, &journal)?;
+        let entry_id = super::adjustments::native(company, &journal, None)?.id;
         let posted = self.journal(company, journal).await?;
         let head = posted["head_sha256"].as_str().unwrap_or("").to_string();
         let doc = OpenDoc {
@@ -271,7 +270,7 @@ impl CompanyBooks {
                 NativeLine { account_id: credit, debit_cents: "0".into(), credit_cents: cents(input.amount_cents), memo: "Payment".into() },
             ],
         };
-        let entry_id = native_id(company, &journal)?;
+        let entry_id = super::adjustments::native(company, &journal, None)?.id;
         let posted = self.journal(company, journal).await?;
         let head = posted["head_sha256"].as_str().unwrap_or("").to_string();
         state.payments.push(DocPayment { id: input.request_id.clone(), document_id: doc.id.clone(), amount_cents: input.amount_cents, journal_entry_id: entry_id });

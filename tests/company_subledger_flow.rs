@@ -84,3 +84,41 @@ async fn parallel_subledger_posts_open_items_without_changing_source_rows() {
     assert_eq!(view["authoritative_system"], "quickbooks");
     assert_eq!(view["documents"][0]["open_cents"], 1500);
 }
+
+/// Native entries sort after source entries, so a book over one page used to lose them.
+#[tokio::test]
+async fn invoice_and_payment_record_their_journal_on_a_book_over_200_entries() {
+    const EXTRA: i64 = 204;
+    let books = CompanyBooks::new(Store::memory());
+    let mut raw = serde_json::to_value(chunk()).unwrap();
+    let entries = raw["entries"].as_array_mut().unwrap();
+    for i in 0..EXTRA {
+        let row = 3 + i * 2;
+        entries.push(json!({"id":format!("src-big-{i}"),"date":"2026-01-01","source_id":format!("archive-row:synthetic:big-{i}"),"memo":"Same memo","lines":[
+            {"account_id":"cash","debit_cents":"1","credit_cents":"0","source_row":row,"memo":"Debit"},
+            {"account_id":"equity","debit_cents":"0","credit_cents":"1","source_row":row + 1,"memo":"Credit"}
+        ]}));
+    }
+    let uploaded = books.upload("big", serde_json::from_value(raw).unwrap()).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
+    let mut input = serde_json::to_value(preview(uploaded["sha256"].as_str().unwrap())).unwrap();
+    let total = (10000 + EXTRA).to_string();
+    input["trial_balance"][0]["debit_cents"] = json!(total);
+    input["trial_balance"][1]["credit_cents"] = json!(total);
+    let previewed = books.preview("big", serde_json::from_value(input).unwrap()).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
+    assert_eq!(previewed["stage"], "preview_ready", "{previewed}");
+    let committed = books.commit("big", CommitInput { preview_id: previewed["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit-big".into(), reviewer_label: "Synthetic reviewer".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None }).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
+    let head = committed["head_sha256"].as_str().unwrap().to_string();
+    let invoice = books.open_document("big", serde_json::from_value(json!({
+        "request_id":"inv-big","expected_head":head,"operator_label":"Synthetic operator","kind":"invoice","contact":"Maple",
+        "date":"2026-02-02","memo":"Same memo","control_account":"ar","lines":[{"account_id":"revenue","amount_cents":2500}]
+    })).unwrap()).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
+    let entry = invoice["journal_entry_id"].as_str().unwrap();
+    assert!(entry.starts_with("nxtj_"), "{invoice}");
+    let last = books.entries("big", 205, 10, None).await.ok().unwrap();
+    assert_eq!(last["rows"][0]["id"].as_str(), Some(entry), "the id is the posted journal's");
+    let paid = books.apply_payment("big", serde_json::from_value(json!({
+        "request_id":"pay-big","expected_head":invoice["head_sha256"],"operator_label":"Synthetic operator","document_id":"inv-big","cash_account":"cash","date":"2026-02-03","amount_cents":2500
+    })).unwrap()).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
+    assert_eq!(paid["open_cents"], 0);
+    assert_eq!(books.subledger("big").await.ok().unwrap()["documents"][0]["open_cents"], 0);
+}
