@@ -63,6 +63,8 @@ pub fn split_gross(gross: i64, rate_bp: i64) -> (i64, i64) {
 
 pub struct Ledger {
     pub store: Store,
+    /// Key prefix of this book: `gl:` for the firm, per company otherwise.
+    keys: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -228,19 +230,28 @@ pub struct RegisterRow {
 
 impl Ledger {
     pub fn new(store: Store) -> Self {
-        Ledger { store }
+        Ledger { store, keys: "gl:".into() }
+    }
+
+    /// One client's own book. It shares no accounts, entries, sequences or settings with any other book.
+    pub fn for_company(store: Store, company: &str) -> Self {
+        Ledger { store, keys: format!("company-ledger:{company}:") }
+    }
+
+    fn key(&self, name: &str) -> String {
+        format!("{}{name}", self.keys)
     }
 
     // ---- generic collection helpers ---------------------------------------
 
     async fn put<T: Serialize>(&self, coll: &str, id: &str, v: &T) -> LResult<()> {
-        self.store.set_json(&format!("gl:{coll}:{id}"), v).await?;
-        self.store.sadd(&format!("gl:{coll}"), id).await?;
+        self.store.set_json(&self.key(&format!("{coll}:{id}")), v).await?;
+        self.store.sadd(&self.key(coll), id).await?;
         Ok(())
     }
 
     async fn get<T: DeserializeOwned>(&self, coll: &str, id: &str) -> LResult<Option<T>> {
-        Ok(self.store.get_json(&format!("gl:{coll}:{id}")).await?)
+        Ok(self.store.get_json(&self.key(&format!("{coll}:{id}"))).await?)
     }
 
     async fn must<T: DeserializeOwned>(&self, coll: &str, id: &str) -> LResult<T> {
@@ -250,32 +261,34 @@ impl Ledger {
     }
 
     async fn all<T: DeserializeOwned>(&self, coll: &str) -> LResult<Vec<T>> {
-        let ids = self.store.smembers(&format!("gl:{coll}")).await?;
-        let keys: Vec<String> = ids.iter().map(|id| format!("gl:{coll}:{id}")).collect();
-        Ok(self
-            .store
+        let ids = self.store.smembers(&self.key(coll)).await?;
+        let keys: Vec<String> = ids.iter().map(|id| self.key(&format!("{coll}:{id}"))).collect();
+        // A report must never silently leave out a record it cannot read.
+        self.store
             .mget(&keys)
             .await?
             .into_iter()
-            .flatten()
-            .filter_map(|raw| serde_json::from_str(&raw).ok())
-            .collect())
+            .map(|raw| {
+                let raw = raw.ok_or_else(|| LedgerError::Storage(format!("a {coll} record is missing")))?;
+                serde_json::from_str(&raw).map_err(|_| LedgerError::Storage(format!("a {coll} record is unreadable")))
+            })
+            .collect()
     }
 
     pub async fn audit(&self, action: &str, detail: String) -> LResult<()> {
         let ev = AuditEvent { at: now(), action: action.into(), detail };
-        self.store.lpush_capped("gl:audit", &serde_json::to_string(&ev).unwrap(), 2000).await?;
+        self.store.lpush_capped(&self.key("audit"), &serde_json::to_string(&ev).unwrap(), 2000).await?;
         Ok(())
     }
 
     pub async fn audit_log(&self, limit: usize) -> LResult<Vec<AuditEvent>> {
-        Ok(self.store.list_json("gl:audit", limit).await?)
+        Ok(self.store.list_json(&self.key("audit"), limit).await?)
     }
 
     // ---- company & chart ---------------------------------------------------
 
     pub async fn ensure_seeded(&self) -> LResult<()> {
-        if self.store.set_nx("gl:seeded", "1").await? {
+        if self.store.set_nx(&self.key("seeded"), "1").await? {
             for a in default_chart() {
                 self.put("accounts", &a.id, &a).await?;
             }
@@ -284,7 +297,7 @@ impl Ledger {
     }
 
     pub async fn company(&self) -> LResult<Company> {
-        Ok(self.store.get_json("gl:company").await?.unwrap_or_default())
+        Ok(self.store.get_json(&self.key("company")).await?.unwrap_or_default())
     }
 
     pub async fn save_company(&self, c: &Company) -> LResult<()> {
@@ -299,7 +312,7 @@ impl Ledger {
         if tax_rate(&c.default_tax_code).is_none() {
             return bad("unknown default_tax_code");
         }
-        self.store.set_json("gl:company", c).await?;
+        self.store.set_json(&self.key("company"), c).await?;
         self.audit("company.updated", c.name.clone()).await
     }
 
@@ -461,7 +474,7 @@ impl Ledger {
         if dr != cr {
             return bad(format!("entry is out of balance: debits {dr} ≠ credits {cr}"));
         }
-        let number = self.store.incr_by("gl:seq:entry", 1).await?;
+        let number = self.store.incr_by(&self.key("seq:entry"), 1).await?;
         let entry = Entry {
             id: new_id("je"),
             number,
@@ -561,9 +574,9 @@ impl Ledger {
         let number = match input.number.filter(|n| !n.trim().is_empty()) {
             Some(n) => n.trim().to_string(),
             None if kind == DocKind::Invoice => {
-                format!("{}{:04}", company.invoice_prefix, self.store.incr_by("gl:seq:invoice", 1).await? + 1000)
+                format!("{}{:04}", company.invoice_prefix, self.store.incr_by(&self.key("seq:invoice"), 1).await? + 1000)
             }
-            None => format!("BILL-{:04}", self.store.incr_by("gl:seq:bill", 1).await?),
+            None => format!("BILL-{:04}", self.store.incr_by(&self.key("seq:bill"), 1).await?),
         };
         let doc_id = new_id(if kind == DocKind::Invoice { "inv" } else { "bill" });
         let cid = Some(contact.id.clone());
@@ -984,7 +997,7 @@ impl Ledger {
                 errors.push(format!("row {}: couldn't read '{}'", n + 1, line.chars().take(60).collect::<String>()));
                 continue;
             };
-            let fp = format!("gl:feedfp:{}:{date}:{amount}:{}", acct.id, description.to_lowercase());
+            let fp = self.key(&format!("feedfp:{}:{date}:{amount}:{}", acct.id, description.to_lowercase()));
             if !self.store.set_nx(&fp, "1").await? {
                 dupes += 1;
                 continue;
@@ -1012,7 +1025,7 @@ impl Ledger {
     }
 
     pub async fn rules(&self) -> LResult<Vec<BankRule>> {
-        Ok(self.store.get_json("gl:rules").await?.unwrap_or_default())
+        Ok(self.store.get_json(&self.key("rules")).await?.unwrap_or_default())
     }
 
     pub async fn categorize(&self, id: &str, input: CategorizeInput) -> LResult<FeedItem> {
@@ -1047,7 +1060,7 @@ impl Ledger {
                 let mut rules = self.rules().await?;
                 rules.retain(|r| r.keyword != keyword);
                 rules.push(BankRule { keyword, account_id: input.account_id, tax_code: input.tax_code.unwrap_or("NONE".into()), contact_id: input.contact_id });
-                self.store.set_json("gl:rules", &rules).await?;
+                self.store.set_json(&self.key("rules"), &rules).await?;
             }
         }
         Ok(item)

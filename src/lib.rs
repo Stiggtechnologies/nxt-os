@@ -64,6 +64,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
     let agent = agent::Claude::from_env().map(|m| agent::Agent::new(journeys.clone(), Arc::new(m)).with_backup(backup));
     Router::new()
         .merge(ledger::routes::router(ledger.clone()))
+        .merge(ledger::routes::company_router(ledger.store.clone()))
         .merge(firm::router(firm.clone()))
         .merge(tax::router(tax.clone()))
         .merge(engagement::router(engagements.clone()))

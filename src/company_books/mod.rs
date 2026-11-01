@@ -96,7 +96,7 @@ fn hash(bytes: &[u8]) -> String {
 fn encoded<T: Serialize>(v: &T) -> Result<String> {
     serde_json::to_string(v).map_err(|_| bad("Object cannot be encoded"))
 }
-fn valid_id(s: &str) -> bool {
+pub(crate) fn valid_id(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 96
         && s.bytes()

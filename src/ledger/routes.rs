@@ -1,16 +1,20 @@
 use super::engine::*;
 use super::models::*;
+use crate::firm::staff::Identity;
 use crate::referral::routes::{ApiError, require_admin};
+use crate::store::Store;
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
-    http::StatusCode,
+    extract::{Path, Query, Request, State},
+    http::{HeaderValue, StatusCode, Uri, header},
     middleware,
-    routing::{get, post},
+    response::{IntoResponse, Response},
+    routing::{any, get, post},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
+use tower::ServiceExt;
 
 type S = State<Arc<Ledger>>;
 type R = Result<Json<Value>, ApiError>;
@@ -49,6 +53,102 @@ impl Range {
 }
 
 pub fn router(st: Arc<Ledger>) -> Router {
+    routes(st).layer(middleware::from_fn(require_admin))
+}
+
+/// Each client's own book, served by the same handlers at
+/// `/api/company-ledger/{company}/...`. `POST .../open` creates a book; every
+/// other route answers 404 until then, so a mistyped id cannot start one.
+pub fn company_router(store: Store) -> Router {
+    Router::new()
+        .route("/api/company-ledger/{company}/{*rest}", any(company_book))
+        .layer(middleware::from_fn(client_scope))
+        .layer(middleware::from_fn(require_admin))
+        .layer(middleware::map_response(|mut r: Response| async move {
+            r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
+            r
+        }))
+        .with_state(Arc::new(store))
+}
+
+async fn client_scope(req: Request, next: middleware::Next) -> Response {
+    crate::firm::staff::scope_guard(req, next, COMPANY_BASE, &[], |c| async move { Some(c) }).await
+}
+
+const COMPANY_BASE: &str = "/api/company-ledger";
+
+fn opened_key(company: &str) -> String {
+    format!("company-ledger:{company}:opened")
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OpenBook {
+    name: String,
+    #[serde(default)]
+    province: Option<String>,
+}
+
+async fn open_book(store: &Arc<Store>, company: &str, req: Request) -> R {
+    let bytes = axum::body::to_bytes(req.into_body(), 64 * 1024)
+        .await
+        .map_err(|_| ApiError(StatusCode::PAYLOAD_TOO_LARGE, "request body too large".into()))?;
+    let input: OpenBook = serde_json::from_slice(&bytes).map_err(|_| ApiError(StatusCode::BAD_REQUEST, "a book needs a company name".into()))?;
+    let name = input.name.trim();
+    if name.is_empty() || name.len() > 300 {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "a book needs a company name".into()));
+    }
+    let storage = |e: String| ApiError::from(LedgerError::Storage(e));
+    let ledger = Ledger::for_company((**store).clone(), company);
+    // The first request settles the book's identity; a retry changes nothing.
+    if store.get(&opened_key(company)).await.map_err(storage)?.is_some() {
+        return Ok(Json(json!({"company_id": company, "company": ledger.company().await?, "already_open": true})));
+    }
+    let defaults = Company::default();
+    let book = Company { name: name.into(), province: input.province.unwrap_or(defaults.province.clone()), ..defaults };
+    ledger.save_company(&book).await?;
+    ledger.audit("book.opened", name.into()).await?;
+    store.set_nx(&opened_key(company), "1").await.map_err(storage)?;
+    Ok(Json(json!({"company_id": company, "company": book, "already_open": false})))
+}
+
+async fn company_book(State(store): State<Arc<Store>>, mut req: Request) -> Response {
+    // Read the raw path: this is the same text the client scope guard checked.
+    let path = req.uri().path().to_string();
+    let Some((company, rest)) = path.strip_prefix(COMPANY_BASE).and_then(|p| p.strip_prefix('/')).and_then(|p| p.split_once('/')) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !crate::company_books::valid_id(company) {
+        return ApiError(StatusCode::BAD_REQUEST, "Invalid company id".into()).into_response();
+    }
+    if rest == "open" && req.method() == axum::http::Method::POST {
+        return open_book(&store, company, req).await.into_response();
+    }
+    match store.get(&opened_key(company)).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return ApiError(StatusCode::NOT_FOUND, "this company has no ledger yet".into()).into_response(),
+        Err(e) => return ApiError::from(LedgerError::Storage(e)).into_response(),
+    }
+    let target = match req.uri().query() {
+        Some(q) => format!("/api/ledger/{rest}?{q}"),
+        None => format!("/api/ledger/{rest}"),
+    };
+    let Ok(uri) = target.parse::<Uri>() else { return StatusCode::BAD_REQUEST.into_response() };
+    *req.uri_mut() = uri;
+    // Keep only the verified identity: the outer route's path parameters would otherwise reach the inner handlers.
+    let identity = req.extensions().get::<Identity>().cloned();
+    *req.extensions_mut() = Default::default();
+    if let Some(identity) = identity {
+        req.extensions_mut().insert(identity);
+    }
+    let ledger = Arc::new(Ledger::for_company((*store).clone(), company));
+    match routes(ledger).oneshot(req).await {
+        Ok(response) => response,
+        Err(never) => match never {},
+    }
+}
+
+fn routes(st: Arc<Ledger>) -> Router {
     Router::new()
         .route("/api/ledger/meta", get(meta))
         .route("/api/ledger/company", get(company).put(save_company))
@@ -77,7 +177,6 @@ pub fn router(st: Arc<Ledger>) -> Router {
         .route("/api/ledger/reconcile", get(reconciliations).post(reconcile))
         .route("/api/ledger/reports/{name}", get(report))
         .route("/api/ledger/audit", get(audit))
-        .layer(middleware::from_fn(require_admin))
         .with_state(st)
 }
 
