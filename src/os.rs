@@ -62,6 +62,7 @@ async fn status(State(os): State<Os>) -> Json<Value> {
             { "id": "migrations", "name": "Parallel testing", "path": "/apps/migrations/" },
             { "id": "signatures", "name": "Prepare signatures", "path": "/apps/signatures/" },
             { "id": "referrals", "name": "NXT Referrals", "path": "/apps/referrals/" },
+            { "id": "guardvoice", "name": "GuardVoice", "path": "/apps/guardvoice/" },
             { "id": "nixon", "name": "Nixon", "path": "/apps/nixon/" },
         ],
     }))
@@ -152,11 +153,11 @@ async fn insights(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
 // ---- assistant ----------------------------------------------------------------
 
 const SYSTEM_PROMPT: &str = "You are NXT, the assistant built into NXT OS: an operating system for running a Canadian business. \
-Seven apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports), \
+Eight apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports), \
 Firm Operations (projects, templates, automated internal work, human approvals, reports and books close), \
 NXT Tax (independent scoped T1, T2, T3 and T5013 workpapers), NXT Engagements (working papers and internal review), \
 Parallel testing (read-only source snapshots), Prepare signatures (internal agreement preparation), \
-and NXT Referrals (customer referral and loyalty programs). Nixon is the read-only finance review over the ledger.
+NXT Referrals (customer referral and loyalty programs), and GuardVoice (the phone line: call activity, handoffs, and approvals). Nixon is the read-only finance review over the ledger.
 
 How you work:
 - Answer from the user's live data. Use the tools to look things up; never estimate or invent figures.
@@ -431,8 +432,8 @@ async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) 
         }
         "open_app" => {
             let app = s(input, "app").ok_or("app is required")?;
-            if !["ledger","firm","tax","engagements","migrations","signatures","referrals","nixon"].contains(&app.as_str()) {
-                return Err("app must be ledger, firm, tax, engagements, migrations, signatures, referrals, or nixon".into());
+            if !["ledger","firm","tax","engagements","migrations","signatures","referrals","nixon","guardvoice"].contains(&app.as_str()) {
+                return Err("app must be ledger, firm, tax, engagements, migrations, signatures, referrals, nixon, or guardvoice".into());
             }
             actions.push(json!({ "type": "open_app", "app": app, "view": s(input, "view") }));
             Ok(json!({ "opened": true }))

@@ -11,6 +11,7 @@ An AI-native operating system for running a Canadian business. One Rust function
 | **NXT Ledger** (`/apps/ledger/`) | Double-entry accounting: chart of accounts, journal entries, invoices and bills with per-line GST/HST, payments (auto-applied to the oldest open documents), expenses, deposits, transfers, GST/HST remittances, bank CSV import with learned categorization rules, reconciliation, period close, audit log. |
 | **NXT Referrals** (`/apps/referrals/`) | Referral and loyalty programs: advocate links, friend incentives, attribution, fraud checks, points, signed webhooks, an embeddable widget (`/widget.js`) and a friend landing page (`/welcome.html`). |
 | **Nixon** (`/apps/nixon/`) | Read-only finance review over the ledger, bank feed, and trial balance. Findings carry evidence and hypotheses. A named person can approve or reject; Nixon does not post journals or file taxes. |
+| **GuardVoice** (`/apps/guardvoice/`) | The phone line, built and tested in simulation. Its public routes stay closed until deliberately enabled with verified Twilio signatures. Callers can leave messages and request actions, but cannot hear firm data, and a person approves every change. See [docs/GUARDVOICE.md](docs/GUARDVOICE.md). |
 
 Ledger reports: profit and loss, balance sheet (with retained earnings roll-forward by fiscal year), trial balance, AR and AP aging, a GST/HST return working paper (CRA lines 101/105/108/109) and the general ledger. Each one prints and exports to CSV.
 
