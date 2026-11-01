@@ -6,8 +6,10 @@
 //!
 //! Every step defaults to `review`. Steps the profession or the client
 //! relationship reserve for people are locked to `human` and cannot be loosened:
-//! the journey's human gates (engagement letter, filing authorization, e-file)
-//! plus anything that prices work or moves money. `NXT_AUTONOMY` (JSON, e.g.
+//! the journey's human gates (engagement letter, filing authorization, e-file),
+//! anything that prices work or moves money, anything whose gate names a human
+//! review or a client decision, and the close steps NXT cannot fully prove until
+//! it holds bank reconciliation. `NXT_AUTONOMY` (JSON, e.g.
 //! `{"books_access":"auto"}`) overrides the rest; invalid entries are reported.
 
 use super::{Gate, JourneyDef};
@@ -23,8 +25,16 @@ pub enum Autonomy {
     Human,
 }
 
-/// Auto-gated steps that still need a person: they price work or move money.
-pub const LOCKED_HUMAN: [&str; 3] = ["proposal", "invoicing", "payment"];
+/// Auto-gated steps that still need a person.
+pub const LOCKED_HUMAN: [&str; 12] = [
+    // Price work or move money.
+    "proposal", "invoicing", "payment",
+    // The gate names a human review or a client decision.
+    "books_health_check", "health_check_review", "monthly_report", "year_end_statements",
+    "year_end_review", "tax_preparation", "annual_review",
+    // The ledger proves part of the gate; a person attests the reconciliation.
+    "catch_up_cleanup", "monthly_close",
+];
 
 #[derive(Debug, Clone)]
 pub struct Policy {
@@ -84,5 +94,16 @@ mod tests {
         assert_eq!(p.mode("engagement_letter"), Autonomy::Human);
         assert_eq!(p.mode("payment"), Autonomy::Human);
         assert_eq!(p.rejected.len(), 3);
+    }
+
+    #[test]
+    fn every_step_with_a_human_decision_is_locked() {
+        let def = JourneyDef::load().unwrap();
+        for key in LOCKED_HUMAN {
+            assert!(def.step(key).is_some(), "{key} is not a journey step");
+            let p = Policy::new(&def, Some(&format!(r#"{{"{key}":"auto"}}"#)));
+            assert_eq!(p.mode(key), Autonomy::Human, "{key}");
+            assert_eq!(p.rejected.len(), 1, "{key}");
+        }
     }
 }
