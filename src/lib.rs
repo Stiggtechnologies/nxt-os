@@ -72,6 +72,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
             migrations: migrations.clone(),
             company_books: company_books.clone(),
             referrals: referrals.clone(),
+            journeys: journeys.clone(),
         }))
         .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
