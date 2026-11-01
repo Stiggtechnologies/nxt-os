@@ -52,5 +52,6 @@ async fn scoped_staff_reach_only_their_clients_source_records() {
     assert_eq!(call(&r, "GET", &format!("{files}/test-copy/summary"), &tok, None).await.0, 403);
     assert_eq!(call(&r, "POST", &format!("{files}/clients"), &tok, Some(json!({"client_id":"client-a","dtmax_keys":["X"]}))).await.0, 403);
     assert_eq!(call(&r, "GET", &format!("/api/source-imports/dtmax/batches/{}", "a".repeat(16)), &tok, None).await.0, 403);
+    assert_eq!(call(&r, "GET", &format!("{files}/test-copy/clients"), &tok, None).await.0, 403);
     ok(&r, "GET", &format!("{files}/test-copy/summary"), "k", None).await;
 }

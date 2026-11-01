@@ -122,3 +122,23 @@ async fn replace_if_newer_keeps_history_and_unsubscribed_flag() {
     let (_, sum) = call(&r, "GET", &format!("{BASE}/summary"), None).await;
     assert_eq!((sum["returns"].as_u64(), sum["returns_replaced_with_history"].as_u64(), sum["clients_unsubscribed"].as_u64()), (Some(1), Some(1), Some(1)), "{sum}");
 }
+
+#[tokio::test]
+async fn client_page_shows_loaded_clients_in_number_order_and_refuses_hosted_stores() {
+    let r = router();
+    let rows = json!([{"client_number": "1000", "name": "Test Person C"}, {"client_number": "99", "name": "Test Person D", "city": "Testville"}]);
+    assert_eq!(call(&r, "POST", &format!("{BASE}/clients"), Some(json!({"test_copy": true, "clients": rows}))).await.0, 200);
+    assert_eq!(call(&r, "POST", &format!("{BASE}/returns"), Some(json!({"test_copy": true, "returns": [ret("99", 2024)]}))).await.0, 200);
+
+    let (s, b) = call(&r, "GET", &format!("{BASE}/clients?offset=0&limit=1"), None).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["total"], 2);
+    assert_eq!(b["clients"][0]["name"], "Test Person D");
+    assert_eq!(b["clients"][0]["return_years"], json!([2024]));
+    assert_eq!(call(&r, "GET", &format!("{BASE}/clients?limit=101"), None).await.0, 400);
+
+    let hosted = nxt_os::source_import::SourceImport::new(Store::Unavailable { reason: "synthetic hosted store".into() });
+    let refused = hosted.test_copy_client_page("test-co", 0, 10).await.err().unwrap();
+    assert_eq!(refused.0.as_u16(), 409);
+    assert!(refused.1.starts_with("test_copy_only"));
+}
