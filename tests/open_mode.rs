@@ -39,6 +39,7 @@ async fn missing_workspace_key_fails_closed_across_modules() {
             migrations: Arc::new(nxt_os::migrations::Migrations::new(Store::memory())),
             company_books: Arc::new(nxt_os::company_books::CompanyBooks::new(Store::memory())),
             referrals: referrals.clone(),
+            journeys: Arc::new(nxt_os::client_journey::service::Journeys::new(Store::memory(), nxt_os::client_journey::capability::Capabilities::new())),
         }))
         .merge(nxt_os::os::router(nxt_os::os::Os {
             ledger: ledger.clone(), referrals: referrals.clone(), firm: firm.clone(), tax: tax.clone(), engagements: engagements.clone(),
