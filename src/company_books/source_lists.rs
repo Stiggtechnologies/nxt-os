@@ -664,6 +664,7 @@ pub fn router(state: Arc<SourceLists>) -> Router {
             get(other_rows),
         )
         .layer(DefaultBodyLimit::max(600 * 1024))
+        .layer(middleware::from_fn(client_scope))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|mut r: Response| async move {
             r.headers_mut().insert(
@@ -677,6 +678,10 @@ pub fn router(state: Arc<SourceLists>) -> Router {
             r
         }))
         .with_state(state)
+}
+/// Client scoping: the company id is the client label, as on the company book routes.
+async fn client_scope(req: axum::extract::Request, next: middleware::Next) -> Response {
+    crate::firm::staff::scope_guard(req, next, "/api/company-books", &[], |c| async move { Some(c) }).await
 }
 async fn index(State(s): State<Arc<SourceLists>>, Path(c): Path<String>) -> Result<Json<Value>> {
     Ok(Json(s.list(&c).await?))

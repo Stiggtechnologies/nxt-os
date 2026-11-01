@@ -55,6 +55,7 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/t5008", post(test_copy_slips))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/summary", get(test_copy_summary))
         .layer(axum::extract::DefaultBodyLimit::max(super::files::MAX_FILE_BYTES * 2 + 64 * 1024))
+        .layer(middleware::from_fn(client_scope))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
         .layer(middleware::map_response(|mut response: Response| async move {
             response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
@@ -62,6 +63,22 @@ pub fn router(state: Arc<SourceImport>) -> Router {
             response
         }))
         .with_state(state)
+}
+
+/// Client scoping: only `.../clients/{client}/files` names a client, and the coverage catalog
+/// holds no client data. Batches, unmatched files and the test copy are firm-wide.
+async fn client_scope(req: axum::extract::Request, next: middleware::Next) -> Response {
+    let Some(id) = crate::firm::staff::scoped(&req) else { return next.run(req).await };
+    let path = req.uri().path();
+    if path == "/api/source-imports/coverage" { return next.run(req).await; }
+    let client = path.strip_prefix("/api/source-imports/dtmax/companies/")
+        .and_then(|rest| rest.split_once("/clients/"))
+        .and_then(|(_, rest)| rest.strip_suffix("/files"));
+    match client {
+        Some(c) if id.can_client(c) => next.run(req).await,
+        Some(_) => (axum::http::StatusCode::FORBIDDEN, Json(json!({"error": "you are not assigned to this client"}))).into_response(),
+        None => crate::firm::staff::firm_wide_only(req, next).await,
+    }
 }
 
 async fn coverage() -> Json<Value> {
