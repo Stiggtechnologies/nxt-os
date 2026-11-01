@@ -52,7 +52,8 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
             source_import: source_import.clone(),
         }));
     let journeys = Arc::new(client_journey::service::Journeys::new(journey_store, capabilities));
-    let agent = agent::Claude::from_env().map(|m| agent::Agent::new(journeys.clone(), Arc::new(m)));
+    let backup = agent::openai::OpenAi::from_env().map(|m| Arc::new(m) as Arc<dyn agent::Model>);
+    let agent = agent::Claude::from_env().map(|m| agent::Agent::new(journeys.clone(), Arc::new(m)).with_backup(backup));
     Router::new()
         .merge(ledger::routes::router(ledger.clone()))
         .merge(firm::router(firm.clone()))

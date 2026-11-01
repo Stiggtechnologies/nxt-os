@@ -6,6 +6,12 @@
 //! logged on the journey as evidence. The agent never moves the journey: after
 //! it stops, the journey re-assesses the step and the autonomy policy decides
 //! who closes it (evidence, Nixon review, or a person).
+//!
+//! An optional backup model covers Claude outages only. On an outage the step
+//! starts over on the backup; refusals and configuration errors never fail
+//! over. See `openai` for the switches, which are off by default.
+
+pub mod openai;
 
 use crate::client_journey::capability::{BoxFut, Capability};
 use crate::client_journey::service::{AgentAction, Journeys, WorkItem};
@@ -26,9 +32,30 @@ NXT cannot import yet, anything ambiguous), call escalate_to_human with a one-se
 stop. You cannot approve, send, charge or file anything. Finish with a short plain summary of what \
 you did and what is still blocked.";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelError {
+    /// The provider is unreachable or overloaded; a backup may take over.
+    Outage(String),
+    /// Anything else (bad key, bad request): client data stays with the primary.
+    Other(String),
+}
+
+impl ModelError {
+    fn message(self) -> String {
+        match self {
+            Self::Outage(m) | Self::Other(m) => m,
+        }
+    }
+}
+
+/// True for statuses that mean the provider is overloaded or down.
+pub fn outage_status(status: StatusCode) -> bool {
+    status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
 /// A model that answers one Messages API request.
 pub trait Model: Send + Sync {
-    fn respond<'a>(&'a self, system: &'a str, tools: &'a [Value], messages: &'a [Value]) -> BoxFut<'a, Result<Value, String>>;
+    fn respond<'a>(&'a self, system: &'a str, tools: &'a [Value], messages: &'a [Value]) -> BoxFut<'a, Result<Value, ModelError>>;
 }
 
 /// The Claude Messages API, configured like Ask NXT.
@@ -44,7 +71,7 @@ impl Claude {
 }
 
 impl Model for Claude {
-    fn respond<'a>(&'a self, system: &'a str, tools: &'a [Value], messages: &'a [Value]) -> BoxFut<'a, Result<Value, String>> {
+    fn respond<'a>(&'a self, system: &'a str, tools: &'a [Value], messages: &'a [Value]) -> BoxFut<'a, Result<Value, ModelError>> {
         Box::pin(async move {
             let body = json!({
                 "model": crate::os::model(),
@@ -62,11 +89,16 @@ impl Model for Claude {
                 .header("anthropic-beta", "server-side-fallback-2026-07-01")
                 .json(&body)
                 .send().await
-                .map_err(|e| format!("couldn't reach the Claude API: {e}"))?;
+                .map_err(|e| ModelError::Outage(format!("couldn't reach the Claude API: {e}")))?;
             let status = resp.status();
-            let v: Value = resp.json().await.map_err(|e| format!("invalid Claude API response: {e}"))?;
+            let v: Value = match resp.json().await {
+                Ok(v) => v,
+                Err(e) if outage_status(status) => return Err(ModelError::Outage(format!("Claude API error ({status}): {e}"))),
+                Err(e) => return Err(ModelError::Other(format!("invalid Claude API response: {e}"))),
+            };
             if !status.is_success() {
-                return Err(format!("Claude API error ({status}): {}", v["error"]["message"].as_str().unwrap_or("unknown error")));
+                let msg = format!("Claude API error ({status}): {}", v["error"]["message"].as_str().unwrap_or("unknown error"));
+                return Err(if outage_status(status) { ModelError::Outage(msg) } else { ModelError::Other(msg) });
             }
             Ok(v)
         })
@@ -76,6 +108,7 @@ impl Model for Claude {
 pub struct Agent {
     journeys: Arc<Journeys>,
     model: Arc<dyn Model>,
+    backup: Option<Arc<dyn Model>>,
 }
 
 fn tools(cap: &dyn Capability, step: &str) -> Vec<Value> {
@@ -112,7 +145,12 @@ fn clip(v: &Value) -> String {
 
 impl Agent {
     pub fn new(journeys: Arc<Journeys>, model: Arc<dyn Model>) -> Self {
-        Self { journeys, model }
+        Self { journeys, model, backup: None }
+    }
+
+    pub fn with_backup(mut self, backup: Option<Arc<dyn Model>>) -> Self {
+        self.backup = backup;
+        self
     }
 
     /// Advances the journey, works the current step if a capability can, then advances again.
@@ -124,12 +162,37 @@ impl Agent {
         };
         let cap = item.capability.clone();
         let tools = tools(cap.as_ref(), &item.step.key);
-        let mut messages = vec![json!({"role": "user", "content": brief(&item)})];
+        let start = vec![json!({"role": "user", "content": brief(&item)})];
+        let mut messages = start.clone();
+        let mut model = &self.model;
+        let mut model_used = "primary";
         let mut log: Vec<AgentAction> = Vec::new();
         let mut summary = String::new();
         let mut escalated = None;
-        'rounds: for _ in 0..MAX_ROUNDS {
-            let resp = self.model.respond(SYSTEM_PROMPT, &tools, &messages).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e))?;
+        let mut rounds = 0;
+        'rounds: while rounds < MAX_ROUNDS {
+            rounds += 1;
+            let resp = match model.respond(SYSTEM_PROMPT, &tools, &messages).await {
+                Ok(resp) => resp,
+                Err(ModelError::Outage(reason)) if model_used == "primary" && self.backup.is_some() => {
+                    log.push(AgentAction {
+                        at: chrono::Utc::now().to_rfc3339(), step: item.step.key.clone(), tool: "model_failover".into(),
+                        input: json!({}), ok: true, result: json!({"from": "primary", "to": "backup", "reason": reason}),
+                    });
+                    if let Some(backup) = self.backup.as_ref() {
+                        model = backup;
+                    }
+                    model_used = "backup";
+                    messages = start.clone();
+                    rounds = 0;
+                    continue;
+                }
+                Err(e) => {
+                    // Work already done stays on the record as evidence.
+                    self.journeys.log_actions(client, &log).await?;
+                    return Err(ApiError(StatusCode::BAD_GATEWAY, e.message()));
+                }
+            };
             let content = resp["content"].as_array().cloned().unwrap_or_default();
             let stop = resp["stop_reason"].as_str().unwrap_or("");
             summary = content.iter().filter(|c| c["type"] == "text").filter_map(|c| c["text"].as_str()).collect::<Vec<_>>().join("\n\n");
@@ -164,6 +227,6 @@ impl Agent {
             self.journeys.escalate(client, &item.step.key, reason).await?;
         }
         let journey = self.journeys.advance(client).await?;
-        Ok(json!({"worked": true, "step": item.step.key, "actions": log, "escalated": escalated, "summary": summary, "journey": journey}))
+        Ok(json!({"worked": true, "step": item.step.key, "model_used": model_used, "actions": log, "escalated": escalated, "summary": summary, "journey": journey}))
     }
 }
