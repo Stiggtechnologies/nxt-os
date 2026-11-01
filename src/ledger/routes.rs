@@ -77,8 +77,23 @@ async fn client_scope(req: Request, next: middleware::Next) -> Response {
 
 const COMPANY_BASE: &str = "/api/company-ledger";
 
+const OPENED: &str = "company-ledger:index";
+
 fn opened_key(company: &str) -> String {
     format!("company-ledger:{company}:opened")
+}
+
+/// Whether this client has a ledger book of its own.
+pub async fn company_book_open(store: &Store, company: &str) -> Result<bool, String> {
+    if !crate::company_books::valid_id(company) {
+        return Ok(false);
+    }
+    Ok(store.get(&opened_key(company)).await?.is_some())
+}
+
+/// Every client with an open ledger book.
+pub async fn opened_company_books(store: &Store) -> Result<Vec<String>, String> {
+    store.smembers(OPENED).await
 }
 
 #[derive(Deserialize)]
@@ -102,6 +117,7 @@ async fn open_book(store: &Arc<Store>, company: &str, req: Request) -> R {
     let ledger = Ledger::for_company((**store).clone(), company);
     // The first request settles the book's identity; a retry changes nothing.
     if store.get(&opened_key(company)).await.map_err(storage)?.is_some() {
+        store.sadd(OPENED, company).await.map_err(storage)?;
         return Ok(Json(json!({"company_id": company, "company": ledger.company().await?, "already_open": true})));
     }
     let defaults = Company::default();
@@ -109,6 +125,7 @@ async fn open_book(store: &Arc<Store>, company: &str, req: Request) -> R {
     ledger.save_company(&book).await?;
     ledger.audit("book.opened", name.into()).await?;
     store.set_nx(&opened_key(company), "1").await.map_err(storage)?;
+    store.sadd(OPENED, company).await.map_err(storage)?;
     Ok(Json(json!({"company_id": company, "company": book, "already_open": false})))
 }
 
