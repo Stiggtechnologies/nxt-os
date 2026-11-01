@@ -38,12 +38,19 @@ pub(crate) fn api_key() -> Option<String> {
     std::env::var("ANTHROPIC_API_KEY").ok().filter(|k| !k.is_empty())
 }
 
+/// The status check runs at sign-in for everyone. Insights and the assistant read firm-wide data.
+async fn client_scope(req: axum::extract::Request, next: middleware::Next) -> axum::response::Response {
+    if req.uri().path() == "/api/os/status" { return next.run(req).await; }
+    crate::firm::staff::firm_wide_only(req, next).await
+}
+
 pub fn router(os: Os) -> Router {
     Router::new()
         .route("/api/os/status", get(status))
         .route("/api/os/insights", get(insights))
         .route("/api/os/ask", post(ask))
         .route("/api/os/sample-data", post(sample_data))
+        .layer(middleware::from_fn(client_scope))
         .layer(middleware::from_fn(require_admin))
         .with_state(os)
 }

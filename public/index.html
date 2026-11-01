@@ -103,11 +103,31 @@
   <div class="box">
     <span class="nxt-mark" id="markSignin"></span>
     <h1>Run what's next.</h1>
-    <p>NXT OS brings firm operations, accounting, tax, engagement workpapers, referrals and an AI operator into one workspace. Sign in with your workspace key.</p>
-    <form id="signinForm" class="row">
-      <input id="key" type="password" placeholder="Workspace key" autocomplete="current-password" style="flex:1" required aria-label="Workspace key">
+    <p>NXT OS brings firm operations, accounting, tax, engagement workpapers, referrals and an AI operator into one workspace. Sign in with your staff account.</p>
+    <form id="staffForm" style="display:grid;gap:8px">
+      <input id="staffUser" placeholder="Username" autocomplete="username" required aria-label="Username">
+      <input id="staffPass" type="password" placeholder="Password" autocomplete="current-password" required aria-label="Password">
+      <input id="staffCode" inputmode="numeric" placeholder="6-digit code, once MFA is set up" autocomplete="one-time-code" aria-label="Authenticator code">
       <button class="btn primary">Sign in</button>
     </form>
+    <form id="enrollForm" style="display:grid;gap:8px" hidden>
+      <p>Add this key to your authenticator app, then enter the code it shows.</p>
+      <code id="enrollSecret" style="word-break:break-all"></code>
+      <input id="enrollCode" inputmode="numeric" placeholder="6-digit code" autocomplete="one-time-code" required aria-label="Authenticator code">
+      <button class="btn primary">Confirm</button>
+    </form>
+    <form id="passwordForm" style="display:grid;gap:8px" hidden>
+      <p>Choose your own password to replace the temporary one.</p>
+      <input id="newPass" type="password" placeholder="New password" autocomplete="new-password" required aria-label="New password">
+      <button class="btn primary">Save password</button>
+    </form>
+    <details id="keySignin" style="margin-top:14px">
+      <summary>Use the workspace key</summary>
+      <form id="signinForm" class="row" style="margin-top:8px">
+        <input id="key" type="password" placeholder="Workspace key" autocomplete="off" style="flex:1" required aria-label="Workspace key">
+        <button class="btn">Sign in</button>
+      </form>
+    </details>
     <div class="err-text" id="signinErr" style="margin-top:10px"></div>
   </div>
 </div>
@@ -200,6 +220,7 @@
 </aside>
 
 <script src="/nxt/ui.js"></script>
+<script src="/nxt/staff-signin.js"></script>
 <script>
 const { api, esc, money, moneyShort, toast } = NXT;
 const $ = (s) => document.querySelector(s);
@@ -324,7 +345,7 @@ async function boot() {
   // A missing server key is a configuration error; protected APIs stay closed.
   try { status = await api("/api/os/status"); }
   catch (e) {
-    if (e.status === 401 && NXT.key.get()) $("#signinErr").textContent = "That key didn't work.";
+    if (e.status === 401 && NXT.key.get()) $("#signinErr").textContent = "That sign-in didn't work.";
     else if (e.status !== 401) $("#signinErr").textContent = e.message;
     NXT.key.clear(); $("#signin").hidden = false; $("#os").hidden = true; return;
   }
@@ -333,6 +354,36 @@ async function boot() {
   route();
 }
 function signOut() { NXT.key.clear(); $("#frame").removeAttribute("src"); $("#frame").dataset.src = ""; closeDrawer(); boot(); }
+let staffPassword = "";
+function staffForm(id) { for (const f of ["staffForm", "enrollForm", "passwordForm"]) $("#" + f).hidden = f !== id; $("#keySignin").hidden = id !== "staffForm"; }
+function staffFail(e) { $("#signinErr").textContent = e.message; }
+async function staffStep(step) {
+  $("#signinErr").textContent = "";
+  if (step === "enroll") { const r = await api("/api/staff/mfa/enroll", { body: {} }); $("#enrollSecret").textContent = r.secret; staffForm("enrollForm"); return; }
+  if (step === "password") { staffForm("passwordForm"); return; }
+  staffPassword = ""; staffForm("staffForm"); boot();
+}
+$("#staffForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const username = $("#staffUser").value.trim(), password = $("#staffPass").value, totp = $("#staffCode").value.trim();
+  try {
+    NXT.key.clear();
+    const r = await api("/api/staff/login", { body: { username, password, ...(totp ? { totp } : {}) } });
+    NXT.key.set(r.token); staffPassword = password; window.staffMustChange = r.must_change_password;
+    $("#staffPass").value = ""; $("#staffCode").value = "";
+    await staffStep(NXTStaffSignin.next(r));
+  } catch (err) { staffFail(err); }
+};
+$("#enrollForm").onsubmit = async (e) => {
+  e.preventDefault();
+  try { await api("/api/staff/mfa/confirm", { body: { code: $("#enrollCode").value.trim() } }); $("#enrollCode").value = ""; await staffStep(window.staffMustChange ? "password" : "done"); }
+  catch (err) { staffFail(err); }
+};
+$("#passwordForm").onsubmit = async (e) => {
+  e.preventDefault();
+  try { await api("/api/staff/me/password", { body: { current_password: staffPassword, new_password: $("#newPass").value } }); $("#newPass").value = ""; await staffStep("done"); }
+  catch (err) { staffFail(err); }
+};
 $("#signinForm").onsubmit = (e) => { e.preventDefault(); NXT.key.set($("#key").value.trim()); $("#key").value = ""; boot(); };
 $("#signOut").onclick = signOut;
 
