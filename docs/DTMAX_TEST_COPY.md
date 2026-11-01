@@ -1,6 +1,6 @@
 # DT Max real-client load: local test copy only
 
-Orville approved loading real DT Max clients into the **NXT OS test copy** (2026-10-29). Production stays blocked.
+Orville approved loading real DT Max clients into the **NXT OS test copy** (2026-10-29). Production stays blocked until the owner sets `NXT_DTMAX_HOSTED=on`.
 
 ## Guard
 
@@ -44,3 +44,7 @@ Loader: `--t5008 <dir>` (repeatable) reads `<client#>-<LAST_First>-<yyyymmdd>-T5
 - `POST .../returns` accepts `replace_if_newer: true` (test copy only). A conflicting return replaces the stored one only when its `last_saved_epoch` is strictly newer; the prior body is kept in `return_history:{client}:{year}`. Older or undated conflicts are rejected as `conflicting_return_not_newer`. Default stays refuse.
 - Clients accept `unsubscribed: true` (stored as a flag); the summary reports `clients_unsubscribed` and `returns_replaced_with_history`.
 - Loader: `--xlsx` is repeatable and reads every sheet (headerless Tatsiana layout supported; SIN columns are never read). `--friends` / `--unsubscribed` sheets have no client number, so rows only tag existing clients matched by unique email or name; unmatched/ambiguous rows are counted, not loaded. `--replace-if-newer` passes the flag.
+
+## Loading production
+
+Off by default. Before turning it on, the owner should confirm the retention rule for client contacts, and that only firm-wide accounts need this list. With `NXT_DTMAX_HOSTED=on`, Supabase accepts these routes. Run the loader with `--dry-run` first, then with `--origin https://os.nxtcorporation.ca --hosted` and `NXT_COMPANY_BOOKS_KEY` in the environment. SIN is still refused. Staff limited to specific clients cannot read this list.

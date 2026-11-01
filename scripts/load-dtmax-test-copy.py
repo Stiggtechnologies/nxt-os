@@ -20,6 +20,9 @@ FILE_RE = re.compile(r"^(?P<stem>[^.]+)\.P(?P<yy>\d\d)$", re.I)
 TS_RE = re.compile(rb"(1[0-9]{9})\0\0")
 
 
+PRODUCTION_ORIGIN = "https://os.nxtcorporation.ca"
+
+
 def local_origin(origin):
     host = urllib.parse.urlparse(origin).hostname or ""
     try:
@@ -295,12 +298,14 @@ def main():
     ap.add_argument("--xlsx", action="append", default=[]); ap.add_argument("--friends", action="append", default=[]); ap.add_argument("--unsubscribed", action="append", default=[]); ap.add_argument("--replace-if-newer", action="store_true"); ap.add_argument("--book1"); ap.add_argument("--book2"); ap.add_argument("--t1")
     ap.add_argument("--t5008", action="append", default=[], help="folder holding afr-prd T5008 CSVs (repeatable)")
     ap.add_argument("--skip-clients", action="store_true"); ap.add_argument("--skip-returns", action="store_true")
+    ap.add_argument("--hosted", action="store_true", help="Allow the production origin. The server must also have NXT_DTMAX_HOSTED=on; the key comes from NXT_COMPANY_BOOKS_KEY.")
     ap.add_argument("--origin", default=os.environ.get("NXT_TEST_COMPANY_BOOKS_ORIGIN") or "http://127.0.0.1:3917")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    if not local_origin(a.origin):
+    hosted = a.origin == PRODUCTION_ORIGIN and a.hosted
+    if not local_origin(a.origin) and not hosted:
         sys.exit("TEST_COPY_TARGET_MUST_BE_LOCAL")
-    token = os.environ.get("NXT_TEST_COMPANY_BOOKS_KEY", "")
+    token = os.environ.get("NXT_COMPANY_BOOKS_KEY" if hosted else "NXT_TEST_COMPANY_BOOKS_KEY", "")
     if not a.dry_run and not token:
         sys.exit("NXT_TEST_COMPANY_BOOKS_KEY is required")
     stats = collections.defaultdict(int)

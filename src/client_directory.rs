@@ -49,8 +49,13 @@ impl Rows {
 
 /// Records the firm has that are not client-linked in this deployment, and why.
 fn not_loaded() -> Value {
+    let dtmax = if crate::source_import::test_copy::hosted_switch_on() {
+        "Kept in its own list under DT Max clients. It is not joined to these rows, because DT Max client numbers are not company ids."
+    } else {
+        "Loads only into a local test copy. Hosted storage refuses it until the owner sets NXT_DTMAX_HOSTED=on."
+    };
     json!([
-        {"record": "DT Max client list and contacts", "reason": "Loads only into a local test copy. Hosted storage refuses it until the owner approves a production path."},
+        {"record": "DT Max client list and contacts", "reason": dtmax},
         {"record": "DT Max return content", "reason": "The return files are vendor-encoded. NXT holds a per-year file index at most, and needs a DT Max export for content."},
         {"record": "QuickBooks customers, suppliers, invoices and bills", "reason": "The journal import does not include them. They need typed source exports."},
         {"record": "Caseware, WebTax, DocuSign and payroll client records", "reason": "No client-level importer yet. These lanes are preservation only."}
