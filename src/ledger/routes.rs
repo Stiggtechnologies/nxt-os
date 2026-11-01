@@ -117,6 +117,7 @@ async fn open_book(store: &Arc<Store>, company: &str, req: Request) -> R {
     let ledger = Ledger::for_company((**store).clone(), company);
     // The first request settles the book's identity; a retry changes nothing.
     if store.get(&opened_key(company)).await.map_err(storage)?.is_some() {
+        store.sadd(OPENED, company).await.map_err(storage)?;
         return Ok(Json(json!({"company_id": company, "company": ledger.company().await?, "already_open": true})));
     }
     let defaults = Company::default();
