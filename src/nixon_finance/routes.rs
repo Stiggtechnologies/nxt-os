@@ -59,14 +59,16 @@ async fn status() -> Json<Value> {
 }
 
 async fn list_clients(State(scope): S, Extension(id): Extension<Identity>) -> Result<Json<Value>, ApiError> {
-    Ok(Json(super::clients::list(&scope, |c| id.can_client(c)).await?))
+    let assigned: Vec<String> = id.clients.iter().filter(|c| c.as_str() != "*").cloned().collect();
+    Ok(Json(super::clients::list(&scope, &assigned, |c| id.can_client(c)).await?))
 }
 
 async fn client_view(State(scope): S, Extension(id): Extension<Identity>, Path(client): Path<String>) -> Result<Json<Value>, ApiError> {
     if !id.can_client(&client) {
         return Err(ApiError(StatusCode::FORBIDDEN, "you are not assigned to this client".into()));
     }
-    Ok(Json(super::clients::view(&scope, &client).await?))
+    let assigned = id.clients.iter().any(|c| c.eq_ignore_ascii_case(client.trim()));
+    Ok(Json(super::clients::view(&scope, &client, assigned).await?))
 }
 
 async fn create_review(

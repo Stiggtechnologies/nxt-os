@@ -58,3 +58,48 @@ async fn each_account_sees_only_its_clients() {
     assert_eq!(call(&r, "GET", "/api/nixon/clients/no-such-client", &tok, None).await.0, 403);
     assert_eq!(call(&r, "GET", "/api/nixon/clients/no-such-client", "k", None).await.0, 404);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn staff_see_every_assigned_client_and_its_ledger() {
+    unsafe {
+        std::env::set_var("ADMIN_API_KEY", "k");
+        std::env::set_var("NXT_STAFF_PBKDF2_ITERATIONS", "1000");
+    }
+    staff::install(Arc::new(staff::Staff::new(Store::memory())));
+    let shared = Store::memory();
+    let r = app_with(move || shared.clone());
+    let tok = preparer(&r, "assigned", json!(["client-a", "client-new"])).await;
+    for (client, amount) in [("client-a", 10000), ("client-b", 7700)] {
+        let base = format!("/api/company-ledger/{client}");
+        ok(&r, "POST", &format!("{base}/open"), "k", Some(json!({"name": format!("Synthetic {client}")}))).await;
+        let accounts = ok(&r, "GET", &format!("{base}/accounts"), "k", None).await;
+        let income = accounts.as_array().unwrap().iter().find(|a| a["kind"] == "income").unwrap()["id"].clone();
+        let customer = ok(&r, "POST", &format!("{base}/contacts"), "k", Some(json!({"kind":"customer","name":"Maple"}))).await;
+        ok(&r, "POST", &format!("{base}/invoices"), "k", Some(json!({"contact_id":customer["id"],"date":"2026-02-02","lines":[{"account_id":income,"description":"Work","qty":1.0,"rate":amount}]}))).await;
+    }
+
+    // A client with a ledger and no journey or books is listed, and so is an assigned client with nothing yet.
+    let mine = ok(&r, "GET", "/api/nixon/clients", &tok, None).await;
+    let rows = mine["clients"].as_array().unwrap();
+    let ids: Vec<&str> = rows.iter().map(|c| c["client_id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["client-a", "client-new"], "{mine}");
+    assert_eq!(rows[0]["ledger_open"], true);
+    assert_eq!(rows[1]["ledger_open"], false);
+    assert_eq!(ok(&r, "GET", "/api/nixon/clients", "k", None).await["clients"].as_array().unwrap().len(), 2);
+
+    let v = ok(&r, "GET", "/api/nixon/clients/client-a", &tok, None).await;
+    let l = &v["ledger"];
+    assert_eq!(l["name"], "Synthetic client-a");
+    assert_eq!(l["trial_balance"]["balanced"], true);
+    assert_eq!(l["recent_entries"].as_array().unwrap().len(), 1);
+    assert_eq!(l["ar_aging"]["rows"][0]["contact"], "Maple");
+    assert!(l["ar_aging"]["totals"]["total"].as_i64().unwrap() >= 10000, "{l}");
+    assert!(!v.to_string().contains("client-b"));
+
+    let new = ok(&r, "GET", "/api/nixon/clients/client-new", &tok, None).await;
+    assert!(new["ledger"].is_null());
+    assert!(new["findings"].to_string().contains("No client ledger"), "{new}");
+
+    assert_eq!(call(&r, "GET", "/api/nixon/clients/client-b", &tok, None).await.0, 403);
+    assert_eq!(call(&r, "GET", "/api/company-ledger/client-b/entries", &tok, None).await.0, 403);
+}

@@ -20,18 +20,39 @@ async function loadStatus() {
 async function loadClients() {
   const { clients } = await api("/api/nixon/clients");
   if (!clients.length) { $("#clients").innerHTML = `<p class="meta">No clients to show for this account.</p>`; return; }
-  $("#clients").innerHTML = `<table><thead><tr><th>Client</th><th>Books</th><th>Journey step</th><th>Done</th><th></th></tr></thead><tbody>${clients.map((c) => `
+  $("#clients").innerHTML = `<table><thead><tr><th>Client</th><th>Ledger</th><th>Imported books</th><th>Journey step</th><th>Done</th><th></th></tr></thead><tbody>${clients.map((c) => `
     <tr><td><button class="btn" data-client="${esc(c.client_id)}">${esc(c.client_id)}</button></td>
-    <td>${esc(c.books_stage || "none")}</td><td>${esc(c.current_step || "not started")}</td><td>${c.percent == null ? "" : esc(c.percent) + "%"}</td>
+    <td>${c.ledger_open ? "Open" : "Not opened"}</td><td>${esc(c.books_stage || "none")}</td><td>${esc(c.current_step || "not started")}</td><td>${c.percent == null ? "" : esc(c.percent) + "%"}</td>
     <td>${c.waiting_on_person ? "Waiting on a person" : ""}</td></tr>`).join("")}</tbody></table>`;
+}
+
+const dollars = (cents) => (Number(cents || 0) / 100).toLocaleString("en-CA", { style: "currency", currency: "CAD" });
+
+function amounts(rows) {
+  return `<table><thead><tr><th>Account</th><th>Debit</th><th>Credit</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.debit ? dollars(r.debit) : ""}</td><td>${r.credit ? dollars(r.credit) : ""}</td></tr>`).join("")}</tbody></table>`;
+}
+
+function ledgerView(l) {
+  if (!l) return `<p class="meta">No client ledger has been opened.</p>`;
+  const entries = l.recent_entries.map((e) => `<tr><td>${esc(e.date)}</td><td>#${esc(e.number)}</td><td>${esc(e.memo)}</td><td>${e.voided ? "Void" : ""}</td></tr>`).join("");
+  return `<h4>Ledger: ${esc(l.name)}</h4>
+    <p class="meta">As of ${esc(l.as_of)}${l.closing_date ? `. Closed through ${esc(l.closing_date)}` : ""}. Net income this fiscal year: ${dollars(l.profit_loss.net_income)}. Receivable: ${dollars(l.ar_aging.totals.total)}. Payable: ${dollars(l.ap_aging.totals.total)}.</p>
+    ${l.trial_balance.rows.length ? amounts(l.trial_balance.rows) : `<p class="meta">No activity yet.</p>`}
+    ${entries ? `<h4>Recent entries</h4><table><tbody>${entries}</tbody></table>` : ""}`;
+}
+
+function importedBooks(b) {
+  const t = b?.trial_balance;
+  if (!t) return "";
+  const rows = (t.balances || []).filter((r) => r.debit_cents !== "0" || r.credit_cents !== "0").map((r) => ({ name: r.name, debit: r.debit_cents === "0" ? 0 : r.debit_cents, credit: r.credit_cents === "0" ? 0 : r.credit_cents }));
+  return `<h4>Imported books</h4><p class="meta">${esc(t.analysis.entries)} entries. QuickBooks stays authoritative.${t.has_more ? ` First ${esc(rows.length)} of ${esc(t.total)} accounts shown.` : ""}</p>${amounts(rows)}`;
 }
 
 async function showClient(id) {
   const v = await api(`/api/nixon/clients/${encodeURIComponent(id)}`);
-  const total = v.books?.trial_balance?.analysis;
   $("#clientView").innerHTML = `<h3 style="font-size:16px">${esc(v.client_id)}</h3>
-    ${total ? `<p class="meta">Trial balance: ${esc(total.entries)} entries</p>` : ""}
-    ${v.findings.length ? `<ul>${v.findings.map((f) => `<li><b>${esc(f.severity)}</b>: ${esc(f.title)}</li>`).join("")}</ul>` : `<p class="meta">Nothing needs attention.</p>`}`;
+    ${v.findings.length ? `<ul>${v.findings.map((f) => `<li><b>${esc(f.severity)}</b>: ${esc(f.title)}</li>`).join("")}</ul>` : `<p class="meta">Nothing needs attention.</p>`}
+    ${ledgerView(v.ledger)}${importedBooks(v.books)}`;
 }
 
 $("#clients").addEventListener("click", (e) => {
