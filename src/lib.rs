@@ -4,7 +4,9 @@
 //! (`client_journey::capability`) or recorded by staff, and human gates stay human.
 
 pub mod agent;
+pub mod guardvoice;
 pub mod ledger;
+pub mod nixon;
 pub mod firm;
 pub mod nixon_finance;
 pub mod os;
@@ -24,8 +26,13 @@ use std::sync::Arc;
 use store::Store;
 
 pub fn app(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>) -> Router {
+    let voice = voice_router(ledger.clone(), referrals.clone(), guardvoice::Config::from_env(), Store::from_env());
     let firm = Arc::new(firm::Firm::new(Store::from_env(), ledger.clone()));
-    app_modules(ledger, referrals, firm)
+    app_modules(ledger, referrals, firm).merge(voice)
+}
+
+fn voice_router(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, voice: guardvoice::Config, store: Store) -> Router {
+    guardvoice::router(Arc::new(guardvoice::GuardVoice::new(ledger, referrals, store, voice)))
 }
 
 fn app_modules(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>) -> Router {
@@ -82,6 +89,11 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
 
 /// Builds the app with storage chosen per-module by `make_store`.
 pub fn app_with(make_store: impl Fn() -> Store) -> Router {
+    app_with_voice(make_store, guardvoice::Config::from_env())
+}
+
+/// Same as `app_with`, with an explicit GuardVoice config (tests, mock mode).
+pub fn app_with_voice(make_store: impl Fn() -> Store, voice: guardvoice::Config) -> Router {
     let ledger = Arc::new(ledger::engine::Ledger::new(make_store()));
     let referrals = Arc::new(referral::engine::Engine::new(make_store()));
     let firm = Arc::new(firm::Firm::new(make_store(), ledger.clone()));
@@ -92,5 +104,6 @@ pub fn app_with(make_store: impl Fn() -> Store) -> Router {
     let company_books = Arc::new(company_books::CompanyBooks::new(make_store()));
     let source_lists = Arc::new(company_books::source_lists::SourceLists::new(make_store(), migrations.clone()));
     let source_import = Arc::new(source_import::SourceImport::new(make_store()));
-    app_all(ledger, referrals, firm, tax, engagements,migrations,signatures,company_books,source_lists,source_import,make_store())
+    let voice = voice_router(ledger.clone(), referrals.clone(), voice, make_store());
+    app_all(ledger, referrals, firm, tax, engagements,migrations,signatures,company_books,source_lists,source_import,make_store()).merge(voice)
 }
