@@ -10,6 +10,7 @@
 //! stays in `nixon_finance` so the two can merge without sharing a file.
 
 pub mod analyze;
+pub mod clients;
 pub mod models;
 pub mod navigate;
 pub mod routes;

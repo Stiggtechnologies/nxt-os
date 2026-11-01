@@ -27,6 +27,7 @@ pub struct Scope {
     pub migrations: Arc<crate::migrations::Migrations>,
     pub company_books: Arc<crate::company_books::CompanyBooks>,
     pub referrals: Arc<crate::referral::engine::Engine>,
+    pub journeys: Arc<crate::client_journey::service::Journeys>,
 }
 
 /// Same spoken-budget Sync still uses in `stripForSpeech`.

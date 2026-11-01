@@ -2,8 +2,10 @@
 //! Execute is refused. Actions are stored as blocked and not applied.
 
 use super::service::{self, ActionRequest, DecisionRequest, NixonError, ReviewRequest};
+use crate::firm::staff::Identity;
 use crate::referral::routes::{ApiError, require_admin};
 use axum::{
+    Extension,
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
@@ -42,6 +44,8 @@ pub fn router(scope: super::voice::Scope) -> Router {
             "/api/nixon/reviews/{id}/proposals/{pid}/execute",
             post(execute),
         )
+        .route("/api/nixon/clients", get(list_clients))
+        .route("/api/nixon/clients/{client}", get(client_view))
         .route("/api/nixon/actions", post(action))
         .route("/api/nixon/voice", post(voice))
         .route("/api/nixon/voice/realtime", post(realtime))
@@ -52,6 +56,17 @@ pub fn router(scope: super::voice::Scope) -> Router {
 
 async fn status() -> Json<Value> {
     Json(service::status_body())
+}
+
+async fn list_clients(State(scope): S, Extension(id): Extension<Identity>) -> Result<Json<Value>, ApiError> {
+    Ok(Json(super::clients::list(&scope, |c| id.can_client(c)).await?))
+}
+
+async fn client_view(State(scope): S, Extension(id): Extension<Identity>, Path(client): Path<String>) -> Result<Json<Value>, ApiError> {
+    if !id.can_client(&client) {
+        return Err(ApiError(StatusCode::FORBIDDEN, "you are not assigned to this client".into()));
+    }
+    Ok(Json(super::clients::view(&scope, &client).await?))
 }
 
 async fn create_review(
