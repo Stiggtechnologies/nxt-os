@@ -168,7 +168,8 @@ pub struct CommitInput {
     pub expected_head: Option<String>,
     pub request_id: String,
     pub reviewer_label: String,
-    /// Test-copy only: commit a book that fails financial controls, recorded as needs_review.
+    /// Commit a book that fails financial controls, recorded as needs_review. Hosted stores
+    /// refuse this unless NXT_BOOKS_NEEDS_REVIEW=on.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub needs_review: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -199,7 +200,7 @@ pub struct Head {
     pub locked_through: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation: Option<Operation>,
-    /// Present only on test-copy books committed in needs_review mode.
+    /// Present only on books committed in needs_review mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<Review>,
 }

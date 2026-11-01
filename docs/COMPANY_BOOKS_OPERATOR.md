@@ -33,3 +33,7 @@ The initial importer rejects a second full-history generation. It does not guess
 The worklist joins observed source inventory, published source packages and actual company book receipts. A roster alias is not a durable source company identifier. Labels supplied under a shared workspace key do not establish individually authenticated review. That key is the HTTP gate. The API writes company-books rows with the Supabase service role, which is the intended server credential, and each company touch is appended to `company_access_audit`. Staff who query the import tables are limited by row-level security to assigned companies; the `nxt_company_admin` role sees all. The operator is not given a staff session or the service-role key.
 
 Final cutover still depends on complete declared object coverage, resolved exceptions, source-to-target reconciliation, access controls, recovery verification and an executed company-specific cutover record. Recording user authorization does not mark those checks complete or retire the original system.
+
+## Needs-review books on durable storage
+
+A book that fails its controls can be committed on Supabase only while the server has `NXT_BOOKS_NEEDS_REVIEW=on`. It is off by default, and Redis always refuses. The commit records every blocker and at least one is required. Every read reports `review_status: needs_review`, and such a book is history under review, not an accepted balance. Turning the switch off stops new commits; committed books stay readable.
