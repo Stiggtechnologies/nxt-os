@@ -122,6 +122,16 @@ fn durable_needs_review_needs_the_owner_switch() {
     assert!(!needs_review_permitted("redis", Some("on")));
     assert!(!needs_review_permitted("unavailable", Some("on")));
 }
+#[test]
+fn durable_limits_default_to_today_and_cap_at_what_chunks_can_hold() {
+    let today = (MAX_BOOK, 100_000, 500_000);
+    assert_eq!(durable_limits(None), today);
+    assert_eq!(durable_limits(Some("nonsense")), today);
+    assert_eq!(durable_limits(Some("1")), today);
+    assert_eq!(durable_limits(Some("48")), (48 << 20, 200_000, 1_000_000));
+    assert_eq!(durable_limits(Some("9999")).0, 128 << 20);
+    assert!(durable_limits(Some("9999")).0 <= 256 * MAX_CHUNK);
+}
 #[tokio::test]
 async fn review_blockers_require_needs_review() {
     let (s, input) = staged().await;

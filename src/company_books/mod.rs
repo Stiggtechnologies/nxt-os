@@ -190,6 +190,13 @@ fn preview_value(id: &str, p: &Preview) -> Value {
 fn needs_review_permitted(backend: &str, switch: Option<&str>) -> bool {
     backend == "memory" || (backend == "supabase" && switch.is_some_and(|v| v.trim().eq_ignore_ascii_case("on")))
 }
+/// Durable book limits in bytes, entries and lines. The default is 24 MiB. The owner can raise it
+/// to 128 MiB, which 256 chunks of 512 KiB can hold; entries and lines scale with it. Every read
+/// loads the whole book, so measure a large book's read time before raising this.
+fn durable_limits(setting: Option<&str>) -> (usize, usize, usize) {
+    let mib = setting.and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0).clamp(24, 128);
+    (mib * 1024 * 1024, 100_000 * mib / 24, 500_000 * mib / 24)
+}
 impl CompanyBooks {
     /// Test-copy guard: only the in-memory (optionally file-backed) dev store.
     fn test_copy(&self) -> bool {
@@ -206,7 +213,7 @@ impl CompanyBooks {
         if self.test_copy() {
             TEST_COPY_MAX_LINES
         } else {
-            500_000
+            durable_limits(std::env::var("NXT_COMPANY_BOOK_MAX_MIB").ok().as_deref()).2
         }
     }
     pub fn new(store: Store) -> Self {
@@ -266,7 +273,8 @@ impl CompanyBooks {
         let (max_chunks, max_book, max_entries) = if self.test_copy() {
             (TEST_COPY_MAX_CHUNKS, TEST_COPY_MAX_BOOK, TEST_COPY_MAX_ENTRIES)
         } else {
-            (256, MAX_BOOK, 100_000)
+            let (bytes, entries, _) = durable_limits(std::env::var("NXT_COMPANY_BOOK_MAX_MIB").ok().as_deref());
+            (256, bytes, entries)
         };
         if chunks.is_empty() || chunks.len() > max_chunks {
             return Err(bad(if self.test_copy() {
