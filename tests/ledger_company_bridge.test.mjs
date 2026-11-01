@@ -79,3 +79,7 @@ test('shared api forwards cancellation without altering legacy GET/body behavior
  vm.runInNewContext(read('public/nxt/ui.js'),box);const c=new AbortController();await box.window.NXT.api('/synthetic',{signal:c.signal});await box.window.NXT.api('/synthetic',{body:{value:1}});
  assert.equal(calls[0].init.signal,c.signal);assert.equal(calls[0].init.method,'GET');assert.equal(calls[1].init.method,'POST');assert.equal(calls[1].init.body,'{"value":1}');assert.equal(calls[1].init.signal,undefined);
 });
+test('Firm clients screen reads the guarded directory and states what is not loaded',()=>{
+ const firm=read('public/apps/firm/firm.js');
+ assert.match(firm,/api\('\/api\/clients'\)/);assert.match(firm,/Not in this directory/);assert.match(firm,/missing, not zero/);
+});
