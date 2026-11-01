@@ -13,6 +13,7 @@ Routes under `/api/source-imports/dtmax/companies/{company}/test-copy/` sit behi
 | --- | --- |
 | `POST …/test-copy/clients` | `{test_copy, clients:[…]}`, at most 1,000 rows. Upsert by DT Max `Client #` (`client_number`, digits). Fields: `name` (required), `processing_status`, `email`, `home_phone`, `work_phone`, `cell_phone`, `street`, `city`, `postal_code`, `province`, `country`, `source_lists`. A `sin` field is refused per row (`sin_not_accepted`); unknown fields are refused per row. The response has only counts: `created`, `updated`, `unchanged`, `rejected{reason: n}`. |
 | `POST …/test-copy/returns` | `{test_copy, returns:[…]}`, at most 1,000. One index row per client number and tax year: `extension` (`Pyy`), `header_year`, `size_bytes`, `sha256`, `sections`, `last_saved_epoch`, `content_state: "vendor_encoded_not_decoded"`. Extension and header year must equal the tax year. A replay is `unchanged_replays`; different bytes for the same client and year are refused. Returns with no roster client are kept as `unlinked`. |
+| `GET …/test-copy/clients?offset=0&limit=50` | One sorted page (at most 100) of loaded clients with their fields and `return_years`, so staff can check the load. Same store guard, firm-wide accounts only. |
 | `GET …/test-copy/summary` | Counts: clients, contact coverage, returns by year (linked/unlinked), `content_decoded: false`. |
 
 ## DT Max `.Pyy` return files: what is decoded

@@ -5,7 +5,8 @@
 //! production, always refuse. Clients are keyed by the DT Max `Client #`. Return files are
 //! indexed by client number and tax year from the file's own `DTMAX\0YY` header; their
 //! section payloads are vendor-encoded and are not decoded or stored here.
-//! SIN is never accepted. Responses carry counts and reasons, never client fields.
+//! SIN is never accepted. Load responses carry counts and reasons, never client fields; only
+//! `test_copy_client_page` returns client fields, and it refuses on hosted stores too.
 
 use super::{ImportError, bad, conflict, storage, valid_token};
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 type Result<T> = std::result::Result<T, ImportError>;
 const MAX_BATCH: usize = 1_000;
+const PAGE_MAX: usize = 100;
 const TEXT_FIELDS: &[(&str, usize)] = &[
     ("name", 200), ("processing_status", 80), ("email", 200), ("home_phone", 40), ("work_phone", 40),
     ("cell_phone", 40), ("street", 200), ("city", 100), ("postal_code", 16), ("province", 40), ("country", 60),
@@ -175,6 +177,31 @@ impl super::SourceImport {
         }
         Ok(json!({"company_id": company, "test_copy": true, "submitted": batch.slips.len(),
             "linked": linked, "unlinked": unlinked, "unchanged_replays": unchanged, "rejected": rejected}))
+    }
+
+    /// One sorted page of test-copy clients with their indexed return years, so staff can check
+    /// the load. Refused on hosted stores like every other test-copy route.
+    pub async fn test_copy_client_page(&self, company: &str, offset: usize, limit: usize) -> Result<Value> {
+        self.test_copy_guard(company, true)?;
+        if limit == 0 || limit > PAGE_MAX { return Err(bad("Page limit must be 1-100")); }
+        let mut numbers = self.store.smembers(&k(company, "clients")).await.map_err(|e| s(&e))?;
+        numbers.sort_by(|a, b| (a.len(), a).cmp(&(b.len(), b)));
+        let total = numbers.len();
+        let page: Vec<String> = numbers.into_iter().skip(offset).take(limit).collect();
+        let keys: Vec<String> = page.iter().map(|n| k(company, &format!("client:{n}"))).collect();
+        let mut years: BTreeMap<String, BTreeSet<u16>> = BTreeMap::new();
+        for m in self.store.smembers(&k(company, "returns")).await.map_err(|e| s(&e))? {
+            let Some((num, year)) = m.split_once(':') else { continue };
+            if let Ok(year) = year.parse() { years.entry(num.to_string()).or_default().insert(year); }
+        }
+        let mut clients = Vec::new();
+        for (number, raw) in page.iter().zip(self.store.mget(&keys).await.map_err(|e| s(&e))?) {
+            let Some(raw) = raw else { continue };
+            let mut client: Value = serde_json::from_str(&raw).map_err(|_| s("stored client unreadable"))?;
+            client["return_years"] = json!(years.get(number).cloned().unwrap_or_default());
+            clients.push(client);
+        }
+        Ok(json!({"company_id": company, "test_copy": true, "total": total, "offset": offset, "clients": clients, "content_decoded": false}))
     }
 
     /// Counts only: roster size, contact coverage, and returns by tax year.

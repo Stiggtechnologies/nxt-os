@@ -2,7 +2,7 @@ use super::files::{ClientLinkInput, FileInput, ResolveInput};
 use super::{ImportError, OpenBatch, ParallelInput, SourceImport};
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderValue, header},
     middleware,
     response::{IntoResponse, Response},
@@ -50,7 +50,7 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/files/{sha}", get(source_file))
         .route("/api/source-imports/dtmax/companies/{company}/files/{sha}/content", get(source_bytes))
         .route("/api/source-imports/dtmax/companies/{company}/files/{sha}/link", post(resolve))
-        .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients", post(test_copy_clients))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients", post(test_copy_clients).get(test_copy_client_page))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/returns", post(test_copy_returns))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/t5008", post(test_copy_slips))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/summary", get(test_copy_summary))
@@ -144,6 +144,19 @@ async fn client_files(State(state): S, Path((company, client)): Path<(String, St
 
 async fn test_copy_clients(State(state): S, Path(company): Path<String>, Json(body): Json<super::test_copy::ClientBatch>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_clients(&company, body).await?))
+}
+
+#[derive(Deserialize)]
+struct ClientPage {
+    #[serde(default)]
+    offset: usize,
+    #[serde(default = "client_page_limit")]
+    limit: usize,
+}
+fn client_page_limit() -> usize { 50 }
+
+async fn test_copy_client_page(State(state): S, Path(company): Path<String>, Query(page): Query<ClientPage>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_client_page(&company, page.offset, page.limit).await?))
 }
 
 async fn test_copy_returns(State(state): S, Path(company): Path<String>, Json(body): Json<super::test_copy::ReturnBatch>) -> Result<Json<Value>, ImportError> {
