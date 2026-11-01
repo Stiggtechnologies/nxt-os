@@ -20,6 +20,7 @@ pub mod company_books;
 pub mod source_import;
 pub mod import_parsers;
 pub mod client_journey;
+pub mod client_directory;
 
 use axum::Router;
 use std::sync::Arc;
@@ -70,6 +71,14 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         .merge(signatures::router(signatures.clone()))
         .merge(company_books::router(company_books.clone()))
         .merge(company_books::source_lists::router(source_lists))
+        .merge(client_directory::router(Arc::new(client_directory::Directory {
+            company_books: company_books.clone(),
+            migrations: migrations.clone(),
+            tax: tax.clone(),
+            engagements: engagements.clone(),
+            signatures: signatures.clone(),
+            firm: firm.clone(),
+        })))
         .merge(crate::nixon_finance::routes::router(crate::nixon_finance::voice::Scope {
             ledger: ledger.clone(),
             firm: firm.clone(),
