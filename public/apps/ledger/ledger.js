@@ -21,7 +21,7 @@ try { const t = localStorage.getItem("nxt_theme"); if (t) document.documentEleme
 
 const S = { accounts: [], contacts: [], taxCodes: [], company: null };
 const KIND_LABEL = { asset: "Assets", liability: "Liabilities", equity: "Equity", income: "Income", expense: "Expenses" };
-const SOURCE_LABEL = { journal: "Journal", invoice: "Invoice", bill: "Bill", payment_received: "Payment received", payment_made: "Bill payment", money_in: "Deposit", money_out: "Expense", transfer: "Transfer", tax_payment: "GST/HST payment" };
+const SOURCE_LABEL = { journal: "Journal", invoice: "Invoice", bill: "Bill", payment_received: "Payment received", payment_made: "Bill payment", money_in: "Deposit", money_out: "Expense", transfer: "Transfer", tax_payment: "GST/HST payment", opening_balance: "Opening balance" };
 
 async function loadRefs() {
   const [accounts, contacts, meta, company] = await Promise.all([api("/api/ledger/accounts"), api("/api/ledger/contacts"), api("/api/ledger/meta"), api("/api/ledger/company")]);
@@ -46,7 +46,7 @@ const taxOptions = (selected) => S.taxCodes.map((t) => `<option value="${t.code}
 
 function page(title, sub, actions, body) {
   main.innerHTML = `<button class="btn sm menu-btn no-print" id="menuBtn">☰ Menu</button>
-    <div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ""}</div><div class="row no-print">${actions || ""}</div></div>${company ? `<section class="qb-native-boundary"><div><strong>${esc(S.company?.name || company)}</strong><span>This screen shows this client's own ledger, kept apart from the Firm workspace and other clients. It holds only what was entered here. Imported QuickBooks history stays in the company's imported books, and QuickBooks stays authoritative.</span></div></section>` : `<section class="qb-native-boundary"><div><strong>Firm workspace · NXT native books</strong><span>This screen shows the shared Firm workspace. Choose Company books in the navigation to open an imported company's accounts, journals or saved contacts. Empty or zero workspace reports do not represent that company's source balances. Original systems remain authoritative during parallel testing.</span></div><button class="btn sm" type="button" data-qb-open-app="migrations" data-qb-open-view="companies">Choose company books</button></section>`}${body}`;
+    <div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ""}</div><div class="row no-print">${actions || ""}</div></div>${company ? `<section class="qb-native-boundary"><div><strong>${esc(S.company?.name || company)}</strong><span>This screen shows this client's own ledger, kept apart from the Firm workspace and other clients. It holds only what was entered here. Imported QuickBooks history stays in the company's imported books, and QuickBooks stays authoritative.</span></div><a class="btn sm" href="#opening">Opening balances</a></section>` : `<section class="qb-native-boundary"><div><strong>Firm workspace · NXT native books</strong><span>This screen shows the shared Firm workspace. Choose Company books in the navigation to open an imported company's accounts, journals or saved contacts. Empty or zero workspace reports do not represent that company's source balances. Original systems remain authoritative during parallel testing.</span></div><button class="btn sm" type="button" data-qb-open-app="migrations" data-qb-open-view="companies">Choose company books</button></section>`}${body}`;
   $("#menuBtn").onclick = () => $("#side").classList.toggle("open");
 }
 function table(cols, rows, { onClick, empty = "Nothing here yet.", foot } = {}) {
@@ -707,6 +707,37 @@ views.capability = async (id) => {
   const view = window.NXT_QB_NAV?.capability(decodeURIComponent(id || ""));
   if (!view) return page("Menu capability unavailable", "The selected source menu is not in the observed inventory.", '<a class="btn" href="#dashboard">NXT dashboard</a>', '<div class="card"><p>Reload the menu inventory or choose an observed menu. No source action has run.</p></div>');
   page(view.title, view.subtitle, view.actions, view.body);
+};
+
+// Carry a client's imported chart and balances into its ledger, after review.
+const KINDS = ["asset", "liability", "equity", "income", "expense"];
+const openingKinds = () => Object.fromEntries($$("[data-kind]", main).filter((s) => s.value).map((s) => [s.dataset.kind, s.value]));
+views.opening = async () => {
+  if (!company) return go("dashboard");
+  const r = await api("/api/ledger/opening-balances/preview", { body: { classifications: openingKinds() } });
+  if (r.posted) {
+    const t = r.receipt;
+    return page("Opening balances posted", `Entry #${esc(t.entry_number)} dated ${esc(fmtDate(t.date))}, reviewed by ${esc(t.reviewer)}.`, "", `<div class="card"><p>${t.tied_out ? "Every account ties to the imported books." : `These accounts do not tie to the imported books: ${esc(t.accounts_not_tied.join(", "))}.`}</p><p class="meta">${esc(t.accounts)} accounts, ${esc(t.new_accounts)} added to the chart. Debits ${money(t.total_debit)}, credits ${money(t.total_credit)}.</p></div>`);
+  }
+  const p = r.plan;
+  const kind = (a) => a.kind ? esc(a.kind) : `<select data-kind="${esc(a.source_id)}"><option value="">Choose</option>${KINDS.map((k) => `<option value="${k}">${esc(KIND_LABEL[k])}</option>`).join("")}</select>`;
+  page("Opening balances", `Posts the imported trial balance as one entry dated ${esc(fmtDate(p.date))}, then closes the books through that date. It can't be voided. Mark bank, receivable and payable accounts in the chart afterwards if they weren't matched.`,
+    `<button class="btn primary" id="postOpening"${p.blockers.length ? " disabled" : ""}>Post opening balances</button>`,
+    `${p.blockers.length ? `<div class="card err-text" id="openingBlockers"><ul>${p.blockers.map((b) => `<li>${esc(b)}</li>`).join("")}</ul></div>` : ""}
+    <div class="card"><label>Reviewed by <input id="openingReviewer" maxlength="200"></label>
+    <table><thead><tr><th>Imported account</th><th>Type</th><th>Goes to</th><th>Debit</th><th>Credit</th></tr></thead><tbody>${p.accounts.map((a) => `<tr><td>${esc(a.name)}</td><td>${kind(a)}</td><td>${esc(a.ledger_account || `New: ${a.code}`)}</td><td>${a.debit ? money(a.debit) : ""}</td><td>${a.credit ? money(a.credit) : ""}</td></tr>`).join("")}</tbody></table></div>`);
+  $$("[data-kind]", main).forEach((s) => (s.onchange = () => {
+    if ($$("[data-kind]", main).some((x) => !x.value)) return;
+    api("/api/ledger/opening-balances/preview", { body: { classifications: openingKinds() } }).then(({ plan }) => {
+      $("#postOpening").disabled = plan.blockers.length > 0;
+      $("#openingBlockers").innerHTML = plan.blockers.length ? `<ul>${plan.blockers.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+      $("#openingBlockers").hidden = !plan.blockers.length;
+    }).catch(err);
+  }));
+  $("#postOpening").onclick = async () => {
+    if (!await confirm("Post opening balances?", "This posts one entry and closes the books through that date. It can't be voided.", "Post")) return;
+    try { await api("/api/ledger/opening-balances", { body: { expected_head: p.expected_head, reviewer: $("#openingReviewer").value, classifications: openingKinds() } }); await loadRefs(); toast("Opening balances posted"); route(); } catch (e) { err(e); }
+  };
 };
 
 // ---------------------------------------------------------------- boot

@@ -13,6 +13,8 @@ use tower::ServiceExt;
 
 const PW: &str = "synthetic-pass-phrase-1";
 const PW2: &str = "synthetic-pass-phrase-2";
+/// These tests install the process-wide staff registry, so they take turns.
+static STAFF: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn call(r: &axum::Router, m: &str, uri: &str, tok: &str, body: Option<Value>) -> (u16, Value) {
     let mut q = Request::builder().method(m).uri(uri).header("x-forwarded-for", "10.2.0.1");
@@ -39,6 +41,7 @@ async fn scoped_staff(r: &axum::Router, clients: Value) -> String {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn client_books_are_separate_and_scoped() {
+    let _turn = STAFF.lock().await;
     unsafe {
         std::env::set_var("ADMIN_API_KEY", "k");
         std::env::set_var("NXT_STAFF_PBKDF2_ITERATIONS", "1000");
@@ -176,3 +179,54 @@ async fn invoice_and_payment_link_their_journals_on_a_book_over_one_page() {
     assert_eq!(paid["open_cents"], 1500);
     assert_eq!(books.subledger("co").await.map_err(e).unwrap()["documents"][0]["open_cents"], 1500);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn imported_balances_carry_into_the_clients_ledger_once() {
+    let _turn = STAFF.lock().await;
+    unsafe {
+        std::env::set_var("ADMIN_API_KEY", "k");
+        std::env::set_var("NXT_STAFF_PBKDF2_ITERATIONS", "1000");
+    }
+    staff::install(Arc::new(staff::Staff::new(Store::memory())));
+    let shared = Store::memory();
+    let books = CompanyBooks::new(shared.clone());
+    let head = imported(&books, 3).await;
+    let shared_app = shared.clone();
+    let r = app_with(move || shared_app.clone());
+    let base = "/api/company-ledger/co";
+
+    ok(&r, "POST", &format!("{base}/open"), "k", Some(json!({"name":"Synthetic"}))).await;
+    let v = ok(&r, "POST", &format!("{base}/opening-balances/preview"), "k", Some(json!({}))).await;
+    assert_eq!(v["posted"], false);
+    let plan = &v["plan"];
+    assert_eq!(plan["blockers"], json!([]), "{plan}");
+    assert_eq!(plan["expected_head"], head);
+    assert_eq!(plan["date"], "2026-12-31");
+    assert_eq!(plan["total_debit"], 300);
+    // Only the plan so far: nothing has been written to the books.
+    assert_eq!(ok(&r, "GET", &format!("{base}/entries"), "k", None).await, json!([]));
+
+    let tok = scoped_staff(&r, json!(["co"])).await;
+    let post = json!({"expected_head": head, "reviewer": "Synthetic reviewer"});
+    assert_eq!(call(&r, "POST", &format!("{base}/opening-balances"), &tok, Some(post.clone())).await.0, 403);
+    assert_eq!(call(&r, "POST", &format!("{base}/opening-balances"), "k", Some(json!({"expected_head":"0".repeat(64),"reviewer":"x"}))).await.0, 409);
+    assert_eq!(call(&r, "POST", &format!("{base}/opening-balances"), "k", Some(json!({"expected_head":head,"reviewer":" "}))).await.0, 400);
+
+    let receipt = ok(&r, "POST", &format!("{base}/opening-balances"), "k", Some(post.clone())).await;
+    assert_eq!(receipt["tied_out"], true, "{receipt}");
+    assert_eq!(receipt["accounts_not_tied"], json!([]));
+    assert_eq!(receipt["total_debit"], 300);
+
+    let tb = ok(&r, "GET", &format!("{base}/reports/trial-balance?to=2026-12-31"), "k", None).await;
+    assert_eq!(tb["balanced"], true);
+    assert!(tb.to_string().contains("Equity") && tb.to_string().contains("Cash"), "{tb}");
+    assert_eq!(ok(&r, "GET", &format!("{base}/company"), "k", None).await["closing_date"], "2026-12-31");
+
+    // Once only, and the imported book and firm ledger are untouched.
+    assert_eq!(call(&r, "POST", &format!("{base}/opening-balances"), "k", Some(post)).await.0, 409);
+    assert_eq!(ok(&r, "POST", &format!("{base}/opening-balances/preview"), "k", Some(json!({}))).await["posted"], true);
+    assert_eq!(ok(&r, "GET", &format!("{base}/entries"), "k", None).await.as_array().unwrap().len(), 1);
+    assert_eq!(ok(&r, "GET", "/api/ledger/entries", "k", None).await, json!([]));
+    assert_eq!(books.detail("co").await.map_err(|e| e.1).unwrap()["head_sha256"], head);
+}
+
