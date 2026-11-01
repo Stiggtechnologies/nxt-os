@@ -361,4 +361,33 @@ end;
 $anon$;
 reset role;
 
+-- A client ledger is audited per write and per collection read, and never enters the import catalog.
+set local role service_role;
+do $ledger$
+declare
+    ns text := 'company_access_test';
+    entry_key text := 'nxt:company-ledger:delta:entries:je_1';
+    fingerprint text := 'nxt:company-ledger:delta:feedfp:acc_1:2026-01-02:-500:coffee, shop #4';
+begin
+    perform public.nxt_store_command(ns, pg_catalog.jsonb_build_array('SET', entry_key, 'ledger-body'));
+    perform public.nxt_store_command(ns, pg_catalog.jsonb_build_array('SET', fingerprint, '1', 'NX'));
+    perform public.nxt_store_command(ns, pg_catalog.jsonb_build_array('SADD', 'nxt:company-ledger:delta:entries', 'je_1'));
+    perform public.nxt_store_command(ns, pg_catalog.jsonb_build_array('SMEMBERS', 'nxt:company-ledger:delta:entries'));
+    perform public.nxt_store_command(ns, pg_catalog.jsonb_build_array('MGET', entry_key));
+    if (select pg_catalog.count(*) from public.company_access_audit where company_id = 'delta' and action = 'MGET') <> 0 then
+        raise exception 'ledger MGET rows were audited one by one';
+    end if;
+    if (select pg_catalog.count(*) from public.company_access_audit where company_id = 'delta') <> 4 then
+        raise exception 'ledger writes and collection reads were not all audited';
+    end if;
+    if exists (select 1 from public.company_book_imports where company_id = 'delta') then
+        raise exception 'ledger key entered the import catalog';
+    end if;
+    if exists (select 1 from public.company_access_audit where pg_catalog.to_jsonb(company_access_audit)::text like '%ledger-body%') then
+        raise exception 'audit stored a ledger payload';
+    end if;
+end;
+$ledger$;
+reset role;
+
 rollback;

@@ -14,6 +14,7 @@ use axum::http::StatusCode;
 use chrono::{NaiveDate, Utc};
 use models::*;
 pub use routes::router;
+pub(crate) use routes::client_scope;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -96,7 +97,7 @@ fn hash(bytes: &[u8]) -> String {
 fn encoded<T: Serialize>(v: &T) -> Result<String> {
     serde_json::to_string(v).map_err(|_| bad("Object cannot be encoded"))
 }
-fn valid_id(s: &str) -> bool {
+pub(crate) fn valid_id(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 96
         && s.bytes()

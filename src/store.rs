@@ -59,6 +59,7 @@ impl Memory {
     }
 }
 
+#[derive(Clone)]
 pub enum Store {
     Memory(Arc<Mutex<Memory>>),
     Redis {

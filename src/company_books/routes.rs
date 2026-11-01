@@ -78,7 +78,7 @@ pub fn router(state: Arc<CompanyBooks>) -> Router {
         .merge(roster)
 }
 /// Client scoping: the company id is the client label. The inventory list is firm-wide.
-async fn client_scope(req: axum::extract::Request, next: middleware::Next) -> Response {
+pub(crate) async fn client_scope(req: axum::extract::Request, next: middleware::Next) -> Response {
     if req.uri().path() == "/api/company-books" && crate::firm::staff::scoped(&req).is_some() {
         return crate::firm::staff::firm_wide_only(req, next).await;
     }

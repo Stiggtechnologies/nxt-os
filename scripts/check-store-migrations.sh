@@ -28,6 +28,7 @@ expected=(
   "20261025051013_nxt_store.sql"
   "20261026033000_nxt_backup_reader.sql"
   "20261029140000_company_access.sql"
+  "20261101120000_company_ledger_audit.sql"
 )
 if [[ "${#migrations[@]}" -ne "${#expected[@]}" ]]; then
   echo "expected exactly ${#expected[@]} store migrations, found ${#migrations[@]}" >&2

@@ -1,5 +1,6 @@
 //! Parallel AR/AP, classes, attachments, and native-journal sync.
 //! Imported QuickBooks rows stay authoritative. Nothing here writes back.
+use super::adjustments::native_id;
 use super::{bad, corrupt, date, err, hash, storage, text, valid_id, CompanyBooks, Result};
 use super::models::{Entry, JournalInput, NativeLine, ReverseInput};
 use axum::http::StatusCode;
@@ -216,18 +217,17 @@ impl CompanyBooks {
             }
             lines.push(NativeLine { account_id: input.control_account.clone(), debit_cents: "0".into(), credit_cents: cents(gross), memo: input.memo.clone() });
         }
-        let posted = self.journal(company, JournalInput {
+        let journal = JournalInput {
             request_id: input.request_id.clone(),
             expected_head: input.expected_head.clone(),
             operator_label: input.operator_label.clone(),
             date: input.date.clone(),
             memo: input.memo.clone(),
             lines,
-        }).await?;
+        };
+        let entry_id = native_id(company, &journal)?;
+        let posted = self.journal(company, journal).await?;
         let head = posted["head_sha256"].as_str().unwrap_or("").to_string();
-        let page = self.entries(company, 0, 200, None).await?;
-        let entry_id = page["rows"].as_array().and_then(|rows| rows.iter().rev().find(|row| row["memo"] == input.memo)).and_then(|row| row["id"].as_str()).unwrap_or("").to_string();
-        if entry_id.is_empty() { return Err(corrupt()); }
         let doc = OpenDoc {
             id: input.request_id.clone(),
             kind: input.kind.clone(),
@@ -260,7 +260,7 @@ impl CompanyBooks {
         } else {
             (doc.control_account.clone(), input.cash_account.clone())
         };
-        let posted = self.journal(company, JournalInput {
+        let journal = JournalInput {
             request_id: input.request_id.clone(),
             expected_head: input.expected_head,
             operator_label: input.operator_label,
@@ -270,11 +270,10 @@ impl CompanyBooks {
                 NativeLine { account_id: debit, debit_cents: cents(input.amount_cents), credit_cents: "0".into(), memo: "Payment".into() },
                 NativeLine { account_id: credit, debit_cents: "0".into(), credit_cents: cents(input.amount_cents), memo: "Payment".into() },
             ],
-        }).await?;
+        };
+        let entry_id = native_id(company, &journal)?;
+        let posted = self.journal(company, journal).await?;
         let head = posted["head_sha256"].as_str().unwrap_or("").to_string();
-        let page = self.entries(company, 0, 200, None).await?;
-        let memo = format!("Parallel payment {}", doc.id);
-        let entry_id = page["rows"].as_array().and_then(|rows| rows.iter().rev().find(|row| row["memo"] == memo)).and_then(|row| row["id"].as_str()).unwrap_or("").to_string();
         state.payments.push(DocPayment { id: input.request_id.clone(), document_id: doc.id.clone(), amount_cents: input.amount_cents, journal_entry_id: entry_id });
         self.parallel_save(company, raw.as_deref(), &state).await?;
         Ok(json!({"id": input.request_id, "open_cents": open - input.amount_cents, "head_sha256": head, "write_back": false, "authoritative_system": "quickbooks"}))
