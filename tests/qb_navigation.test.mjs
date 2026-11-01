@@ -119,6 +119,7 @@ test('native-create routes open existing forms after a stable route change and n
       requests.push(url);
       return url.includes('trial-balance') ? { rows: [] } : [];
     } });
+  e.context.URLSearchParams = URLSearchParams;
   e.context.localStorage = { getItem: () => null };
   e.context.history = { replaceState: (...args) => replacements.push(args[2]) };
   // Expose the real route closures and stop before normal app boot, so these

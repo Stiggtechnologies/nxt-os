@@ -3,15 +3,18 @@
 // #reconcile, #accounts, #journal, #reports, #reports/<name>, #settings, #audit.
 (() => {
 "use strict";
-const { api, esc, money, toCents, today, fmtDate, toast, modal, confirm, csvDownload } = NXT;
+const { esc, money, toCents, today, fmtDate, toast, modal, confirm, csvDownload } = NXT;
+// ?company=<id> runs every screen below on that client's own book.
+const company = new URLSearchParams(location.search).get("company") || "";
+const api = (path, options) => NXT.api(company && path.startsWith("/api/ledger/") ? `/api/company-ledger/${encodeURIComponent(company)}/${path.slice("/api/ledger/".length)}` : path, options);
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const main = $("#main");
 const companyBridgeHost = $("#ledger-company-bridge");
-const companyBridge = companyBridgeHost && window.NXTLedgerCompanyBridge?.mount(companyBridgeHost, {api, esc, openApp(app, view) {
+const companyBridge = companyBridgeHost && window.NXTLedgerCompanyBridge?.mount(companyBridgeHost, {api, esc, current: company, openApp(app, view) {
   if (window.parent !== window) window.parent.postMessage({nxt:"open-app", app, view}, location.origin);
   else location.href = "/#/" + app + "/" + view;
-}});
+}, openLedger(id) { location.href = location.pathname + (id ? "?company=" + encodeURIComponent(id) : "") + "#dashboard"; }});
 window.addEventListener("pagehide", () => companyBridge?.destroy(), {once:true});
 $("#mark").innerHTML = NXT.MARK + "<span>NXT Ledger</span>";
 try { const t = localStorage.getItem("nxt_theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
@@ -43,7 +46,7 @@ const taxOptions = (selected) => S.taxCodes.map((t) => `<option value="${t.code}
 
 function page(title, sub, actions, body) {
   main.innerHTML = `<button class="btn sm menu-btn no-print" id="menuBtn">☰ Menu</button>
-    <div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ""}</div><div class="row no-print">${actions || ""}</div></div><section class="qb-native-boundary"><div><strong>Firm workspace · NXT native books</strong><span>This screen shows the shared Firm workspace. Choose Company books in the navigation to open an imported company's accounts, journals or saved contacts. Empty or zero workspace reports do not represent that company's source balances. Original systems remain authoritative during parallel testing.</span></div><button class="btn sm" type="button" data-qb-open-app="migrations" data-qb-open-view="companies">Choose company books</button></section>${body}`;
+    <div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ""}</div><div class="row no-print">${actions || ""}</div></div>${company ? `<section class="qb-native-boundary"><div><strong>${esc(S.company?.name || company)}</strong><span>This screen shows this client's own ledger, kept apart from the Firm workspace and other clients. It holds only what was entered here. Imported QuickBooks history stays in the company's imported books, and QuickBooks stays authoritative.</span></div></section>` : `<section class="qb-native-boundary"><div><strong>Firm workspace · NXT native books</strong><span>This screen shows the shared Firm workspace. Choose Company books in the navigation to open an imported company's accounts, journals or saved contacts. Empty or zero workspace reports do not represent that company's source balances. Original systems remain authoritative during parallel testing.</span></div><button class="btn sm" type="button" data-qb-open-app="migrations" data-qb-open-view="companies">Choose company books</button></section>`}${body}`;
   $("#menuBtn").onclick = () => $("#side").classList.toggle("open");
 }
 function table(cols, rows, { onClick, empty = "Nothing here yet.", foot } = {}) {
@@ -707,8 +710,17 @@ views.capability = async (id) => {
 };
 
 // ---------------------------------------------------------------- boot
+function openBook() {
+  main.innerHTML = `<div class="page-head"><div><h1>Open a ledger for ${esc(company)}</h1><p>This client has no ledger yet. It starts with the standard chart of accounts and no balances. Imported QuickBooks history stays in the company's imported books and is not copied in.</p></div></div>
+    <form class="card" id="openBook"><label>Company name <input name="name" required maxlength="300"></label><button class="btn primary" type="submit">Open ledger</button></form>`;
+  $("#openBook").onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api("/api/ledger/open", { body: { name: e.target.name.value } }); location.reload(); } catch (x) { err(x); }
+  };
+}
+
 (async () => {
-  try { await loadRefs(); } catch (e) { main.innerHTML = `<div class="card err-text">${esc(e.status === 401 ? "Sign in to NXT OS to use NXT Ledger." : e.message)}</div>`; return; }
+  try { await loadRefs(); } catch (e) { if (company && e.status === 404) return openBook(); main.innerHTML = `<div class="card err-text">${esc(e.status === 401 ? "Sign in to NXT OS to use NXT Ledger." : e.message)}</div>`; return; }
   refreshBadge();
   route();
 })();

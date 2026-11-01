@@ -36,15 +36,17 @@
     }
     throw Error('Company book inventory exceeds its supported bound.');
   }
-  function join(roster,sources,books){
+  function join(roster,sources,books,clients){
     const rows=new Map();
     const get=(id,label)=>{if(!rows.has(id))rows.set(id,{id,name:label||id,observed:false,sources:0,book:null});return rows.get(id);};
     for(const row of roster||[])get(row.company_id,row.company_name).observed=true;
     for(const row of sources||[])get(row.cohort_ref,row.company_name).sources++;
     for(const row of books||[]){const label=row.previews?.[0]?.company?.name;get(row.company_id,name(label)?label:row.company_id).book=row;}
+    for(const row of clients?.clients||[]){if(validId(row.client_id))get(row.client_id).ledger=row.ledger_open===true;}
     return [...rows.values()].sort((a,b)=>Number(!!b.book?.head)-Number(!!a.book?.head)||a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
   }
   function status(row,available){
+    if(row.ledger)return 'Ledger open';
     if(row.book?.head)return 'Journal imported';
     if(row.book)return 'Journal assessment saved';
     if(!available.books)return row.sources?'Reports saved · journal status unavailable':'Journal status unavailable';
@@ -55,7 +57,7 @@
     need(validId(id)&&['','trial-balance','entries','customers','suppliers'].includes(section),'Select a valid company view.');
     return 'company/'+encodeURIComponent(id)+(section?'/'+section:'');
   }
-  function mount(host,{api,esc,openApp,timeoutMs=20000}={}){
+  function mount(host,{api,esc,openApp,openLedger=null,current='',timeoutMs=20000}={}){
     need(Number.isFinite(timeoutMs)&&timeoutMs>0&&timeoutMs<=20000,'Company directory timeout exceeds its supported bound.');
     let disposed=false,version=0,controller=null,timer=null,rows=[],available={books:false,sources:false},message='Loading company directory…';
     const live=v=>!disposed&&host.isConnected!==false&&version===v;
@@ -63,9 +65,10 @@
     function navigate(view){if(disposed)return;stop();disposed=true;openApp('migrations',view);}
     function draw(v,loading=false,auth=false){
       if(!live(v))return;
-      host.innerHTML=`<label for="ledger-company-choice">Company books</label><select id="ledger-company-choice" aria-describedby="ledger-company-scope"${loading||auth?' disabled':''}><option value="">Firm workspace · NXT native books</option>${rows.map(row=>`<option value="${esc(row.id)}">${esc(row.name)} — ${esc(status(row,available))}</option>`).join('')}</select><p id="ledger-company-scope">Current screen: Firm workspace. Select a company to open its own accounts, journals and saved contacts.</p>${message?`<p class="company-directory-message" role="${auth?'alert':'status'}">${esc(message)}</p>`:''}<a href="/#/migrations/companies" data-company-directory>View all companies</a>${!loading?'<button class="btn sm" type="button" data-company-reload>Refresh companies</button>':''}`;
+      host.innerHTML=`<label for="ledger-company-choice">Company books</label><select id="ledger-company-choice" aria-describedby="ledger-company-scope"${loading||auth?' disabled':''}><option value="">Firm workspace · NXT native books</option>${current&&!rows.some(row=>row.id===current)?`<option value="${esc(current)}" selected>${esc(current)}</option>`:''}${rows.map(row=>`<option value="${esc(row.id)}"${row.id===current?' selected':''}>${esc(row.name)} — ${esc(status(row,available))}</option>`).join('')}</select><p id="ledger-company-scope">${current?`Current screen: ${esc(rows.find(row=>row.id===current)?.name||current)}'s own ledger.`:`Current screen: Firm workspace. Select a company to open its own ${openLedger?'ledger':'accounts, journals and saved contacts'}.`}</p>${current?'<a href="/#/migrations/companies" data-company-imported>Imported books for this company</a> ':''}${message?`<p class="company-directory-message" role="${auth?'alert':'status'}">${esc(message)}</p>`:''}<a href="/#/migrations/companies" data-company-directory>View all companies</a>${!loading?'<button class="btn sm" type="button" data-company-reload>Refresh companies</button>':''}`;
       const select=host.querySelector('#ledger-company-choice');
-      if(select)select.onchange=()=>{if(!live(v)||!select.value)return;const row=rows.find(row=>row.id===select.value);if(!row)return;navigate(companyView(row.id,row.book?.head?'trial-balance':''));};
+      if(select)select.onchange=()=>{if(!live(v))return;if(openLedger){if(select.value===current)return;if(!select.value||rows.some(row=>row.id===select.value)){stop();disposed=true;openLedger(select.value);}return;}if(!select.value)return;const row=rows.find(row=>row.id===select.value);if(!row)return;navigate(companyView(row.id,row.book?.head?'trial-balance':''));};
+      const imported=host.querySelector('[data-company-imported]');if(imported)imported.onclick=event=>{event.preventDefault();if(live(v))navigate(companyView(current));};
       const directory=host.querySelector('[data-company-directory]');if(directory)directory.onclick=event=>{event.preventDefault();if(live(v))navigate('companies');};
       const retry=host.querySelector('[data-company-reload]');if(retry)retry.onclick=()=>{if(live(v))reload();};
     }
@@ -78,14 +81,15 @@
         const result=await Promise.allSettled([
           request('/api/company-books/roster').then(rosterRows),
           request('/api/migrations').then(sourceRows),
-          booksRows(request,()=>live(v))
+          booksRows(request,()=>live(v)),
+          ...(openLedger?[request('/api/nixon/clients')]:[])
         ]);
         if(!live(v))return;
         if(result.some(r=>r.status==='rejected'&&r.reason?.status===401)){rows=[];message='Sign in to view company books. Company coverage is unavailable.';draw(v,false,true);return;}
         if(signal.aborted){rows=[];message='Company directory timed out. Refresh to check company coverage.';draw(v);return;}
         const values=result.map(r=>r.status==='fulfilled'?r.value:null);
         available={sources:values[1]!==null,books:values[2]!==null};rows=join(...values);
-        const missing=result.filter(r=>r.status==='rejected').length;
+        const missing=result.slice(0,3).filter(r=>r.status==='rejected').length;
         message=missing?'Some company status is unavailable. No missing data is treated as an empty company.':rows.length?'Company journals and saved source contacts open in their own company views.':'No company directory records are published. This does not establish an empty source.';
         draw(v);
       }catch{if(live(v)){rows=[];message='Company directory unavailable. Refresh or sign in again.';draw(v);}}
