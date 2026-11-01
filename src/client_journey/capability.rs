@@ -59,8 +59,13 @@ pub struct SourceProfile {
     /// The DT Max company scope this client's tax files are preserved under.
     #[serde(default)]
     pub dtmax_company: Option<String>,
+    /// DT Max client file stems (e.g. "SMITHJ") staff confirmed belong to this
+    /// client. Identity is a staff decision; agents only link files by these keys.
+    #[serde(default)]
+    pub dtmax_keys: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
 pub struct StepContext {
     pub client_id: String,
     pub step: String,
@@ -78,11 +83,26 @@ pub enum Readiness {
     Blocked { reasons: Vec<String>, evidence: Value },
 }
 
+/// A tool the agent may call to do a step's work, in Claude tool format.
+#[derive(Debug, Clone, Serialize)]
+pub struct ActionSpec {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub input_schema: Value,
+}
+
 pub trait Capability: Send + Sync {
     fn id(&self) -> &'static str;
     /// Journey step keys this capability does the work for.
     fn steps(&self) -> &'static [&'static str];
     fn assess<'a>(&'a self, ctx: &'a StepContext) -> BoxFut<'a, Readiness>;
+    /// Actions the agent may take for this step. Each must be safe to repeat.
+    fn actions(&self, _step: &str) -> Vec<ActionSpec> {
+        Vec::new()
+    }
+    fn act<'a>(&'a self, _ctx: &'a StepContext, name: &'a str, _input: &'a Value) -> BoxFut<'a, Result<Value, String>> {
+        Box::pin(async move { Err(format!("unknown action {name}")) })
+    }
 }
 
 #[derive(Default, Clone)]
