@@ -13,7 +13,7 @@ verbatim; nothing is altered or dropped silently:
 * trial-balance rows that cannot be read are kept as flagged review blockers.
 
 `load` uploads the staged book to a *local* test copy only and commits it with
-`needs_review`. The server itself refuses `needs_review` on any non-test-copy
+`needs_review`. The server refuses `needs_review` on hosted stores unless NXT_BOOKS_NEEDS_REVIEW=on, and on any other non-test-copy
 store, so production behaviour is unchanged. The bearer key comes from
 NXT_TEST_COMPANY_BOOKS_KEY and is never printed.
 """

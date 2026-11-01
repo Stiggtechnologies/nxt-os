@@ -185,13 +185,22 @@ fn controls() -> Value {
 fn preview_value(id: &str, p: &Preview) -> Value {
     json!({"preview_id":id,"stage":if p.analysis.controls_passed {"preview_ready"} else {"assessment_blocked"},"preview":p,"controls":controls()})
 }
+/// Durable stores accept a book that fails its controls only when the owner turns this on. Such a
+/// book is history under review, flagged on every read, and never a basis for cutover.
+fn needs_review_permitted(backend: &str, switch: Option<&str>) -> bool {
+    backend == "memory" || (backend == "supabase" && switch.is_some_and(|v| v.trim().eq_ignore_ascii_case("on")))
+}
 impl CompanyBooks {
     /// Test-copy guard: only the in-memory (optionally file-backed) dev store.
     fn test_copy(&self) -> bool {
         self.store.backend_name() == "memory"
     }
+    /// A committed needs_review head stays readable even if the switch below is later turned off.
     fn review_ok(&self, h: &Head) -> bool {
-        self.test_copy() && h.review.as_ref().is_some_and(|r| r.status == NEEDS_REVIEW)
+        h.review.as_ref().is_some_and(|r| r.status == NEEDS_REVIEW && !r.blockers.is_empty())
+    }
+    fn needs_review_allowed(&self) -> bool {
+        needs_review_permitted(self.store.backend_name(), std::env::var("NXT_BOOKS_NEEDS_REVIEW").ok().as_deref())
     }
     fn max_lines(&self) -> usize {
         if self.test_copy() {
@@ -811,8 +820,8 @@ impl CompanyBooks {
         {
             return Err(bad("Request id and reviewer label are required"));
         }
-        if input.needs_review && !self.test_copy() {
-            return Err(err(StatusCode::CONFLICT, "needs_review commits are test_copy_only"));
+        if input.needs_review && !self.needs_review_allowed() {
+            return Err(err(StatusCode::CONFLICT, "needs_review commits are test_copy_only unless NXT_BOOKS_NEEDS_REVIEW=on"));
         }
         let p = self.load_preview(company, &input.preview_id).await?;
         if p.input.expected_head != input.expected_head {
@@ -835,9 +844,13 @@ impl CompanyBooks {
                 "Unresolved source identity, currency, completeness or reconciliation blockers",
             ));
         }
+        let mut review_blockers = p.analysis.blockers.clone();
+        review_blockers.extend(input.review_blockers.iter().cloned());
+        if input.needs_review && review_blockers.is_empty() {
+            return Err(bad("A needs_review commit must record at least one blocker"));
+        }
         let review = input.needs_review.then(|| {
-            let mut blockers = p.analysis.blockers.clone();
-            blockers.extend(input.review_blockers.iter().cloned());
+            let blockers = review_blockers.clone();
             Review {
                 status: NEEDS_REVIEW.into(),
                 blockers,

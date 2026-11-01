@@ -113,6 +113,15 @@ async fn needs_review_is_refused_outside_test_copy() {
     assert!(e.1.contains("test_copy_only"));
     assert!(!s.test_copy());
 }
+#[test]
+fn durable_needs_review_needs_the_owner_switch() {
+    assert!(needs_review_permitted("memory", None));
+    assert!(!needs_review_permitted("supabase", None));
+    assert!(!needs_review_permitted("supabase", Some("off")));
+    assert!(needs_review_permitted("supabase", Some(" ON ")));
+    assert!(!needs_review_permitted("redis", Some("on")));
+    assert!(!needs_review_permitted("unavailable", Some("on")));
+}
 #[tokio::test]
 async fn review_blockers_require_needs_review() {
     let (s, input) = staged().await;
