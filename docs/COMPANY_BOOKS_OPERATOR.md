@@ -37,3 +37,7 @@ Final cutover still depends on complete declared object coverage, resolved excep
 ## Needs-review books on durable storage
 
 A book that fails its controls can be committed on Supabase only while the server has `NXT_BOOKS_NEEDS_REVIEW=on`. It is off by default, and Redis always refuses. The commit records every blocker and at least one is required. Every read reports `review_status: needs_review`, and such a book is history under review, not an accepted balance. Turning the switch off stops new commits; committed books stay readable.
+
+## Durable book limits
+
+Supabase books default to 24 MiB, 100,000 entries and 500,000 lines. `NXT_COMPANY_BOOK_MAX_MIB` raises this up to 128 MiB, and entries and lines scale with it. Every read loads the whole book, so time a read of the largest book before raising it. Vercel stops a request at 120 seconds.
