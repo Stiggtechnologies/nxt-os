@@ -2,7 +2,7 @@
 //! the agent works books_access through capability actions, Nixon reviews
 //! before the step closes, and escalations and policy-reserved steps wait in
 //! the human review queue. Synthetic data only.
-use nxt_os::agent::{Agent, Model};
+use nxt_os::agent::{Agent, Model, ModelError};
 use nxt_os::client_journey::capability::{BoxFut, Capabilities, SourceProfile, SourceSystem};
 use nxt_os::client_journey::service::{Journeys, StaffAction};
 use nxt_os::client_journey::sources::SourceSoftwareImport;
@@ -16,21 +16,27 @@ use std::sync::{Arc, Mutex};
 
 /// Replays canned Messages API responses and records what it was offered.
 struct Script {
-    replies: Mutex<VecDeque<Value>>,
+    replies: Mutex<VecDeque<Result<Value, ModelError>>>,
     tools_seen: Mutex<Vec<String>>,
 }
 
 impl Script {
     fn new(replies: Vec<Value>) -> Arc<Self> {
+        Self::results(replies.into_iter().map(Ok).collect())
+    }
+    fn results(replies: Vec<Result<Value, ModelError>>) -> Arc<Self> {
         Arc::new(Self { replies: Mutex::new(replies.into()), tools_seen: Mutex::new(vec![]) })
+    }
+    fn left(&self) -> usize {
+        self.replies.lock().unwrap().len()
     }
 }
 
 impl Model for Script {
-    fn respond<'a>(&'a self, _system: &'a str, tools: &'a [Value], _messages: &'a [Value]) -> BoxFut<'a, Result<Value, String>> {
+    fn respond<'a>(&'a self, _system: &'a str, tools: &'a [Value], _messages: &'a [Value]) -> BoxFut<'a, Result<Value, ModelError>> {
         Box::pin(async move {
             *self.tools_seen.lock().unwrap() = tools.iter().filter_map(|t| t["name"].as_str().map(String::from)).collect();
-            self.replies.lock().unwrap().pop_front().ok_or_else(|| "script exhausted".to_string())
+            self.replies.lock().unwrap().pop_front().unwrap_or_else(|| Err(ModelError::Other("script exhausted".into())))
         })
     }
 }
@@ -180,4 +186,51 @@ async fn policy_reserved_steps_wait_for_a_person_and_manual_steps_skip_the_model
     let coverage = f.journeys.coverage();
     assert_eq!(coverage["policy"]["modes"]["books_access"], "human");
     assert_eq!(coverage["policy"]["modes"]["invoicing"], "human");
+}
+
+#[tokio::test]
+async fn claude_outage_restarts_the_step_on_the_backup_under_the_same_controls() {
+    let f = firm("{}");
+    at_books_access(&f, "ng-a", dtmax(&["NGA"])).await;
+    unmatched_file(&f, "nga").await;
+    let primary = Script::results(vec![Ok(call("list_unmatched_dtmax_files", json!({}))), Err(ModelError::Outage("overloaded".into()))]);
+    let backup = Script::new(vec![call("link_dtmax_files_by_confirmed_keys", json!({})), done("Linked.")]);
+    let agent = Agent::new(f.journeys.clone(), primary).with_backup(Some(backup.clone()));
+    let v = agent.work("ng-a").await.map_err(|e| e.1).unwrap();
+    assert_eq!(v["model_used"], "backup");
+    let tools: Vec<&str> = v["actions"].as_array().unwrap().iter().map(|a| a["tool"].as_str().unwrap()).collect();
+    assert_eq!(tools, ["list_unmatched_dtmax_files", "model_failover", "link_dtmax_files_by_confirmed_keys"]);
+    assert!(backup.tools_seen.lock().unwrap().contains(&"escalate_to_human".to_string()));
+    assert_eq!(v["journey"]["status"]["books_access"], "completed");
+    assert_eq!(v["journey"]["assessments"][0]["readiness"]["review"]["approved"], true);
+    assert_eq!(v["journey"]["agent_log"].as_array().unwrap().len(), 3, "the failover is on the record");
+}
+
+#[tokio::test]
+async fn refusals_and_non_outage_errors_never_reach_the_backup() {
+    let f = firm("{}");
+    at_books_access(&f, "roy-b", dtmax(&["ROYB"])).await;
+    unmatched_file(&f, "royb").await;
+    let backup = Script::new(vec![done("must not run")]);
+
+    let refused = Script::new(vec![json!({"stop_reason": "refusal", "content": []})]);
+    let v = Agent::new(f.journeys.clone(), refused).with_backup(Some(backup.clone())).work("roy-b").await.map_err(|e| e.1).unwrap();
+    assert_eq!(v["model_used"], "primary");
+    assert_eq!(v["journey"]["status"]["books_access"], "pending");
+
+    let bad_key = Script::results(vec![Err(ModelError::Other("bad key".into()))]);
+    let err = Agent::new(f.journeys.clone(), bad_key).with_backup(Some(backup.clone())).work("roy-b").await.err().unwrap();
+    assert_eq!(err.0.as_u16(), 502);
+    assert_eq!(backup.left(), 1, "the backup saw no client data");
+}
+
+#[tokio::test]
+async fn outage_without_a_backup_fails_but_keeps_the_action_log() {
+    let f = firm("{}");
+    at_books_access(&f, "kim-d", dtmax(&["KIMD"])).await;
+    let primary = Script::results(vec![Ok(call("list_unmatched_dtmax_files", json!({}))), Err(ModelError::Outage("down".into()))]);
+    let err = Agent::new(f.journeys.clone(), primary).work("kim-d").await.err().unwrap();
+    assert_eq!(err.0.as_u16(), 502);
+    let j = f.journeys.get("kim-d").await.map_err(|e| e.1).unwrap();
+    assert_eq!(j["agent_log"].as_array().unwrap().len(), 1);
 }
