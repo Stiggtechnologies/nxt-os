@@ -1,6 +1,7 @@
-//! NXT OS: an AI-native business operating system. Hosts NXT Ledger
-//! (accounting) and NXT Referrals (referral + loyalty), with the "Ask NXT"
-//! assistant across both, served as one Rust function on Vercel.
+//! NXT OS: an AI-native operating system for running an accounting firm,
+//! served as one Rust function on Vercel. The client journey
+//! (`client_journey`) is the spine: each step is done by a module capability
+//! (`client_journey::capability`) or recorded by staff, and human gates stay human.
 
 pub mod ledger;
 pub mod firm;
@@ -38,11 +39,18 @@ fn app_modules_with_tax(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<refe
     let company_books = Arc::new(company_books::CompanyBooks::new(Store::from_env()));
     let source_lists = Arc::new(company_books::source_lists::SourceLists::new(Store::from_env(), migrations.clone()));
     let source_import = Arc::new(source_import::SourceImport::new(Store::from_env()));
-    app_all(ledger,referrals,firm,tax,engagements,migrations,signatures,company_books,source_lists,source_import)
+    app_all(ledger,referrals,firm,tax,engagements,migrations,signatures,company_books,source_lists,source_import,Store::from_env())
 }
 
-fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>, migrations:Arc<migrations::Migrations>, signatures:Arc<signatures::Signatures>, company_books:Arc<company_books::CompanyBooks>, source_lists:Arc<company_books::source_lists::SourceLists>, source_import: Arc<source_import::SourceImport>) -> Router {
+fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>, migrations:Arc<migrations::Migrations>, signatures:Arc<signatures::Signatures>, company_books:Arc<company_books::CompanyBooks>, source_lists:Arc<company_books::source_lists::SourceLists>, source_import: Arc<source_import::SourceImport>, journey_store: Store) -> Router {
     tax.require_signed_t183_from(signatures.clone());
+    let capabilities = client_journey::capability::Capabilities::new()
+        .with(Arc::new(client_journey::sources::SourceSoftwareImport {
+            company_books: company_books.clone(),
+            migrations: migrations.clone(),
+            source_import: source_import.clone(),
+        }));
+    let journeys = Arc::new(client_journey::service::Journeys::new(journey_store, capabilities));
     Router::new()
         .merge(ledger::routes::router(ledger.clone()))
         .merge(firm::router(firm.clone()))
@@ -65,6 +73,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
         .merge(source_import::router(source_import))
+        .merge(client_journey::router(journeys))
 }
 
 /// Builds the app with storage chosen per-module by `make_store`.
@@ -79,5 +88,5 @@ pub fn app_with(make_store: impl Fn() -> Store) -> Router {
     let company_books = Arc::new(company_books::CompanyBooks::new(make_store()));
     let source_lists = Arc::new(company_books::source_lists::SourceLists::new(make_store(), migrations.clone()));
     let source_import = Arc::new(source_import::SourceImport::new(make_store()));
-    app_all(ledger, referrals, firm, tax, engagements,migrations,signatures,company_books,source_lists,source_import)
+    app_all(ledger, referrals, firm, tax, engagements,migrations,signatures,company_books,source_lists,source_import,make_store())
 }
