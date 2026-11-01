@@ -1,0 +1,39 @@
+/* Sanitized observed source navigation. No source account data or authenticated URLs. */
+(() => {
+  'use strict';
+  const {esc}=NXT,host=document.getElementById('qb-navigation');
+  const state={catalog:null,entries:new Map(),search:'',expanded:new Set(),current:''};
+  const list=value=>Array.isArray(value)?value:[];
+  const href=entry=>entry.native_route?'#'+entry.native_route:'#capability/'+encodeURIComponent(entry.id);
+  function collect(nodes,path=[]){for(const node of nodes){if(!node||typeof node.id!=='string'||typeof node.label!=='string'||state.entries.has(node.id))throw Error('Unsupported or duplicate source menu entry.');state.entries.set(node.id,{...node,observed_path:node.observed_path||[...path,node.label].join(' > ')});collect(list(node.children),[...path,node.label]);}}
+  function matches(node,path){const query=state.search.toLowerCase().trim(),entry=state.entries.get(node.id),own=node.observation!=='grouping'&&String(entry?.observed_path||node.label).toLowerCase().includes(query);return !query||own||list(node.children).some(child=>matches(child,[...path,node.label]));}
+  function renderNode(node,path=[]){
+    if(!matches(node,path))return '';
+    const children=list(node.children),entry=state.entries.get(node.id),observed=entry.observation==='observed';
+    const status=entry.native_route?'Native':observed?'Scope':'Unverified';
+    const link=`<a class="qb-nav-link" href="${esc(href(entry))}" data-qb-menu="${esc(entry.id)}" title="${esc(entry.native_scope||'Observed source menu; native scope is described before any action.')}"${state.current===href(entry).slice(1)?' aria-current="page"':''}><span>${esc(entry.label)}${!observed?'<small class="qb-nav-item-source">Not observed in this workspace</small>':''}</span><span class="qb-nav-status ${entry.native_route?'native':'scope'}">${status}</span></a>`;
+    if(!children.length)return link;
+    return `<details class="qb-nav-node" data-qb-group="${esc(node.id)}"${state.search||state.expanded.has(node.id)?' open':''}><summary>${esc(node.label)}</summary><div class="qb-nav-children">${node.native_route?`<a class="qb-nav-link qb-nav-group-open" href="${esc(href(entry))}">Open native ${esc(node.label)}</a>`:''}${children.map(child=>renderNode(child,[...path,node.label])).join('')}</div></details>`;
+  }
+  function renderTree(){const tree=host?.querySelector('[data-qb-tree]');if(!tree||!state.catalog)return;const html=list(state.catalog.groups).map(node=>renderNode(node)).join('');tree.innerHTML=html||'<p class="qb-nav-empty">No observed menu matches this search.</p>';tree.querySelectorAll('details[data-qb-group]').forEach(detail=>detail.addEventListener('toggle',()=>{if(!state.search){if(detail.open)state.expanded.add(detail.dataset.qbGroup);else state.expanded.delete(detail.dataset.qbGroup);}}));}
+  function render(){
+    if(!host||!state.catalog)return;
+    const observed=[...state.entries.values()].filter(e=>e.observation==='observed').length;
+    host.innerHTML=`<div class="qb-nav-heading"><span>QuickBooks menu map</span></div><p class="qb-nav-help">${observed} observed menu entries · ${esc(state.catalog.observed_at||'Capture date not recorded')}</p><label class="qb-nav-search">Search menus<input type="search" data-qb-search placeholder="Reports, settings, payroll…" value="${esc(state.search)}"></label><div class="qb-nav-controls"><button type="button" data-qb-expand>Expand all</button><button type="button" data-qb-collapse>Collapse all</button></div><div class="qb-nav-tree" data-qb-tree></div><p class="qb-nav-boundary">Native opens a bounded NXT feature. Scope opens an honest capability note. Menus alone do not establish QuickBooks parity.</p>`;
+    host.querySelector('[data-qb-search]').addEventListener('input',event=>{state.search=event.target.value;renderTree();});
+    host.querySelector('[data-qb-expand]').addEventListener('click',()=>{for(const [id,entry] of state.entries)if(list(entry.children).length)state.expanded.add(id);renderTree();});
+    host.querySelector('[data-qb-collapse]').addEventListener('click',()=>{state.expanded.clear();state.search='';host.querySelector('[data-qb-search]').value='';renderTree();});
+    renderTree();
+  }
+  function setCurrent(hash){state.current=hash;host?.querySelectorAll('a[data-qb-menu]').forEach(a=>a.setAttribute('aria-current',a.getAttribute('href')==='#'+hash?'page':'false'));}
+  function capability(id){
+    const entry=state.entries.get(id);if(!entry)return null;
+    const sourceObserved=entry.observation==='observed';
+    const related=list(entry.related);
+    const relatedLinks=related.map(link=>link.route?`<a class="btn" href="#${esc(link.route)}">${esc(link.label)}</a>`:link.app?`<button class="btn" type="button" data-qb-open-app="${esc(link.app)}" data-qb-open-view="${esc(link.view||'')}">${esc(link.label)}</button>`:'').join('');
+    return {title:entry.label,subtitle:esc(entry.observed_path),actions:'<a class="btn" href="#reports">NXT reports</a>',body:`<section class="qb-scope-notice"><strong>${sourceObserved?'Source menu observed · full native capability not implemented':'Source menu not verified in this workspace'}</strong><p>This menu is included in the navigation map so its coverage is visible. Opening this page performs no source action, sends nothing externally and does not record a financial posting or approval. Original source systems remain authoritative during parallel testing.</p></section><div class="qb-scope-grid"><section class="card"><span class="qb-scope-tag">${esc(entry.status_label||'Capability gap')}</span><h2>Available in NXT</h2><p>${esc(entry.native_scope||'No working native equivalent is established for this source capability.')}</p>${relatedLinks?`<div class="qb-scope-links">${relatedLinks}</div>`:''}<p class="qb-scope-meta">A related native screen is a narrower NXT workflow; it is not proof of source equivalence.</p></section><section class="card"><h2>Required next step</h2><p>${esc(entry.next_step||'Specify the permitted source workflow and acceptance cases, implement the required behavior, then compare the same synthetic scenario before accepting this capability.')}</p><p class="qb-scope-meta">Company isolation, verified individual authority, external service permissions, supported imports and applicable filing certification remain separate gates.</p></section><section class="card"><h2>Navigation evidence</h2><p class="qb-scope-path">${esc(entry.observed_path)}</p><p class="qb-scope-meta">Observation: ${esc(sourceObserved?'Visible authenticated source UI':'Documented or requested, not observed')}<br>Capture: ${esc(state.catalog.observed_at||'Not recorded')}<br>Context: ${esc(state.catalog.context||'Source workspace navigation only')}</p><p class="qb-scope-meta">${esc(state.catalog.limitations||'Available menus depend on the source plan, permissions, region and current UI. Complete menu or runtime coverage is not established.')}</p></section></div>`};
+  }
+  document.addEventListener('click',event=>{const button=event.target.closest('[data-qb-open-app]');if(!button)return;const app=button.dataset.qbOpenApp,view=button.dataset.qbOpenView;if(window.parent!==window)window.parent.postMessage({nxt:'open-app',app,view},location.origin);else location.href='/#/'+encodeURIComponent(app)+(view?'/'+view:'');});
+  const ready=(async()=>{try{const response=await fetch('qb-navigation.json',{cache:'no-cache'});if(!response.ok)throw Error('Menu inventory request failed.');const catalog=await response.json();if(catalog.format!=='nxt-observed-qbo-navigation/v1'||!Array.isArray(catalog.groups))throw Error('Menu inventory is incomplete.');state.catalog=catalog;collect(catalog.groups);render();return true;}catch(error){if(host)host.innerHTML=`<p class="qb-nav-help" role="alert">${esc(error.message)} Existing native Ledger navigation remains available below.</p>`;return false;}})();
+  window.NXT_QB_NAV={ready,setCurrent,capability};
+})();

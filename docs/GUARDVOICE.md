@@ -10,6 +10,10 @@ It has three layers:
 
 Nothing here dials a real number until Twilio credentials, a from-number, and live mode are all set. The default, with those unset, is mock mode.
 
+**The public line is closed by default.** The Twilio routes return 404 unless `GUARDVOICE_ENABLED=on`, live mode, enforced signatures, a Twilio auth token and an explicit `GUARDVOICE_STREAM_SECRET` are all in place. Mock mode is for tests and the signed-in staff simulator only.
+
+**Callers are not verified.** Caller ID is not proof of identity, so the assistant does not read firm data to a caller unless `GUARDVOICE_CALLER_READS=on`, and that should stay off until caller verification exists. `GUARDVOICE_AUTONOMY` defaults to `read`, which holds every write for a person. The phone desk needs an account assigned to all clients, and only a reviewer or admin can decide an approval. The decision records who made it.
+
 ## Architecture
 
 ```

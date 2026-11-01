@@ -7,6 +7,12 @@ const { api, esc, money, toCents, today, fmtDate, toast, modal, confirm, csvDown
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const main = $("#main");
+const companyBridgeHost = $("#ledger-company-bridge");
+const companyBridge = companyBridgeHost && window.NXTLedgerCompanyBridge?.mount(companyBridgeHost, {api, esc, openApp(app, view) {
+  if (window.parent !== window) window.parent.postMessage({nxt:"open-app", app, view}, location.origin);
+  else location.href = "/#/" + app + "/" + view;
+}});
+window.addEventListener("pagehide", () => companyBridge?.destroy(), {once:true});
 $("#mark").innerHTML = NXT.MARK + "<span>NXT Ledger</span>";
 try { const t = localStorage.getItem("nxt_theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 
@@ -37,7 +43,7 @@ const taxOptions = (selected) => S.taxCodes.map((t) => `<option value="${t.code}
 
 function page(title, sub, actions, body) {
   main.innerHTML = `<button class="btn sm menu-btn no-print" id="menuBtn">☰ Menu</button>
-    <div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ""}</div><div class="row no-print">${actions || ""}</div></div>${body}`;
+    <div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ""}</div><div class="row no-print">${actions || ""}</div></div><section class="qb-native-boundary"><div><strong>Firm workspace · NXT native books</strong><span>This screen shows the shared Firm workspace. Choose Company books in the navigation to open an imported company's accounts, journals or saved contacts. Empty or zero workspace reports do not represent that company's source balances. Original systems remain authoritative during parallel testing.</span></div><button class="btn sm" type="button" data-qb-open-app="migrations" data-qb-open-view="companies">Choose company books</button></section>${body}`;
   $("#menuBtn").onclick = () => $("#side").classList.toggle("open");
 }
 function table(cols, rows, { onClick, empty = "Nothing here yet.", foot } = {}) {
@@ -57,6 +63,7 @@ async function route() {
   const hash = location.hash.slice(1) || "dashboard";
   const [name, ...rest] = hash.split("/");
   $$("#side a").forEach((a) => a.setAttribute("aria-current", a.getAttribute("href") === "#" + name ? "page" : "false"));
+  window.NXT_QB_NAV?.setCurrent(hash);
   $("#side").classList.remove("open");
   if (window.parent !== window) window.parent.postMessage({ nxt: "view", view: hash }, location.origin);
   const v = views[name] || views.dashboard;
@@ -668,6 +675,35 @@ views.audit = async () => {
   const log = await api("/api/ledger/audit");
   page("Audit log", "A record of every change made to your books.", "",
     `<div class="card">${table([{ h: "When", f: (e) => new Date(e.at).toLocaleString("en-CA") }, { h: "Action", f: (e) => `<span class="mono">${esc(e.action)}</span>` }, { h: "Detail", f: (e) => esc(e.detail) }], log, { empty: "No activity yet." })}</div>`);
+};
+
+// Observed source navigation routes to existing native views or explicit scope
+// notes. Menu presence does not establish QuickBooks functionality or parity.
+views["native-create"] = async (action) => {
+  const handlers = {
+    expense: ["banking", () => moneyModal("out")],
+    deposit: ["banking", () => moneyModal("in")],
+    transfer: ["banking", () => transferModal(false)],
+    journal: ["journal", () => journalModal()],
+    customer: ["customers", () => contactModal("customer")],
+    supplier: ["vendors", () => contactModal("vendor")],
+  };
+  const handler = Object.hasOwn(handlers, action) ? handlers[action] : null;
+  if (!handler) return go("dashboard");
+  // Change to the stable existing view before opening its existing form. Save
+  // and cancel can refresh that view without reopening another creation form.
+  history.replaceState(null, "", "#" + handler[0]);
+  window.NXT_QB_NAV?.setCurrent(handler[0]);
+  if (window.parent !== window) window.parent.postMessage({nxt:"view",view:handler[0]},location.origin);
+  await views[handler[0]]();
+  return handler[1]();
+};
+
+views.capability = async (id) => {
+  await window.NXT_QB_NAV?.ready;
+  const view = window.NXT_QB_NAV?.capability(decodeURIComponent(id || ""));
+  if (!view) return page("Menu capability unavailable", "The selected source menu is not in the observed inventory.", '<a class="btn" href="#dashboard">NXT dashboard</a>', '<div class="card"><p>Reload the menu inventory or choose an observed menu. No source action has run.</p></div>');
+  page(view.title, view.subtitle, view.actions, view.body);
 };
 
 // ---------------------------------------------------------------- boot

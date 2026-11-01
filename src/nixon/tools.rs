@@ -39,6 +39,13 @@ fn permission(tool: &str) -> Option<Perm> {
 impl GuardVoice {
     pub(super) async fn gate(&self, call_id: &str, tool: &str, input: Value) -> Result<ToolOut, String> {
         let perm = permission(tool).ok_or_else(|| format!("unknown tool {tool}"))?;
+        if matches!(perm, Perm::Read) && !self.config.caller_reads {
+            return Ok(ToolOut {
+                value: json!({ "status": "refused", "speech": "I can't share account details on this line. I can take a message for the team." }),
+                pending_id: None,
+                end_call: false,
+            });
+        }
         let hold = match perm {
             Perm::Consequential => true,
             Perm::Write => self.config.autonomy == Autonomy::Read,
@@ -58,7 +65,7 @@ impl GuardVoice {
         self.execute(call_id, tool, &input).await
     }
 
-    pub(crate) async fn decide(&self, id: &str, approve: bool) -> Result<Approval, String> {
+    pub(crate) async fn decide(&self, id: &str, approve: bool, by: &str) -> Result<Approval, String> {
         let mut a: Approval = self
             .store
             .get_json(&format!("gv:approval:{id}"))
@@ -67,6 +74,7 @@ impl GuardVoice {
         if a.status != "pending" && !(approve && a.status == "failed") {
             return Err(format!("approval is already {}", a.status));
         }
+        a.decided_by = Some(by.to_string());
         if !approve {
             a.status = "denied".into();
             a.decided_at = Some(now());

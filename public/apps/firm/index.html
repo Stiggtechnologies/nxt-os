@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en-CA">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>NXT Firm · Firm Operations</title>
+  <meta name="description" content="Firm operations, accountable automation and human review inside NXT OS.">
+  <link rel="stylesheet" href="/nxt/brand.css">
+  <link rel="stylesheet" href="firm.css">
+</head>
+<body>
+  <a href="#main" class="skip-link">Skip to content</a>
+  <div class="firm-app">
+    <nav class="firm-rail" aria-label="Main navigation">
+      <a class="rail-brand" href="#overview" aria-label="NXT Firm home">NXT</a>
+      <button data-global-action="menu" aria-label="My menu"><span>▦</span><small>My menu</small></button>
+      <button data-global-action="create" aria-label="Create"><span>⊕</span><small>Create</small></button>
+      <a href="#overview" data-rail="home"><span>⌂</span><small>Home</small></a>
+      <button data-global-action="clients" aria-label="Clients"><span>♧</span><small>Clients</small></button>
+      <a href="#projects" data-rail="work"><span>▤</span><small>Work</small></a>
+      <a href="#accounts" data-rail="hub"><span>⌘</span><small>Firm hub</small></a>
+      <button data-open-ledger="dashboard" aria-label="Firm books"><span>▦</span><small>Firm books</small></button>
+      <span class="rail-separator"></span><span class="rail-label">PINNED</span>
+      <button data-open-ledger="accounts" aria-label="Accounting"><span>▣</span><small>Accounting</small></button>
+      <button data-open-ledger="invoices" aria-label="Sales"><span>◴</span><small>Sales</small></button>
+      <a href="#approvals" data-rail="review"><span>✓</span><small>Review</small><b id="approval-badge" class="rail-badge" hidden></b></a>
+    </nav>
+    <aside class="firm-side" id="side" hidden><nav id="secondary-nav" aria-label="Section navigation"></nav></aside>
+    <div class="firm-workspace">
+      <header class="firm-topbar"><div class="row"><button class="btn sm mobile-menu" id="menu-toggle" aria-label="Open navigation" aria-expanded="false">☰</button><button class="firm-switcher" data-global-action="workspace">NXT Corporation <span>⌄</span></button></div><button class="global-search" data-global-action="search"><span>⌕</span> Navigate. Find work, reports and more… <kbd>Ctrl K</kbd></button><div class="row top-tools"><button data-top-route="projects" aria-label="Tasks" title="Tasks">▤</button><button data-top-route="automations" aria-label="Workflow automation" title="Workflow automation">ϟ</button><button data-top-route="approvals" aria-label="Human review inbox" title="Human review inbox">▱</button><button data-top-route="integrations" aria-label="Integrations" title="Integrations">⌘</button><button data-global-action="settings" aria-label="Settings" title="Settings">⚙</button><button id="refresh" aria-label="Refresh current view" title="Refresh current view">↻</button><button class="avatar" data-global-action="workspace" aria-label="Workspace information">N</button></div></header>
+      <main id="main" tabindex="-1" aria-live="polite"><div class="loading-state"><span class="spinner"></span>Loading firm workspace…</div></main>
+      <footer class="firm-footer"><span>NXT Corporation · Firm Operations</span><span id="storage-label">Shared workspace</span></footer>
+    </div>
+  </div>
+  <script src="/nxt/ui.js"></script>
+  <script src="firm.js"></script>
+</body>
+</html>

@@ -7,9 +7,11 @@ use super::config::{SignatureMode, Transport};
 use super::models::*;
 use super::voice::{self, host_of, param};
 use super::GuardVoice;
+use crate::firm::staff::Identity;
 use crate::referral::routes::{require_admin, ApiError};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::{
+    Extension,
     extract::{Path, Query, Request, State},
     http::{HeaderMap, StatusCode},
     middleware,
@@ -21,9 +23,25 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+/// The public Twilio routes do not exist until the line is enabled.
+async fn line_open(State(gv): State<Arc<GuardVoice>>, req: Request, next: middleware::Next) -> Response {
+    if !gv.config.public_line {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    next.run(req).await
+}
+
+/// Calls cross clients, so the phone desk needs a firm-wide account.
+async fn firm_wide(req: Request, next: middleware::Next) -> Response {
+    let allowed = req.extensions().get::<Identity>().is_some_and(|id| id.can_client("*"));
+    if !allowed {
+        return ApiError(StatusCode::FORBIDDEN, "the phone desk needs an account assigned to all clients".into()).into_response();
+    }
+    next.run(req).await
+}
+
 pub fn router(gv: Arc<GuardVoice>) -> Router {
-    let public = Router::new()
-        .route("/api/guardvoice/health", get(health))
+    let phone = Router::new()
         .route("/api/guardvoice/twiml", post(twiml_inbound))
         .route("/api/guardvoice/twiml/gather", post(twiml_gather))
         .route("/api/guardvoice/twiml/outbound", post(twiml_outbound))
@@ -32,7 +50,9 @@ pub fn router(gv: Arc<GuardVoice>) -> Router {
         .route("/api/guardvoice/twiml/transfer-whisper", post(twiml_whisper))
         .route("/api/guardvoice/twiml/transfer-screen", post(twiml_screen))
         .route("/api/guardvoice/twiml/transfer-result", post(twiml_transfer_result))
-        .route("/api/guardvoice/relay", post(relay_http).get(relay_ws));
+        .route("/api/guardvoice/relay", post(relay_http).get(relay_ws))
+        .route_layer(middleware::from_fn_with_state(gv.clone(), line_open));
+    let public = Router::new().route("/api/guardvoice/health", get(health)).merge(phone);
     let admin = Router::new()
         .route("/api/guardvoice/status", get(status))
         .route("/api/guardvoice/summary", get(summary))
@@ -52,6 +72,7 @@ pub fn router(gv: Arc<GuardVoice>) -> Router {
         .route("/api/guardvoice/mock/calls/{id}/say", post(mock_say))
         .route("/api/guardvoice/mock/calls/{id}/interrupt", post(mock_interrupt))
         .route("/api/guardvoice/mock/calls/{id}/hangup", post(mock_hangup))
+        .layer(middleware::from_fn(firm_wide))
         .layer(middleware::from_fn(require_admin));
     public.merge(admin).with_state(gv)
 }
@@ -163,12 +184,15 @@ struct DecideBody {
     decision: String,
 }
 
-async fn decide(State(gv): State<Arc<GuardVoice>>, Path(id): Path<String>, Json(b): Json<DecideBody>) -> Result<Json<Value>, ApiError> {
+async fn decide(State(gv): State<Arc<GuardVoice>>, Extension(id_): Extension<Identity>, Path(id): Path<String>, Json(b): Json<DecideBody>) -> Result<Json<Value>, ApiError> {
+    if !id_.is_reviewer() {
+        return Err(ApiError(StatusCode::FORBIDDEN, "approval needs a reviewer or admin account".into()));
+    }
     let approve = matches!(b.decision.as_str(), "approve" | "approved" | "yes");
     if !approve && !matches!(b.decision.as_str(), "deny" | "denied" | "no") {
         return Err(ApiError(StatusCode::BAD_REQUEST, "decision must be approve or deny".into()));
     }
-    let a = gv.decide(&id, approve).await.map_err(|e| ApiError(StatusCode::BAD_REQUEST, e))?;
+    let a = gv.decide(&id, approve, &id_.label()).await.map_err(|e| ApiError(StatusCode::BAD_REQUEST, e))?;
     Ok(Json(json!(a)))
 }
 

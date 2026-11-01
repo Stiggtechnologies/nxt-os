@@ -30,7 +30,7 @@ async fn main() {
     let router = app_with(Store::from_env)
         .route("/", axum::routing::get(static_file))
         .route("/{*file}", axum::routing::get(static_file));
-    let addr = std::env::var("PORT").map(|p| format!("0.0.0.0:{p}")).unwrap_or("0.0.0.0:3000".into());
+    let addr = std::env::var("PORT").map(|p| format!("127.0.0.1:{p}")).unwrap_or("127.0.0.1:3000".into());
     println!("NXT OS dev server on http://{addr}");
     axum::serve(tokio::net::TcpListener::bind(&addr).await.unwrap(), router).await.unwrap();
 }

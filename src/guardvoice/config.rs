@@ -41,6 +41,12 @@ pub struct Config {
     pub transport: Transport,
     pub signature_mode: SignatureMode,
     pub autonomy: Autonomy,
+    /// Serves the public Twilio routes. Off unless deliberately enabled on a
+    /// live line with enforced signatures and its own stream secret.
+    pub public_line: bool,
+    /// Lets the assistant read firm data to a caller. Caller ID is not proof of
+    /// identity, so this is off outside tests and the staff simulator.
+    pub caller_reads: bool,
     /// How Nixon decides: scripted in tests and mock mode, Claude when asked.
     pub nixon: Engine,
     pub agent_name: String,
@@ -73,6 +79,8 @@ impl Config {
             transport: Transport::Relay,
             signature_mode: SignatureMode::Off,
             autonomy: Autonomy::Write,
+            public_line: true,
+            caller_reads: true,
             nixon: Engine::Scripted,
             agent_name: "Nixon".into(),
             company_fallback: "your business".into(),
@@ -137,8 +145,8 @@ impl Config {
             }
         };
         c.autonomy = match env("GUARDVOICE_AUTONOMY").to_ascii_lowercase().as_str() {
-            "read" | "readonly" => Autonomy::Read,
-            _ => Autonomy::Write,
+            "write" => Autonomy::Write,
+            _ => Autonomy::Read,
         };
         c.nixon = match env("NIXON_ENGINE").to_ascii_lowercase().as_str() {
             "scripted" | "mock" => Engine::Scripted,
@@ -186,6 +194,12 @@ impl Config {
                 uuid::Uuid::new_v4().to_string()
             }
         });
+        c.public_line = env("GUARDVOICE_ENABLED").eq_ignore_ascii_case("on")
+            && c.mode == Mode::Live
+            && c.signature_mode == SignatureMode::Enforce
+            && !c.auth_token.is_empty()
+            && env_opt("GUARDVOICE_STREAM_SECRET").is_some();
+        c.caller_reads = env("GUARDVOICE_CALLER_READS").eq_ignore_ascii_case("on");
         c.welcome = env_opt("GUARDVOICE_WELCOME");
         c.notes_webhook_url = env_opt("GUARDVOICE_NOTES_WEBHOOK_URL");
         c.notes_webhook_secret = env_opt("GUARDVOICE_NOTES_WEBHOOK_SECRET");

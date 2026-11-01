@@ -16,22 +16,25 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct Os {
     pub ledger: Arc<Ledger>,
+    pub firm: Arc<crate::firm::Firm>,
+    pub tax: Arc<crate::tax::Tax>,
+    pub engagements: Arc<crate::engagement::Engagements>,
     pub referrals: Arc<Referrals>,
 }
 
 const MAX_TOOL_ROUNDS: usize = 8;
 const MAX_TOOL_RESULT_CHARS: usize = 40_000;
 
-fn model() -> String {
+pub(crate) fn model() -> String {
     std::env::var("NXT_AI_MODEL").ok().filter(|m| !m.is_empty()).unwrap_or_else(|| "claude-opus-5-5".into())
 }
 
-fn api_url() -> String {
+pub(crate) fn api_url() -> String {
     let base = std::env::var("ANTHROPIC_BASE_URL").ok().filter(|b| !b.is_empty()).unwrap_or_else(|| "https://api.anthropic.com".into());
     format!("{}/v1/messages", base.trim_end_matches('/'))
 }
 
-fn api_key() -> Option<String> {
+pub(crate) fn api_key() -> Option<String> {
     std::env::var("ANTHROPIC_API_KEY").ok().filter(|k| !k.is_empty())
 }
 
@@ -53,8 +56,14 @@ async fn status(State(os): State<Os>) -> Json<Value> {
         "storage": os.ledger.store.backend_name(),
         "apps": [
             { "id": "ledger", "name": "NXT Ledger", "path": "/apps/ledger/" },
+            { "id": "firm", "name": "Firm Operations", "path": "/apps/firm/" },
+            { "id": "tax", "name": "NXT Tax", "path": "/apps/tax/" },
+            { "id": "engagements", "name": "NXT Engagements", "path": "/apps/engagements/" },
+            { "id": "migrations", "name": "Parallel testing", "path": "/apps/migrations/" },
+            { "id": "signatures", "name": "Prepare signatures", "path": "/apps/signatures/" },
             { "id": "referrals", "name": "NXT Referrals", "path": "/apps/referrals/" },
             { "id": "guardvoice", "name": "GuardVoice", "path": "/apps/guardvoice/" },
+            { "id": "nixon", "name": "Nixon", "path": "/apps/nixon/" },
         ],
     }))
 }
@@ -117,6 +126,17 @@ async fn insights(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
             );
         }
     }
+    if let Ok(items) = crate::nixon_finance::service::attention(&os.ledger).await {
+        for item in items {
+            push(
+                "warn",
+                item["title"].as_str().unwrap_or("Nixon has something to review").to_string(),
+                item["body"].as_str().unwrap_or("Open Nixon to see the evidence.").to_string(),
+                "nixon",
+                "",
+            );
+        }
+    }
     let rev = r["totals"]["referred_revenue"].as_f64().unwrap_or(0.0);
     if rev > 0.0 {
         push(
@@ -133,19 +153,26 @@ async fn insights(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
 // ---- assistant ----------------------------------------------------------------
 
 const SYSTEM_PROMPT: &str = "You are NXT, the assistant built into NXT OS: an operating system for running a Canadian business. \
-Three apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports), \
-NXT Referrals (customer referral and loyalty programs), and GuardVoice (the phone line: call activity, \
-handoffs, and approvals). Nixon is the assistant on that phone line. Nixon can look up and change NXT Ledger \
-and referrals, and waits for a person before payments, voids, or outbound messages. You are Ask NXT, not Nixon, \
-and your own access stays read-only.
+Eight apps are installed: NXT Ledger (double-entry accounting: invoices, bills, banking, GST/HST, financial reports), \
+Firm Operations (projects, templates, automated internal work, human approvals, reports and books close), \
+NXT Tax (independent scoped T1, T2, T3 and T5013 workpapers), NXT Engagements (working papers and internal review), \
+Parallel testing (read-only source snapshots), Prepare signatures (internal agreement preparation), \
+NXT Referrals (customer referral and loyalty programs), and GuardVoice (the phone line: call activity, handoffs, and approvals). Nixon is the read-only finance review over the ledger.
 
 How you work:
 - Answer from the user's live data. Use the tools to look things up; never estimate or invent figures.
 - Every money value returned by tools is an integer number of cents in CAD. Present amounts in dollars, e.g. $12,345.67.
-- Your access is read-only. When the user wants to create or change something (send an invoice, record a payment, \
-categorize a transaction), call open_app to take them to the right screen and tell them what to do there.
+- Read data with the lookup tools. You may prepare an internal task or report with propose_firm_action only when requested. \
+That tool queues an immutable proposal for human approval; it does not execute it. Use a unique idempotency_key per intended action and reuse it for retries. \
+Never say a proposal was executed or approved. Open Firm Operations at approvals for the user to review it. \
+For accounting changes (send an invoice, record a payment, categorize a transaction), call open_app to take the user to the right screen.
+- Nixon reviews are also read-only. Use nixon_review to read the latest one. You cannot approve a Nixon proposal, \
+post a journal, or file a tax return. If the user wants to decide, call open_app for Nixon and say a named person has to do it there.
 - Dates are ISO (YYYY-MM-DD). If the user gives a relative period like \"last quarter\", resolve it against today's date from get_dashboard.
 - GST/HST figures are working papers, not filed returns; say so when asked about filing.
+- Tax calculations are scoped internal workpapers. Read their ruleset and diagnostics; never claim complete DT Max parity, CRA certification, approval or filing. Open the Tax workspace for editing or review. You cannot approve, calculate, import or transmit returns through assistant tools.
+- Prepare signatures supports internal drafts, templates and review. External sending and signing are unavailable; DocuSign is not connected. Open its workspace when requested. Assistant tools cannot read or change agreement preparation records.
+- Parallel testing holds frozen source-company snapshots separate from native NXT books. Assistant tools cannot read their financial rows. Never present native empty or zero balances as migrated source balances. Open Parallel testing for source-report review.
 
 Voice: direct, confident and plain-spoken. Lead with the answer, then the key numbers, then one practical next step \
 when it helps. Keep replies short; use a compact list or table only when comparing several figures.";
@@ -204,16 +231,60 @@ fn tools() -> Value {
             "input_schema": { "type": "object", "properties": {} }
         },
         {
-            "name": "open_app",
-            "description": "Opens an NXT OS app at a screen so the user can act. Ledger views: dashboard, invoices, invoices/new, bills, bills/new, customers, vendors, banking, accounts, journal, reports/profit-loss, reports/balance-sheet, reports/trial-balance, reports/ar-aging, reports/ap-aging, reports/sales-tax, reports/general-ledger, settings. Referrals views: overview, advocates, conversions, rewards, loyalty, settings. GuardVoice views: activity, calls, approvals, notifications, handoffs, messages, simulator.",
+            "name": "get_firm_summary",
+            "description": "Read-only overview of firm operations: projects, open tasks, templates, workflows, pending human approvals, close checklists, and workflow runs. Does not approve, enable or execute actions.",
+            "input_schema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "propose_firm_action",
+            "description": "Prepare an internal task or native ledger report for human review. Always creates a pending proposal, never executes, approves, sends messages, posts accounting entries or connects external accounts. Reuse the same idempotency key for retries of the same action.",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "app": { "type": "string", "enum": ["ledger", "referrals", "guardvoice"] },
+                    "name": { "type": "string", "description": "Short description of the proposed work" },
+                    "idempotency_key": { "type": "string", "description": "Unique action key; stable across retries" },
+                    "action": {
+                        "oneOf": [
+                            { "type": "object", "properties": { "kind": {"const":"create_task"}, "title":{"type":"string"}, "project_id":{"type":"string"} }, "required":["kind","title"], "additionalProperties":false },
+                            { "type": "object", "properties": { "kind":{"const":"generate_report"}, "report":{"type":"string","enum":["profit-loss","balance-sheet","trial-balance","general-ledger","journal"]}, "from":{"type":"string"}, "to":{"type":"string"} }, "required":["kind","report"], "additionalProperties":false }
+                        ]
+                    }
+                },
+                "required": ["name","idempotency_key","action"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "get_tax_summary",
+            "description": "Read-only aggregate counts and readiness of the independent tax workspace. No tax identifiers, client names, input documents, approvals or filing actions.",
+            "input_schema": { "type":"object", "properties":{} }
+        },
+        {
+            "name": "get_tax_calculation",
+            "description": "Read the existing calculation, scope and diagnostics for a known tax return ID. Excludes identity, related-party and input records. Does not calculate, approve or file anything.",
+            "input_schema": { "type":"object", "properties":{"return_id":{"type":"string"}}, "required":["return_id"], "additionalProperties":false }
+        },
+        {
+            "name": "get_engagement_summary",
+            "description": "Read-only engagement counts and blocking-issue count. No client names, paper bodies, accounts, signoffs or input documents.",
+            "input_schema": {"type":"object","properties":{},"additionalProperties":false}
+        },
+        {
+            "name": "open_app",
+            "description": "Opens an NXT OS app at a screen so the user can act. Ledger views: dashboard, invoices, invoices/new, bills, bills/new, customers, vendors, banking, accounts, journal, reports/profit-loss, reports/balance-sheet, reports/trial-balance, reports/ar-aging, reports/ap-aging, reports/sales-tax, reports/general-ledger, settings. Referrals views: overview, advocates, conversions, rewards, loyalty, settings. Nixon views: review.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "app": { "type": "string", "enum": ["ledger", "firm", "tax", "engagements", "migrations", "signatures", "referrals", "nixon"] },
                     "view": { "type": "string" }
                 },
                 "required": ["app"]
             }
+        },
+        {
+            "name": "nixon_review",
+            "description": "Reads the latest Nixon finance review: findings, evidence references, hypotheses, and whether a person still has to decide. Nixon does not post or file. If no review has been run, say so. Do not invent findings.",
+            "input_schema": { "type": "object", "properties": {} }
         }
     ])
 }
@@ -236,6 +307,25 @@ fn s(v: &Value, k: &str) -> Option<String> {
 async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) -> Result<Value, String> {
     let l = &os.ledger;
     match name {
+        "get_engagement_summary" => os.engagements.summary().await.map_err(|e|e.1),
+        "get_tax_summary" => os.tax.summary().await.map_err(|e|e.1),
+        "get_tax_calculation" => {
+            let record_id=s(input,"return_id").ok_or("return_id is required")?;
+            let r=os.tax.get(&record_id).await.map_err(|e|e.1)?;
+            let calculation=r.calculation.as_ref().map(|c| {
+                let totals=c.result["totals"].as_object().map(|t|t.iter().filter(|(k,_)|!k.starts_with("partner.")).map(|(k,v)|(k.clone(),v.clone())).collect::<serde_json::Map<_,_>>()).unwrap_or_default();
+                // Allowlist aggregates; partner labels/IDs and arbitrary replay keys stay local.
+                json!({"id":c.id,"input_revision":c.input_revision,"created_at":c.created_at,"ruleset":c.result["ruleset"],"supported":c.result["supported"],"scope":c.result["scope"],"totals":totals,"diagnostics":c.result["diagnostics"],"sources":c.result["sources"]})
+            });
+            Ok(json!({"return_id":r.id,"program":r.program,"tax_year":r.tax_year,"jurisdiction":r.jurisdiction,"status":r.status,"calculation":calculation,"filing_enabled":false}))
+        },
+        "get_firm_summary" => os.firm.summary().await.map_err(|e| e.1),
+        "propose_firm_action" => {
+            let proposal = serde_json::from_value::<crate::firm::models::ProposalInput>(input.clone()).map_err(|e| e.to_string())?;
+            let run = os.firm.propose_action(proposal).await.map_err(|e| e.1)?;
+            actions.push(json!({"type":"open_app","app":"firm","view":"approvals"}));
+            Ok(json!({"proposal":run,"executed":false,"requires_human_approval":true}))
+        },
         "get_dashboard" => l.dashboard().await.map_err(|e| format!("{e:?}")),
         "run_report" => {
             let report = s(input, "report").ok_or("report is required")?;
@@ -304,10 +394,46 @@ async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) 
                 .collect();
             Ok(json!({ "analytics": a, "top_advocates": top, "note": "Referral amounts are in dollars, not cents." }))
         }
+        "nixon_review" => {
+            let reviews = crate::nixon_finance::service::list_reviews(l).await.map_err(|e| e.message)?;
+            let Some(latest) = reviews.first() else {
+                return Ok(json!({ "review": null, "note": "No Nixon review has been run. Do not invent findings." }));
+            };
+            let id = latest["id"].as_str().unwrap_or("");
+            let review = crate::nixon_finance::service::get_review(l, id).await.map_err(|e| e.message)?;
+            let findings: Vec<Value> = review
+                .findings
+                .iter()
+                .take(12)
+                .map(|f| {
+                    json!({
+                        "id": f.id,
+                        "capability": f.capability,
+                        "risk_level": f.risk_level,
+                        "title": f.title,
+                        "summary": f.summary,
+                        "requires_human_review": f.requires_human_review,
+                        "evidence": f.evidence.iter().take(8).map(|e| json!({ "reference": e.reference, "note": e.note, "level": e.level })).collect::<Vec<_>>(),
+                        "hypotheses": f.hypotheses.iter().map(|h| json!({ "label": h.label, "statement": h.statement, "confidence": h.confidence, "confidence_refusal": h.confidence_refusal })).collect::<Vec<_>>(),
+                        "gaps": f.gaps.iter().map(|g| g.note.clone()).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            Ok(json!({
+                "review_id": review.id,
+                "correlation_id": review.correlation_id,
+                "as_of": review.as_of,
+                "summary": review.summary,
+                "posting": "disabled",
+                "filing": "disabled",
+                "findings": findings,
+                "note": "Read-only. You cannot approve, post, or file.",
+            }))
+        }
         "open_app" => {
             let app = s(input, "app").ok_or("app is required")?;
-            if app != "ledger" && app != "referrals" && app != "guardvoice" {
-                return Err("app must be ledger, referrals, or guardvoice".into());
+            if !["ledger","firm","tax","engagements","migrations","signatures","referrals","nixon","guardvoice"].contains(&app.as_str()) {
+                return Err("app must be ledger, firm, tax, engagements, migrations, signatures, referrals, nixon, or guardvoice".into());
             }
             actions.push(json!({ "type": "open_app", "app": app, "view": s(input, "view") }));
             Ok(json!({ "opened": true }))
@@ -509,4 +635,62 @@ async fn sample_data(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
         }
     }
     Ok(Json(json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod firm_tool_tests {
+    use super::*;
+    use crate::{firm::Firm, store::Store};
+
+    #[tokio::test]
+    async fn tax_assistant_receives_aggregates_without_partner_identity_or_replay_keys() {
+        let ledger=Arc::new(Ledger::new(Store::memory()));
+        let tax=Arc::new(crate::tax::Tax::new(Store::memory()));
+        let input=serde_json::from_value(json!({"program":"T5013","tax_year":2025,"jurisdiction":"CA","name":"SECRET TAXPAYER","client_ref":"SECRET CLIENT REF","inputs":{"scope_confirmed":true,"allocation_verified":true,"revenue_cents":10001,"partners":[{"id":"PRIVATE_ID","name":"SECRET PARTNER NAME","share_bps":10000}]}})).unwrap();
+        let r=tax.save(None,input).await.map_err(|e|e.1).unwrap();
+        tax.calculate(&r.id,crate::tax::models::RevisionInput{expected_revision:r.revision,idempotency_key:Some("SECRET REPLAY KEY".into())}).await.map_err(|e|e.1).unwrap();
+        let firm=Arc::new(Firm::new(Store::memory(),ledger.clone()));
+        let engagements=Arc::new(crate::engagement::Engagements::new(Store::memory(),ledger.clone(),tax.clone(),firm.clone()));
+        engagements.save(None,serde_json::from_value(json!({"name":"SECRET ENGAGEMENT","client_ref":"SECRET ENG CLIENT","period_start":"2025-01-01","period_end":"2025-12-31","workpapers":[{"id":"wp","reference":"A","title":"SECRET PAPER TITLE","body":"SECRET PAPER BODY"}]})).unwrap()).await.map_err(|e|e.1).unwrap();
+        let os=Os{firm,ledger,tax,engagements,referrals:Arc::new(Referrals::new(Store::memory()))};
+        let mut actions=Vec::new();
+        let result=run_tool(&os,"get_tax_calculation",&json!({"return_id":r.id}),&mut actions).await.unwrap();
+        let encoded=result.to_string();
+        for private in ["SECRET TAXPAYER","SECRET CLIENT REF","PRIVATE_ID","SECRET PARTNER NAME","SECRET REPLAY KEY","idempotency_key"] { assert!(!encoded.contains(private)); }
+        assert_eq!(result["calculation"]["totals"]["net_income"],10001);
+        assert_eq!(result["filing_enabled"],false);
+        assert!(run_tool(&os,"approve_tax_return",&json!({}),&mut actions).await.is_err());
+        assert!(actions.is_empty());
+        let summary=run_tool(&os,"get_engagement_summary",&json!({}),&mut actions).await.unwrap();
+        assert_eq!(summary["total"],1);
+        for private in ["SECRET ENGAGEMENT","SECRET ENG CLIENT","SECRET PAPER TITLE","SECRET PAPER BODY"] {assert!(!summary.to_string().contains(private));}
+        assert!(run_tool(&os,"lock_engagement",&json!({}),&mut actions).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn assistant_can_propose_but_cannot_approve_or_execute() {
+        let ledger = Arc::new(Ledger::new(Store::memory()));
+        let firm = Arc::new(Firm::new(Store::memory(), ledger.clone()));
+        let tax=Arc::new(crate::tax::Tax::new(Store::memory()));
+        let engagements=Arc::new(crate::engagement::Engagements::new(Store::memory(),ledger.clone(),tax.clone(),firm.clone()));
+        let os = Os { ledger, firm, tax, engagements, referrals: Arc::new(Referrals::new(Store::memory())) };
+        let mut actions = Vec::new();
+        let input = json!({"name":"Prepare review checklist","idempotency_key":"assistant-test-once","action":{"kind":"create_task","title":"Review reporting package"}});
+        let response = run_tool(&os, "propose_firm_action", &input, &mut actions).await.unwrap();
+        assert_eq!(response["executed"], false);
+        assert_eq!(response["proposal"]["status"], "proposed");
+        assert_eq!(response["requires_human_approval"], true);
+        assert_eq!(actions[0]["view"], "approvals");
+        let summary = run_tool(&os, "get_firm_summary", &json!({}), &mut actions).await.unwrap();
+        assert_eq!(summary["pending_approvals"], 1);
+        assert_eq!(summary["open_tasks"], 0);
+        let repeat = run_tool(&os, "propose_firm_action", &input, &mut actions).await.unwrap();
+        assert_eq!(response["proposal"]["id"], repeat["proposal"]["id"]);
+        assert!(run_tool(&os, "approve_firm_action", &json!({}), &mut actions).await.is_err());
+        let mut navigation = Vec::new();
+        let opened = run_tool(&os, "open_app", &json!({"app":"signatures","view":"drafts"}), &mut navigation).await.unwrap();
+        assert_eq!(opened["opened"], true);
+        assert_eq!(navigation, vec![json!({"type":"open_app","app":"signatures","view":"drafts"})]);
+        assert!(run_tool(&os, "get_signature_draft", &json!({}), &mut navigation).await.is_err());
+    }
 }

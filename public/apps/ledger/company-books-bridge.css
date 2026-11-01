@@ -1,0 +1,7 @@
+.ledger-company-bridge { margin:0 2px 14px;padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2); }
+.ledger-company-bridge label { display:block;font-weight:600;color:var(--ink);margin-bottom:6px; }
+.ledger-company-bridge select { width:100%;min-width:0; }
+.ledger-company-bridge p { font-size:12px;line-height:1.45;color:var(--muted);margin:8px 0; }
+.ledger-company-bridge a { font-size:12px; }
+.ledger-company-bridge button { margin-top:5px; }
+@media print { .ledger-company-bridge { display:none; } }

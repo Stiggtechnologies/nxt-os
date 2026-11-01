@@ -1,0 +1,9 @@
+{
+  "format":"nxt-cutover-manifest/v1","environment_id":"synthetic-nxt-rehearsal","cohort_id":"synthetic-company-001","as_of":"2025-12-31","currency":"CAD","synthetic":true,
+  "entities":{
+    "accounts":[{"id":"acc_cash","fields":{"code":"1000","kind":"asset"}},{"id":"acc_revenue","fields":{"code":"4000","kind":"income"}}],
+    "contacts":[{"id":"contact_1","fields":{"name":"Synthetic Customer","balance_cents":"1250","status":"enabled"}}],
+    "journal_entries":[{"id":"je_1","fields":{"date":"2025-12-31","memo":"Synthetic control entry"}}],
+    "journal_lines":[{"id":"jl_1","fields":{"entry_id":"je_1","account_id":"acc_cash","debit_cents":"10000","credit_cents":"0"}},{"id":"jl_2","fields":{"entry_id":"je_1","account_id":"acc_revenue","debit_cents":"0","credit_cents":"10000"}},{"id":"jl_1","fields":{"entry_id":"je_1","account_id":"acc_cash","debit_cents":"10000","credit_cents":"0"}}]
+  }
+}

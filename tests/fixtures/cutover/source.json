@@ -1,0 +1,24 @@
+{
+  "format":"nxt-cutover-manifest/v1",
+  "environment_id":"synthetic-legacy-readonly",
+  "cohort_id":"synthetic-company-001",
+  "as_of":"2025-12-31",
+  "currency":"CAD",
+  "synthetic":true,
+  "entities":{
+    "accounts":[
+      {"id":"a-cash","fields":{"code":"1000","kind":"Bank"}},
+      {"id":"a-revenue","fields":{"code":"4000","kind":"Revenue"}}
+    ],
+    "contacts":[
+      {"id":"c-1","fields":{"name":"Synthetic Customer","credit_balance_cents":"-1250","state":"active","legacy_note":"Synthetic display-only note"}}
+    ],
+    "journal_entries":[
+      {"id":"e-1","fields":{"date":"2025-12-31","memo":"Synthetic control entry"}}
+    ],
+    "journal_lines":[
+      {"id":"l-1","fields":{"entry_id":"e-1","account_id":"a-cash","debit_cents":"10000","credit_cents":"0"}},
+      {"id":"l-2","fields":{"entry_id":"e-1","account_id":"a-revenue","debit_cents":"0","credit_cents":"10000"}}
+    ]
+  }
+}

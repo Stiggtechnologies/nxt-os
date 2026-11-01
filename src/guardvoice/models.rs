@@ -80,6 +80,8 @@ pub struct Approval {
     pub status: String,
     pub created_at: String,
     pub decided_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decided_by: Option<String>,
     pub result: Option<serde_json::Value>,
     pub error: Option<String>,
 }

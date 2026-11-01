@@ -1,0 +1,98 @@
+name: Encrypted NXT Store backup
+
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nxt-store-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    # Install this workflow and scripts/backup-nxt-store.mjs in the dedicated
+    # PRIVATE backup repository. The public source repository deliberately skips it.
+    if: github.event.repository.private == true && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    container:
+      image: postgres:17-bookworm
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: nxt_restore
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-restore-only
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nxt_restore"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Install encryption and archive prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install --yes --no-install-recommends age ca-certificates git tar
+
+      - name: Checkout private backup driver
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Checkout the versioned public NXT source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: Stiggtechnologies/nxt-os
+          ref: ${{ vars.NXT_SOURCE_REF || 'main' }}
+          path: source
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Materialize the pinned public Supabase CA
+        shell: bash
+        env:
+          BACKUP_CA_PEM: ${{ vars.BACKUP_CA_PEM }}
+          BACKUP_CA_FILE: ${{ runner.temp }}/nxt-supabase-root.crt
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs';
+          import { createHash } from 'node:crypto';
+          const pem = (process.env.BACKUP_CA_PEM || '').replace(/\r\n/g, '\n').trim() + '\n';
+          const expected = '700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7';
+          if (createHash('sha256').update(pem).digest('hex') !== expected) throw new Error('Public database CA pin mismatch');
+          writeFileSync(process.env.BACKUP_CA_FILE, pem, { mode: 0o600 });
+          NODE
+
+      - name: Export, verify isolated recovery, and encrypt
+        shell: bash
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+          BACKUP_CA_FILE: ${{ runner.temp }}/nxt-supabase-root.crt
+          BACKUP_RESTORE_DATABASE_URL: postgresql://postgres:isolated-restore-only@postgres:5432/nxt_restore?sslmode=disable
+          BACKUP_SOURCE_DIR: ${{ github.workspace }}/source
+          BACKUP_OUTPUT_DIR: ${{ github.workspace }}/backup-output
+        run: node scripts/backup-nxt-store.mjs
+
+      - name: Retain encrypted artifact only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nxt-store-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            backup-output/*.tar.gz.age
+            backup-output/*.manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+          include-hidden-files: false

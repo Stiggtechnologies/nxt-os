@@ -423,6 +423,7 @@ impl GuardVoice {
             status: "pending".into(),
             created_at: now(),
             decided_at: None,
+            decided_by: None,
             result: None,
             error: None,
         };

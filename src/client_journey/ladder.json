@@ -1,0 +1,151 @@
+{
+  "ladder_id": "nxt-accounting-value-ladder",
+  "version": 1,
+  "pricing_note": "pricing TBD by Orville; all pricing models are placeholders",
+  "tiers": [
+    {
+      "id": "health_check",
+      "rung": 1,
+      "name": "Free books health check",
+      "entry_criteria": "Any prospect or client with books to assess",
+      "deliverables": [
+        "Scored books health report",
+        "Months-behind and reconciliation status",
+        "Filing exposure summary"
+      ],
+      "pricing_model": "Free diagnostic (pricing TBD by Orville)",
+      "pricing_tbd": true,
+      "next_rung_triggers": []
+    },
+    {
+      "id": "catch_up_cleanup",
+      "rung": 2,
+      "name": "Catch-up / cleanup",
+      "entry_criteria": "Books are behind or have unreconciled history",
+      "deliverables": [
+        "Books brought current",
+        "Historical reconciliation",
+        "Opening balances confirmed"
+      ],
+      "pricing_model": "Fixed fee per month behind (pricing TBD by Orville)",
+      "pricing_tbd": true,
+      "next_rung_triggers": [
+        {
+          "signal": "months_behind",
+          "op": ">=",
+          "threshold": 1
+        },
+        {
+          "signal": "reconciliation_exceptions",
+          "op": ">=",
+          "threshold": 10
+        }
+      ]
+    },
+    {
+      "id": "monthly_bookkeeping",
+      "rung": 3,
+      "name": "Monthly bookkeeping",
+      "entry_criteria": "Books current, or cleanup complete",
+      "deliverables": [
+        "Monthly close",
+        "Bank and subledger reconciliation",
+        "Monthly report"
+      ],
+      "pricing_model": "Monthly subscription tiered by transaction volume (pricing TBD by Orville)",
+      "pricing_tbd": true,
+      "next_rung_triggers": [
+        {
+          "signal": "monthly_transactions",
+          "op": ">=",
+          "threshold": 50
+        }
+      ]
+    },
+    {
+      "id": "payroll",
+      "rung": 4,
+      "name": "Payroll",
+      "entry_criteria": "On monthly bookkeeping and has or is adding employees",
+      "deliverables": [
+        "Pay runs",
+        "Source deduction remittances",
+        "T4 / ROE support"
+      ],
+      "pricing_model": "Per employee per pay run (pricing TBD by Orville)",
+      "pricing_tbd": true,
+      "next_rung_triggers": [
+        {
+          "signal": "employees",
+          "op": ">=",
+          "threshold": 1
+        }
+      ]
+    },
+    {
+      "id": "year_end_tax",
+      "rung": 5,
+      "name": "Year-end statements + T2/T1 tax",
+      "entry_criteria": "Fiscal year-end reached with closed months",
+      "deliverables": [
+        "Year-end financial statements",
+        "T2 or T1 return",
+        "Filing (human-gated)"
+      ],
+      "pricing_model": "Annual fixed fee by entity complexity (pricing TBD by Orville)",
+      "pricing_tbd": true,
+      "next_rung_triggers": [
+        {
+          "signal": "months_to_year_end",
+          "op": "<=",
+          "threshold": 3
+        }
+      ]
+    },
+    {
+      "id": "cfo_advisory",
+      "rung": 6,
+      "name": "CFO / advisory",
+      "entry_criteria": "On monthly bookkeeping with a completed year-end",
+      "deliverables": [
+        "Rolling forecast",
+        "KPI dashboard",
+        "Quarterly advisory session"
+      ],
+      "pricing_model": "Monthly retainer (pricing TBD by Orville)",
+      "pricing_tbd": true,
+      "next_rung_triggers": [
+        {
+          "signal": "revenue_growth_pct",
+          "op": ">=",
+          "threshold": 20
+        },
+        {
+          "signal": "annual_revenue",
+          "op": ">=",
+          "threshold": 1000000
+        }
+      ]
+    },
+    {
+      "id": "strategic",
+      "rung": 7,
+      "name": "Strategic (exit / acquisition readiness)",
+      "entry_criteria": "On CFO/advisory with a stated transaction goal",
+      "deliverables": [
+        "Quality-of-earnings style cleanup",
+        "Data room checklist",
+        "Valuation readiness plan"
+      ],
+      "pricing_model": "Project fee (pricing TBD by Orville)",
+      "pricing_tbd": true,
+      "next_rung_triggers": [
+        {
+          "signal": "exit_horizon_years",
+          "op": "<=",
+          "threshold": 3
+        }
+      ]
+    }
+  ]
+}

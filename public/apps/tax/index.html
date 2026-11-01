@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en-CA">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NXT Tax · Independent tax workpapers</title>
+  <link rel="stylesheet" href="/nxt/brand.css">
+  <link rel="stylesheet" href="tax.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to return workspace</a>
+  <div class="tax-app">
+    <aside class="tax-rail">
+      <button class="tax-logo" data-os="home" aria-label="NXT OS home">NXT</button>
+      <a href="#worklist" data-nav="worklist"><span>▤</span>Worklist</a>
+      <button data-action="new-return"><span>⊕</span>New return</button>
+      <a href="#import" data-nav="import"><span>⇄</span>Import</a>
+      <a href="#audit" data-nav="audit"><span>◷</span>Audit</a>
+      <a href="#capabilities" data-nav="capabilities"><span>ⓘ</span>Coverage</a>
+      <div class="rail-spacer"></div>
+      <button data-os="firm" aria-label="Open Firm Operations"><span>▦</span>Firm</button>
+      <button data-os="ledger" aria-label="Open NXT Ledger"><span>≡</span>Ledger</button>
+      <button data-action="ask" aria-label="Ask NXT"><span>✧</span>Ask NXT</button>
+    </aside>
+    <div class="tax-shell">
+      <header class="tax-topbar"><div class="tax-brand"><strong>Tax</strong><span>NXT OS / Accounting group</span></div><div class="top-actions"><span class="engine-label"><i></i>Independent NXT engine</span><button class="btn sm" data-action="refresh" aria-label="Refresh current view">↻ Refresh</button><button class="btn sm" data-action="new-return">New return</button></div></header>
+      <div class="program-bar"><nav id="programs" aria-label="Tax program"></nav><span class="program-year" id="program-year"></span></div>
+      <main id="main" tabindex="-1" aria-live="polite"><div class="loading"><span class="spinner"></span>Loading tax workspace…</div></main>
+      <footer><span>NXT Tax · Reviewed workpapers, accountable decisions</span><span id="backend">Shared workspace</span></footer>
+    </div>
+  </div>
+  <script src="/nxt/ui.js"></script>
+  <script src="tax.js"></script>
+</body>
+</html>

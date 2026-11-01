@@ -91,26 +91,18 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// True when ADMIN_API_KEY is set; without it the workspace runs open (no sign-in).
+/// Protected workspace APIs always require sign-in. A missing server key is
+/// configuration failure, never an instruction to expose the workspace.
 pub fn auth_required() -> bool {
-    std::env::var("ADMIN_API_KEY").is_ok_and(|k| !k.is_empty())
+    true
 }
 
-pub async fn require_admin(headers: HeaderMap, req: Request, next: Next) -> Response {
-    if !auth_required() {
-        return next.run(req).await;
-    }
-    let expected = std::env::var("ADMIN_API_KEY").unwrap_or_default();
-    let given = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or("");
-    if !constant_time_eq(given.as_bytes(), expected.as_bytes()) {
-        return ApiError(StatusCode::UNAUTHORIZED, "invalid or missing API key".into()).into_response();
-    }
-    next.run(req).await
+/// Shared protected-route guard: staff sessions or the break-glass admin key.
+/// See `firm::staff` for roles, MFA, label stamping and policy.
+pub async fn require_admin(req: Request, next: Next) -> Response {
+    crate::firm::staff::authorize(req, next).await
 }
+
 
 /// Public endpoints are called by the widget from merchant storefronts.
 async fn cors(req: Request, next: Next) -> Response {

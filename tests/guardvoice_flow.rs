@@ -341,3 +341,36 @@ async fn goodbye_ends_the_call_with_a_handoff() {
     let handoffs = ok(&r, "GET", "/api/guardvoice/handoffs", None).await;
     assert!(handoffs["handoffs"].as_array().unwrap().iter().any(|h| h["kind"] == "summary" && h["call_id"] == id));
 }
+
+#[tokio::test]
+async fn callers_cannot_hear_firm_data_by_default() {
+    let mut cfg = Config::mock();
+    cfg.caller_reads = false;
+    let r = router(cfg);
+    let started = start(&r, "+15551234567").await;
+    let id = started["call"]["id"].as_str().or(started["id"].as_str()).expect("call id");
+    let reply = say(&r, id, "How much cash do we have?").await;
+    let spoken = reply["say"].as_str().unwrap();
+    assert!(spoken.contains("can't share account details"), "{spoken}");
+    assert!(!spoken.contains('$'), "{spoken}");
+}
+
+#[tokio::test]
+async fn the_public_line_does_not_exist_until_enabled() {
+    let mut cfg = Config::mock();
+    cfg.public_line = false;
+    let r = router(cfg);
+    for uri in ["/api/guardvoice/twiml", "/api/guardvoice/twiml/gather", "/api/guardvoice/twiml/outbound"] {
+        assert_eq!(form(&r, uri, "CallSid=CA1&From=%2B15551234567", None).await.0, 404, "{uri}");
+    }
+    assert_eq!(call(&r, "POST", "/api/guardvoice/relay?call_sid=CA1&token=x", Some(json!({"type": "setup"})), false).await.0, 404);
+    assert_eq!(call(&r, "GET", "/api/guardvoice/health", None, false).await.0, 200);
+}
+
+#[test]
+fn an_unconfigured_deployment_stays_closed_and_read_only() {
+    let cfg = Config::from_env();
+    assert!(!cfg.public_line);
+    assert!(!cfg.caller_reads);
+    assert_eq!(cfg.autonomy, Autonomy::Read);
+}
