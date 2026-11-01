@@ -54,7 +54,8 @@ impl Range {
 }
 
 pub fn router(st: Arc<Ledger>) -> Router {
-    routes(st).layer(middleware::from_fn(require_admin))
+    // The firm's own book. Staff limited to specific clients use /api/company-ledger.
+    routes(st).layer(middleware::from_fn(crate::firm::staff::firm_wide_only)).layer(middleware::from_fn(require_admin))
 }
 
 /// Each client's own book, served by the same handlers at

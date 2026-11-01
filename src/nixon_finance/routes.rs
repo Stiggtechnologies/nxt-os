@@ -50,12 +50,22 @@ pub fn router(scope: super::voice::Scope) -> Router {
         .route("/api/nixon/voice", post(voice))
         .route("/api/nixon/voice/realtime", post(realtime))
         .route("/api/nixon/voice/speak", post(speak))
+        .layer(middleware::from_fn(client_scope))
         .layer(middleware::from_fn(require_admin))
         .with_state(scope)
 }
 
 async fn status() -> Json<Value> {
     Json(service::status_body())
+}
+
+/// Nixon's client views check each client themselves. Reviews, actions and voice read firm-wide.
+async fn client_scope(req: axum::extract::Request, next: middleware::Next) -> axum::response::Response {
+    let path = req.uri().path();
+    if path == "/api/nixon/status" || path == "/api/nixon/clients" || path.starts_with("/api/nixon/clients/") {
+        return next.run(req).await;
+    }
+    crate::firm::staff::firm_wide_only(req, next).await
 }
 
 async fn list_clients(State(scope): S, Extension(id): Extension<Identity>) -> Result<Json<Value>, ApiError> {

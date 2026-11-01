@@ -96,3 +96,11 @@ test('Firm clients screen pages DT Max clients through the guarded route',()=>{
  const firm=read('public/apps/firm/firm.js');
  assert.match(firm,/test-copy\/clients\?offset=/);assert.match(firm,/DT Max clients/);assert.match(firm,/esc\(c\.name\)/);
 });
+test('staff sign-in asks for MFA, then a new password, then opens the workspace',()=>{
+ const box={};vm.runInNewContext(read('public/nxt/staff-signin.js'),box);const {next}=box.NXTStaffSignin;
+ assert.equal(next({mfa_enrollment_required:true,must_change_password:true}),'enroll');
+ assert.equal(next({mfa_enrollment_required:false,must_change_password:true}),'password');
+ assert.equal(next({mfa_enrollment_required:false,must_change_password:false}),'done');
+ const home=read('public/index.html');assert.match(home,/api\/staff\/login/);assert.match(home,/Use the workspace key/);
+ assert.match(read('public/apps/firm/firm.js'),/views\.staff=async/);
+});
