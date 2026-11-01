@@ -1,8 +1,7 @@
 //! Real DT Max client roster and return-year index, for the local NXT OS test copy only.
 //!
 //! Every request must carry `"test_copy": true`, and the server refuses unless its store
-//! is the local memory/dev-file backend. Hosted (Supabase/Redis) backends, which back
-//! production, always refuse. Clients are keyed by the DT Max `Client #`. Return files are
+//! is the local memory/dev-file backend, or Supabase with the owner's NXT_DTMAX_HOSTED=on. Clients are keyed by the DT Max `Client #`. Return files are
 //! indexed by client number and tax year from the file's own `DTMAX\0YY` header; their
 //! section payloads are vendor-encoded and are not decoded or stored here.
 //! SIN is never accepted. Load responses carry counts and reasons, never client fields; only
@@ -73,6 +72,15 @@ struct ReturnIndex {
     content_state: String,
 }
 
+/// Supabase holds the DT Max client list only once the owner turns this on. It is off by default.
+fn store_accepts_clients(backend: &str, switch: Option<&str>) -> bool {
+    backend == "memory" || (backend == "supabase" && switch.is_some_and(|v| v.trim().eq_ignore_ascii_case("on")))
+}
+/// Whether this deployment's owner switch for hosted DT Max clients is on.
+pub fn hosted_switch_on() -> bool {
+    store_accepts_clients("supabase", std::env::var("NXT_DTMAX_HOSTED").ok().as_deref())
+}
+
 fn k(company: &str, rest: &str) -> String { format!("dtmaxtc:{company}:{rest}") }
 fn s(e: &str) -> ImportError { storage(e) }
 fn client_number_ok(v: &str) -> bool { !v.is_empty() && v.len() <= 12 && v.bytes().all(|b| b.is_ascii_digit()) }
@@ -82,8 +90,8 @@ impl super::SourceImport {
     fn test_copy_guard(&self, company: &str, flag: bool) -> Result<()> {
         if !valid_token(company) { return Err(bad("Invalid company id")); }
         if !flag { return Err(conflict("test_copy_flag_required: real DT Max data loads only with \"test_copy\": true")); }
-        if self.store.backend_name() != "memory" {
-            return Err(conflict("test_copy_only: real DT Max data loads only into a local test-copy store, never a hosted or production backend"));
+        if !store_accepts_clients(self.store.backend_name(), std::env::var("NXT_DTMAX_HOSTED").ok().as_deref()) {
+            return Err(conflict("test_copy_only: real DT Max data loads only into a local test-copy store unless the owner sets NXT_DTMAX_HOSTED=on"));
         }
         Ok(())
     }
@@ -303,4 +311,18 @@ fn check_slip(r: &T5008Slip) -> std::result::Result<(), &'static str> {
         if v.chars().count() > 200 { return Err("field_too_long"); }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::store_accepts_clients;
+    #[test]
+    fn hosted_stores_need_the_owner_switch() {
+        assert!(store_accepts_clients("memory", None));
+        assert!(!store_accepts_clients("supabase", None));
+        assert!(!store_accepts_clients("supabase", Some("off")));
+        assert!(store_accepts_clients("supabase", Some("on")));
+        assert!(!store_accepts_clients("redis", Some("on")));
+        assert!(!store_accepts_clients("unavailable", Some("on")));
+    }
 }

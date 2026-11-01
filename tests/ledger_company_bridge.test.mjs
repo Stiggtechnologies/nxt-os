@@ -92,3 +92,7 @@ test('Firm clients screen reads the guarded directory and states what is not loa
  const firm=read('public/apps/firm/firm.js');
  assert.match(firm,/api\('\/api\/clients'\)/);assert.match(firm,/Not in this directory/);assert.match(firm,/missing, not zero/);
 });
+test('Firm clients screen pages DT Max clients through the guarded route',()=>{
+ const firm=read('public/apps/firm/firm.js');
+ assert.match(firm,/test-copy\/clients\?offset=/);assert.match(firm,/DT Max clients/);assert.match(firm,/esc\(c\.name\)/);
+});
