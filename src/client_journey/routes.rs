@@ -63,35 +63,53 @@ pub fn router(journeys: Arc<Journeys>, agent: Option<Agent>) -> Router {
         .with_state(state)
 }
 
-async fn list(State(api): S) -> R {
-    Ok(Json(api.journeys.list().await?))
+fn guard(id: &Identity, client: &str) -> Result<(), ApiError> {
+    if id.can_client(client) {
+        return Ok(());
+    }
+    Err(ApiError(axum::http::StatusCode::FORBIDDEN, "you are not assigned to this client".into()))
+}
+
+/// Keeps only the rows for clients this account may open.
+fn visible(mut v: Value, rows: &str, id: &Identity) -> Value {
+    if let Some(items) = v[rows].as_array_mut() {
+        items.retain(|r| id.can_client(r["client_id"].as_str().unwrap_or("")));
+    }
+    v
+}
+
+async fn list(State(api): S, Extension(id): Extension<Identity>) -> R {
+    Ok(Json(visible(api.journeys.list().await?, "journeys", &id)))
 }
 async fn coverage(State(api): S) -> Json<Value> {
     Json(api.journeys.coverage())
 }
-async fn create(State(api): S, Json(b): Json<CreateBody>) -> R {
+async fn create(State(api): S, Extension(id): Extension<Identity>, Json(b): Json<CreateBody>) -> R {
+    guard(&id, &b.client_id)?;
     Ok(Json(api.journeys.create(&b.client_id, b.sources).await?))
 }
-async fn detail(State(api): S, Path(client): Path<String>) -> R {
+async fn detail(State(api): S, Extension(id): Extension<Identity>, Path(client): Path<String>) -> R {
+    guard(&id, &client)?;
     Ok(Json(api.journeys.get(&client).await?))
 }
-async fn sources(State(api): S, Path(client): Path<String>, Json(b): Json<SourceProfile>) -> R {
+async fn sources(State(api): S, Extension(id): Extension<Identity>, Path(client): Path<String>, Json(b): Json<SourceProfile>) -> R {
+    guard(&id, &client)?;
     Ok(Json(api.journeys.set_sources(&client, b).await?))
 }
-async fn advance(State(api): S, Path(client): Path<String>) -> R {
+async fn advance(State(api): S, Extension(id): Extension<Identity>, Path(client): Path<String>) -> R {
+    guard(&id, &client)?;
     Ok(Json(api.journeys.advance(&client).await?))
 }
-async fn reviews(State(api): S) -> R {
-    Ok(Json(api.journeys.reviews().await?))
+async fn reviews(State(api): S, Extension(id): Extension<Identity>) -> R {
+    Ok(Json(visible(api.journeys.reviews().await?, "reviews", &id)))
 }
-async fn work(State(api): S, Path(client): Path<String>) -> R {
+async fn work(State(api): S, Extension(id): Extension<Identity>, Path(client): Path<String>) -> R {
+    guard(&id, &client)?;
     let agent = api.agent.as_ref().ok_or_else(|| ApiError(axum::http::StatusCode::SERVICE_UNAVAILABLE, "the firm agent needs an ANTHROPIC_API_KEY configured for this deployment".into()))?;
     Ok(Json(agent.work(&client).await?))
 }
 async fn staff(State(api): S, Extension(id): Extension<Identity>, Path((client, step)): Path<(String, String)>, Json(b): Json<StaffBody>) -> R {
-    if !id.can_client(&client) {
-        return Err(ApiError(axum::http::StatusCode::FORBIDDEN, "you are not assigned to this client".into()));
-    }
+    guard(&id, &client)?;
     let actor = Actor::Human { name: id.label(), role: format!("{:?}", id.role) };
     Ok(Json(api.journeys.staff(&client, &step, b.action, actor, id.is_reviewer(), &b.note).await?))
 }
