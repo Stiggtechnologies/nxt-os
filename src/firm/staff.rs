@@ -411,6 +411,7 @@ fn reviewer_action(method: &Method, path: &str, body: &Value) -> bool {
         ["api", "engagements", _, "signoffs"] => body["stage"] == "reviewed",
         ["api", "signatures", _, "transition"] => body["action"] == "approve",
         ["api", "signatures", "esign", "bulk-approve"] => true,
+        ["api", "company-ledger", _, "opening-balances"] => true,
         _ => false,
     }
 }

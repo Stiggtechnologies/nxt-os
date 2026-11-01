@@ -1,8 +1,9 @@
 use super::engine::*;
 use super::models::*;
+use super::opening;
 use crate::firm::staff::Identity;
 use crate::referral::routes::{ApiError, require_admin};
-use crate::store::Store;
+use crate::{company_books::CompanyBooks, store::Store};
 use axum::{
     Json, Router,
     extract::{Path, Query, Request, State},
@@ -59,7 +60,7 @@ pub fn router(st: Arc<Ledger>) -> Router {
 /// Each client's own book, served by the same handlers at
 /// `/api/company-ledger/{company}/...`. `POST .../open` creates a book; every
 /// other route answers 404 until then, so a mistyped id cannot start one.
-pub fn company_router(store: Store) -> Router {
+pub fn company_router(store: Store, books: Arc<CompanyBooks>) -> Router {
     Router::new()
         .route("/api/company-ledger/{company}/{*rest}", any(company_book))
         .layer(middleware::from_fn(client_scope))
@@ -68,7 +69,12 @@ pub fn company_router(store: Store) -> Router {
             r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
             r
         }))
-        .with_state(Arc::new(store))
+        .with_state(Arc::new(CompanyState { store, books }))
+}
+
+struct CompanyState {
+    store: Store,
+    books: Arc<CompanyBooks>,
 }
 
 async fn client_scope(req: Request, next: middleware::Next) -> Response {
@@ -104,7 +110,14 @@ struct OpenBook {
     province: Option<String>,
 }
 
-async fn open_book(store: &Arc<Store>, company: &str, req: Request) -> R {
+async fn json_body<T: serde::de::DeserializeOwned>(req: Request) -> Result<T, ApiError> {
+    let bytes = axum::body::to_bytes(req.into_body(), 2 << 20)
+        .await
+        .map_err(|_| ApiError(StatusCode::PAYLOAD_TOO_LARGE, "request body too large".into()))?;
+    serde_json::from_slice(&bytes).map_err(|e| ApiError(StatusCode::BAD_REQUEST, format!("invalid request: {e}")))
+}
+
+async fn open_book(store: &Store, company: &str, req: Request) -> R {
     let bytes = axum::body::to_bytes(req.into_body(), 64 * 1024)
         .await
         .map_err(|_| ApiError(StatusCode::PAYLOAD_TOO_LARGE, "request body too large".into()))?;
@@ -114,7 +127,7 @@ async fn open_book(store: &Arc<Store>, company: &str, req: Request) -> R {
         return Err(ApiError(StatusCode::BAD_REQUEST, "a book needs a company name".into()));
     }
     let storage = |e: String| ApiError::from(LedgerError::Storage(e));
-    let ledger = Ledger::for_company((**store).clone(), company);
+    let ledger = Ledger::for_company(store.clone(), company);
     // The first request settles the book's identity; a retry changes nothing.
     if store.get(&opened_key(company)).await.map_err(storage)?.is_some() {
         store.sadd(OPENED, company).await.map_err(storage)?;
@@ -129,7 +142,8 @@ async fn open_book(store: &Arc<Store>, company: &str, req: Request) -> R {
     Ok(Json(json!({"company_id": company, "company": book, "already_open": false})))
 }
 
-async fn company_book(State(store): State<Arc<Store>>, mut req: Request) -> Response {
+async fn company_book(State(state): State<Arc<CompanyState>>, mut req: Request) -> Response {
+    let store = &state.store;
     // Read the raw path: this is the same text the client scope guard checked.
     let path = req.uri().path().to_string();
     let Some((company, rest)) = path.strip_prefix(COMPANY_BASE).and_then(|p| p.strip_prefix('/')).and_then(|p| p.split_once('/')) else {
@@ -139,12 +153,23 @@ async fn company_book(State(store): State<Arc<Store>>, mut req: Request) -> Resp
         return ApiError(StatusCode::BAD_REQUEST, "Invalid company id".into()).into_response();
     }
     if rest == "open" && req.method() == axum::http::Method::POST {
-        return open_book(&store, company, req).await.into_response();
+        return open_book(store, company, req).await.into_response();
     }
     match store.get(&opened_key(company)).await {
         Ok(Some(_)) => {}
         Ok(None) => return ApiError(StatusCode::NOT_FOUND, "this company has no ledger yet".into()).into_response(),
         Err(e) => return ApiError::from(LedgerError::Storage(e)).into_response(),
+    }
+    let post = req.method() == axum::http::Method::POST;
+    if post && rest == "opening-balances/preview" {
+        let book = Ledger::for_company(store.clone(), company);
+        let run = async { Ok::<_, ApiError>(Json(opening::preview(&state.books, &book, company, json_body(req).await?).await?)) };
+        return run.await.into_response();
+    }
+    if post && rest == "opening-balances" {
+        let book = Ledger::for_company(store.clone(), company);
+        let run = async { Ok::<_, ApiError>(Json(opening::post(&state.books, &book, company, json_body(req).await?).await?)) };
+        return run.await.into_response();
     }
     let target = match req.uri().query() {
         Some(q) => format!("/api/ledger/{rest}?{q}"),
@@ -158,7 +183,7 @@ async fn company_book(State(store): State<Arc<Store>>, mut req: Request) -> Resp
     if let Some(identity) = identity {
         req.extensions_mut().insert(identity);
     }
-    let ledger = Arc::new(Ledger::for_company((*store).clone(), company));
+    let ledger = Arc::new(Ledger::for_company(store.clone(), company));
     match routes(ledger).oneshot(req).await {
         Ok(response) => response,
         Err(never) => match never {},

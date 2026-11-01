@@ -491,6 +491,28 @@ impl Ledger {
         Ok(entry)
     }
 
+    /// Writes one imported account as it stands; the caller has chosen its id and code.
+    pub(super) async fn import_account(&self, account: &Account) -> LResult<()> {
+        self.put("accounts", &account.id, account).await
+    }
+
+    /// True for the first caller only.
+    pub(super) async fn claim(&self, name: &str) -> LResult<bool> {
+        Ok(self.store.set_nx(&self.key(name), "1").await?)
+    }
+
+    pub(super) async fn named_get(&self, name: &str) -> LResult<Option<serde_json::Value>> {
+        Ok(self.store.get_json(&self.key(name)).await?)
+    }
+
+    pub(super) async fn named_set(&self, name: &str, value: &serde_json::Value) -> LResult<()> {
+        Ok(self.store.set_json(&self.key(name), value).await?)
+    }
+
+    pub(super) async fn post_opening(&self, date: &str, memo: &str, lines: Vec<Line>, source_id: &str) -> LResult<Entry> {
+        self.post(date, memo, lines, "opening_balance", Some(source_id.to_string())).await
+    }
+
     async fn void_entry_record(&self, id: &str) -> LResult<Entry> {
         let mut e = self.entry(id).await?;
         self.check_period(&e.date).await?;
