@@ -144,6 +144,13 @@ async fn publish(
     Ok(Json(result))
 }
 
+impl CompanyBooks {
+    /// The observed roster, as the roster route returns it.
+    pub async fn roster_view(&self) -> Result<Value> {
+        Ok(view(load(self).await?))
+    }
+}
+
 pub(super) fn router(s: Arc<CompanyBooks>) -> Router {
     Router::new()
         .route("/api/company-books/roster", get(list).post(publish))

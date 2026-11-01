@@ -141,7 +141,7 @@ async fn missing_workspace_key_fails_closed_across_modules() {
     let bytes = axum::body::to_bytes(response.into_body(), 8192).await.unwrap();
     let status: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(status["auth_required"], true);
-    assert_eq!(status["apps"].as_array().unwrap().len(), 8);
+    assert_eq!(status["apps"].as_array().unwrap().len(), 9);
     assert!(status["apps"].as_array().unwrap().iter().any(|app| app["id"] == "signatures" && app["path"] == "/apps/signatures/"));
     assert!(status["apps"].as_array().unwrap().iter().any(|app| app["id"] == "nixon" && app["path"] == "/apps/nixon/"));
     unsafe { std::env::remove_var("ADMIN_API_KEY") };
