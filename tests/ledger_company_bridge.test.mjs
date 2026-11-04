@@ -104,3 +104,9 @@ test('staff sign-in asks for MFA, then a new password, then opens the workspace'
  const home=read('public/index.html');assert.match(home,/api\/staff\/login/);assert.match(home,/Use the workspace key/);
  assert.match(read('public/apps/firm/firm.js'),/views\.staff=async/);
 });
+test('a client-scoped staff account gets a scope message, not a disabled picker, when firm-wide inventories are refused',async()=>{
+ const denied=()=>{const e=Error('firm-wide views need an account with access to all clients');e.status=403;throw e;};
+ const h=harness(path=>path.endsWith('/roster')||path.startsWith('/api/company-books')?denied():path==='/api/migrations'?source([]):{clients:[{client_id:'client-a',ledger_open:true}]});
+ const m=h.mount({openLedger:()=>{}});await m.ready;
+ assert.ok(!/<select[^>]*disabled/.test(h.host.innerHTML));assert.match(h.host.innerHTML,/assigned clients/);assert.match(h.host.innerHTML,/value="client-a"/);m.destroy();
+});

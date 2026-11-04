@@ -90,7 +90,8 @@
         const values=result.map(r=>r.status==='fulfilled'?r.value:null);
         available={sources:values[1]!==null,books:values[2]!==null};rows=join(...values);
         const missing=result.slice(0,3).filter(r=>r.status==='rejected').length;
-        message=missing?'Some company status is unavailable. No missing data is treated as an empty company.':rows.length?'Company journals and saved source contacts open in their own company views.':'No company directory records are published. This does not establish an empty source.';
+        const scopedOnly=result.slice(0,3).some(r=>r.status==='rejected'&&r.reason?.status===403);
+        message=scopedOnly?'Your account sees only its assigned clients. Choose one of them below to open its own ledger.':missing?'Some company status is unavailable. No missing data is treated as an empty company.':rows.length?'Company journals and saved source contacts open in their own company views.':'No company directory records are published. This does not establish an empty source.';
         draw(v);
       }catch{if(live(v)){rows=[];message='Company directory unavailable. Refresh or sign in again.';draw(v);}}
       finally{if(live(v)&&timer!==null){clearTimeout(timer);timer=null;}}
