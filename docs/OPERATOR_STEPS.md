@@ -15,7 +15,7 @@ Never paste secret values into GitHub, chat or docs.
 
 ## 2. Staff cutover (move off the shared admin key)
 1. There is no staff screen in the app yet; accounts are created through the API with the break-glass admin key (`Authorization: Bearer <ADMIN_API_KEY>`):
-   - `POST /api/staff/users` with `{"username", "display_name", "role", "clients", "temporary_password"}`. `role` is one of `admin`, `preparer`, `reviewer`, `front_desk`, `read_only`; `clients` lists the client references the person may open (empty = firm-wide).
+   - `POST /api/staff/users` with `{"username", "display_name", "role", "clients", "temporary_password"}`. `role` is one of `admin`, `preparer`, `reviewer`, `front_desk`, `read_only`; `clients` lists the client references the person may open (an empty list grants no clients; `["*"]` means all clients and is accepted for `admin` accounts only — any other role is refused with 400). Every assignment, unassignment, role change, refused `*` attempt and 403 access denial is written to the staff audit log (`GET /api/staff/audit`).
    - `GET /api/staff/users` lists accounts; `POST /api/staff/users/{id}` changes role, clients, `disabled`, `reset_mfa` or issues a new temporary password; `GET /api/staff/audit` shows the log.
    - Give each person the smallest role and only the clients they work on. Send the temporary password to them yourself, outside NXT.
 2. Each person signs in (`POST /api/staff/login`), changes the temporary password (`POST /api/staff/me/password`; every other call is refused until they do), and enrolls MFA (`POST /api/staff/mfa/enroll`, then `POST /api/staff/mfa/confirm`). Leave `NXT_STAFF_REQUIRE_MFA` unset (MFA required).

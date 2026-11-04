@@ -138,7 +138,7 @@ async fn list(State(d): S, identity: Option<axum::Extension<crate::firm::staff::
     let (rows, unavailable) = d.collect().await;
     let mut clients: Vec<&Row> = rows.0.values().collect();
     clients.sort_by_key(|r| r.name.as_deref().unwrap_or(&r.client_ref).to_ascii_lowercase());
-    let scoped = identity.is_some_and(|i| !i.clients.iter().any(|c| c == "*"));
+    let scoped = identity.is_some_and(|i| !i.all_clients());
     Json(json!({"clients": clients.into_iter().map(summary).collect::<Vec<_>>(), "unavailable": unavailable, "not_loaded": not_loaded(),
         "scoped": scoped, "source_authoritative": true, "live_cutover_allowed": false}))
 }
