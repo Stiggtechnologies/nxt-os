@@ -318,6 +318,12 @@ impl Journeys {
         let at = now();
         let j = &mut rec.journey;
         let status = j.status_of(step).unwrap_or(StepStatus::Pending);
+        // Steps reserved for a person, and steps in the review queue, close only by a reviewer.
+        let reserved = gate != Gate::Human && self.policy.mode(step) == Autonomy::Human;
+        let queued = rec.pending_review.as_ref().is_some_and(|p| p.step == step);
+        if matches!(action, StaffAction::Complete | StaffAction::Skip) && (reserved || queued) && !reviewer {
+            return Err(ApiError(StatusCode::FORBIDDEN, "this step is closed by a reviewer or admin".into()));
+        }
         match action {
             StaffAction::Complete => {
                 if matches!(status, StepStatus::Pending | StepStatus::Failed) {
@@ -387,6 +393,10 @@ impl Journeys {
             return Ok(None);
         }
         let Some(capability) = self.capabilities.for_step(&step.key).cloned() else { return Ok(None) };
+        // With no actions the agent could only repeat the assessment.
+        if capability.actions(&step.key).is_empty() {
+            return Ok(None);
+        }
         let ctx = StepContext { client_id: client.to_string(), step: step.key.clone(), sources: rec.sources.clone() };
         Ok(Some(WorkItem { step, ctx, capability, last_assessment: rec.last_assessment }))
     }
