@@ -60,10 +60,11 @@ async fn staff_accounts_roles_mfa_scoping_and_break_glass() {
     assert_eq!(call(&r, "POST", "/api/staff/login", None, Some(json!({"username":"nobody","password":PW})), "10.0.0.1").await.0, 401);
     assert_eq!(call(&r, "GET", "/api/staff/users", None, None, "10.0.0.1").await.0, 401);
 
-    let (prep_id, prep) = onboard(&r, "prep", "Pat Preparer", "preparer", json!(["*"])).await;
-    let (_rev_id, rev) = onboard(&r, "rev", "Riley Reviewer", "reviewer", json!(["*"])).await;
-    let (_, desk) = onboard(&r, "desk", "Dana Desk", "front_desk", json!(["*"])).await;
-    let (_, ro) = onboard(&r, "robin", "Robin Readonly", "read_only", json!(["*"])).await;
+    // '*' is admin-only, so non-admin roles are assigned the clients they work on.
+    let (prep_id, prep) = onboard(&r, "prep", "Pat Preparer", "preparer", json!(["client-a", "client-b"])).await;
+    let (_rev_id, rev) = onboard(&r, "rev", "Riley Reviewer", "reviewer", json!(["client-a", "client-b"])).await;
+    let (_, desk) = onboard(&r, "desk", "Dana Desk", "front_desk", json!(["client-a", "client-b"])).await;
+    let (_, ro) = onboard(&r, "robin", "Robin Readonly", "read_only", json!(["client-a", "client-b"])).await;
     let (_, scoped) = onboard(&r, "scoped", "Sam Scoped", "preparer", json!(["client-a"])).await;
 
     let me = ok(&r, "GET", "/api/staff/me", &prep, None).await;
