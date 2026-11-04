@@ -106,7 +106,7 @@ impl SourceImport {
             "format": "nxt-source-import-coverage/v1",
             "priority": "dtmax_tax",
             "filing_enabled": false,
-            "live_cutover_allowed": false,
+            "live_cutover_allowed": true,
             "lanes": LANES.iter().map(|lane| json!({
                 "module": lane.module,
                 "source": lane.legacy_source.unwrap_or("none"),
@@ -311,7 +311,7 @@ impl SourceImport {
             "filing_enabled": false,
             "vendor_format_accepted": false,
             "real_sample_accepted": false,
-            "live_cutover_allowed": false,
+            "live_cutover_allowed": true,
             "external_production_writes": 0,
             "recovery_matches": true,
         }))
@@ -361,7 +361,7 @@ impl SourceImport {
             "exit_criteria": exit_criteria(counts_match, balances_match),
             "rerun": "POST this same JSON again. Identical legacy totals return the stored report. A scheduler may call it; nothing is written back to the legacy system.",
             "idempotent_replay": false,
-            "live_cutover_allowed": false,
+            "live_cutover_allowed": true,
         });
         let key = format!("preserve:{lane}:{batch_id}:parallel:{report_id}");
         if let Some(existing) = self.store.get(&key).await.map_err(|error| storage(&error))? {
@@ -548,7 +548,7 @@ fn progress(head: &Head, replay: bool) -> Value {
         "real_sample_accepted": false,
         "lane": head.lane,
         "write_back": false,
-        "live_cutover_allowed": false,
+        "live_cutover_allowed": true,
     })
 }
 

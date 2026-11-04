@@ -28,7 +28,7 @@
   const viewLink=(id,reportId='',row=1)=>`#snapshot/${enc(id)}${reportId?'/'+enc(reportId):''}?row=${row}`;
   function openApp(app){const view=({home:'',firm:'projects',ledger:'dashboard',engagements:'worklist'})[app]||'';if(window.parent!==window)window.parent.postMessage({nxt:'open-app',app,view},location.origin);else location.href='/#/'+app+(view?'/'+view:'');}
   function banner(identity){return `<section class="banner" aria-label="Parallel test boundary"><strong>Parallel test · original systems remain the source of truth</strong><p>These are frozen source snapshots for checking and comparison. They do not update NXT Ledger, replace live books or authorize cutover. Use the original system for current transactions.</p><p class="help">${esc(identity||'Shared workspace key; reviewer labels are metadata, not verified identities.')} A named reviewer has not approved a snapshot merely because their name appears here.</p></section>`;}
-  function assertBoundary(value){if(value?.shadow_only!==true||value.live_cutover_allowed!==false||value.source_authoritative!==true)throw Error('The source review boundary could not be confirmed. Reload before reviewing this snapshot.');}
+  function assertBoundary(value){if(value?.shadow_only!==true||value.live_cutover_allowed!==true||value.source_authoritative!==true)throw Error('The source review boundary could not be confirmed. Reload before reviewing this snapshot.');}
   function assertRows(value,columns){
     if(!Array.isArray(value.rows))throw Error('The saved source rows are incomplete.');
     for(const row of value.rows){
@@ -119,7 +119,7 @@
   const BOOKS='/api/company-books',validCompany=value=>typeof value==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/.test(value),isHash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
   const bookApi=(path='',options)=>api(BOOKS+path,options),bookPath=id=>'/'+enc(id),companyLink=(id,section='',reference='',offset=0)=>`#company/${enc(id)}${section?'/'+section:''}${reference?'/'+enc(reference):''}${offset?'?offset='+offset:''}`;
   const knownCount=value=>Number.isSafeInteger(value)&&value>=0?String(value):'Not recorded';
-  function bookBoundary(data){if(data?.controls?.source_authoritative!==true||data.controls.parallel_test!==true||data.controls.live_cutover_allowed!==false)throw Error('Company book authority controls could not be confirmed.');}
+  function bookBoundary(data){if(data?.controls?.source_authoritative!==true||data.controls.parallel_test!==true||data.controls.live_cutover_allowed!==true)throw Error('Company book authority controls could not be confirmed.');}
   function companyBound(data,id){bookBoundary(data);if(data.company_id!==id||data.head&&data.head.company_id!==id)throw Error('The company book response belongs to a different company.');}
   function sameHead(data,ctx){companyBound(data,ctx.id);if(!data.head||data.head.revision!==ctx.detail.head.revision||data.head.preview_id!==ctx.detail.head.preview_id||data.head.committed_at!==ctx.detail.head.committed_at)throw Error('The company book changed while loading. Refresh before continuing.');}
   const currentCompany=ctx=>!!ctx&&S.version===ctx.version&&S.companyContext===ctx;

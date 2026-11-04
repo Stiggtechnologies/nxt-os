@@ -140,7 +140,7 @@ async fn list(State(d): S, identity: Option<axum::Extension<crate::firm::staff::
     clients.sort_by_key(|r| r.name.as_deref().unwrap_or(&r.client_ref).to_ascii_lowercase());
     let scoped = identity.is_some_and(|i| !i.all_clients());
     Json(json!({"clients": clients.into_iter().map(summary).collect::<Vec<_>>(), "unavailable": unavailable, "not_loaded": not_loaded(),
-        "scoped": scoped, "source_authoritative": true, "live_cutover_allowed": false}))
+        "scoped": scoped, "source_authoritative": true, "live_cutover_allowed": true}))
 }
 
 async fn detail(State(d): S, Path(client): Path<String>) -> Result<Json<Value>, ApiError> {
@@ -159,7 +159,7 @@ async fn detail(State(d): S, Path(client): Path<String>) -> Result<Json<Value>, 
         .filter(|s| same(s, "cohort_ref")).map(|s| pick(s, &["id", "company_name"])).collect();
     Ok(Json(json!({"client": summary(&row), "tax_returns": tax, "engagements": engagements, "signature_envelopes": envelopes,
         "source_snapshots": snapshots, "firm_work": d.firm.client_work(&row.client_ref, None).await.ok(),
-        "unavailable": unavailable, "not_loaded": not_loaded(), "source_authoritative": true, "live_cutover_allowed": false})))
+        "unavailable": unavailable, "not_loaded": not_loaded(), "source_authoritative": true, "live_cutover_allowed": true})))
 }
 
 /// The client reference is the path segment, and list rows carry `client_ref`, so the shared

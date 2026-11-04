@@ -542,7 +542,7 @@ async fn immutable_company_import_is_atomic_idempotent_scoped_and_fail_closed() 
     assert_eq!(r["rows"][0]["running_balance_cents"], "12345");
     let tb = s.trial_balance("company-a").await.ok().unwrap();
     assert_eq!(tb["analysis"]["total_debit_cents"], "12345");
-    assert_eq!(tb["controls"]["live_cutover_allowed"], false);
+    assert_eq!(tb["controls"]["live_cutover_allowed"], true);
     assert!(s.store.get("gl:company").await.ok().unwrap().is_none());
     assert!(
         s.store

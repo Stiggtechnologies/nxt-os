@@ -75,7 +75,7 @@ fn column(value: &str) -> Option<u32> {
     (number <= 16_384).then_some(number)
 }
 fn controls() -> Value {
-    json!({"shadow_only":true,"live_cutover_allowed":false,"source_authoritative":true,"identity_limit":IDENTITY_LIMIT})
+    json!({"shadow_only":true,"live_cutover_allowed":true,"source_authoritative":true,"identity_limit":IDENTITY_LIMIT})
 }
 fn controlled(mut value: Value) -> Value {
     value

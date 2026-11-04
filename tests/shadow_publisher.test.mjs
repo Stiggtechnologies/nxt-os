@@ -51,7 +51,7 @@ function fixture(t, { empty = false, extraChunks = 0 } = {}) {
   writeFileSync(preload, `
 import fs from 'node:fs';
 const state = JSON.parse(fs.readFileSync(process.env.NXT_SHADOW_TEST_STATE, 'utf8'));
-const controls = { shadow_only: true, live_cutover_allowed: false, source_authoritative: true };
+const controls = { shadow_only: true, live_cutover_allowed: true, source_authoritative: true };
 globalThis.fetch = async function(url, init) {
   fs.appendFileSync(state.log, JSON.stringify({ url, method: init.method, redirect: init.redirect, auth: init.headers.authorization === 'Bearer synthetic-test-only' }) + '\\n');
   if (process.env.NXT_SHADOW_TEST_REDIRECT) return new Response(null, { status: 307, headers: { location: 'https://unapproved.invalid/' } });
@@ -87,7 +87,7 @@ test('publication verifies exact archive bytes and source rows without any finan
   assert.equal(receipt.targeted_source_rows_checked, 1);
   assert.equal(receipt.financial_posts_requested, 0);
   assert.equal(receipt.source_authoritative, true);
-  assert.equal(receipt.live_cutover_allowed, false);
+  assert.equal(receipt.live_cutover_allowed, true);
   assert.ok(!readFileSync(f.receipt, 'utf8').includes('synthetic-test-only'));
 });
 

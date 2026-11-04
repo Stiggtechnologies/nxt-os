@@ -156,7 +156,7 @@ async fn firm_roster_can_publish_154_separately_bound_read_only_snapshots() {
         assert_eq!(result["manifest"], manifest);
         assert_eq!(result["replayed"], false);
         assert_eq!(result["source_authoritative"], true);
-        assert_eq!(result["live_cutover_allowed"], false);
+        assert_eq!(result["live_cutover_allowed"], true);
     }
     let (_, _, _, _, listed_bytes) = request(&router, "GET", "/api/migrations", None, true).await;
     assert!(listed_bytes.len() <= 1024 * 1024);
@@ -339,7 +339,7 @@ async fn parallel_source_archives_are_immutable_scoped_and_never_financial_write
     let empty = call(&router, "GET", "/api/migrations", None, 200).await;
     assert_eq!(empty["snapshots"], json!([]));
     assert_eq!(empty["shadow_only"], true);
-    assert_eq!(empty["live_cutover_allowed"], false);
+    assert_eq!(empty["live_cutover_allowed"], true);
     let ledger_before = call(&router, "GET", "/api/ledger/entries", None, 200).await;
     let tax_before = call(&router, "GET", "/api/tax/returns", None, 200).await;
     let firm_before = call(&router, "GET", "/api/firm/projects", None, 200).await;
@@ -398,7 +398,7 @@ async fn parallel_source_archives_are_immutable_scoped_and_never_financial_write
     assert_eq!(published["replayed"], false);
     assert_eq!(published["manifest"], manifest);
     assert_eq!(published["source_authoritative"], true);
-    assert_eq!(published["live_cutover_allowed"], false);
+    assert_eq!(published["live_cutover_allowed"], true);
     assert!(
         published["identity_limit"]
             .as_str()

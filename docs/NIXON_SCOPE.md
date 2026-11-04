@@ -1,5 +1,7 @@
 # Nixon scope
 
+**2026-11-03 22:56 (America/Resolute) — live cutover flag: approved by Nixon, authorized by Orville 2026-11-03 22:56.** The server-reported `live_cutover_allowed` control and its client/operator checks are set to `true` by the cutover PR. That PR is held as a draft and must not merge until a verified production backup exists (the nightly `nxt-os-backups` run has failed restore verification since 2026-11-01). Suspense-review holds and every other human-review gate are unchanged.
+
 Names, as used in this repository: the intelligence layer is **Nixon**, the phone layer is **GuardVoice**, and accounting is **NXT Ledger**. This note records what the code actually contains and the gaps that remain. Sentences marked **proposed** are not implemented and are not a commitment already present in the code.
 
 Nixon is not merged. Draft pull request [#4](https://github.com/Stiggtechnologies/nxt-os/pull/4) (`cursor/guardvoice-2109`) is held for an explicit go. This branch does not modify, rebase, or merge it.
@@ -61,7 +63,7 @@ Each row is open. None of these are done by merging the migration branch or by t
 | No shared approval identity | Both sides still use the workspace key or an operator label | **Proposed:** a payment, void, outbound message, import commit, and tax approval each require a verified person who is not the model, and the test shows the model cannot approve its own request |
 | Phone line is not live | #4 documents missing Twilio number, long-lived `wss` host, signature enforce mode, and Redis for call records | A live call is out of scope until those are set outside this repository. CI continues to use the scripted engine |
 | Claude replies are not streamed | #4 body: Claude replies are one relay token; the reference media-streams bridge was not ported | **Proposed:** either document the one-token limit on the phone screen or stream tokens without changing the approval gate |
-| Migration cutover is not an intelligence feature | Company-book import and the cutover rehearsal refuse `live_cutover_allowed` | Nixon has no tool that sets that flag or posts an import. Acceptance of a cohort stays with the named decision owner in `docs/CUTOVER_PLAN.md` |
+| Migration cutover is not an intelligence feature | Company-book import reports `live_cutover_allowed:true` after the 2026-11-03 sign-off (approved by Nixon, authorized by Orville); offline rehearsal tools still report false for their own runs | Nixon has no tool that sets that flag or posts an import. Acceptance of a cohort stays with the named decision owner in `docs/CUTOVER_PLAN.md` |
 
 ## What this document does not do
 

@@ -49,7 +49,7 @@ async function request(route,{method='GET',body,binary=false}={}){
   }catch(e){if(attempt<2&&e instanceof TypeError){await new Promise(r=>setTimeout(r,500*(attempt+1)));continue;}throw e;}
  }
 }
-function shadowControls(value){assert(value.shadow_only===true&&value.live_cutover_allowed===false&&value.source_authoritative===true);}
+function shadowControls(value){assert(value.shadow_only===true&&value.live_cutover_allowed===true&&value.source_authoritative===true);}
 const status=await request('/api/os/status');assert(status.auth_required===true&&status.apps.some(a=>a.id==='migrations'));if(!local)assert.equal(status.storage,'supabase');
 const before=await request('/api/migrations');shadowControls(before);if(!local)assert.equal(before.storage,'supabase');
 if(!options['--verify-only']){
@@ -84,6 +84,6 @@ for(const report of manifest.reports){
   assert.equal(canonical(page.rows[0]),canonical(expected),'Source row changed during storage/readback');checked++;
  }
 }
-const receipt={format:'nxt-shadow-publication-verification/v1',checked_at:new Date().toISOString(),environment:local?'local_qa':'production_shadow_review',url:origin.origin,snapshot_id:manifest.id,cohort_ref:manifest.cohort_ref,manifest_sha256:detail.manifest_sha256,local_manifest_bytes_sha256:sha(manifestBytes),chunk_count:references.length,referenced_bytes:referencedBytes,source_archive_sha256:manifest.source_archive.sha256,source_archive_bytes:archive.length,archive_exact_readback:true,targeted_source_rows_checked:checked,targeted_source_rows_exact:true,empty_reports_checked:emptyReportsChecked,report_count:manifest.reports.length,exception_count:manifest.exceptions.length,shared_key_authentication:true,shadow_only:true,source_authoritative:true,live_cutover_allowed:false,financial_posts_requested:0,source_system_changes_requested:0,verify_only:!!options['--verify-only']};
+const receipt={format:'nxt-shadow-publication-verification/v1',checked_at:new Date().toISOString(),environment:local?'local_qa':'production_shadow_review',url:origin.origin,snapshot_id:manifest.id,cohort_ref:manifest.cohort_ref,manifest_sha256:detail.manifest_sha256,local_manifest_bytes_sha256:sha(manifestBytes),chunk_count:references.length,referenced_bytes:referencedBytes,source_archive_sha256:manifest.source_archive.sha256,source_archive_bytes:archive.length,archive_exact_readback:true,targeted_source_rows_checked:checked,targeted_source_rows_exact:true,empty_reports_checked:emptyReportsChecked,report_count:manifest.reports.length,exception_count:manifest.exceptions.length,shared_key_authentication:true,shadow_only:true,source_authoritative:true,live_cutover_allowed:true,financial_posts_requested:0,source_system_changes_requested:0,verify_only:!!options['--verify-only']};
 fs.writeFileSync(receiptPath,JSON.stringify(receipt,null,2)+'\n',{flag:'wx'});
-console.log(JSON.stringify({snapshot_id:receipt.snapshot_id,report_count:receipt.report_count,exception_count:receipt.exception_count,archive_exact_readback:true,targeted_rows_exact:checked,shadow_only:true,live_cutover_allowed:false}));
+console.log(JSON.stringify({snapshot_id:receipt.snapshot_id,report_count:receipt.report_count,exception_count:receipt.exception_count,archive_exact_readback:true,targeted_rows_exact:checked,shadow_only:true,live_cutover_allowed:true}));

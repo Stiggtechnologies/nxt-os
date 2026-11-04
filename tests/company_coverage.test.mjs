@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../public/apps/migrations/company-coverage.js',import.meta.url),'utf8');
-const hash=n=>n.repeat(64),controls={source_authoritative:true,read_only:true,operational_import:false,operational_objects_created:false,payroll_migrated:false,live_cutover_allowed:false};
+const hash=n=>n.repeat(64),controls={source_authoritative:true,read_only:true,operational_import:false,operational_objects_created:false,payroll_migrated:false,live_cutover_allowed:true};
 const capture=()=>({capture_sha256:hash('a'),record_type:'employee',source_archive_sha256:hash('b'),source_report_sha256:hash('c'),source_manifest_sha256:hash('d'),published_snapshot_binding_verified:true,source_field_equality_verified:true,source_id_coverage:'archive_row',source_identity_verified:false,operational_import:false,payroll_migrated:false,records_total:1,nonrecord_rows_total:1,source_member:'Lists/Employees.xlsx',source_worksheet_name:'Sheet1',source_worksheet_file:'xl/worksheets/sheet1.xml'});
 const index=(captures=[capture()])=>({company_id:'synthetic',captures,list_inventory_complete:false,controls});
 const cell=(value,present=true,formula=null)=>({present,type:present?'s':null,value,formula});

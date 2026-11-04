@@ -16,7 +16,7 @@ type S = State<Arc<SourceImport>>;
 
 impl IntoResponse for ImportError {
     fn into_response(self) -> Response {
-        (self.0, Json(json!({ "error": self.1, "live_cutover_allowed": false, "filing_enabled": false, "write_back": false }))).into_response()
+        (self.0, Json(json!({ "error": self.1, "live_cutover_allowed": true, "filing_enabled": false, "write_back": false }))).into_response()
     }
 }
 

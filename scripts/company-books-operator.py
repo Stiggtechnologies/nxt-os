@@ -600,7 +600,7 @@ def chunk_bytes(chunk):
 
 def controls(response):
     c = response.get("controls", {})
-    need(c.get("source_authoritative") is True and c.get("parallel_test") is True and c.get("live_cutover_allowed") is False, "SERVER_CONTROL_SCOPE_CHANGED")
+    need(c.get("source_authoritative") is True and c.get("parallel_test") is True and c.get("live_cutover_allowed") is True, "SERVER_CONTROL_SCOPE_CHANGED")
 
 
 class Runner:
@@ -645,7 +645,7 @@ class Runner:
         receipt = {"format": "nxt-company-book-operator-preview/v1", "origin": self.client.origin, "seed": self.bundle.seed,
                    "preview_id": pid, "request_id": args.request_id, "input_sha256": sha(dump(body)),
                    "analysis_sha256": sha(dump(self.bundle.expected_analysis)), "expected_head": None,
-                   "source_authoritative": True, "live_cutover_allowed": False, "financial_posts_requested": 0}
+                   "source_authoritative": True, "live_cutover_allowed": True, "financial_posts_requested": 0}
         return self._receipt(args.receipt, receipt)
 
     def _reviewed(self, path, digest):
@@ -680,7 +680,7 @@ class Runner:
                   "preview_receipt_sha256": args.preview_receipt_sha256, "preview_receipt": str(self.bundle.files.path(args.preview_receipt)),
                   "preview_id": reviewed["preview_id"], "head_sha256": response["head_sha256"], "head": h,
                   "command_sha256": sha(dump(body)), "idempotent_replay": response.get("idempotent_replay") is True,
-                  "source_authoritative": True, "live_cutover_allowed": False, "financial_posts_requested": 1,
+                  "source_authoritative": True, "live_cutover_allowed": True, "financial_posts_requested": 1,
                   "identity_limit": "Shared-key operator labels and source observations are not independently authenticated identities."}
         receipt_path = self.bundle.files.path(args.receipt, exists=False)
         if receipt_path.exists():
@@ -866,7 +866,7 @@ class Runner:
                     "source_accounts_exact": len(balances), "target_entries_checked": seen,
                     "native_entries_recomputed": len(extra), "native_lines_recomputed": native_lines,
                     "verification_policy": "independent_native_delta" if extra else "strict_initial_import_no_native_adjustments",
-                    "source_authoritative": True, "live_cutover_allowed": False}
+                    "source_authoritative": True, "live_cutover_allowed": True}
         if not extra:
             manifest.pop("native_entries_recomputed")
             manifest.pop("native_lines_recomputed")
@@ -877,7 +877,7 @@ class Runner:
                             "source_entries_exact": len(self.bundle.entries), "source_lines_exact": self.bundle.expected_analysis["lines"],
                             "source_accounts_exact": len(balances), "target_entries_checked": seen,
                             "verification_policy": manifest["verification_policy"],
-                            "source_authoritative": True, "live_cutover_allowed": False, "financial_posts_requested": 0}
+                            "source_authoritative": True, "live_cutover_allowed": True, "financial_posts_requested": 0}
         if extra:
             receipt.update(native_entries_recomputed=len(extra), native_lines_recomputed=native_lines,
                            native_debit_cents=str(native_debit), native_credit_cents=str(native_credit))
@@ -888,7 +888,7 @@ class Runner:
         return {"mode": value["format"].split("-")[-1].split("/")[0], "company_id": self.bundle.company,
                 "receipt_sha256": digest, "source_entries": len(self.bundle.entries),
                 "source_lines": self.bundle.expected_analysis["lines"], "source_accounts": len(self.bundle.accounts),
-                "source_authoritative": True, "live_cutover_allowed": False}
+                "source_authoritative": True, "live_cutover_allowed": True}
 
 
 def main(argv=None):

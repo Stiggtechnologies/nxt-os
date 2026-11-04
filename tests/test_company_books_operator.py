@@ -132,7 +132,7 @@ class FakeAPI:
         if method == "POST" and route.endswith("/chunks"):
             raw = op.chunk_bytes(body)
             return {"sha256": op.sha(raw), "bytes": len(raw)}
-        controls = {"source_authoritative": True, "parallel_test": True, "live_cutover_allowed": False}
+        controls = {"source_authoritative": True, "parallel_test": True, "live_cutover_allowed": True}
         if method == "POST" and route.endswith("/imports/preview"):
             p = {"format": "nxt-company-book-preview/v1", "company_id": "synthetic", "input": body, "analysis": copy.deepcopy(self.bundle.expected_analysis)}
             self.preview_value = {"preview_id": op.sha(op.preview_bytes(p)), "stage": "preview_ready", "preview": p, "controls": controls}
@@ -248,7 +248,7 @@ class OperatorTests(unittest.TestCase):
         for item in manifest["files"]:
             self.assertEqual(op.sha((self.root / "readback" / item["file"]).read_bytes()), item["sha256"])
         self.assertNotIn('"debit_cents"', (self.root / "verification.json").read_text())
-        self.assertFalse(result["live_cutover_allowed"])
+        self.assertTrue(result["live_cutover_allowed"])
 
     def test_ambiguous_commit_exact_retry_does_not_repost(self):
         runner, api = self.ready()
@@ -343,7 +343,7 @@ class OperatorTests(unittest.TestCase):
         receipt = op.parse((self.root / "verification-native.json").read_bytes())
         self.assertEqual(receipt["verification_policy"], "independent_native_delta")
         self.assertEqual(receipt["native_debit_cents"], "10")
-        self.assertFalse(receipt["live_cutover_allowed"])
+        self.assertTrue(receipt["live_cutover_allowed"])
         self.assertEqual(verified["source_authoritative"], True)
         self.assertEqual(api.posts, posts)
         api.request = lambda method, route, body=None: respond(method, route, body, lie=True)
