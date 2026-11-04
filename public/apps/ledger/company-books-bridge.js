@@ -90,7 +90,8 @@
         if(signal.aborted&&!values.some(Boolean)){rows=[];message='Company directory timed out. Refresh to check company coverage.';draw(v);return;}
         available={sources:values[1]!==null,books:values[2]!==null};rows=join(...values);
         const missing=result.slice(0,3).filter(r=>r.status==='rejected').length;
-        message=missing?'Some company status is unavailable. No missing data is treated as an empty company.':rows.length?'Company journals and saved source contacts open in their own company views.':'No company directory records are published. This does not establish an empty source.';
+        const scopedOnly=result.slice(0,3).some(r=>r.status==='rejected'&&r.reason?.status===403);
+        message=scopedOnly?'Your account sees only its assigned clients. Choose one of them below to open its own ledger.':missing?'Some company status is unavailable. No missing data is treated as an empty company.':rows.length?'Company journals and saved source contacts open in their own company views.':'No company directory records are published. This does not establish an empty source.';
         if(signal.aborted)message='Some company status is still loading slowly. Companies listed below can be opened.';
         draw(v);
         // Ledger-open flags are a nicety: they load after the list and never block or disable it.
