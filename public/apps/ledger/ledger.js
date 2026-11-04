@@ -14,7 +14,7 @@ const companyBridgeHost = $("#ledger-company-bridge");
 const companyBridge = companyBridgeHost && window.NXTLedgerCompanyBridge?.mount(companyBridgeHost, {api, esc, current: company, openApp(app, view) {
   if (window.parent !== window) window.parent.postMessage({nxt:"open-app", app, view}, location.origin);
   else location.href = "/#/" + app + "/" + view;
-}, openLedger(id) { location.href = location.pathname + (id ? "?company=" + encodeURIComponent(id) : "") + "#dashboard"; }});
+}, openLedger(id) { if (window.NXTCompany && window.parent !== window) { NXTCompany.set(id); return; } location.href = location.pathname + (id ? "?company=" + encodeURIComponent(id) : "") + "#dashboard"; }});
 window.addEventListener("pagehide", () => companyBridge?.destroy(), {once:true});
 $("#mark").innerHTML = NXT.MARK + "<span>NXT Ledger</span>";
 try { const t = localStorage.getItem("nxt_theme"); if (t) document.documentElement.dataset.theme = t; } catch {}

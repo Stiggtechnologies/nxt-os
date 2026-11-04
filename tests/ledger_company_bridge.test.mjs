@@ -65,7 +65,7 @@ test('timeout aborts the metadata requests and never admits late data',async()=>
  const h=harness((path,{signal})=>new Promise((resolve,reject)=>{signal.addEventListener('abort',()=>reject(Object.assign(Error('aborted'),{name:'AbortError'})),{once:true});}));const m=h.mount({timeoutMs:5});await m.ready;assert.match(h.host.innerHTML,/timed out/);assert.ok(h.calls.every(c=>c.signal.aborted));m.destroy();
 });
 test('directory action and timeout bounds stay on the existing read-only company route',async()=>{
- const h=harness();for(const timeoutMs of [0,-1,Infinity,20001])assert.throws(()=>h.mount({timeoutMs}));assert.equal(h.calls.length,0);
+ const h=harness();for(const timeoutMs of [0,-1,Infinity,60001])assert.throws(()=>h.mount({timeoutMs}));assert.equal(h.calls.length,0);
  const m=h.mount();await m.ready;let prevented=false;h.host.querySelector('[data-company-directory]').onclick({preventDefault(){prevented=true;}});assert.equal(prevented,true);assert.deepEqual(h.opened,[{app:'migrations',view:'companies'}]);m.destroy();
 });
 test('native default, startup hooks and legacy Ledger API routes remain intact',()=>{
@@ -77,7 +77,7 @@ test('native default, startup hooks and legacy Ledger API routes remain intact',
 test('with openLedger a company choice opens its own ledger, including clients only Nixon lists',async()=>{
   const h=harness();const opened=[];
   h.setHandler(async path=>{if(path==='/api/nixon/clients')return {clients:[{client_id:'client-a',ledger_open:true}]};throw Object.assign(Error('firm-wide'),{status:403});});
-  await h.mount({openLedger:id=>opened.push(id)}).ready;
+  await h.mount({openLedger:id=>opened.push(id)}).ready;await new Promise(r=>setTimeout(r,0));
   assert.match(h.host.innerHTML,/client-a — Ledger open/);
   const select=h.host.querySelector('#ledger-company-choice');select.value='client-a';select.onchange();
   assert.deepEqual(opened,['client-a']);
@@ -104,9 +104,19 @@ test('staff sign-in asks for MFA, then a new password, then opens the workspace'
  const home=read('public/index.html');assert.match(home,/api\/staff\/login/);assert.match(home,/Use the workspace key/);
  assert.match(read('public/apps/firm/firm.js'),/views\.staff=async/);
 });
+
+test('ledger-open flags never block or disable the company list (Nixon * timeout regression)',async()=>{
+  const h=harness();h.setHandler(path=>path==='/api/nixon/clients'?new Promise(()=>{}):path.endsWith('/roster')?roster([{company_id:'co-a',company_name:'Synthetic A'}]):path==='/api/migrations'?source([]):page([]));
+  await h.mount({openLedger:()=>{}}).ready;
+  assert.match(h.host.innerHTML,/co-a/);assert.doesNotMatch(h.host.innerHTML,/<select[^>]*disabled/);
+});
+test('a timeout keeps companies that already arrived selectable',async()=>{
+  const h=harness((path,{signal})=>path.endsWith('/roster')?Promise.resolve(roster([{company_id:'co-b',company_name:'Synthetic B'}])):new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Object.assign(Error('aborted'),{name:'AbortError'})),{once:true})));
+  const m=h.mount({timeoutMs:5});await m.ready;assert.match(h.host.innerHTML,/co-b/);assert.doesNotMatch(h.host.innerHTML,/disabled/);m.destroy();
+});
 test('a client-scoped staff account gets a scope message, not a disabled picker, when firm-wide inventories are refused',async()=>{
  const denied=()=>{const e=Error('firm-wide views need an account with access to all clients');e.status=403;throw e;};
  const h=harness(path=>path.endsWith('/roster')||path.startsWith('/api/company-books')?denied():path==='/api/migrations'?source([]):{clients:[{client_id:'client-a',ledger_open:true}]});
- const m=h.mount({openLedger:()=>{}});await m.ready;
+ const m=h.mount({openLedger:()=>{}});await m.ready;await new Promise(r=>setTimeout(r,0));
  assert.ok(!/<select[^>]*disabled/.test(h.host.innerHTML));assert.match(h.host.innerHTML,/assigned clients/);assert.match(h.host.innerHTML,/value="client-a"/);m.destroy();
 });

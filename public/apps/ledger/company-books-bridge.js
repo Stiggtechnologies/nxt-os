@@ -58,7 +58,7 @@
     return 'company/'+encodeURIComponent(id)+(section?'/'+section:'');
   }
   function mount(host,{api,esc,openApp,openLedger=null,current='',timeoutMs=20000}={}){
-    need(Number.isFinite(timeoutMs)&&timeoutMs>0&&timeoutMs<=20000,'Company directory timeout exceeds its supported bound.');
+    need(Number.isFinite(timeoutMs)&&timeoutMs>0&&timeoutMs<=60000,'Company directory timeout exceeds its supported bound.');
     let disposed=false,version=0,controller=null,timer=null,rows=[],available={books:false,sources:false},message='Loading company directory…';
     const live=v=>!disposed&&host.isConnected!==false&&version===v;
     function stop(){controller?.abort();if(timer!==null)clearTimeout(timer);timer=null;}
@@ -81,18 +81,21 @@
         const result=await Promise.allSettled([
           request('/api/company-books/roster').then(rosterRows),
           request('/api/migrations').then(sourceRows),
-          booksRows(request,()=>live(v)),
-          ...(openLedger?[request('/api/nixon/clients')]:[])
+          booksRows(request,()=>live(v))
         ]);
         if(!live(v))return;
         if(result.some(r=>r.status==='rejected'&&r.reason?.status===401)){rows=[];message='Sign in to view company books. Company coverage is unavailable.';draw(v,false,true);return;}
-        if(signal.aborted){rows=[];message='Company directory timed out. Refresh to check company coverage.';draw(v);return;}
         const values=result.map(r=>r.status==='fulfilled'?r.value:null);
+        // A slow page no longer empties the list: whatever arrived (the roster is fast) stays selectable.
+        if(signal.aborted&&!values.some(Boolean)){rows=[];message='Company directory timed out. Refresh to check company coverage.';draw(v);return;}
         available={sources:values[1]!==null,books:values[2]!==null};rows=join(...values);
         const missing=result.slice(0,3).filter(r=>r.status==='rejected').length;
         const scopedOnly=result.slice(0,3).some(r=>r.status==='rejected'&&r.reason?.status===403);
         message=scopedOnly?'Your account sees only its assigned clients. Choose one of them below to open its own ledger.':missing?'Some company status is unavailable. No missing data is treated as an empty company.':rows.length?'Company journals and saved source contacts open in their own company views.':'No company directory records are published. This does not establish an empty source.';
+        if(signal.aborted)message='Some company status is still loading slowly. Companies listed below can be opened.';
         draw(v);
+        // Ledger-open flags are a nicety: they load after the list and never block or disable it.
+        if(openLedger)api('/api/nixon/clients',{}).then(c=>{if(!live(v))return;rows=join(...values,c);draw(v);}).catch(()=>{});
       }catch{if(live(v)){rows=[];message='Company directory unavailable. Refresh or sign in again.';draw(v);}}
       finally{if(live(v)&&timer!==null){clearTimeout(timer);timer=null;}}
     }
