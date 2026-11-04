@@ -69,8 +69,10 @@ async fn coverage_names_the_source_import_capability() {
     let cap = |k: &str| v["steps"].as_array().unwrap().iter().find(|s| s["step"] == k).unwrap()["capability"].clone();
     assert_eq!(cap("books_access"), "source_software_import");
     assert_eq!(cap("data_migration"), "source_software_import");
+    assert_eq!(cap("catch_up_cleanup"), "ledger_close");
+    assert_eq!(cap("monthly_close"), "ledger_close");
     assert_eq!(cap("enquiry_received"), Value::Null);
-    assert_eq!(v["automated"], 2);
+    assert_eq!(v["automated"], 4);
 }
 
 #[tokio::test]
