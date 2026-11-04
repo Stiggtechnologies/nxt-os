@@ -230,3 +230,43 @@ The installed tree documented earlier is `C:\Program Files (x86)\DT Max`. Histor
 - Historical reconstruction evidence IDs were not re-executed. Where this pass could not see the original, the row says so.
 - No production store was written. Tests used in-memory or local fixtures. Python logs record failed local overwrite attempts that the tests expect to refuse.
 - QuickBooks, Caseware, DocuSign, DT Max, and WebTax remain the sources of truth for a parallel period.
+
+## TurboTax Canada self-serve T1 to guided T1 interview
+
+Source: public TurboTax Canada pages and help articles, plus canada.ca (brief T, 2026-11-04). No Intuit sign-in, no Intuit wording or branding copied. The guided screens live at `#tt-start`, `#tt-t1/{id}` and `#tt-spouse/{family}` in `public/apps/tax` (`tt-core.js`, `tt-ui.js`), and each shows "Internal workpaper. Not CRA-certified. NETFILE disabled. A human files."
+
+Fidelity: **50%** after the guided interview (was **37.5%**). Now 2 copied & tested, 8 partial, 2 missing, 0 wrong; 12 rows. `(2 + 0.5×8) / 12`. The previous score was `(0.5×9) / 12`.
+
+| Original feature | NXT status | Evidence |
+| --- | --- | --- |
+| 1. Who the return is for (me / couple) | partial | `#tt-start` creates one T1 or two linked T1s (`POST /api/tax/families`). No "someone else" path and no lock-after-choice. Rust `spouse_optimizer_proposes_only_and_audits_acceptance` links a pair. |
+| 2. About you / residency interview | partial | One screen per topic with step nav and Continue. SIN is Luhn-checked and masked in the browser and never sent (`t1_interview.test.mjs`). Answers map only to engine keys; out-of-scope situations set `other_tax_situations` so review blocks. No DOB, address, marital-change date or dependant screens. |
+| 3. Auto-fill my return (CRA) | missing | Not built and not simulated. Needs CRA certification. |
+| 4. Slip search-to-add and slip-shaped forms | copied & tested | `GET /api/tax/slips/catalog` (from `slips.rs`), search ranked by slip code then plain words, one field per box with calculated boxes first, several slips per type, re-aggregation without double counting (`t1_slips_search.test.mjs`, Rust `slip_catalog_lists_every_kind_with_calculated_boxes`). No box-image help. |
+| 5. Deductions and credits checklist | partial | Topic checklist writing only engine-supported keys (RRSP, medical, donations, tuition, student loan, home buyers, T2125, T776), tested against the 2025 T1 field list. FHSA, child care and moving are listed as not calculated. |
+| 6. Review with Fix-it links | copied & tested | Blocking items and notes grouped from calculate diagnostics, each with a deep link to the screen and field; ready gate requires no blocking item (`t1_review.test.mjs`). |
+| 7. Running refund meter | partial | Meter on every guided screen, refreshed after each Continue (save then calculate). Combined only, not federal/provincial split; a couple shows one person at a time. |
+| 8. Spouse optimisation | partial | `POST /api/tax/families/{id}/optimize` proposes T1032 pension split (5% steps to the 50% cap), donation and medical pooling with engine-computed deltas, and a Schedule 2 tuition transfer capped at $5,000 with no delta. Proposals only; accept writes an audit event. Rust test checks the delta equals the engine's with-minus-without. |
+| 9. Plans and payment | missing | Replaced on purpose by the review page scope check. |
+| 10. NETFILE | partial | Substitute only: the filing route still returns 409 and guided code has no filing call or external host (`turbotax_no_cra_network.test.mjs`). |
+| 11. Post-filing | partial | Unchanged: audit, print, roll forward. |
+| 12. Import last year | partial | Unchanged: roll forward and prior-year columns. |
+
+## TurboTax Business Incorporated T2 intake to one-page T2 intake
+
+Source: public TurboTax Business Incorporated start flow (brief T2, walk notes and screenshots). Copied: the order of questions and the result routes. Not copied: wording, branding, plan cards and prices. Screen at `#tt-t2`; server at `POST /api/tax/t2/intake` and `/api/tax/t2/intake/start` (`src/tax/t2_intake.rs`).
+
+Fidelity: **75%** for a new table (was **0%**: no intake existed). 7 copied & tested, 1 partial, 2 missing, 0 wrong; 10 rows. `(7 + 0.5×1) / 10`.
+
+| Original feature | NXT status | Evidence |
+| --- | --- | --- |
+| Incorporated? (no → personal return) | copied & tested | Route `t1_self_employment` links to the T1 interview. Rust `t2_intake_routes_and_period_rules`. |
+| Location (Quebec / multiple / outside Canada out of scope) | copied & tested | Same test; out-of-scope routes cannot start a return (`t2_intake_dialogs_and_start`). |
+| Reporting period with date rules | copied & tested | Start on or after 2023-01-01, end not after today, end after start, at most 53 weeks. |
+| Income question | copied & tested | Income → full T2. |
+| Other-expenses question (nil vs full) | copied & tested | No income and only professional fees / bank charges / office → nil T2; else full. |
+| Overlapping-period dialog | copied & tested | Same corporation (client reference) with overlapping dates blocks and start returns 409. |
+| Locked-tax-year dialog | copied & tested | Reopening a started T2 with a different year blocks. |
+| Carry-forward dialog | partial | Offered from the prior-year T2; copies profile, shareholders and closing balances (as roll forward). No separate "prior return in progress" flow beyond a note. |
+| Import from another program (.GT2) | missing | Proprietary binary not read; dialog points to the existing DT Max / NXT import. |
+| Plan and price result | missing | Replaced on purpose by a scope/readiness result (schedules list, AB-only engine note, not CRA-certified, a human files). |

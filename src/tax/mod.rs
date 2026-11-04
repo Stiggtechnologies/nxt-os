@@ -9,6 +9,8 @@ pub mod slips;
 pub mod gifi_map;
 pub mod t2_schedules;
 pub mod t5013_cca;
+pub mod spouse_optimize;
+pub mod t2_intake;
 mod routes;
 pub use routes::router;
 
