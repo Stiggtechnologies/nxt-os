@@ -114,3 +114,9 @@ test('a timeout keeps companies that already arrived selectable',async()=>{
   const h=harness((path,{signal})=>path.endsWith('/roster')?Promise.resolve(roster([{company_id:'co-b',company_name:'Synthetic B'}])):new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Object.assign(Error('aborted'),{name:'AbortError'})),{once:true})));
   const m=h.mount({timeoutMs:5});await m.ready;assert.match(h.host.innerHTML,/co-b/);assert.doesNotMatch(h.host.innerHTML,/disabled/);m.destroy();
 });
+test('a client-scoped staff account gets a scope message, not a disabled picker, when firm-wide inventories are refused',async()=>{
+ const denied=()=>{const e=Error('firm-wide views need an account with access to all clients');e.status=403;throw e;};
+ const h=harness(path=>path.endsWith('/roster')||path.startsWith('/api/company-books')?denied():path==='/api/migrations'?source([]):{clients:[{client_id:'client-a',ledger_open:true}]});
+ const m=h.mount({openLedger:()=>{}});await m.ready;await new Promise(r=>setTimeout(r,0));
+ assert.ok(!/<select[^>]*disabled/.test(h.host.innerHTML));assert.match(h.host.innerHTML,/assigned clients/);assert.match(h.host.innerHTML,/value="client-a"/);m.destroy();
+});

@@ -751,7 +751,7 @@ function openBook() {
 }
 
 (async () => {
-  try { await loadRefs(); } catch (e) { if (company && e.status === 404) return openBook(); main.innerHTML = `<div class="card err-text">${esc(e.status === 401 ? "Sign in to NXT OS to use NXT Ledger." : e.message)}</div>`; return; }
+  try { await loadRefs(); } catch (e) { if (company && e.status === 404) return openBook(); main.innerHTML = `<div class="card err-text">${esc(e.status === 401 ? "Sign in to NXT OS to use NXT Ledger." : !company && e.status === 403 ? "The Firm workspace needs an account with access to all clients. Choose one of your assigned clients under Company books above." : e.message)}</div>`; return; }
   refreshBadge();
   route();
 })();
