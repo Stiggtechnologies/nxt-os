@@ -22,6 +22,7 @@ fn commit(id: &str, request: &str) -> CommitInput {
         needs_review: false,
         review_blockers: vec![],
         suspense_account_id: None,
+        supersedes_head: None,
     }
 }
 fn adjustment(head: &str, request: &str) -> JournalInput {

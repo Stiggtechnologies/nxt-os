@@ -89,6 +89,17 @@ fn is_zero(n: &usize) -> bool {
     *n == 0
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveInput {
+    pub request_id: String,
+    pub expected_head: String,
+    pub operator_label: String,
+    /// Company id of the kept copy when this book is a duplicate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merged_into: Option<String>,
+    pub note: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlBasis {
     SourceReportRow {
@@ -176,6 +187,10 @@ pub struct CommitInput {
     pub review_blockers: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suspense_account_id: Option<String>,
+    /// Re-baseline a needs_review book from a corrected staging of the same
+    /// source exports. Must equal the current head; see `CompanyBooks::commit`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes_head: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -203,6 +218,10 @@ pub struct Head {
     /// Present only on books committed in needs_review mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<Review>,
+    /// Receipt id of the needs_review base this re-baselined base replaced.
+    /// The replaced chain stays stored as an immutable receipt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -254,6 +273,11 @@ pub enum Operation {
     },
     PeriodLock {
         input: LockInput,
+    },
+    /// Terminal: the book is retired (e.g. merged duplicate). All receipts and
+    /// source data are kept; only further postings are refused.
+    Archive {
+        input: ArchiveInput,
     },
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

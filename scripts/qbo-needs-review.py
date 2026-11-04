@@ -336,6 +336,157 @@ def stage_journal(book, review, accounts, order_choice, as_of):
     return entries, suspense
 
 
+DERIVED_CLOSE_FORMAT = "qbo-derived-year-end-close/v1"
+
+
+def _fiscal_cut(as_of, month):
+    a = dt.date.fromisoformat(as_of)
+    return dt.date(a.year - (month > a.month), month, 1)
+
+
+def _fy_end(d, month):
+    if month == 1:
+        return dt.date(d.year, 12, 31)
+    year = d.year + (d.month >= month)
+    return dt.date(year, month, 1) - dt.timedelta(days=1)
+
+
+def _totals(entries):
+    t = {}
+    for e in entries:
+        for l in e["lines"]:
+            x = t.setdefault(l["account_id"], [0, 0, 0])
+            x[0] += int(l["debit_cents"]); x[1] += int(l["credit_cents"]); x[2] += 1
+    return t
+
+
+def _tb_net(c):
+    return int(c["debit_cents"]) - int(c["credit_cents"])
+
+
+def _plan_closes(entries, controls, accounts, as_of):
+    """Find the fiscal year start whose QuickBooks year-end closes explain the
+    trial balance exactly (to the cent), using only journal activity.
+
+    An account is closed when its trial-balance balance (0 when QuickBooks
+    omitted it) equals its activity since the fiscal year start and differs
+    from its full-history balance. The receiver (retained earnings or owner's equity) must
+    then equal its own journal balance plus everything the closes moved.
+    Returns (month, receiver_id, {account: pre_cut_net}) or None."""
+    if not as_of:
+        return None
+    # QuickBooks closes to Retained Earnings (corporations) or to the owner's
+    # equity account (sole proprietors). Only a candidate that reconciles to the
+    # cent is accepted; Retained Earnings wins ties.
+    receivers = sorted((a for a, n in accounts.items() if a != SUSPENSE_ID and any(
+        k in n.lower() for k in ("retained earnings", "owner", "equity", "capital"))),
+        key=lambda a: ("retained earnings" not in accounts[a].lower(), a))
+    if not receivers:
+        return None
+    best = None
+    by_date = {}
+    for e in entries:
+        x = by_date.setdefault(e["date"], {})
+        for l in e["lines"]:
+            x[l["account_id"]] = x.get(l["account_id"], 0) + int(l["debit_cents"]) - int(l["credit_cents"])
+    for month in range(1, 13):
+        cut = _fiscal_cut(as_of, month).isoformat()
+        pre, post = {}, {}
+        for day, nets in by_date.items():
+            side = pre if day < cut else post
+            for a, n in nets.items():
+                side[a] = side.get(a, 0) + n
+        for receiver in receivers:
+            closed, unresolved = {}, 0
+            for a in set(pre) | set(post) | set(controls):
+                if a == receiver:
+                    continue
+                tb = _tb_net(controls[a]) if a in controls else 0
+                p, q = pre.get(a, 0), post.get(a, 0)
+                if tb == p + q:
+                    continue
+                if p and tb == q:
+                    closed[a] = p
+                else:
+                    unresolved += 1
+            if not closed:
+                continue
+            rec = pre.get(receiver, 0) + post.get(receiver, 0) + sum(closed.values())
+            if rec != (_tb_net(controls[receiver]) if receiver in controls else 0):
+                continue
+            if best is None or unresolved < best[0]:
+                best = (unresolved, month, receiver, closed)
+    return None if best is None else best[1:]
+
+
+def derive_year_end_closes(entries, controls, accounts, as_of, journal_sha):
+    """Labelled close entries, one per fiscal year end before the TB's fiscal
+    year, moving each closed account's activity in that year to retained
+    earnings. The journal is authoritative; the closes are derived from it."""
+    plan = _plan_closes(entries, controls, accounts, as_of)
+    if plan is None:
+        return []
+    month, receiver, closed = plan
+    cut = _fiscal_cut(as_of, month).isoformat()
+    per_year = {}
+    for e in entries:
+        if e["date"] >= cut:
+            continue
+        fy = _fy_end(dt.date.fromisoformat(e["date"]), month).isoformat()
+        for l in e["lines"]:
+            if l["account_id"] in closed:
+                b = per_year.setdefault(fy, {})
+                b[l["account_id"]] = b.get(l["account_id"], 0) + int(l["debit_cents"]) - int(l["credit_cents"])
+    closes = []
+    for fy in sorted(per_year):
+        nets = {a: -n for a, n in per_year[fy].items() if n}
+        moved = -sum(nets.values())
+        if moved:
+            nets[receiver] = nets.get(receiver, 0) + moved
+        meta = {"format": DERIVED_CLOSE_FORMAT, "fiscal_year_end": fy, "fiscal_year_start_month": month}
+        lines = [{"account_id": a, "debit_cents": str(max(n, 0)), "credit_cents": str(max(-n, 0)), "source_row": 0,
+                  "memo": "QuickBooks year-end close (derived from source journal activity)", "source_metadata": dict(meta)}
+                 for a, n in sorted(nets.items()) if n]
+        if not lines:
+            continue
+        closes.append({"id": "y" + qbo.sha(f"{journal_sha}:close:{fy}".encode("utf-8"))[:20], "date": fy,
+                       "source_id": f"derived-year-end-close:{fy}", "memo": "Fiscal year-end close (derived)", "lines": lines,
+                       "source_metadata": dict(meta, basis="closed account journal activity within the fiscal year, moved to retained earnings",
+                                               durable_source_id=False)})
+    return closes
+
+
+def derive_missing_controls(entries, closes, controls, journal_sha, review):
+    """Controls for accounts QuickBooks left off the trial balance (or showed
+    with no amount). The journal is authoritative: an account whose journal
+    activity (after any derived year-end close) nets to zero gets a derived
+    zero control carrying its exact journal totals. Anything else stays
+    without a control so the server keeps flagging it as a genuine gap."""
+    src, cls = _totals(entries), _totals(closes)
+    out = dict(controls)
+    for a, (d, c, n) in sorted(src.items()):
+        if a in out:
+            continue
+        yd, yc, yn = cls.get(a, (0, 0, 0))
+        if n == 0 or d + yd != c + yc:
+            review.add("tb_control_missing_nonzero_journal", account=a)
+            continue
+        basis = {"kind": "derived_zero_journal_omission", "journal_sha256": journal_sha, "source_row_count": n,
+                 "journal_debit_cents": str(d), "journal_credit_cents": str(c)}
+        if yn:
+            basis.update(kind="derived_zero_after_year_end_close", close_line_count=yn,
+                         close_debit_cents=str(yd), close_credit_cents=str(yc))
+        out[a] = {"account_id": a, "debit_cents": "0", "credit_cents": "0", "basis": basis}
+    return out
+
+
+def source_company_ref(company_name):
+    """Stable source identity for a QuickBooks Online company: the export's own
+    company name, normalised. Imports are upserted by this key."""
+    slug = re.sub(r"[^a-z0-9]+", "-", company_name.lower()).strip("-")
+    return "quickbooks_online:" + (slug or "unnamed")[:180]
+
+
 def pack(account_rows, entries):
     base_first = len(op.chunk_bytes({"accounts": account_rows, "entries": []}))
     base_rest = len(op.chunk_bytes({"accounts": [], "entries": []}))
@@ -367,6 +518,13 @@ def stage(zip_path, out, company_id, order_choice):
     if not entries:
         raise SystemExit(json.dumps({"ok": False, "error": "journal_empty"}))
     accounts[SUSPENSE_ID] = SUSPENSE_NAME
+    used = {l["account_id"] for e in entries for l in e["lines"]} | set(controls)
+    # An account defined only by an empty TB row and no journal line carries no
+    # balance; leaving it out keeps every defined account under a control.
+    accounts = {k: v for k, v in accounts.items() if k in used}
+    closes = derive_year_end_closes(entries, controls, accounts, as_of, jb.raw_hash)
+    controls = derive_missing_controls(entries, closes, controls, jb.raw_hash, review)
+    entries = entries + closes
     account_rows = [{"id": k, "name": v[:300], "kind": None} for k, v in sorted(accounts.items())]
     dates = sorted(e["date"] for e in entries)
     period_start, period_end = dates[0], max(dates[-1], as_of or dates[-1])
@@ -378,7 +536,7 @@ def stage(zip_path, out, company_id, order_choice):
     observation = {"format": "nxt-synthetic-observation/v1", "synthetic": True, "needs_review": True,
                    "note": "Test-copy fixture assertion only; not an independent QuickBooks observation."}
     template = {"request_id": "", "expected_head": None,
-                "company": {"name": company, "source_company_id": "synthetic-fixture", "currency": "CAD",
+                "company": {"name": company, "source_company_id": source_company_ref(company), "currency": "CAD",
                             "identity_verified": True, "currency_verified": True},
                 "source": {"system": "quickbooks_online", "archive_sha256": archive_sha, "journal_sha256": jb.raw_hash,
                            "trial_balance_sha256": tb.raw_hash, "period_start": period_start, "period_end": period_end,
@@ -395,6 +553,7 @@ def stage(zip_path, out, company_id, order_choice):
                "suspense_lines": suspense["lines"], "suspense_offset_lines": suspense["offset_lines"],
                "suspense_debit_cents": str(suspense["debit"]), "suspense_credit_cents": str(suspense["credit"]),
                "suspense_net_debit_cents": str(net), "review_counts": review.counts,
+               "source_company_id": source_company_ref(company), "derived_year_end_closes": len(closes),
                "journal_member": names["journal"], "trial_balance_member": names["trial_balance"]}
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -429,13 +588,31 @@ class Client:
                 return e.code, None
 
 
-def load(stage_dir, company_id, origin, request_prefix, reviewer):
+# Review notes that never hide a source amount: zero-value rows, formatting,
+# period widening, a blank TB amount whose control is derived from the journal.
+CLEAN_REVIEW_KINDS = {"suspense_account_without_amount", "suspense_no_account_no_amount", "tb_amount_normalized_to_cents",
+                      "tb_line_missing_or_unreadable_amount", "journal_date_after_trial_balance_period",
+                      "source_period_widened_for_out_of_period_dates", "journal_header_unrecognised_mapped_by_name"}
+
+
+def load(stage_dir, company_id, origin, request_prefix, reviewer, rebaseline=False):
+    """Upsert by company id: a new book is committed once; with --rebaseline an
+    unadjusted needs_review book is replaced by this staging of the same source
+    exports (server checks every source entry carries over). A preview whose
+    controls pass is committed clean; otherwise it is committed needs_review."""
     stage_dir = Path(stage_dir)
     client = Client(origin)
     base = "/api/company-books/" + urllib.parse.quote(company_id, safe="")
     status, detail = client.call("GET", base)
+    supersedes = None
     if status == 200 and detail.get("head_sha256"):
-        return {"ok": True, "company_id": company_id, "already_committed": True, "head_sha256": detail["head_sha256"]}
+        head = detail.get("head") or {}
+        if (head.get("operation") or {}).get("kind") == "archive":
+            return {"ok": True, "company_id": company_id, "archived": True, "head_sha256": detail["head_sha256"]}
+        if not (rebaseline and head.get("review") and head.get("revision") == 1 and not head.get("operation")):
+            return {"ok": True, "company_id": company_id, "already_committed": True, "head_sha256": detail["head_sha256"]}
+        supersedes = detail["head_sha256"]
+        request_prefix = f"{request_prefix}rb-"
     template = json.loads((stage_dir / "template.json").read_text())
     summary = json.loads((stage_dir / "summary.json").read_text())
     for raw in (stage_dir / "chunks.jsonl").read_bytes().splitlines():
@@ -448,14 +625,24 @@ def load(stage_dir, company_id, origin, request_prefix, reviewer):
     if status != 200:
         raise SystemExit(json.dumps({"ok": False, "error": "preview_failed", "status": status, "detail": preview}))
     blockers = json.loads((stage_dir / "review_blockers.json").read_text())
+    # Controls passing is necessary but not sufficient: a source amount parked
+    # in suspense (even netting to zero) or netted on read still needs a human.
+    held = sorted(k for k in summary.get("review_counts", {}) if k not in CLEAN_REVIEW_KINDS)
+    clean = preview.get("stage") == "preview_ready" and not held
     commit = {"preview_id": preview["preview_id"], "expected_head": None,
-              "request_id": f"{request_prefix}commit-{company_id}"[:96], "reviewer_label": reviewer,
-              "needs_review": True, "review_blockers": blockers, "suspense_account_id": SUSPENSE_ID}
+              "request_id": f"{request_prefix}commit-{company_id}"[:96], "reviewer_label": reviewer}
+    if not clean:
+        commit.update(needs_review=True, review_blockers=blockers, suspense_account_id=SUSPENSE_ID)
+    if supersedes:
+        commit["supersedes_head"] = supersedes
     status, res = client.call("POST", base + "/imports/commit", commit)
     if status != 200:
         raise SystemExit(json.dumps({"ok": False, "error": "commit_failed", "status": status, "detail": res}))
     return {"ok": True, "company_id": company_id, "preview_id": preview["preview_id"], "head_sha256": res["head_sha256"],
-            "server_blockers": len(preview["preview"]["analysis"]["blockers"]), "stage": summary}
+            "clean": clean, "held_review_kinds": held, "controls_passed": preview.get("stage") == "preview_ready",
+            "superseded_head_sha256": supersedes,
+            "server_blockers": preview["preview"]["analysis"]["blockers"][:50],
+            "server_blocker_count": len(preview["preview"]["analysis"]["blockers"]), "stage": summary}
 
 
 def main(argv=None):
@@ -473,11 +660,12 @@ def main(argv=None):
     l.add_argument("--origin", default=os.environ.get("NXT_TEST_COMPANY_BOOKS_ORIGIN", "http://127.0.0.1:3917"))
     l.add_argument("--request-prefix", default="nr-")
     l.add_argument("--reviewer-label", default="QBO migration needs-review load")
+    l.add_argument("--rebaseline", action="store_true", help="replace an unadjusted needs_review book from a corrected staging")
     a = p.parse_args(argv)
     if a.mode == "stage":
         print(json.dumps(stage(a.source_zip, a.out, a.company_id, a.date_order), sort_keys=True))
     else:
-        print(json.dumps(load(a.stage_dir, a.company_id, a.origin, a.request_prefix, a.reviewer_label), sort_keys=True))
+        print(json.dumps(load(a.stage_dir, a.company_id, a.origin, a.request_prefix, a.reviewer_label, a.rebaseline), sort_keys=True))
     return 0
 
 

@@ -36,7 +36,7 @@ async fn committed_books(client: &str) -> Arc<CompanyBooks> {
         ]
     })).unwrap();
     let preview = books.preview(client, input).await.ok().unwrap();
-    books.commit(client, CommitInput { preview_id: preview["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit-close".into(), reviewer_label: "Synthetic reviewer".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None }).await.ok().unwrap();
+    books.commit(client, CommitInput { preview_id: preview["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit-close".into(), reviewer_label: "Synthetic reviewer".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None, supersedes_head: None }).await.ok().unwrap();
     books
 }
 

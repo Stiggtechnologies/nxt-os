@@ -147,6 +147,40 @@ fn aggregate(s: &str) -> Result<i128> {
 /// Labelled QuickBooks year-end close derived from source journal activity.
 pub const DERIVED_CLOSE_FORMAT: &str = "qbo-derived-year-end-close/v1";
 
+/// Source identities that are deduplicated across company ids.
+pub const SOURCE_IDENTITY_PREFIX: &str = "quickbooks_online:";
+fn source_key(source: &str) -> String {
+    format!("company-books:source-company:{}:v1", hash(source.as_bytes()))
+}
+/// True when every old source entry is present unchanged, every account it
+/// uses keeps its name, and the only new entries are labelled derived closes.
+pub(crate) fn source_carried_over(
+    old_accounts: &[Account],
+    old_entries: &[Entry],
+    new_accounts: &[Account],
+    new_entries: &[Entry],
+) -> bool {
+    let names: BTreeMap<&str, &str> = new_accounts
+        .iter()
+        .map(|a| (a.id.as_str(), a.name.as_str()))
+        .collect();
+    let old_names: BTreeMap<&str, &str> = old_accounts
+        .iter()
+        .map(|a| (a.id.as_str(), a.name.as_str()))
+        .collect();
+    let fresh: BTreeMap<&str, &Entry> = new_entries.iter().map(|e| (e.id.as_str(), e)).collect();
+    let kept: HashSet<&str> = old_entries.iter().map(|e| e.id.as_str()).collect();
+    old_entries.iter().all(|e| {
+        fresh.get(e.id.as_str()) == Some(&e)
+            && e.lines.iter().all(|l| {
+                names.get(l.account_id.as_str()) == old_names.get(l.account_id.as_str())
+                    && names.contains_key(l.account_id.as_str())
+            })
+    }) && new_entries
+        .iter()
+        .all(|e| kept.contains(e.id.as_str()) || is_derived_close(&e.source_metadata))
+        && fresh.len() == new_entries.len()
+}
 fn is_derived_close(value: &Option<Value>) -> bool {
     value
         .as_ref()
@@ -891,10 +925,16 @@ impl CompanyBooks {
                     ));
                 }
             }
+            if input.supersedes_head.as_deref() == Some(raw.as_str()) {
+                return self.rebaseline(company, &input, &p, raw, h, review).await;
+            }
             return Err(err(
                 StatusCode::CONFLICT,
                 "Company book already committed; source refresh requires a separately reviewed delta importer",
             ));
+        }
+        if input.supersedes_head.is_some() {
+            return Err(err(StatusCode::CONFLICT, "Superseded head is not the current head"));
         }
         if input.expected_head.is_some() {
             return Err(err(
@@ -920,7 +960,9 @@ impl CompanyBooks {
                 .and_then(|p| p.closed_through.clone()),
             operation: None,
             review,
+            supersedes: None,
         };
+        self.claim_source(company, &p).await?;
         let raw = encoded(&h)?;
         let head_id = hash(raw.as_bytes());
         self.immutable(&Self::key(company, "receipt", &head_id)?, &h)
@@ -934,6 +976,126 @@ impl CompanyBooks {
             return self.commit_replay(company, &input, h.preview_id).await;
         }
         Ok(json!({"head_sha256":head_id,"head":h,"idempotent_replay":false,"controls":controls()}))
+    }
+    /// Replace an unadjusted needs_review base with a corrected staging of the
+    /// same source exports (e.g. derived year-end closes and controls). Every
+    /// original source entry must be carried over unchanged and only labelled
+    /// derived closes may be added, so nothing is lost; the replaced receipts
+    /// stay stored and the new base links to them through `supersedes`.
+    async fn rebaseline(
+        &self,
+        company: &str,
+        input: &CommitInput,
+        p: &Preview,
+        current_id: String,
+        current: Head,
+        review: Option<Review>,
+    ) -> Result<Value> {
+        if current.revision != 1
+            || current.operation.is_some()
+            || current.previous_head.is_some()
+            || !current.journal_chunks.is_empty()
+            || !self.review_ok(&current)
+            || input.expected_head.is_some()
+        {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "Only an unadjusted needs_review base can be re-baselined",
+            ));
+        }
+        let old = self.load_preview(company, &current.preview_id).await?;
+        let (a, b) = (&old.input, &p.input);
+        if a.company.name != b.company.name
+            || a.source.archive_sha256 != b.source.archive_sha256
+            || a.source.journal_sha256 != b.source.journal_sha256
+            || a.source.trial_balance_sha256 != b.source.trial_balance_sha256
+            || a.source.period_lock != b.source.period_lock
+        {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "Re-baseline must restage the same company and source exports",
+            ));
+        }
+        let (old_accounts, old_entries) = self.data(company, &a.chunks).await?;
+        let (new_accounts, new_entries) = self.data(company, &b.chunks).await?;
+        if !source_carried_over(&old_accounts, &old_entries, &new_accounts, &new_entries) {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "Re-baseline would drop or alter source data; only derived year-end closes may be added",
+            ));
+        }
+        let h = Head {
+            format: "nxt-company-book-head/v1".into(),
+            company_id: company.into(),
+            preview_id: input.preview_id.clone(),
+            revision: 1,
+            committed_at: Utc::now().to_rfc3339(),
+            commit_request_id: input.request_id.clone(),
+            reviewer_label: input.reviewer_label.clone(),
+            previous_head: None,
+            journal_chunks: vec![],
+            locked_through: current.locked_through.clone(),
+            operation: None,
+            review,
+            supersedes: Some(current_id.clone()),
+        };
+        self.claim_source(company, p).await?;
+        let raw = encoded(&h)?;
+        let head_id = hash(raw.as_bytes());
+        self.immutable(&Self::key(company, "receipt", &head_id)?, &h)
+            .await?;
+        if !self
+            .store
+            .compare_exchange(&Self::key(company, "head", "v1")?, Some(&current_id), &head_id)
+            .await
+            .map_err(storage)?
+        {
+            return self.commit_replay(company, input, h.preview_id).await;
+        }
+        Ok(json!({"head_sha256":head_id,"head":h,"superseded_head_sha256":current_id,"idempotent_replay":false,"controls":controls()}))
+    }
+    /// One active book per real source company. Fixture identities are exempt.
+    async fn claim_source(&self, company: &str, p: &Preview) -> Result<()> {
+        let source = p.input.company.source_company_id.trim();
+        if !source.starts_with(SOURCE_IDENTITY_PREFIX) {
+            return Ok(());
+        }
+        let key = source_key(source);
+        for _ in 0..8 {
+            let owner = self.store.get(&key).await.map_err(storage)?;
+            match owner.as_deref() {
+                Some(o) if o == company => return Ok(()),
+                Some(o) => {
+                    let active = valid_id(o)
+                        && self.current(o).await?.is_some_and(|(_, h)| {
+                            !matches!(h.operation, Some(Operation::Archive { .. }))
+                        });
+                    if active {
+                        return Err(ApiError(
+                            StatusCode::CONFLICT,
+                            format!("Source company already imported as {o}; upsert into that book or archive it first"),
+                        ));
+                    }
+                }
+                None => {}
+            }
+            if self
+                .store
+                .compare_exchange(&key, owner.as_deref(), company)
+                .await
+                .map_err(storage)?
+            {
+                return Ok(());
+            }
+        }
+        Err(err(StatusCode::CONFLICT, "Concurrent source company claim"))
+    }
+    /// Company that currently owns a real source identity, if any.
+    pub async fn source_owner(&self, source_company_id: &str) -> Result<Option<String>> {
+        self.store
+            .get(&source_key(source_company_id.trim()))
+            .await
+            .map_err(storage)
     }
     async fn commit_replay(
         &self,
@@ -1095,7 +1257,7 @@ impl CompanyBooks {
         for id in selected {
             let (pid, p) = previews.remove(&id).ok_or_else(corrupt)?;
             let head = heads.remove(&id);
-            let head_summary=head.as_ref().map(|(_,h)|json!({"format":h.format,"company_id":h.company_id,"preview_id":h.preview_id,"revision":h.revision,"committed_at":h.committed_at,"locked_through":h.locked_through,"review":h.review,"operation_kind":h.operation.as_ref().map(|o|match o{Operation::Journal{..}=>"journal",Operation::Reversal{..}=>"reversal",Operation::PeriodLock{..}=>"period_lock"})}));
+            let head_summary=head.as_ref().map(|(_,h)|json!({"format":h.format,"company_id":h.company_id,"preview_id":h.preview_id,"revision":h.revision,"committed_at":h.committed_at,"locked_through":h.locked_through,"review":h.review,"operation_kind":h.operation.as_ref().map(|o|match o{Operation::Journal{..}=>"journal",Operation::Reversal{..}=>"reversal",Operation::PeriodLock{..}=>"period_lock",Operation::Archive{..}=>"archive"}),"archived":matches!(h.operation,Some(Operation::Archive{..})),"merged_into":match &h.operation{Some(Operation::Archive{input})=>input.merged_into.clone(),_=>None},"supersedes":h.supersedes}));
             companies.push(json!({"company_id":id,"stage":if head.is_some(){"import_committed"}else{"staged"},"head_sha256":head.as_ref().map(|(id,_)|id),"head":head_summary,"head_truncated":true,"previews":[{"preview_id":pid,"company":p.input.company,"source":p.input.source,"accounts":p.analysis.accounts,"entries":p.analysis.entries,"lines":p.analysis.lines,"blockers":p.analysis.blockers,"stage":if p.analysis.controls_passed{"preview_ready"}else{"assessment_blocked"}}],"previews_truncated":true,"integrity_check":"metadata_only; full journal and history validation occurs on company book reads","controls":controls()}));
         }
         let v = json!({"companies":companies,"total":total,"offset":offset,"limit":limit,"has_more":offset.saturating_add(limit)<total,"integrity_check":"metadata_only; full journal and history validation occurs on company book reads","controls":controls()});

@@ -55,5 +55,78 @@ class NeedsReviewStager(unittest.TestCase):
         self.assertEqual(sum(int(l['debit_cents']) for l in ls), sum(int(l['credit_cents']) for l in ls))
 
 
+def je(day, *legs):
+    return {"id": "e" + day, "date": day, "lines": [
+        {"account_id": a, "debit_cents": str(max(n, 0)), "credit_cents": str(max(-n, 0)), "source_row": i + 1}
+        for i, (a, n) in enumerate(legs)]}
+
+
+def tb(**nets):
+    return {a: {"account_id": a, "debit_cents": str(max(n, 0)), "credit_cents": str(max(-n, 0)),
+                "basis": {"kind": "source_report_row"}} for a, n in nets.items()}
+
+
+ACCOUNTS = {"cash": "Synthetic cash", "sales": "Synthetic sales", "rent": "Synthetic rent",
+            "re": "Retained Earnings", "old": "Synthetic old (deleted)"}
+# Fiscal year starts July 1. Prior years' income was closed by QuickBooks, so the
+# as-of trial balance omits income/rent and carries it in retained earnings.
+JOURNAL = [je("2024-08-01", ("cash", 1000), ("sales", -1000)), je("2025-02-01", ("rent", 300), ("cash", -300)),
+           je("2025-09-01", ("cash", 500), ("sales", -500)), je("2025-03-01", ("old", 40), ("cash", -40)),
+           je("2025-03-02", ("cash", 40), ("old", -40))]
+
+
+def closed_tb():
+    return tb(cash=1200, sales=-500, re=-700)
+
+
+def settle(controls, journal=JOURNAL):
+    review = nr.Review()
+    closes = nr.derive_year_end_closes(journal, controls, ACCOUNTS, "2026-06-30", "j" * 64)
+    out = nr.derive_missing_controls(journal, closes, controls, "j" * 64, review)
+    net = {}
+    for e in journal + closes:
+        for l in e["lines"]:
+            net[l["account_id"]] = net.get(l["account_id"], 0) + int(l["debit_cents"]) - int(l["credit_cents"])
+    bad = sorted(a for a in net if a not in out or nr._tb_net(out[a]) != net[a])
+    return closes, out, review, bad
+
+
+class TrialBalanceControls(unittest.TestCase):
+    def test_year_end_close_is_derived_from_the_journal(self):
+        closes, out, review, bad = settle(closed_tb())
+        self.assertEqual(bad, [])
+        self.assertEqual([c["date"] for c in closes], ["2025-06-30"])
+        self.assertTrue(all(l["source_row"] == 0 and l["source_metadata"]["format"] == nr.DERIVED_CLOSE_FORMAT
+                            for c in closes for l in c["lines"]))
+        self.assertEqual(out["rent"]["basis"]["kind"], "derived_zero_after_year_end_close")
+        self.assertEqual(out["old"]["basis"]["kind"], "derived_zero_journal_omission")
+        self.assertEqual(out["old"]["basis"]["journal_debit_cents"], "40")
+        self.assertFalse(review.counts)
+
+    def test_genuine_mismatch_stays_flagged(self):
+        controls = closed_tb()
+        controls["re"]["credit_cents"] = "699"
+        closes, out, review, bad = settle(controls)
+        self.assertEqual(closes, [])
+        self.assertIn("rent", bad)
+        self.assertIn("tb_control_missing_nonzero_journal", review.counts)
+
+    def test_missing_account_with_unexplained_balance_gets_no_control(self):
+        journal = JOURNAL + [je("2026-01-05", ("cash", 7), ("old", -7))]
+        controls = tb(cash=1207, sales=-500, re=-700)
+        _, out, review, bad = settle(controls, journal)
+        self.assertNotIn("old", out)
+        self.assertEqual(bad, ["old"])
+
+    def test_owner_equity_receiver_for_sole_proprietor(self):
+        accounts = dict(ACCOUNTS, re="Owners Equity")
+        closes = nr.derive_year_end_closes(JOURNAL, closed_tb(), accounts, "2026-06-30", "j" * 64)
+        self.assertEqual(len(closes), 1)
+
+    def test_source_company_id_is_the_real_source(self):
+        self.assertEqual(nr.source_company_ref("2210791 Alberta Ltd."), "quickbooks_online:2210791-alberta-ltd")
+        self.assertNotIn("synthetic", nr.source_company_ref("Synthetic Co").replace("synthetic-co", ""))
+
+
 if __name__ == '__main__':
     unittest.main()

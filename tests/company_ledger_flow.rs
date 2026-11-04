@@ -159,7 +159,7 @@ async fn imported(books: &CompanyBooks, entries: usize) -> String {
         "chunks":[up["sha256"]],
         "trial_balance":[control("cash",&total,"0",1),control("equity","0",&total,2),control("ar","0","0",3),control("revenue","0","0",4)]})).unwrap();
     let preview = books.preview("co", input).await.map_err(e).unwrap();
-    let head = books.commit("co", CommitInput { preview_id: preview["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit".into(), reviewer_label: "Synthetic".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None }).await.map_err(e).unwrap();
+    let head = books.commit("co", CommitInput { preview_id: preview["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit".into(), reviewer_label: "Synthetic".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None, supersedes_head: None }).await.map_err(e).unwrap();
     head["head_sha256"].as_str().unwrap().to_string()
 }
 

@@ -36,6 +36,7 @@ pub fn router(state: Arc<CompanyBooks>) -> Router {
             "/api/company-books/{company}/period-lock",
             post(lock_period),
         )
+        .route("/api/company-books/{company}/archive", post(archive))
         .route("/api/company-books/{company}/parallel/classes", post(add_class))
         .route("/api/company-books/{company}/parallel/documents", post(open_document))
         .route("/api/company-books/{company}/parallel/payments", post(apply_payment))
@@ -197,6 +198,9 @@ async fn reverse(
     Json(v): Json<ReverseInput>,
 ) -> R {
     Ok(Json(s.reverse(&c, &e, v).await?))
+}
+async fn archive(State(s): S, Path(c): Path<String>, Json(v): Json<ArchiveInput>) -> R {
+    Ok(Json(s.archive(&c, v).await?))
 }
 async fn lock_period(State(s): S, Path(c): Path<String>, Json(v): Json<LockInput>) -> R {
     Ok(Json(s.lock_period(&c, v).await?))
