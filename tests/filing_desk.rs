@@ -10,8 +10,9 @@ const PW: &str = "synthetic-pass-phrase-1";
 const PW2: &str = "synthetic-pass-phrase-2";
 const SMS: &str = "246810";
 
-async fn call(r: &axum::Router, m: &str, uri: &str, tok: Option<&str>, body: Option<Value>) -> (u16, Value) {
-    let mut q = Request::builder().method(m).uri(uri).header("x-forwarded-for", "10.0.0.9");
+async fn call(r: &axum::Router, m: &str, uri: &str, tok: Option<&str>, body: Option<Value>) -> (u16, Value) { call_from(r, m, uri, tok, body, "10.0.0.9").await }
+async fn call_from(r: &axum::Router, m: &str, uri: &str, tok: Option<&str>, body: Option<Value>, ip: &str) -> (u16, Value) {
+    let mut q = Request::builder().method(m).uri(uri).header("x-forwarded-for", ip);
     if let Some(t) = tok { q = q.header("authorization", format!("Bearer {t}")); }
     let q = match body { Some(v) => q.header("content-type", "application/json").body(Body::from(v.to_string())), None => q.body(Body::empty()) }.unwrap();
     let resp = r.clone().oneshot(q).await.unwrap();
@@ -31,8 +32,12 @@ async fn onboard(r: &axum::Router, username: &str, name: &str, role: &str, clien
     let u = ok(r, "POST", "/api/staff/users", "k", Some(json!({"username":username,"display_name":name,"role":role,"clients":clients,"temporary_password":PW}))).await;
     let id = u["id"].as_str().unwrap().to_string();
     ok(r, "POST", &format!("/api/staff/users/{id}"), "k", Some(json!({"phone":"780-555-0100"}))).await;
-    ok(r, "POST", "/api/staff/login/sms", "", Some(json!({"username":username,"password":PW}))).await;
-    let login = ok(r, "POST", "/api/staff/login", "", Some(json!({"username":username,"password":PW,"sms_code":SMS}))).await;
+    // Each synthetic user signs in from its own address so the per-network login limit isn't hit.
+    let ip = format!("10.1.{}.{}", username.len(), username.bytes().map(u32::from).sum::<u32>() % 250);
+    let (s1, v1) = call_from(r, "POST", "/api/staff/login/sms", None, Some(json!({"username":username,"password":PW})), &ip).await;
+    assert_eq!(s1, 200, "{v1}");
+    let (s2, login) = call_from(r, "POST", "/api/staff/login", None, Some(json!({"username":username,"password":PW,"sms_code":SMS})), &ip).await;
+    assert_eq!(s2, 200, "{login}");
     let tok = login["token"].as_str().unwrap().to_string();
     ok(r, "POST", "/api/staff/me/password", &tok, Some(json!({"current_password":PW,"new_password":PW2}))).await;
     (id, tok)
