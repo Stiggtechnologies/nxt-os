@@ -113,7 +113,7 @@ The Filing Desk is the last internal step before a person files a return outside
 Guardrails (all server-side):
 - Only staff with a **filer grant** may use the queue, walkthrough, confirm and log. Admin staff accounts grant filers with `POST /api/tax/desk/filers {"user_id","granted"}`, and each grant is audited. The break-glass key can never file.
 - **Two-person rule:** the account that signed the preparation off cannot file that return. If the preparer label is not a verified staff label, filing is also refused.
-- **Fingerprint:** a confirmation is tied to a hash of the full return input, input revision, calculation output hash and status. Any later edit, recalculation or reopen changes the fingerprint. That invalidates the confirmation and the seen marks, and the return goes back to the queue flagged `invalidated_confirmation`.
+- **Fingerprint:** a confirmation is tied to a hash of the full return input, input and record revisions, review and preparer sign-offs, calculation output hash and status. Any later edit, recalculation or reopen changes the fingerprint. That invalidates the confirmation and the seen marks, and the return goes back to the queue flagged `invalidated_confirmation`.
 
 ### Internal-only gating (guided intake and Filing Desk)
 

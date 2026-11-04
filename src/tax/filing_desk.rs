@@ -78,11 +78,11 @@ fn sees(who: &Identity, client_ref: &str) -> bool { who.all_clients() || who.can
 fn forbidden(m: &str) -> ApiError { ApiError(StatusCode::FORBIDDEN, m.into()) }
 
 /// Fingerprint of the canonical return data a filer confirms: the full return input, the input
-/// revision, the calculation output hash and the status. Any edit, recalculation or reopen
-/// changes it.
+/// revision, the record revision, the review and preparer sign-offs, the calculation output
+/// hash and the status. Any edit, recalculation, reopen or re-review changes it.
 pub fn fingerprint(r: &TaxReturn) -> TResult<String> {
-    hash(&json!({"format":"nxt-filing-fingerprint/v1","return_id":r.id,"input":ReturnInput::from(r),"input_revision":r.input_revision,
-        "output_hash":r.calculation.as_ref().map(|c| c.output_hash.clone()),"status":r.status}))
+    hash(&json!({"format":"nxt-filing-fingerprint/v1","return_id":r.id,"input":ReturnInput::from(r),"input_revision":r.input_revision,"revision":r.revision,
+        "review":r.review,"preparer_signoff":r.preparer_signoff,"output_hash":r.calculation.as_ref().map(|c| c.output_hash.clone()),"status":r.status}))
 }
 
 /// Statutory filing deadline used for sorting (T1: April 30 of the next year; T2: six months
