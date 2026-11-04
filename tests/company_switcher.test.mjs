@@ -46,3 +46,17 @@ test('every app and the shell load the one shared module; lists are marked as cl
   assert.match(read('public/apps/migrations/migrations.js'),/data-client-row="\$\{esc\(c\.company_id\)\}"/);
   assert.match(read('public/apps/nixon/nixon.js'),/data-client-row=/);assert.match(read('public/apps/nixon/nixon.js'),/#client/);
 });
+test('roster is cached in sessionStorage and the switcher gives up after 10 s, not 45 s',async()=>{
+  assert.match(code,/timeoutMs = 10000/);assert.doesNotMatch(code,/45000/);
+  const t=load();const ss=new Map();t.box.sessionStorage={getItem:k=>ss.get(k)??null,setItem:(k,v)=>ss.set(k,v),removeItem:k=>ss.delete(k)};
+  assert.equal(t.C.cachedRoster(),null);
+  t.C.saveRoster([{id:'example-co-001',name:'Example Co 001'}],1000);
+  assert.deepEqual(JSON.parse(JSON.stringify(t.C.cachedRoster(2000))),[{id:'example-co-001',name:'Example Co 001'}]);
+  assert.equal(t.C.cachedRoster(1000+6*60*1000),null,'stale after 5 minutes');
+});
+test('type-ahead filters by name or id, prefix matches first',()=>{
+  const {C}=load();const rows=[{id:'b-2',name:'Northern Example'},{id:'a-1',name:'Example Co 001'},{id:'c-3',name:'Other'}];
+  assert.deepEqual(C.filter(rows,'exa').map(r=>r.id),['a-1','b-2']);
+  assert.deepEqual(C.filter(rows,'C-3').map(r=>r.id),['c-3']);
+  assert.equal(C.filter(rows,'').length,3);
+});

@@ -75,6 +75,8 @@ SDK evidence: parent `ev_c6d077c18411971abee54760eba97daebb074995bf8a14e5c201932
 | Company-scoped journal and trial-balance import | partial | Nine `company_books_flow` tests plus the Python assessor/staging/operator tests. Import preserves source cents and blocks live cutover. It is not a QBO company sync. |
 | Classes, departments, items, estimates, purchase orders, time, budgets, multi-currency | partial | Classes, departments, items, estimates, purchase orders, time, and budgets are stored in parallel. Estimates, purchase orders, time, and budgets do not post a journal. Multi-currency is still absent. None of these call QuickBooks. |
 | Transaction attachments | partial | A parallel attachment stores the hex bytes, SHA-256, and owner id, and does not execute the bytes or write them back. It is not an `IPPAttachable` sync. |
+| QBO keyboard shortcuts (Ctrl+Alt+I/W/X/R/A/L/F, `?` help, Esc) | partial | `tests/shortcuts.test.mjs` (`ledger gets the QBO Ctrl+Alt shortcuts and they route to native views`, `? opens the help overlay…`, `apps can register their own keys…`). Ctrl+Alt+E (estimate) is listed as not available because Ledger has no native estimate screen. |
+| Client and company lists open fast at firm scale | partial | `listing_clients_costs_constant_store_round_trips` (5 vs 80 clients cost the same ≤5 store reads) and `list_summaries_never_reads_preview_keys_and_is_two_round_trips`. Switcher caches the roster 5 min, times out at 10 s, and filters as you type (`tests/company_switcher.test.mjs`). Not timed against production Supabase. |
 | OAuth and realm synchronization | missing | Firm integrations report QuickBooks as not configured. No token exchange was run. |
 
 ## Firm

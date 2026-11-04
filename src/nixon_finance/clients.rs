@@ -8,9 +8,13 @@ use crate::ledger::{engine::{Ledger, LedgerError, parse_date, today}, models::Do
 use crate::referral::routes::ApiError;
 use axum::http::StatusCode;
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use crate::client_journey::service::Journeys;
+use crate::company_books::{CompanyBooks, valid_id};
+use crate::store::Store;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
-const BOOK_PAGE: usize = 50;
 const MAX_BOOKS: usize = 500;
 const RECENT_ENTRIES: usize = 25;
 
@@ -18,28 +22,76 @@ fn finding(severity: &str, title: String, source: &str) -> Value {
     json!({"severity": severity, "title": title, "source": source})
 }
 
-async fn book_ids(scope: &Scope) -> Result<Vec<String>, ApiError> {
-    let mut ids = Vec::new();
-    while ids.len() < MAX_BOOKS {
-        let page = scope.company_books.list_page(ids.len(), BOOK_PAGE).await?;
-        let rows = page["companies"].as_array().cloned().unwrap_or_default();
-        ids.extend(rows.iter().filter_map(|c| c["company_id"].as_str().map(String::from)));
-        if rows.is_empty() || page["has_more"] != true {
-            break;
-        }
-    }
-    Ok(ids)
+/// Every committed or staged company book id: one index read plus one pointer MGET.
+async fn book_stages(books: &CompanyBooks) -> Result<BTreeMap<String, String>, ApiError> {
+    let page = books.list_summaries(0, MAX_BOOKS).await?;
+    Ok(page["companies"].as_array().into_iter().flatten()
+        .filter_map(|c| Some((c["company_id"].as_str()?.to_string(), c["stage"].as_str()?.to_string())))
+        .collect())
 }
 
 /// Every client the firm has a journey, imported books or a ledger for.
 pub async fn client_ids(scope: &Scope) -> Result<BTreeSet<String>, ApiError> {
-    let journeys = scope.journeys.list().await?;
-    let mut ids: BTreeSet<String> = journeys["journeys"].as_array().into_iter().flatten()
-        .filter_map(|j| j["client_id"].as_str().map(String::from))
+    Ok(base_rows(&scope.company_books, &scope.journeys, &scope.ledger.store).await?.keys().cloned().collect())
+}
+
+/// One row per known client, built from three batched reads (journeys, book
+/// pointers, opened ledgers) instead of several reads per client.
+async fn base_rows(books: &CompanyBooks, journeys: &Journeys, ledger_store: &Store) -> Result<BTreeMap<String, Value>, ApiError> {
+    let journeys = journeys.list().await?;
+    let stages = book_stages(books).await?;
+    let opened: BTreeSet<String> = opened_company_books(ledger_store).await.map_err(storage)?.into_iter().collect();
+    let by_client: BTreeMap<String, &Value> = journeys["journeys"].as_array().into_iter().flatten()
+        .filter_map(|j| Some((j["client_id"].as_str()?.to_string(), j)))
         .collect();
-    ids.extend(book_ids(scope).await?);
-    ids.extend(opened_company_books(&scope.ledger.store).await.map_err(storage)?);
-    Ok(ids)
+    let mut ids: BTreeSet<String> = by_client.keys().cloned().collect();
+    ids.extend(stages.keys().cloned());
+    ids.extend(opened.iter().cloned());
+    Ok(ids.into_iter().map(|id| {
+        let j = by_client.get(&id).copied();
+        let row = row(&id, j, stages.get(&id).map(String::as_str), opened.contains(&id));
+        (id, row)
+    }).collect())
+}
+
+fn row(id: &str, j: Option<&Value>, stage: Option<&str>, ledger_open: bool) -> Value {
+    // Same shape the per-client detail() call produced: an untouched valid id reads as acquisition_pending.
+    let books_stage = stage.map(String::from).or_else(|| valid_id(id).then(|| "acquisition_pending".to_string()));
+    json!({
+        "client_id": id,
+        "books_stage": books_stage,
+        "ledger_open": ledger_open,
+        "current_step": j.map(|j| &j["progress"]["current_step"]),
+        "percent": j.map(|j| &j["progress"]["percent"]),
+        "waiting_on_person": j.is_some_and(|j| !j["pending_review"].is_null()),
+    })
+}
+
+const CACHE_TTL: Duration = Duration::from_secs(45);
+type Cached = (Instant, Arc<BTreeMap<String, Value>>);
+fn cache() -> &'static Mutex<HashMap<String, Cached>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Cached>>> = OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// Base rows, cached per tenant (remote store) for a short TTL. Process-memory
+/// stores (local/test copies) are never cached so writes show immediately.
+async fn cached_rows(scope: &Scope) -> Result<Arc<BTreeMap<String, Value>>, ApiError> {
+    let key = scope.company_books.store.tenant_key();
+    if let Some(k) = &key {
+        if let Some((at, rows)) = cache().lock().unwrap().get(k) {
+            if at.elapsed() < CACHE_TTL {
+                return Ok(rows.clone());
+            }
+        }
+    }
+    let rows = Arc::new(base_rows(&scope.company_books, &scope.journeys, &scope.ledger.store).await?);
+    if let Some(k) = key {
+        let mut c = cache().lock().unwrap();
+        c.retain(|_, (at, _)| at.elapsed() < CACHE_TTL);
+        c.insert(k, (Instant::now(), rows.clone()));
+    }
+    Ok(rows)
 }
 
 async fn journey(scope: &Scope, client: &str) -> Result<Option<Value>, ApiError> {
@@ -134,25 +186,15 @@ fn findings(journey: Option<&Value>, books: Option<&Value>) -> Vec<Value> {
 /// One row per client; `visible` is the caller's assignment check. `assigned` clients
 /// are listed even before any record exists for them.
 pub async fn list(scope: &Scope, assigned: &[String], visible: impl Fn(&str) -> bool) -> Result<Value, ApiError> {
-    let mut ids = client_ids(scope).await?;
+    let base = cached_rows(scope).await?;
+    let mut rows: Vec<Value> = base.iter().filter(|(id, _)| visible(id)).map(|(_, r)| r.clone()).collect();
     for client in assigned {
-        if !ids.iter().any(|c| c.eq_ignore_ascii_case(client)) {
-            ids.insert(client.clone());
+        if !base.keys().any(|c| c.eq_ignore_ascii_case(client)) && visible(client) {
+            rows.push(row(client, None, None, false));
         }
     }
-    let mut rows = Vec::new();
-    for id in ids.iter().filter(|c| visible(c)) {
-        let j = journey(scope, id).await?;
-        let b = scope.company_books.detail(id).await.ok();
-        rows.push(json!({
-            "client_id": id,
-            "books_stage": b.as_ref().map(|b| &b["stage"]),
-            "ledger_open": company_book_open(&scope.ledger.store, id).await.map_err(storage)?,
-            "current_step": j.as_ref().map(|j| &j["progress"]["current_step"]),
-            "percent": j.as_ref().map(|j| &j["progress"]["percent"]),
-            "waiting_on_person": j.as_ref().is_some_and(|j| !j["pending_review"].is_null()),
-        }));
-    }
+    rows.sort_by(|a, b| a["client_id"].as_str().cmp(&b["client_id"].as_str()));
+    rows.dedup_by(|a, b| a["client_id"] == b["client_id"]);
     Ok(json!({"clients": rows}))
 }
 
@@ -185,6 +227,37 @@ mod tests {
 
     fn book(debit: &str, credit: &str) -> Value {
         json!({"stage": "import_committed", "trial_balance": {"analysis": {"total_debit_cents": debit, "total_credit_cents": credit}}})
+    }
+
+    async fn seeded(n: usize) -> (Store, CompanyBooks, Journeys) {
+        let store = Store::memory();
+        let books = CompanyBooks::new(store.clone());
+        let journeys = Journeys::new(store.clone(), crate::client_journey::capability::Capabilities::new());
+        for i in 0..n {
+            let id = format!("example-co-{i:03}");
+            journeys.create(&id, Default::default()).await.ok().unwrap();
+            store.sadd("company-books:companies:v1", &id).await.unwrap();
+            store.set(&format!("company-books:{id}:latest-preview:v1"), &"a".repeat(64)).await.unwrap();
+        }
+        (store, books, journeys)
+    }
+
+    #[tokio::test]
+    async fn listing_clients_costs_constant_store_round_trips() {
+        let mut counts = vec![];
+        for n in [5, 80] {
+            let (store, books, journeys) = seeded(n).await;
+            store.take_test_reads();
+            let rows = base_rows(&books, &journeys, &store).await.ok().unwrap();
+            let reads = store.take_test_reads();
+            assert_eq!(rows.len(), n);
+            assert!(reads.iter().flatten().all(|k| !k.contains(":preview:")), "list must not read preview blobs");
+            assert_eq!(rows["example-co-000"]["books_stage"], "staged");
+            assert_eq!(rows["example-co-000"]["waiting_on_person"], false);
+            counts.push(reads.len());
+        }
+        assert_eq!(counts[0], counts[1], "round trips must not grow with client count: {counts:?}");
+        assert!(counts[0] <= 5, "{counts:?}");
     }
 
     #[test]
