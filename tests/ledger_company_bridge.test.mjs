@@ -120,3 +120,8 @@ test('a client-scoped staff account gets a scope message, not a disabled picker,
  const m=h.mount({openLedger:()=>{}});await m.ready;await new Promise(r=>setTimeout(r,0));
  assert.ok(!/<select[^>]*disabled/.test(h.host.innerHTML));assert.match(h.host.innerHTML,/assigned clients/);assert.match(h.host.innerHTML,/value="client-a"/);m.destroy();
 });
+test('archived books are counted for pagination but not listed',async()=>{
+ const h=harness();const archived={...book('B'),head:{company_id:'B',archived:true}};let n=0;
+ const rows=await h.subject.booksRows(async()=>++n===1?page([book('A'),archived],3,0,true):page([book('C')],3,2,false),()=>true);
+ assert.equal(rows.map(r=>r.company_id).join(),'A,C');
+});
