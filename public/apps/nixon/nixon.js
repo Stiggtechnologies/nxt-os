@@ -21,7 +21,7 @@ async function loadClients() {
   const { clients } = await api("/api/nixon/clients");
   if (!clients.length) { $("#clients").innerHTML = `<p class="meta">No clients to show for this account.</p>`; return; }
   $("#clients").innerHTML = `<table><thead><tr><th>Client</th><th>Ledger</th><th>Imported books</th><th>Journey step</th><th>Done</th><th></th></tr></thead><tbody>${clients.map((c) => `
-    <tr><td><button class="btn" data-client="${esc(c.client_id)}">${esc(c.client_id)}</button></td>
+    <tr data-client-row="${esc(c.client_id)}"><td><button class="btn" data-client="${esc(c.client_id)}">${esc(c.client_id)}</button></td>
     <td>${c.ledger_open ? "Open" : "Not opened"}</td><td>${esc(c.books_stage || "none")}</td><td>${esc(c.current_step || "not started")}</td><td>${c.percent == null ? "" : esc(c.percent) + "%"}</td>
     <td>${c.waiting_on_person ? "Waiting on a person" : ""}</td></tr>`).join("")}</tbody></table>`;
 }
@@ -59,6 +59,14 @@ $("#clients").addEventListener("click", (e) => {
   const id = e.target.closest("[data-client]")?.dataset.client;
   if (id) showClient(id).catch((err) => toast(err.message));
 });
+// The client journey home: #client/<id> (and the active company) opens that client's journey view.
+function routeClient() {
+  const m = location.hash.match(/^#client\/(.+)$/);
+  const id = m ? decodeURIComponent(m[1]) : (window.NXTCompany ? NXTCompany.get() : "");
+  if (id) showClient(id).catch((err) => toast(err.message));
+}
+window.addEventListener("hashchange", routeClient);
+routeClient();
 loadClients().catch((err) => { $("#clients").innerHTML = `<p class="meta">${esc(err.message)}</p>`; });
 
 function packetBody() {

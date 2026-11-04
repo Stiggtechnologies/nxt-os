@@ -10,7 +10,9 @@
   body { height: 100vh; overflow: hidden; }
   .os { display: grid; grid-template-columns: 72px 1fr; height: 100vh; }
   .os.firm-focus { grid-template-columns: 1fr; }
-  .os.firm-focus > .dock, .os.firm-focus > .main > .topbar { display: none; }
+  .os.firm-focus > .dock { display: none; }
+  .os.firm-focus > .main > .topbar .cmd { display: none; }
+  .nxt-co { display: flex; align-items: center; gap: 6px; font-size: 13px; } .nxt-co select { max-width: 280px; } .nxt-co-state { color: var(--muted, #888); font-size: 12px; }
   .dock { background: var(--bg-2); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 14px 0; gap: 6px; }
   .dock .logo { margin-bottom: 14px; }
   .dock .logo svg { width: 34px; height: 34px; }
@@ -155,6 +157,7 @@
   <div class="main">
     <header class="topbar">
       <div class="crumb" id="crumb">Home</div>
+      <div class="nxt-co" id="companySwitch" aria-live="polite"></div>
       <div class="cmd" id="cmdOpen" role="button" tabindex="0" aria-label="Open command bar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/></svg>
         <span>Ask NXT or jump to anything…</span><kbd>⌘K</kbd>
@@ -222,6 +225,7 @@
 </aside>
 
 <script src="/nxt/ui.js"></script>
+<script src="/nxt/company-switcher.js"></script>
 <script src="/nxt/staff-signin.js"></script>
 <script>
 const { api, esc, money, moneyShort, toast } = NXT;
@@ -255,9 +259,11 @@ function route() {
     $("#home").hidden = true;
     frame.hidden = false;
     frame.title = APPS[app].name;
-    const want = APPS[app].path + (view ? "#" + view : "");
+    const co = NXTCompany.get();
+    const base = APPS[app].path + (co ? "?company=" + encodeURIComponent(co) : "");
+    const want = base + (view ? "#" + view : "");
     const cur = frame.dataset.src || "";
-    if (cur.split("#")[0] !== APPS[app].path) { frame.src = want; }
+    if (cur.split("#")[0] !== base) { frame.src = want; }
     else if (cur !== want) { frame.contentWindow.location.hash = view; }
     frame.dataset.src = want;
     $("#crumb").textContent = APPS[app].name;
@@ -270,6 +276,10 @@ function route() {
 }
 function go(app, view) { location.hash = "/" + app + (view ? "/" + view : ""); }
 window.addEventListener("hashchange", route);
+// Active company: one header switcher; a change re-opens the current app on that client's books.
+NXTCompany.onChange(() => { const f = $("#frame"); f.dataset.src = ""; route(); });
+window.addEventListener("storage", (e) => { if (e.key === NXTCompany.KEY) { NXTCompany.set(e.newValue || ""); } });
+if (NXTCompany.get()) NXTCompany.set(NXTCompany.get());
 document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-go]");
   if (!b) return;
@@ -284,9 +294,10 @@ window.addEventListener("message", (e) => {
   if (e.data.nxt === "view") {
     const [, app] = location.hash.split("/");
     const want = "#/" + app + (e.data.view ? "/" + e.data.view : "");
-    if (APPS[app] && location.hash !== want) { history.replaceState(null, "", want); $("#frame").dataset.src = APPS[app].path + (e.data.view ? "#" + e.data.view : ""); }
+    if (APPS[app] && location.hash !== want) { history.replaceState(null, "", want); $("#frame").dataset.src = ($("#frame").dataset.src || APPS[app].path).split("#")[0] + (e.data.view ? "#" + e.data.view : ""); }
   }
   if (e.data.nxt === "signed-out") signOut();
+  if (e.data.nxt === "company" && e.source === $("#frame").contentWindow) { NXTCompany.set(e.data.id || ""); if (e.data.open && e.data.id) go("nixon", NXTCompany.journeyView(e.data.id)); }
   if (e.data.nxt === "open-app" && e.source === $("#frame").contentWindow && (APPS[e.data.app] || e.data.app === "home")) go(e.data.app, e.data.view);
   if (e.data.nxt === "ask") { openDrawer(); if (e.data.text) send(e.data.text); }
 });
@@ -353,6 +364,7 @@ async function boot() {
   }
   $("#signOut").hidden = !status.auth_required;
   $("#signin").hidden = true; $("#os").hidden = false;
+  if (window.nxtCompanySwitcher) window.nxtCompanySwitcher.reload(); else window.nxtCompanySwitcher = NXTCompany.mountSwitcher($("#companySwitch"), { api, esc: NXT.esc });
   route();
 }
 function signOut() { NXT.key.clear(); $("#frame").removeAttribute("src"); $("#frame").dataset.src = ""; closeDrawer(); boot(); }
