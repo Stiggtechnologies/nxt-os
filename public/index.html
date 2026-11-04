@@ -109,6 +109,8 @@
       <input id="staffPass" type="password" placeholder="Password" autocomplete="current-password" required aria-label="Password">
       <input id="staffCode" inputmode="numeric" placeholder="6-digit code, once MFA is set up" autocomplete="one-time-code" aria-label="Authenticator code">
       <button class="btn primary">Sign in</button>
+      <button type="button" class="btn" id="smsSend">Text me a code instead</button>
+      <div class="muted" id="smsNote" aria-live="polite"></div>
     </form>
     <form id="enrollForm" style="display:grid;gap:8px" hidden>
       <p>Add this key to your authenticator app, then enter the code it shows.</p>
@@ -363,12 +365,31 @@ async function staffStep(step) {
   if (step === "password") { staffForm("passwordForm"); return; }
   staffPassword = ""; staffForm("staffForm"); boot();
 }
+// SMS one-time code: optional. When Twilio Verify isn't configured the server answers 503
+// and the screen stays on password + authenticator code.
+let smsMode = false;
+$("#smsSend").onclick = async () => {
+  const username = $("#staffUser").value.trim(), password = $("#staffPass").value;
+  $("#signinErr").textContent = "";
+  if (!username || !password) { $("#smsNote").textContent = "Enter your username and password first."; return; }
+  try {
+    NXT.key.clear();
+    await api("/api/staff/login/sms", { body: { username, password } });
+    smsMode = true; $("#staffCode").placeholder = "Code from the text message"; $("#staffCode").setAttribute("aria-label", "Text message code");
+    $("#smsNote").textContent = "If your details and the phone on file are right, a code is on its way. Enter it above, then Sign in.";
+  } catch (err) {
+    smsMode = false;
+    $("#smsNote").textContent = err.status === 503 ? "Text sign-in isn't set up yet. Use your authenticator code." : err.status === 429 ? "Too many requests. Wait a few minutes." : "Couldn't send a code. Use your authenticator code.";
+  }
+};
 $("#staffForm").onsubmit = async (e) => {
   e.preventDefault();
   const username = $("#staffUser").value.trim(), password = $("#staffPass").value, totp = $("#staffCode").value.trim();
   try {
     NXT.key.clear();
-    const r = await api("/api/staff/login", { body: { username, password, ...(totp ? { totp } : {}) } });
+    const second = totp ? (smsMode ? { sms_code: totp } : { totp }) : {};
+    const r = await api("/api/staff/login", { body: { username, password, ...second } });
+    smsMode = false; $("#smsNote").textContent = "";
     NXT.key.set(r.token); staffPassword = password; window.staffMustChange = r.must_change_password;
     $("#staffPass").value = ""; $("#staffCode").value = "";
     await staffStep(NXTStaffSignin.next(r));
