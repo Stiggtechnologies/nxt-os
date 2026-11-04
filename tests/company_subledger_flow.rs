@@ -44,7 +44,7 @@ async fn parallel_subledger_posts_open_items_without_changing_source_rows() {
     let uploaded = books.upload("co", chunk()).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
     let preview = books.preview("co", preview(uploaded["sha256"].as_str().unwrap())).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
     assert_eq!(preview["stage"], "preview_ready");
-    let committed = books.commit("co", CommitInput { preview_id: preview["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit-sub".into(), reviewer_label: "Synthetic reviewer".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None }).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
+    let committed = books.commit("co", CommitInput { preview_id: preview["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit-sub".into(), reviewer_label: "Synthetic reviewer".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None, supersedes_head: None }).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
     let head = committed["head_sha256"].as_str().unwrap().to_string();
     books.add_class("co", serde_json::from_value(json!({"request_id":"class-east","name":"East"})).unwrap()).await.ok().unwrap();
     let invoice = books.open_document("co", serde_json::from_value(json!({
@@ -106,7 +106,7 @@ async fn invoice_and_payment_record_their_journal_on_a_book_over_200_entries() {
     input["trial_balance"][1]["credit_cents"] = json!(total);
     let previewed = books.preview("big", serde_json::from_value(input).unwrap()).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
     assert_eq!(previewed["stage"], "preview_ready", "{previewed}");
-    let committed = books.commit("big", CommitInput { preview_id: previewed["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit-big".into(), reviewer_label: "Synthetic reviewer".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None }).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
+    let committed = books.commit("big", CommitInput { preview_id: previewed["preview_id"].as_str().unwrap().into(), expected_head: None, request_id: "commit-big".into(), reviewer_label: "Synthetic reviewer".into(), needs_review: false, review_blockers: vec![], suspense_account_id: None, supersedes_head: None }).await.map_err(|e| format!("{} {}", e.0, e.1)).unwrap();
     let head = committed["head_sha256"].as_str().unwrap().to_string();
     let invoice = books.open_document("big", serde_json::from_value(json!({
         "request_id":"inv-big","expected_head":head,"operator_label":"Synthetic operator","kind":"invoice","contact":"Maple",

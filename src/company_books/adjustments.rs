@@ -177,6 +177,8 @@ impl CompanyBooks {
                 if head.format != "nxt-company-book-head/v2"
                     || head.revision != prev.revision + 1
                     || head.previous_head.as_deref() != prior_id
+                    || head.supersedes.is_some()
+                    || matches!(prev.operation, Some(Operation::Archive { .. }))
                 {
                     return Err(corrupt());
                 }
@@ -284,6 +286,15 @@ impl CompanyBooks {
                         }
                         locked = Some(input.locked_through.clone());
                     }
+                    Operation::Archive { input } => {
+                        archive_check(company, input).map_err(|_| corrupt())?;
+                        if input.expected_head != prior_id.unwrap()
+                            || input.request_id != head.commit_request_id
+                            || input.operator_label != head.reviewer_label
+                        {
+                            return Err(corrupt());
+                        }
+                    }
                 }
                 if head.journal_chunks != chunks
                     || head.locked_through != locked
@@ -338,6 +349,9 @@ impl CompanyBooks {
         {
             return Ok(result);
         }
+        if matches!(h.operation, Some(Operation::Archive { .. })) {
+            return Err(err(StatusCode::CONFLICT, "Company book is archived"));
+        }
         if id != expected {
             return Err(err(
                 StatusCode::CONFLICT,
@@ -356,6 +370,7 @@ impl CompanyBooks {
             Operation::Journal { journal_sha256, .. }
             | Operation::Reversal { journal_sha256, .. } => chunks.push(journal_sha256.clone()),
             Operation::PeriodLock { input } => locked = Some(input.locked_through.clone()),
+            Operation::Archive { .. } => {}
         }
         let next = Head {
             format: "nxt-company-book-head/v2".into(),
@@ -370,6 +385,7 @@ impl CompanyBooks {
             locked_through: locked,
             operation: Some(op.clone()),
             review: h.review.clone(),
+            supersedes: None,
         };
         let p = self.load_preview(company, &h.preview_id).await?;
         self.validate_chain(company, "prospective", &next, &p)
@@ -548,6 +564,58 @@ impl CompanyBooks {
         )
         .await
     }
+    /// Retire a book (for example a duplicate import) without deleting anything.
+    /// When `merged_into` is given, the kept copy must exist and not be archived.
+    pub async fn archive(&self, company: &str, input: ArchiveInput) -> Result<Value> {
+        archive_check(company, &input)?;
+        let (id, h) = self
+            .current(company)
+            .await?
+            .ok_or_else(|| err(StatusCode::NOT_FOUND, "Company has no committed book"))?;
+        let op = Operation::Archive {
+            input: input.clone(),
+        };
+        if let Some(v) = self
+            .replay_operation(company, &id, &h, &input.request_id, &op)
+            .await?
+        {
+            return Ok(v);
+        }
+        if let Some(kept) = input.merged_into.as_deref() {
+            match self.current(kept).await? {
+                Some((_, k)) if !matches!(k.operation, Some(Operation::Archive { .. })) => {}
+                _ => {
+                    return Err(err(
+                        StatusCode::CONFLICT,
+                        "merged_into must be an active committed company book",
+                    ))
+                }
+            }
+        }
+        self.append_operation(
+            company,
+            &input.expected_head,
+            &input.request_id,
+            &input.operator_label,
+            op,
+        )
+        .await
+    }
+}
+pub(super) fn archive_check(company: &str, input: &ArchiveInput) -> Result<()> {
+    command(&input.request_id, &input.expected_head, &input.operator_label)?;
+    if input.note.trim().is_empty()
+        || !text(&input.note, 2000)
+        || input
+            .merged_into
+            .as_deref()
+            .is_some_and(|m| !valid_id(m) || m == company)
+    {
+        return Err(bad(
+            "Archive needs a note and a different, valid merged_into company",
+        ));
+    }
+    Ok(())
 }
 fn p_hash(p: &Preview) -> Result<String> {
     Ok(hash(encoded(p)?.as_bytes()))
