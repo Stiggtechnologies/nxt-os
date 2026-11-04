@@ -62,6 +62,9 @@ pub struct StaffUser {
     pub totp_secret: Option<String>,
     pub pending_totp_secret: Option<String>,
     pub last_totp_step: u64,
+    /// E.164 mobile number for SMS one-time codes (admin-set). Absent on older records.
+    #[serde(default)]
+    pub phone: Option<String>,
     pub failed_logins: u8,
     pub locked_until: Option<String>,
     pub created_at: String,
@@ -71,7 +74,7 @@ pub struct StaffUser {
 impl StaffUser {
     pub fn public(&self) -> Value {
         json!({"id":self.id,"username":self.username,"display_name":self.display_name,"role":self.role,"clients":self.clients,
-            "disabled":self.disabled,"mfa_enabled":self.mfa_enabled,"must_change_password":self.must_change_password,"created_at":self.created_at,"updated_at":self.updated_at})
+            "disabled":self.disabled,"mfa_enabled":self.mfa_enabled,"phone":self.phone.as_deref().map(mask_phone),"must_change_password":self.must_change_password,"created_at":self.created_at,"updated_at":self.updated_at})
     }
 }
 
@@ -219,10 +222,15 @@ pub struct CreateUser { pub username: String, pub display_name: String, pub role
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateUser { #[serde(default)] pub role: Option<Role>, #[serde(default)] pub clients: Option<Vec<String>>, #[serde(default)] pub disabled: Option<bool>,
-    #[serde(default)] pub reset_mfa: bool, #[serde(default)] pub temporary_password: Option<String>, #[serde(default)] pub display_name: Option<String> }
+    #[serde(default)] pub reset_mfa: bool, #[serde(default)] pub temporary_password: Option<String>, #[serde(default)] pub display_name: Option<String>,
+    /// E.164 number for SMS codes; empty string removes it.
+    #[serde(default)] pub phone: Option<String> }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LoginInput { pub username: String, pub password: String, #[serde(default)] pub totp: Option<String> }
+pub struct LoginInput { pub username: String, pub password: String, #[serde(default)] pub totp: Option<String>, #[serde(default)] pub sms_code: Option<String> }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SmsStartInput { pub username: String, pub password: String }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CodeInput { pub code: String }
@@ -262,7 +270,7 @@ impl Staff {
         let at = now();
         let u = StaffUser { id: id.clone(), username, display_name: display.into(), role: input.role, clients: clean_clients(&input.clients)?, disabled: false,
             password_hash: hex::encode(pbkdf2(input.temporary_password.as_bytes(), salt.as_bytes(), iters)), salt, iterations: iters, must_change_password: true,
-            mfa_enabled: false, totp_secret: None, pending_totp_secret: None, last_totp_step: 0, failed_logins: 0, locked_until: None, created_at: at.clone(), updated_at: at };
+            mfa_enabled: false, totp_secret: None, pending_totp_secret: None, last_totp_step: 0, phone: None, failed_logins: 0, locked_until: None, created_at: at.clone(), updated_at: at };
         self.put(&u).await?;
         self.store.sadd(USERS, &id).await.map_err(st)?;
         self.audit(&by.label(), "user_created", &format!("{} role {:?}", u.id, u.role)).await?;
@@ -276,6 +284,7 @@ impl Staff {
         if let Some(c) = input.clients { u.clients = clean_clients(&c)?; changes.push(format!("{} client refs", u.clients.len())); }
         if let Some(d) = input.disabled { if by.user_id == u.id && d { return Err(conflict("you cannot disable your own account")); } u.disabled = d; changes.push(format!("disabled {d}")); }
         if let Some(n) = input.display_name { let n = n.trim(); if n.is_empty() || n.len() > 120 || n.contains('[') || n.contains(']') { return Err(bad("display name: 1-120 characters, no brackets")); } u.display_name = n.into(); changes.push("display name".into()); }
+        if let Some(ph) = input.phone { let ph = ph.trim(); if ph.is_empty() { u.phone = None; changes.push("phone removed".into()); } else { let n = normalize_phone(ph).ok_or_else(|| bad("phone must be a valid E.164 number, e.g. +17805550100"))?; changes.push(format!("phone {}", mask_phone(&n))); u.phone = Some(n); } }
         if input.reset_mfa { u.mfa_enabled = false; u.totp_secret = None; u.pending_totp_secret = None; changes.push("MFA reset".into()); }
         if let Some(p) = input.temporary_password {
             valid_password(&p)?;
@@ -300,7 +309,11 @@ impl Staff {
             if l > Utc::now() { return Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "account temporarily locked after failed sign-ins; try again later or ask an admin".into())); }
         }
         let pw_ok = ct_eq(hex::encode(pbkdf2(input.password.as_bytes(), u.salt.as_bytes(), u.iterations)).as_bytes(), u.password_hash.as_bytes());
-        let totp_ok = if !u.mfa_enabled { Some(u.last_totp_step) } else {
+        let sms_ok = match (pw_ok && !u.disabled, input.sms_code.as_deref(), u.phone.as_deref()) {
+            (true, Some(c), Some(ph)) => sms::check(ph, c).await,
+            _ => false,
+        };
+        let totp_ok = if sms_ok { Some(u.last_totp_step) } else if !u.mfa_enabled { if input.sms_code.is_some() { None } else { Some(u.last_totp_step) } } else {
             input.totp.as_deref().and_then(|c| u.totp_secret.as_deref().and_then(|s| totp_match(s, c, u.last_totp_step)))
         };
         if !pw_ok || totp_ok.is_none() || u.disabled {
@@ -312,13 +325,32 @@ impl Staff {
         }
         u.failed_logins = 0; u.locked_until = None; u.last_totp_step = totp_ok.unwrap_or(0);
         self.put(&u).await?;
-        let full = u.mfa_enabled || !require_mfa();
+        let full = u.mfa_enabled || sms_ok || !require_mfa();
         let token = format!("nxs_{}", rand_hex(64));
         let exp = Utc::now() + if full { chrono::Duration::hours(SESSION_HOURS) } else { chrono::Duration::minutes(ENROLL_MINUTES) };
         let s = Session { user_id: u.id.clone(), mfa: full, expires_at: exp.to_rfc3339_opts(SecondsFormat::Secs, true), created_at: now() };
         self.store.set_json(&session_key(&sha_hex(token.as_bytes())), &s).await.map_err(st)?;
-        self.audit(&u.id, "login", &format!("from {ip}; mfa {}", u.mfa_enabled)).await?;
+        self.audit(&u.id, "login", &format!("from {ip}; mfa {}; sms {}", u.mfa_enabled, sms_ok)).await?;
         Ok(json!({"token":token,"expires_at":s.expires_at,"mfa_enrollment_required":!full,"must_change_password":u.must_change_password,"user":u.public()}))
+    }
+
+    /// Password check, then send an SMS one-time code to the account's phone.
+    /// Answers the same way whether or not the account exists or has a phone.
+    pub async fn sms_start(&self, input: SmsStartInput, ip: &str) -> SResult<Value> {
+        if !sms::configured() { return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "SMS sign-in is not configured".into())); }
+        let id = self.store.get(&name_key(&input.username)).await.map_err(st)?;
+        let u = match id { Some(id) => self.user(&id).await?, None => None };
+        let ok = match &u {
+            Some(u) => !u.disabled && ct_eq(hex::encode(pbkdf2(input.password.as_bytes(), u.salt.as_bytes(), u.iterations)).as_bytes(), u.password_hash.as_bytes()),
+            None => { let _ = pbkdf2(input.password.as_bytes(), b"timing-equalizer", iterations()); false }
+        };
+        if let (true, Some(u)) = (ok, &u) {
+            if let Some(ph) = u.phone.as_deref() {
+                sms::send(ph).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, format!("SMS send failed: {e}")))?;
+                self.audit(&u.id, "sms_code_sent", &format!("to {} from {ip}", mask_phone(ph))).await?;
+            }
+        }
+        Ok(json!({"sent": true, "note": "if the username, password and phone on file are correct, a code was texted"}))
     }
 
     async fn session(&self, token: &str) -> SResult<Option<(Session, StaffUser)>> {
@@ -478,6 +510,46 @@ pub async fn authorize(req: Request, next: Next) -> Response {
     next.run(Request::from_parts(parts, body)).await
 }
 
+// ---------- SMS one-time codes (Twilio Verify) ----------
+
+pub fn normalize_phone(p: &str) -> Option<String> {
+    let d: String = p.chars().filter(|c| c.is_ascii_digit()).collect();
+    let d = if d.len() == 10 && !p.trim_start().starts_with('+') { format!("1{d}") } else { d };
+    (11..=15).contains(&d.len()).then(|| format!("+{d}"))
+}
+pub fn mask_phone(p: &str) -> String { let n = p.len(); if n <= 4 { "****".into() } else { format!("{}{}", "*".repeat(n - 4), &p[n - 4..]) } }
+
+pub mod sms {
+    //! Twilio Verify. Needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID.
+    //! `NXT_SMS_MOCK_CODE` (tests only, never in production) accepts that code without Twilio.
+    use base64::Engine;
+    fn env(k: &str) -> Option<String> { std::env::var(k).ok().filter(|v| !v.trim().is_empty()) }
+    fn mock() -> Option<String> { if env("VERCEL_ENV").as_deref() == Some("production") { return None; } env("NXT_SMS_MOCK_CODE") }
+    pub fn configured() -> bool { mock().is_some() || (env("TWILIO_ACCOUNT_SID").is_some() && env("TWILIO_AUTH_TOKEN").is_some() && env("TWILIO_VERIFY_SERVICE_SID").is_some()) }
+    fn enc(s: &str) -> String { s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect() }
+    async fn call(path: &str, form: &[(&str, &str)]) -> Result<serde_json::Value, String> {
+        let (sid, tok, svc) = (env("TWILIO_ACCOUNT_SID").ok_or("not configured")?, env("TWILIO_AUTH_TOKEN").ok_or("not configured")?, env("TWILIO_VERIFY_SERVICE_SID").ok_or("not configured")?);
+        let body = form.iter().map(|(k, v)| format!("{}={}", enc(k), enc(v))).collect::<Vec<_>>().join("&");
+        let auth = base64::engine::general_purpose::STANDARD.encode(format!("{sid}:{tok}"));
+        let r = reqwest::Client::new().post(format!("https://verify.twilio.com/v2/Services/{svc}/{path}"))
+            .header("Authorization", format!("Basic {auth}")).header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body).send().await.map_err(|e| e.to_string())?;
+        let ok = r.status().is_success();
+        let v: serde_json::Value = r.json().await.map_err(|e| e.to_string())?;
+        if ok { Ok(v) } else { Err(v.get("message").and_then(|m| m.as_str()).unwrap_or("twilio error").to_string()) }
+    }
+    pub async fn send(phone: &str) -> Result<(), String> {
+        if mock().is_some() { return Ok(()); }
+        call("Verifications", &[("To", phone), ("Channel", "sms")]).await.map(|_| ())
+    }
+    pub async fn check(phone: &str, code: &str) -> bool {
+        let code = code.trim();
+        if code.len() < 4 || code.len() > 10 || !code.bytes().all(|b| b.is_ascii_digit()) { return false; }
+        if let Some(m) = mock() { return crate::referral::routes::constant_time_eq(m.as_bytes(), code.as_bytes()); }
+        call("VerificationCheck", &[("To", phone), ("Code", code)]).await.ok().and_then(|v| v.get("status").and_then(|s| s.as_str()).map(|s| s == "approved")).unwrap_or(false)
+    }
+}
+
 // ---------- IP rate limiting (store counters, fixed windows) ----------
 
 /// Counts one hit for `scope` from `ip` in the current window and refuses past `limit`.
@@ -504,10 +576,16 @@ pub fn router() -> Router {
         .route("/api/staff/users/{id}", post(update))
         .route("/api/staff/audit", get(audit))
         .layer(axum::middleware::from_fn(crate::referral::routes::require_admin));
-    Router::new().route("/api/staff/login", post(login)).merge(protected)
+    Router::new().route("/api/staff/login", post(login)).route("/api/staff/login/sms", post(sms_start)).merge(protected)
         .layer(axum::middleware::map_response(|mut r: Response| async move { r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store")); r }))
 }
 fn bearer(h: &HeaderMap) -> String { h.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("").trim().to_string() }
+async fn sms_start(h: HeaderMap, Json(v): Json<SmsStartInput>) -> R {
+    let s = registry();
+    let ip = client_ip(&h);
+    rate_limit(&s.store, "staff-sms", &ip, 5, 600).await?;
+    Ok(Json(s.sms_start(v, &ip).await?))
+}
 async fn login(h: HeaderMap, Json(v): Json<LoginInput>) -> R {
     let s = registry();
     let ip = client_ip(&h);
