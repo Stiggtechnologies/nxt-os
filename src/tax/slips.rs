@@ -147,3 +147,26 @@ mod tests {
         assert!(aggregate(&[slip("T2125", &[])]).is_err());
     }
 }
+
+/// Slip titles shown in the search-to-add picker.
+pub const SLIP_TITLES: &[(&str, &str, &str)] = &[
+    ("T4", "Statement of Remuneration Paid", "employment income employer paycheque wages salary"),
+    ("T4A", "Statement of Pension, Retirement, Annuity and Other Income", "pension annuity retirement other income"),
+    ("T5", "Statement of Investment Income", "interest bank investment savings dividends"),
+    ("T3", "Statement of Trust Income Allocations and Designations", "trust mutual fund distributions"),
+    ("T5008", "Statement of Securities Transactions", "stocks shares sold securities capital gains"),
+    ("RRSP", "RRSP contribution receipt", "retirement savings contribution deduction"),
+    ("T2202", "Tuition and Enrolment Certificate", "school college university tuition student"),
+];
+
+/// Searchable catalog for the guided slip picker: every slip kind and each box the
+/// workpaper accepts, labelled `calculated` (mapped to a line) or `recorded`.
+pub fn catalog() -> Value {
+    let slips: Vec<Value> = SLIP_TITLES.iter().map(|(kind, title, keywords)| {
+        let mut boxes: Vec<Value> = MAPPED.iter().filter(|m| m.0 == *kind)
+            .map(|m| json!({"box": m.1, "label": format!("Line {} ({})", m.3, m.2.trim_end_matches("_cents").replace('_', " ")), "status": "calculated", "line": m.3})).collect();
+        boxes.extend(RECORDED.iter().filter(|r| r.0 == *kind).map(|r| json!({"box": r.1, "label": r.2, "status": "recorded"})));
+        json!({"kind": kind, "title": title, "keywords": keywords, "boxes": boxes})
+    }).collect();
+    json!({"slips": slips, "note": "Calculated boxes flow to the native T1 lines; recorded boxes are kept and flagged for the preparer."})
+}

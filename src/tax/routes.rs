@@ -27,6 +27,12 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/prior-lines",post(prior_lines))
         .route("/api/tax/families",post(create_family))
         .route("/api/tax/families/{id}",get(family))
+        .route("/api/tax/families/by-return/{id}",get(family_by_return))
+        .route("/api/tax/families/{id}/optimize",post(family_optimize))
+        .route("/api/tax/families/{id}/accept",post(family_accept))
+        .route("/api/tax/slips/catalog",get(slips_catalog))
+        .route("/api/tax/t2/intake",post(t2_intake))
+        .route("/api/tax/t2/intake/start",post(t2_intake_start))
         .route("/api/tax/import/preview",post(preview))
         .route("/api/tax/import/previews/{id}",get(import_preview))
         .route("/api/tax/import/commit",post(commit))
@@ -82,6 +88,15 @@ async fn create_family(State(t):S,Json(input):Json<FamilyInput>) -> R {
     ok(t.link_family(&input.label, &input.primary_return_id, &input.spouse_return_id).await?)
 }
 async fn family(State(t):S,Path(id):Path<String>) -> R { ok(t.family(&id).await?) }
+async fn family_by_return(State(t):S,Path(id):Path<String>) -> R { ok(t.family_for_return(&id).await?) }
+async fn family_optimize(State(t):S,Path(id):Path<String>) -> R { ok(t.optimize_family(&id).await?) }
+#[derive(Deserialize)] #[serde(deny_unknown_fields)] struct AcceptInput { kind: String }
+async fn family_accept(State(t):S,Path(id):Path<String>,Json(input):Json<AcceptInput>) -> R { ok(t.accept_proposal(&id,&input.kind).await?) }
+async fn slips_catalog() -> R { ok(super::slips::catalog()) }
+fn today() -> chrono::NaiveDate { chrono::Local::now().date_naive() }
+async fn t2_intake(State(t):S,Json(input):Json<super::t2_intake::IntakeAnswers>) -> R { ok(t.t2_intake(&input,today()).await?) }
+#[derive(Deserialize)] #[serde(deny_unknown_fields)] struct IntakeStart { answers: super::t2_intake::IntakeAnswers, name: String, #[serde(default)] carry_forward_from: Option<String> }
+async fn t2_intake_start(State(t):S,Json(input):Json<IntakeStart>) -> R { ok(t.t2_intake_start(&input.answers,&input.name,input.carry_forward_from.as_deref(),today()).await?) }
 #[derive(Deserialize)] #[serde(deny_unknown_fields)] struct PriorInput { expected_revision: u64, lines: Vec<super::models::PriorLine> }
 async fn prior_lines(State(t):S,Path(id):Path<String>,Json(input):Json<PriorInput>) -> R {
     ok(t.set_prior_lines(&id, input.expected_revision, input.lines).await?)
@@ -132,6 +147,6 @@ async fn t2_schedules(Json(input):Json<super::t2_schedules::T2Input>) -> R { ok(
 async fn t183_draft(State(t):S,Path(id):Path<String>) -> R { let r=t.get(&id).await?; ok(super::t183::draft(&r).map_err(|e|conflict(&e))?) }
 
 async fn client_scope(State(t): S, req: axum::extract::Request, next: middleware::Next) -> Response {
-    crate::firm::staff::scope_guard(req, next, "/api/tax/returns", &["/api/tax/catalog", "/api/tax/capabilities", "/api/tax/rates", "/api/tax/t2/schedules", "/api/tax/t5013/cca"],
+    crate::firm::staff::scope_guard(req, next, "/api/tax/returns", &["/api/tax/catalog", "/api/tax/capabilities", "/api/tax/rates", "/api/tax/t2/schedules", "/api/tax/t5013/cca", "/api/tax/slips/catalog"],
         |id| async move { t.get(&id).await.ok().map(|r| r.client_ref) }).await
 }

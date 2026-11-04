@@ -1,0 +1,139 @@
+/* Guided intake core (pure logic, no DOM, no network). Shared by the T1 interview,
+   slip picker, review page and T2 intake, and loaded by node tests.
+   Nothing here files anything: NETFILE / EFILE stay disabled. */
+(function (root) {
+  "use strict";
+  const BANNER = "Internal workpaper. Not CRA-certified. NETFILE disabled. A human files.";
+  const TAX_YEAR = 2025;
+  const PROVINCES = [["AB","Alberta"],["BC","British Columbia"],["MB","Manitoba"],["NB","New Brunswick"],["NL","Newfoundland and Labrador"],["NS","Nova Scotia"],["NT","Northwest Territories"],["NU","Nunavut"],["ON","Ontario"],["PE","Prince Edward Island"],["SK","Saskatchewan"],["YT","Yukon"]];
+
+  // --- SIN: validated and masked in the browser only; never sent to the server or stored.
+  function sinDigits(s) { return String(s || "").replace(/[\s-]/g, ""); }
+  function validSin(s) {
+    const d = sinDigits(s);
+    if (!/^\d{9}$/.test(d) || d === "000000000") return false;
+    let sum = 0;
+    for (let i = 0; i < 9; i++) { let n = +d[i]; if (i % 2 === 1) { n *= 2; if (n > 9) n -= 9; } sum += n; }
+    return sum % 10 === 0;
+  }
+  function maskSin(s) { const d = sinDigits(s); return d.length === 9 ? "*** *** " + d.slice(6) : ""; }
+
+  // --- Live refund meter from calculation totals (balance = tax - paid; negative is a refund).
+  function meter(calc) {
+    const t = calc && calc.totals;
+    if (!t || typeof t.balance !== "number") return { kind: "pending", cents: 0, label: "Calculate to see your estimate" };
+    if (t.balance < 0) return { kind: "refund", cents: -t.balance, label: "Estimated refund" };
+    if (t.balance > 0) return { kind: "owing", cents: t.balance, label: "Estimated balance owing" };
+    return { kind: "even", cents: 0, label: "Nothing owing, no refund" };
+  }
+
+  // --- Situations ("what applies to you") mapped to interview screens and engine input keys.
+  const SITUATIONS = [
+    { id: "employment", label: "Employment income (T4)", screen: "slips", supported: true },
+    { id: "investments", label: "Interest from a bank or investments (T5)", screen: "slips", supported: true },
+    { id: "pension", label: "Pension or annuity income (T4A)", screen: "slips", supported: true },
+    { id: "tuition", label: "Post-secondary tuition (T2202)", screen: "slips", supported: true },
+    { id: "securities", label: "Sold stocks, funds or other securities (T5008)", screen: "slips", supported: true },
+    { id: "self_employed", label: "Self-employed or freelance income", screen: "deductions", supported: true },
+    { id: "rental", label: "Rental property income", screen: "deductions", supported: true },
+    { id: "foreign", label: "Foreign property over $100,000 (T1135)", screen: null, supported: false },
+    { id: "moved", label: "Moved provinces or left/entered Canada", screen: null, supported: false },
+    { id: "deceased", label: "Return for a person who died", screen: null, supported: false },
+  ];
+  const DEDUCTIONS = [
+    { id: "rrsp", label: "RRSP contributions", keys: ["rrsp_deduction_cents", "rrsp_deduction_limit_cents"], verify: "rrsp_verified", supported: true },
+    { id: "medical", label: "Medical expenses", keys: ["medical_expenses_cents"], verify: "credits_verified", supported: true },
+    { id: "donations", label: "Charitable donations", keys: ["donations_cents"], verify: "credits_verified", supported: true },
+    { id: "tuition", label: "Tuition (from T2202)", keys: ["tuition_cents"], verify: "credits_verified", supported: true },
+    { id: "student_loan", label: "Student loan interest", keys: ["student_loan_interest_cents"], verify: null, supported: true },
+    { id: "home_buyers", label: "First-time home buyers' amount", keys: ["home_buyers_amount_cents"], verify: null, supported: true },
+    { id: "self_employment", label: "Business income and expenses (T2125)", keys: ["self_employment_gross_cents", "self_employment_expenses_cents"], verify: "t2125_verified", supported: true },
+    { id: "rental", label: "Rental income and expenses (T776)", keys: ["rental_gross_cents", "rental_expenses_cents"], verify: "t776_verified", supported: true },
+    { id: "fhsa", label: "FHSA contributions", keys: [], verify: null, supported: false },
+    { id: "childcare", label: "Child care expenses", keys: [], verify: null, supported: false },
+    { id: "moving", label: "Moving expenses", keys: [], verify: null, supported: false },
+  ];
+  const FIELD_SCREEN = { full_year_resident: "profile", scope_confirmed: "profile", other_tax_situations: "situations", provincial_adjustments_not_applicable: "profile",
+    born_1960_or_earlier: "profile", spouse_net_income_cents: "profile", disability_tax_credit_approved: "profile",
+    employment_income_cents: "slips", interest_income_cents: "slips", tax_withheld_cents: "slips", pension_income_cents: "slips", capital_proceeds_cents: "slips", capital_acb_cents: "slips",
+    payroll_verified: "slips", cpp_base_credit_cents: "slips", cpp_enhanced_deduction_cents: "slips", ei_credit_cents: "slips", schedule3_verified: "slips" };
+  for (const d of DEDUCTIONS) { for (const k of d.keys) FIELD_SCREEN[k] = "deductions"; if (d.verify && !FIELD_SCREEN[d.verify]) FIELD_SCREEN[d.verify] = "deductions"; }
+  function screenFor(field) { return FIELD_SCREEN[field] || "deductions"; }
+
+  // Profile answers -> engine inputs. Unsupported situations set other_tax_situations so the
+  // engine blocks review with a scope diagnostic instead of silently under-reporting.
+  function profileInputs(answers, inputs) {
+    const out = Object.assign({}, inputs || {});
+    out.full_year_resident = !!answers.full_year_resident;
+    out.scope_confirmed = !!answers.scope_confirmed;
+    const picked = new Set(answers.situations || []);
+    out.other_tax_situations = SITUATIONS.some(s => !s.supported && picked.has(s.id)) || !!answers.other_situations;
+    if (answers.born_1960_or_earlier !== undefined) out.born_1960_or_earlier = !!answers.born_1960_or_earlier;
+    return out;
+  }
+  function outOfScope(answers) { const p = new Set(answers.situations || []); return SITUATIONS.filter(s => !s.supported && p.has(s.id)).map(s => s.label); }
+
+  // --- Slip search-to-add over GET /api/tax/slips/catalog.
+  function searchSlips(catalog, q) {
+    const slips = (catalog && catalog.slips) || [];
+    const terms = String(q || "").toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return slips.slice();
+    const scored = slips.map(s => {
+      const head = [s.kind, s.title, s.keywords].join(" ").toLowerCase(), boxes = (s.boxes || []).map(b => b.label).join(" ").toLowerCase();
+      let score = 0;
+      for (const t of terms) { if (s.kind.toLowerCase() === t) score += 100; else if (s.kind.toLowerCase().startsWith(t)) score += 50; if (head.includes(t)) score += 20; else if (boxes.includes(t)) score += 5; else return null; }
+      return { s, score };
+    }).filter(Boolean);
+    return scored.sort((a, b) => b.score - a.score || a.s.kind.localeCompare(b.s.kind)).map(x => x.s);
+  }
+  // Slip-shaped form: one field per box, in box order, with calculated boxes first.
+  function slipForm(entry) {
+    const boxes = (entry.boxes || []).slice().sort((a, b) => (a.status === b.status ? String(a.box).localeCompare(String(b.box), undefined, { numeric: true }) : a.status === "calculated" ? -1 : 1));
+    return { kind: entry.kind, title: entry.title, fields: boxes.map(b => ({ box: b.box, label: b.label, status: b.status, name: "box_" + b.box })) };
+  }
+  function toCents(v) { const n = Number(String(v ?? "").replace(/[$,\s]/g, "")); return Number.isFinite(n) ? Math.round(n * 100) : NaN; }
+  function slipFromForm(kind, issuer, values) {
+    const boxes = {};
+    for (const [box, v] of Object.entries(values || {})) { if (v === "" || v == null) continue; const c = toCents(v); if (!Number.isFinite(c) || c < 0) throw new Error("Box " + box + " must be a positive dollar amount"); if (c) boxes[box] = c; }
+    return { kind, issuer: String(issuer || "").slice(0, 120), boxes };
+  }
+  // Merge aggregated slip inputs into the return inputs (slip-derived keys are replaced, not added twice).
+  function mergeSlipInputs(inputs, aggregate, previousSlipKeys) {
+    const out = Object.assign({}, inputs || {});
+    for (const k of previousSlipKeys || []) delete out[k];
+    for (const [k, v] of Object.entries((aggregate && aggregate.inputs) || {})) out[k] = v;
+    return out;
+  }
+
+  // --- Review page: diagnostics grouped with Fix-it links back into the interview.
+  function reviewItems(returnId, calc) {
+    const diags = (calc && calc.diagnostics) || [];
+    const items = diags.map(d => ({ code: d.code, message: d.message, blocking: !!d.blocks_review, field: d.field || null,
+      screen: d.field ? screenFor(d.field) : "situations",
+      fix: "#tt-t1/" + encodeURIComponent(returnId) + "?screen=" + (d.field ? screenFor(d.field) : "situations") + (d.field ? "&field=" + encodeURIComponent(d.field) : "") }));
+    return { blocking: items.filter(i => i.blocking), notes: items.filter(i => !i.blocking), ready: !items.some(i => i.blocking) && !!(calc && calc.supported) };
+  }
+
+  // --- T2 intake: which sections are visible for the server's "next" step (one progressive page).
+  const T2_STEPS = ["incorporated", "location", "period", "income", "expenses"];
+  function t2Visible(next, answers) {
+    const idx = next === "done" ? T2_STEPS.length : T2_STEPS.indexOf(next);
+    let vis = T2_STEPS.slice(0, idx < 0 ? 1 : idx + 1);
+    if (answers && answers.had_income === true) vis = vis.filter(s => s !== "expenses");
+    if (answers && answers.incorporated === false) vis = ["incorporated"];
+    if (answers && ["QC", "MULTI", "OUTSIDE"].includes(answers.location)) vis = vis.slice(0, 2);
+    return vis;
+  }
+  // Changing an earlier answer clears the later ones (as the interview re-asks them).
+  function t2Answer(answers, step, patch) {
+    const out = Object.assign({}, answers, patch);
+    const i = T2_STEPS.indexOf(step);
+    const keys = { location: ["location"], period: ["period_start", "period_end"], income: ["had_income"], expenses: ["other_expenses"] };
+    for (const s of T2_STEPS.slice(i + 1)) for (const k of keys[s] || []) delete out[k];
+    return out;
+  }
+
+  const api = { BANNER, TAX_YEAR, PROVINCES, SITUATIONS, DEDUCTIONS, FIELD_SCREEN, T2_STEPS, validSin, maskSin, meter, screenFor, profileInputs, outOfScope, searchSlips, slipForm, slipFromForm, toCents, mergeSlipInputs, reviewItems, t2Visible, t2Answer };
+  root.NXTTurboCore = api;
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+})(typeof globalThis !== "undefined" ? globalThis : this);

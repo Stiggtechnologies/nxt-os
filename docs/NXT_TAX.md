@@ -91,3 +91,10 @@ The full local regression suite reported **28 passing tests (20 unit, eight inte
 Formula and corporate validation tests are in `src/tax/calculations.rs` and `src/tax/corporate.rs`. These checks establish bounded native behavior; they are not vendor-equivalence tests, government certification or professional validation of every tax situation.
 
 The evidence boundary and remaining work are tracked in [DTMAX_RECONSTRUCTION.md](DTMAX_RECONSTRUCTION.md), [DTMAX_PARITY_ROADMAP.md](DTMAX_PARITY_ROADMAP.md) and [WEBTAX_RECONSTRUCTION.md](WEBTAX_RECONSTRUCTION.md). Full DT Max/WebTax parity, individual staff authorization, complete returns, official forms/barcodes, auto-fill, transmission and Quebec support remain separate open gates.
+
+## Guided intake (T1 interview and T2 intake)
+
+- `#tt-start` → `#tt-t1/{id}`: one person or a couple (two linked 2025 T1s). Screens: about you, what applies, slips (search-to-add, slip-shaped forms), deductions checklist, review with Fix-it links. Each Continue saves and recalculates; the meter shows the estimated refund or balance owing. The SIN is checked and masked in the browser only and never saved. Entered slips are kept in the browser's local storage for that return; the aggregated amounts are saved on the return.
+- `#tt-spouse/{family}`: spouse proposals from `POST /api/tax/families/{id}/optimize`. Proposals never change a return. `POST /api/tax/families/{id}/accept {kind}` records an audit event only.
+- `#tt-t2`: one-page T2 intake (`POST /api/tax/t2/intake`, `/start`). Routes: full T2, nil T2, personal return (not incorporated), out of scope (Quebec, several provinces, outside Canada). Dialogs: overlapping period, locked tax year, carry forward, .GT2 import (not supported).
+- Every guided screen shows "Internal workpaper. Not CRA-certified. NETFILE disabled. A human files." Nothing transmits to CRA.
