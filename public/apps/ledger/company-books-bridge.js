@@ -28,11 +28,11 @@
       for(const row of value.companies){
         need(row&&validId(row.company_id)&&!ids.has(row.company_id),'Company book references are invalid or duplicated.');
         need(row.head===null?row.stage==='staged':row.head&&row.head.company_id===row.company_id&&hash(row.head_sha256)&&row.stage==='import_committed','Company journal status is inconsistent.');
-        ids.add(row.company_id);rows.push(row);
+        ids.add(row.company_id);if(row.head?.archived!==true)rows.push(row);
       }
-      need(rows.length<=total,'Company book inventory exceeds its recorded total.');
-      if(!value.has_more){need(rows.length===total,'Company book inventory ended early.');return rows;}
-      need(value.companies.length>0&&rows.length<total,'Company book pagination did not advance.');offset+=value.companies.length;
+      need(ids.size<=total,'Company book inventory exceeds its recorded total.');
+      if(!value.has_more){need(ids.size===total,'Company book inventory ended early.');return rows;}
+      need(value.companies.length>0&&ids.size<total,'Company book pagination did not advance.');offset+=value.companies.length;
     }
     throw Error('Company book inventory exceeds its supported bound.');
   }
