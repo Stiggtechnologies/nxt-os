@@ -109,7 +109,7 @@ async fn filing_desk_is_internal_filer_only_two_person_append_only_and_launch_ga
     assert_eq!(st(&r, "POST", &path(&tid, "/desk/fee"), Some(&desk), Some(json!({"paid":true}))).await, 403);
     assert_eq!(st(&r, "POST", &path(&tid, "/desk/fee"), Some(&ro), Some(json!({"paid":true}))).await, 403);
     ok(&r, "POST", &path(&tid, "/desk/fee"), &prep, Some(json!({"paid":true}))).await;
-    let audit = ok(&r, "GET", "/api/tax/audit?limit=500", &admin, None).await;
+    let audit = ok(&r, "GET", "/api/tax/audit?limit=200", &admin, None).await;
     assert!(audit.to_string().contains("filing_fee_paid"), "{audit}");
     let q = ok(&r, "GET", "/api/tax/desk/queue", &filer, None).await;
     let row = &q["returns"][0];
