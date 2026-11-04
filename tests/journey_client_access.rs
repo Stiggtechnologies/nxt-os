@@ -45,7 +45,8 @@ async fn journeys_are_scoped_to_assigned_clients() {
     staff::install(Arc::new(staff::Staff::new(Store::memory())));
     let r = app_with(Store::memory);
     let tok = preparer(&r, "scoped", json!(["client-a"])).await;
-    let all = preparer(&r, "firmwide", json!(["*"])).await;
+    // '*' is admin-only; a preparer assigned both clients sees both.
+    let all = preparer(&r, "both", json!(["client-a", "client-b"])).await;
 
     let qbo = json!({"systems": ["quickbooks_online"]});
     for c in ["client-a", "client-b"] {

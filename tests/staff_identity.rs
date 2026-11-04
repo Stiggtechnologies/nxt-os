@@ -60,10 +60,11 @@ async fn staff_accounts_roles_mfa_scoping_and_break_glass() {
     assert_eq!(call(&r, "POST", "/api/staff/login", None, Some(json!({"username":"nobody","password":PW})), "10.0.0.1").await.0, 401);
     assert_eq!(call(&r, "GET", "/api/staff/users", None, None, "10.0.0.1").await.0, 401);
 
-    let (prep_id, prep) = onboard(&r, "prep", "Pat Preparer", "preparer", json!(["*"])).await;
-    let (_rev_id, rev) = onboard(&r, "rev", "Riley Reviewer", "reviewer", json!(["*"])).await;
-    let (_, desk) = onboard(&r, "desk", "Dana Desk", "front_desk", json!(["*"])).await;
-    let (_, ro) = onboard(&r, "robin", "Robin Readonly", "read_only", json!(["*"])).await;
+    // '*' is admin-only, so non-admin roles are assigned the clients they work on.
+    let (prep_id, prep) = onboard(&r, "prep", "Pat Preparer", "preparer", json!(["client-a", "client-b"])).await;
+    let (_rev_id, rev) = onboard(&r, "rev", "Riley Reviewer", "reviewer", json!(["client-a", "client-b"])).await;
+    let (_, desk) = onboard(&r, "desk", "Dana Desk", "front_desk", json!(["client-a", "client-b"])).await;
+    let (_, ro) = onboard(&r, "robin", "Robin Readonly", "read_only", json!(["client-a", "client-b"])).await;
     let (_, scoped) = onboard(&r, "scoped", "Sam Scoped", "preparer", json!(["client-a"])).await;
 
     let me = ok(&r, "GET", "/api/staff/me", &prep, None).await;
@@ -124,7 +125,10 @@ async fn staff_accounts_roles_mfa_scoping_and_break_glass() {
     assert_ne!(call(&r, "POST", "/api/sign/nosuchtoken/otp", None, None, "10.9.9.10").await.0, 429);
 
     // E-sign sweep runs for staff (front desk allowed) and is a no-op here.
-    let sw = ok(&r, "POST", "/api/signatures/esign/sweep", &desk, Some(json!({"operator_label":"x","dry_run":true}))).await;
+    // The e-sign sweep is firm-wide, so it is admin-only now that '*' is reserved for admins.
+    let sweep = || Some(json!({"operator_label":"x","dry_run":true}));
+    assert_eq!(call(&r, "POST", "/api/signatures/esign/sweep", Some(&desk), sweep(), "10.0.0.1").await.0, 403);
+    let sw = ok(&r, "POST", "/api/signatures/esign/sweep", "k", sweep()).await;
     assert_eq!(sw["email_sent"], false);
 
     // Break-glass can be switched off by config.

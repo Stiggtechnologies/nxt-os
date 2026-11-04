@@ -106,8 +106,10 @@ impl Identity {
     /// A verified staff user id, or None for the shared break-glass key.
     pub fn staff_id(&self) -> Option<&str> { (!self.break_glass).then_some(self.user_id.as_str()) }
     pub fn can_client(&self, client_ref: &str) -> bool {
-        self.clients.iter().any(|c| c == "*" || (!client_ref.trim().is_empty() && c.eq_ignore_ascii_case(client_ref.trim())))
+        self.clients.iter().any(|c| (c == "*" && self.role == Role::Admin) || (c != "*" && !client_ref.trim().is_empty() && c.eq_ignore_ascii_case(client_ref.trim())))
     }
+    /// Firm-wide access: an admin holding '*'. A non-admin '*' (legacy record) grants nothing.
+    pub fn all_clients(&self) -> bool { self.role == Role::Admin && self.clients.iter().any(|c| c == "*") }
     pub fn is_reviewer(&self) -> bool { matches!(self.role, Role::Admin | Role::Reviewer) }
 }
 
@@ -208,9 +210,11 @@ fn valid_password(p: &str) -> SResult<()> {
     if p.chars().count() < MIN_PASSWORD || p.len() > 256 { return Err(bad(format!("password must be {MIN_PASSWORD} to 256 characters"))); }
     Ok(())
 }
+pub const WILDCARD_ADMIN_ONLY: &str = "'*' (all clients) is allowed for admin accounts only; assign specific client ids to this account";
 fn clean_clients(c: &[String]) -> SResult<Vec<String>> {
     if c.len() > 500 { return Err(bad("at most 500 client refs per account")); }
     let mut out: Vec<String> = c.iter().map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect();
+    if out.iter().any(|x| x.contains('*') && x != "*") { return Err(bad("'*' must be the whole client ref (all clients), not a pattern")); }
     if out.iter().any(|x| x.len() > 120) { return Err(bad("client refs are at most 120 characters")); }
     out.sort(); out.dedup();
     Ok(out)
@@ -245,6 +249,12 @@ impl Staff {
         let e = json!({"at":now(),"actor":actor,"action":action,"detail":detail});
         self.store.lpush_capped(AUDIT, &e.to_string(), 5000).await.map_err(st)
     }
+    /// An access event: who, which account or client id, which route or action, and the result.
+    /// Only ids are stored (no client names or other PII).
+    pub async fn audit_access(&self, actor: &str, action: &str, target_user: Option<&str>, client: Option<&str>, route: &str, result: &str, detail: &str) -> SResult<()> {
+        let e = json!({"at":now(),"actor":actor,"action":action,"target_user":target_user,"client":client,"route":route,"result":result,"detail":detail});
+        self.store.lpush_capped(AUDIT, &e.to_string(), 5000).await.map_err(st)
+    }
     pub async fn audit_log(&self, limit: usize) -> SResult<Vec<Value>> {
         Ok(self.store.lrange(AUDIT, limit.min(1000)).await.map_err(st)?.iter().filter_map(|s| serde_json::from_str(s).ok()).collect())
     }
@@ -263,25 +273,37 @@ impl Staff {
         let display = input.display_name.trim();
         if display.is_empty() || display.len() > 120 || display.contains('[') || display.contains(']') { return Err(bad("display name: 1-120 characters, no brackets")); }
         valid_password(&input.temporary_password)?;
+        let clients = clean_clients(&input.clients)?;
+        if input.role != Role::Admin && clients.iter().any(|c| c == "*") {
+            let _ = self.audit_access(&by.label(), "wildcard_refused", None, None, "POST /api/staff/users", "refused", &format!("role {:?}", input.role)).await;
+            return Err(bad(WILDCARD_ADMIN_ONLY));
+        }
         let id = format!("usr_{}", rand_hex(16));
         if !self.store.set_nx(&name_key(&username), &id).await.map_err(st)? { return Err(conflict("that username is taken")); }
         let salt = rand_hex(32);
         let iters = iterations();
         let at = now();
-        let u = StaffUser { id: id.clone(), username, display_name: display.into(), role: input.role, clients: clean_clients(&input.clients)?, disabled: false,
+        let u = StaffUser { id: id.clone(), username, display_name: display.into(), role: input.role, clients, disabled: false,
             password_hash: hex::encode(pbkdf2(input.temporary_password.as_bytes(), salt.as_bytes(), iters)), salt, iterations: iters, must_change_password: true,
             mfa_enabled: false, totp_secret: None, pending_totp_secret: None, last_totp_step: 0, phone: None, failed_logins: 0, locked_until: None, created_at: at.clone(), updated_at: at };
         self.put(&u).await?;
         self.store.sadd(USERS, &id).await.map_err(st)?;
-        self.audit(&by.label(), "user_created", &format!("{} role {:?}", u.id, u.role)).await?;
+        self.audit_access(&by.label(), "user_created", Some(&u.id), None, "POST /api/staff/users", "ok", &format!("role {:?}; {} client refs", u.role, u.clients.len())).await?;
+        for c in &u.clients { self.audit_access(&by.label(), "client_assigned", Some(&u.id), Some(c), "POST /api/staff/users", "ok", "").await?; }
         Ok(u.public())
     }
 
     pub async fn update_user(&self, by: &Identity, id: &str, input: UpdateUser) -> SResult<Value> {
         let mut u = self.user(id).await?.ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "staff user not found".into()))?;
         let mut changes = vec![];
+        let route = format!("POST /api/staff/users/{}", u.id);
+        let (old_role, old_clients) = (u.role, u.clients.clone());
         if let Some(r) = input.role { if by.user_id == u.id && r != Role::Admin { return Err(conflict("you cannot remove your own admin role")); } u.role = r; changes.push(format!("role {r:?}")); }
-        if let Some(c) = input.clients { u.clients = clean_clients(&c)?; changes.push(format!("{} client refs", u.clients.len())); }
+        if let Some(c) = &input.clients { u.clients = clean_clients(c)?; changes.push(format!("{} client refs", u.clients.len())); }
+        if u.role != Role::Admin && u.clients.iter().any(|c| c == "*") {
+            let _ = self.audit_access(&by.label(), "wildcard_refused", Some(&u.id), None, &route, "refused", &format!("role {:?}", u.role)).await;
+            return Err(bad(WILDCARD_ADMIN_ONLY));
+        }
         if let Some(d) = input.disabled { if by.user_id == u.id && d { return Err(conflict("you cannot disable your own account")); } u.disabled = d; changes.push(format!("disabled {d}")); }
         if let Some(n) = input.display_name { let n = n.trim(); if n.is_empty() || n.len() > 120 || n.contains('[') || n.contains(']') { return Err(bad("display name: 1-120 characters, no brackets")); } u.display_name = n.into(); changes.push("display name".into()); }
         if let Some(ph) = input.phone { let ph = ph.trim(); if ph.is_empty() { u.phone = None; changes.push("phone removed".into()); } else { let n = normalize_phone(ph).ok_or_else(|| bad("phone must be a valid E.164 number, e.g. +17805550100"))?; changes.push(format!("phone {}", mask_phone(&n))); u.phone = Some(n); } }
@@ -294,7 +316,13 @@ impl Staff {
         if changes.is_empty() { return Err(bad("no changes")); }
         u.updated_at = now();
         self.put(&u).await?;
-        self.audit(&by.label(), "user_updated", &format!("{}: {}", u.id, changes.join(", "))).await?;
+        self.audit_access(&by.label(), "user_updated", Some(&u.id), None, &route, "ok", &changes.join(", ")).await?;
+        if old_role != u.role {
+            let action = if u.role == Role::Admin { "admin_granted" } else if old_role == Role::Admin { "admin_revoked" } else { "role_changed" };
+            self.audit_access(&by.label(), action, Some(&u.id), None, &route, "ok", &format!("{old_role:?} -> {:?}", u.role)).await?;
+        }
+        for c in u.clients.iter().filter(|c| !old_clients.contains(c)) { self.audit_access(&by.label(), "client_assigned", Some(&u.id), Some(c), &route, "ok", "").await?; }
+        for c in old_clients.iter().filter(|c| !u.clients.contains(c)) { self.audit_access(&by.label(), "client_unassigned", Some(&u.id), Some(c), &route, "ok", "").await?; }
         Ok(u.public())
     }
 
@@ -495,19 +523,75 @@ pub async fn authorize(req: Request, next: Next) -> Response {
         let bytes = match axum::body::to_bytes(body, 8 << 20).await { Ok(b) => b, Err(_) => return auth_error(StatusCode::PAYLOAD_TOO_LARGE, "request body too large") };
         match serde_json::from_slice::<Value>(&bytes) {
             Ok(mut v) => {
-                if let Err(m) = check_policy(&id, &method, &path, &v) { return auth_error(StatusCode::FORBIDDEN, &m); }
+                if let Err(m) = check_policy(&id, &method, &path, &v) { log_denial(&staff, &id, &method, &parts.uri, None, &m).await; return auth_error(StatusCode::FORBIDDEN, &m); }
                 let b = if stamp_labels(&mut v, &id) { let s = v.to_string(); parts.headers.remove(header::CONTENT_LENGTH); Body::from(s) } else { Body::from(bytes) };
                 (b, true)
             }
             Err(_) => (Body::from(bytes), false),
         }
     } else { (body, false) };
-    if !parsed { if let Err(m) = check_policy(&id, &method, &path, &Value::Null) { return auth_error(StatusCode::FORBIDDEN, &m); } }
+    if !parsed { if let Err(m) = check_policy(&id, &method, &path, &Value::Null) { log_denial(&staff, &id, &method, &parts.uri, None, &m).await; return auth_error(StatusCode::FORBIDDEN, &m); } }
     if id.break_glass && !matches!(method, Method::GET | Method::HEAD | Method::OPTIONS) {
         let _ = staff.audit("break-glass", "shared_key_write", &format!("{method} {path} from {}", client_ip(&parts.headers))).await;
     }
-    parts.extensions.insert(id);
-    next.run(Request::from_parts(parts, body)).await
+    let uri = parts.uri.clone();
+    parts.extensions.insert(id.clone());
+    let resp = next.run(Request::from_parts(parts, body)).await;
+    if resp.status() == StatusCode::FORBIDDEN {
+        let client = resp.extensions().get::<DeniedClient>().map(|c| c.0.clone());
+        log_denial(&staff, &id, &method, &uri, client, "refused by the route's access check").await;
+    }
+    resp
+}
+
+/// The client id a scope check refused, attached to the 403 response for the audit log.
+#[derive(Clone)]
+pub struct DeniedClient(pub String);
+
+/// A client id named by the request itself: ?client= / ?company= or the segment after a
+/// client-keyed collection. Only the id is logged.
+fn client_in_request(uri: &axum::http::Uri) -> Option<String> {
+    let q = uri.query().unwrap_or("");
+    for kv in q.split('&') {
+        if let Some(v) = kv.strip_prefix("client=").or_else(|| kv.strip_prefix("company=")).or_else(|| kv.strip_prefix("client_ref=")) {
+            if !v.is_empty() { return Some(v.chars().take(120).collect()); }
+        }
+    }
+    let segs: Vec<&str> = uri.path().split('/').collect();
+    for (i, s) in segs.iter().enumerate().rev() {
+        if matches!(*s, "journeys" | "clients" | "company-books" | "company-ledger" | "companies") {
+            if let Some(n) = segs.get(i + 1).filter(|n| !n.is_empty() && !matches!(**n, "coverage" | "reviews" | "roster")) { return Some(n.chars().take(120).collect()); }
+        }
+    }
+    None
+}
+
+/// Rate-safe denial writes: at most one entry per (actor, route, client) per minute and at
+/// most DENIAL_BUDGET entries per minute per instance; suppressed denials are counted into the
+/// next entry that is written, so nothing is silently lost and the store cannot be flooded.
+const DENIAL_BUDGET: u32 = 60;
+struct DenialLimiter { minute: i64, written: u32, suppressed: u64, seen: std::collections::HashMap<String, i64> }
+static DENIALS: std::sync::Mutex<Option<DenialLimiter>> = std::sync::Mutex::new(None);
+fn denial_admit(key: &str, minute: i64) -> Option<u64> {
+    let mut g = DENIALS.lock().unwrap_or_else(|e| e.into_inner());
+    let l = g.get_or_insert_with(|| DenialLimiter { minute, written: 0, suppressed: 0, seen: Default::default() });
+    if l.minute != minute { l.minute = minute; l.written = 0; l.seen.retain(|_, m| *m >= minute - 1); }
+    if l.seen.get(key) == Some(&minute) || l.written >= DENIAL_BUDGET { l.suppressed += 1; return None; }
+    l.seen.insert(key.to_string(), minute);
+    l.written += 1;
+    Some(std::mem::take(&mut l.suppressed))
+}
+#[doc(hidden)]
+pub fn reset_denial_limiter() { *DENIALS.lock().unwrap_or_else(|e| e.into_inner()) = None; }
+
+async fn log_denial(staff: &Staff, id: &Identity, method: &Method, uri: &axum::http::Uri, client: Option<String>, reason: &str) {
+    let client = client.or_else(|| client_in_request(uri));
+    let route = format!("{method} {}", uri.path());
+    let actor = id.label();
+    let key = format!("{actor}|{route}|{}", client.as_deref().unwrap_or(""));
+    let Some(suppressed) = denial_admit(&key, Utc::now().timestamp() / 60) else { return };
+    let detail = if suppressed > 0 { format!("{reason}; {suppressed} earlier denials not written (rate limit)") } else { reason.to_string() };
+    let _ = staff.audit_access(&actor, "access_denied", None, client.as_deref(), &route, "denied 403", &detail).await;
 }
 
 // ---------- SMS one-time codes (Twilio Verify) ----------
@@ -607,7 +691,7 @@ fn admin(i: &Identity) -> SResult<()> { if i.role == Role::Admin { Ok(()) } else
 
 /// The caller's identity when it is limited to specific clients (None = unrestricted).
 pub fn scoped(req: &Request) -> Option<Identity> {
-    req.extensions().get::<Identity>().filter(|i| !i.clients.iter().any(|c| c == "*")).cloned()
+    req.extensions().get::<Identity>().filter(|i| !i.all_clients()).cloned()
 }
 
 /// Shared scope guard for modules whose records carry a `client_ref`.
@@ -639,7 +723,7 @@ where F: FnOnce(String) -> Fut, Fut: std::future::Future<Output = Option<String>
         let (parts, body) = req.into_parts();
         let Ok(bytes) = axum::body::to_bytes(body, 8 * 1024 * 1024).await else { return denied("request body too large").into_response() };
         let cref = serde_json::from_slice::<Value>(&bytes).ok().as_ref().and_then(body_client).unwrap_or_default();
-        if !id.can_client(&cref) { return denied("you are not assigned to this client").into_response(); }
+        if !id.can_client(&cref) { let mut r = denied("you are not assigned to this client").into_response(); if !cref.is_empty() { r.extensions_mut().insert(DeniedClient(cref)); } return r; }
         return next.run(Request::from_parts(parts, Body::from(bytes))).await;
     }
     if let Some(rest) = path.strip_prefix(base).and_then(|r| r.strip_prefix('/')) {
@@ -656,7 +740,7 @@ where F: FnOnce(String) -> Fut, Fut: std::future::Future<Output = Option<String>
                 }
                 next.run(Request::from_parts(parts, Body::from(bytes))).await
             }
-            Some(_) => denied("you are not assigned to this client").into_response(),
+            Some(c) => { let mut r = denied("you are not assigned to this client").into_response(); r.extensions_mut().insert(DeniedClient(c)); r }
             None => next.run(req).await, // unknown id: let the handler answer 404
         };
     }

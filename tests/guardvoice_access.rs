@@ -41,13 +41,16 @@ async fn the_phone_desk_is_firm_wide_and_approvals_need_a_reviewer() {
     staff::install(Arc::new(staff::Staff::new(Store::memory())));
     let r = app_with(Store::memory);
     let scoped = preparer(&r, "scoped", json!(["client-a"])).await;
-    let firmwide = preparer(&r, "firmwide", json!(["*"])).await;
+    // '*' (firm-wide) is admin-only: a preparer cannot be given it, so the desk is admin-only too.
+    let (s, _) = call(&r, "POST", "/api/staff/users", "k", Some(json!({"username":"firmwide","display_name":"Synthetic Preparer","role":"preparer","clients":["*"],"temporary_password":PW}))).await;
+    assert_eq!(s, 400);
+    let both = preparer(&r, "both", json!(["client-a", "client-b"])).await;
 
     assert_eq!(call(&r, "GET", "/api/guardvoice/calls", &scoped, None).await.0, 403);
-    ok(&r, "GET", "/api/guardvoice/calls", &firmwide, None).await;
+    assert_eq!(call(&r, "GET", "/api/guardvoice/calls", &both, None).await.0, 403);
     ok(&r, "GET", "/api/guardvoice/calls", "k", None).await;
 
     let body = || Some(json!({"decision": "approve"}));
-    assert_eq!(call(&r, "POST", "/api/guardvoice/approvals/none/decide", &firmwide, body()).await.0, 403);
+    assert_eq!(call(&r, "POST", "/api/guardvoice/approvals/none/decide", &both, body()).await.0, 403);
     assert_eq!(call(&r, "POST", "/api/guardvoice/approvals/none/decide", "k", body()).await.0, 400, "an admin reaches the lookup");
 }
