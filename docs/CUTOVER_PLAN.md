@@ -1,5 +1,7 @@
 # NXT OS cutover plan
 
+**2026-11-03 22:56 (America/Resolute) — live cutover flag: approved by Nixon, authorized by Orville 2026-11-03 22:56.** The server-reported `live_cutover_allowed` control and its client/operator checks are set to `true` by the cutover PR. That PR is held as a draft and must not merge until a verified production backup exists (the nightly `nxt-os-backups` run has failed restore verification since 2026-11-01). Suspense-review holds and every other human-review gate are unchanged.
+
 Latest preparation checkpoint, 2026-10-26: the user explicitly authorized preserving selected source exports **as-is in parallel test mode**, including protected read-only snapshot publication for review. Each company/acquisition receives separate immutable snapshot IDs; private company identities and artifacts stay outside Git. QuickBooks and the other original applications remain authoritative. The nominated reviewer label is metadata, not verified approval. Source completeness, currency/basis, an evidenced cutoff/freeze, individual company IAM, a validated financial importer and post-write recovery remain unaccepted. **Live financial cutover remains NO-GO.** Follow [PARALLEL_TEST_RUNBOOK.md](PARALLEL_TEST_RUNBOOK.md) for the authorized review-copy lane and [SHADOW_SNAPSHOTS.md](SHADOW_SNAPSHOTS.md) for exact-source preservation. Earlier deployment/backup details below are historical checkpoints; the new parallel-test release and real snapshot publication require their own evidence.
 
 ## Decision and scope

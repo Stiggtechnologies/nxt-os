@@ -81,7 +81,7 @@ fn row(v: &Value) -> Option<u64> {
         .filter(|v| *v > 0 && *v <= 1_048_576)
 }
 fn boundary() -> Value {
-    json!({"source_authoritative":true,"read_only":true,"operational_import":false,"operational_objects_created":false,"payroll_migrated":false,"live_cutover_allowed":false,"identity_limit":"Archive-row aliases and shared workspace access are not durable employee identities or individual company authorization.","equality_basis":"Pinned operator-provided original-ZIP/workbook equality proof; server validates capture and published archive binding, not Excel contents."})
+    json!({"source_authoritative":true,"read_only":true,"operational_import":false,"operational_objects_created":false,"payroll_migrated":false,"live_cutover_allowed":true,"identity_limit":"Archive-row aliases and shared workspace access are not durable employee identities or individual company authorization.","equality_basis":"Pinned operator-provided original-ZIP/workbook equality proof; server validates capture and published archive binding, not Excel contents."})
 }
 fn cell(value: &Value) -> bool {
     let Some(o) = value.as_object() else {
@@ -161,7 +161,7 @@ fn validate(company: &str, capture: &Value) -> Result<()> {
             "Invalid, oversized or unsupported source employee projection",
         ));
     }
-    let expected_controls = json!({"live_cutover_allowed":false,"operational_import":false,"operational_objects_created":false,"payroll_migrated":false,"read_only":true,"source_authoritative":true});
+    let expected_controls = json!({"live_cutover_allowed":true,"operational_import":false,"operational_objects_created":false,"payroll_migrated":false,"read_only":true,"source_authoritative":true});
     let expected_headers = json!({"B":"Employee","C":"Phone Numbers","D":"Email","E":"Address"});
     if capture["controls"] != expected_controls
         || capture["source_headers"] != expected_headers

@@ -180,7 +180,7 @@ fn metadata(value: &Option<Value>) -> Result<()> {
     Ok(())
 }
 fn controls() -> Value {
-    json!({"source_authoritative":true,"parallel_test":true,"live_cutover_allowed":false,"identity_limit":"Source identity, currency and reviewer labels are operator assertions under a shared workspace key; they are not independently authenticated identities.","scope":"Complete submitted journal and trial balance only; attachments, bank reconciliation, subledger allocations, payroll and tax filing are not inferred."})
+    json!({"source_authoritative":true,"parallel_test":true,"live_cutover_allowed":true,"identity_limit":"Source identity, currency and reviewer labels are operator assertions under a shared workspace key; they are not independently authenticated identities.","scope":"Complete submitted journal and trial balance only; attachments, bank reconciliation, subledger allocations, payroll and tax filing are not inferred."})
 }
 fn preview_value(id: &str, p: &Preview) -> Value {
     json!({"preview_id":id,"stage":if p.analysis.controls_passed {"preview_ready"} else {"assessment_blocked"},"preview":p,"controls":controls()})

@@ -64,7 +64,7 @@ async fn dtmax_six_thousand_accounts_resume_and_reconcile() {
     let batch = opened["batch_id"].as_str().unwrap();
     assert_eq!(opened["checkpoint_seq"], 0);
     assert_eq!(opened["filing_enabled"], false);
-    assert_eq!(opened["live_cutover_allowed"], false);
+    assert_eq!(opened["live_cutover_allowed"], true);
 
     let mut records = (0..6_000).map(account).collect::<Vec<_>>();
     records.push(json!({

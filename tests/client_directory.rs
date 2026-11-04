@@ -32,7 +32,7 @@ async fn directory_lists_every_module_and_filters_by_assignment() {
     assert_eq!(call(&r, "GET", "/api/clients", "", None).await.0, 401);
     let empty = ok(&r, "GET", "/api/clients", "k", None).await;
     assert_eq!(empty["clients"], json!([]));
-    assert_eq!(empty["live_cutover_allowed"], false);
+    assert_eq!(empty["live_cutover_allowed"], true);
     assert!(empty["not_loaded"].as_array().unwrap().iter().any(|n| n["record"].as_str().unwrap().contains("DT Max client list")));
 
     ok(&r, "POST", "/api/company-books/roster", "k", Some(json!({"expected_head":null,"capture":{"format":"nxt-source-company-roster/v1","source_system":"synthetic",

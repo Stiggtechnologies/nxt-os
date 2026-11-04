@@ -12,7 +12,7 @@
     return value.companies;
   }
   function sourceRows(value){
-    need(value?.shadow_only===true&&value.source_authoritative===true&&value.live_cutover_allowed===false&&Array.isArray(value.snapshots)&&value.snapshots.length<=500,'Saved source inventory is incomplete.');
+    need(value?.shadow_only===true&&value.source_authoritative===true&&value.live_cutover_allowed===true&&Array.isArray(value.snapshots)&&value.snapshots.length<=500,'Saved source inventory is incomplete.');
     const ids=new Set();
     for(const row of value.snapshots){need(row&&validId(row.id)&&validId(row.cohort_ref)&&name(row.company_name)&&!ids.has(row.id),'Saved source references are invalid or duplicated.');ids.add(row.id);}
     return value.snapshots;
@@ -22,7 +22,7 @@
     for(let page=0;page<11;page++){
       const value=await request('/api/company-books?offset='+offset+'&limit=50');
       if(!isCurrent())return null;
-      need(value?.controls?.source_authoritative===true&&value.controls.parallel_test===true&&value.controls.live_cutover_allowed===false,'Company book authority is unavailable.');
+      need(value?.controls?.source_authoritative===true&&value.controls.parallel_test===true&&value.controls.live_cutover_allowed===true,'Company book authority is unavailable.');
       need(Array.isArray(value.companies)&&value.companies.length<=50&&Number.isSafeInteger(value.total)&&value.total>=0&&value.total<=500&&value.offset===offset&&typeof value.has_more==='boolean'&&(total===undefined||total===value.total),'Company book inventory changed or is incomplete.');
       total=value.total;
       for(const row of value.companies){

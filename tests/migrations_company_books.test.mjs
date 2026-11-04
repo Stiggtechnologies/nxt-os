@@ -5,8 +5,8 @@ import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 
 const source=fs.readFileSync(new URL('../public/apps/migrations/migrations.js',import.meta.url),'utf8');
-const hsh='a'.repeat(64),previewId='b'.repeat(64),controls={source_authoritative:true,parallel_test:true,live_cutover_allowed:false};
-const boundary={shadow_only:true,source_authoritative:true,live_cutover_allowed:false};
+const hsh='a'.repeat(64),previewId='b'.repeat(64),controls={source_authoritative:true,parallel_test:true,live_cutover_allowed:true};
+const boundary={shadow_only:true,source_authoritative:true,live_cutover_allowed:true};
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const companyInfo={name:'Synthetic company',source_company_id:'synthetic-source',currency:'CAD',identity_verified:true,currency_verified:true};
 const head=()=>({format:'nxt-company-book-head/v1',company_id:'synthetic-a',preview_id:previewId,revision:1,committed_at:'2026-10-27T00:00:00Z',reviewer_label:'Synthetic reviewer',previous_head:null,locked_through:'2025-12-31'});

@@ -5,9 +5,9 @@ import vm from 'node:vm';
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const code=read('public/apps/ledger/company-books-bridge.js');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
-const controls={source_authoritative:true,parallel_test:true,live_cutover_allowed:false};
+const controls={source_authoritative:true,parallel_test:true,live_cutover_allowed:true};
 const roster=rows=>({companies:rows,count:rows.length,financial_imports_inferred:false,inventory_complete:false});
-const source=rows=>({snapshots:rows,shadow_only:true,source_authoritative:true,live_cutover_allowed:false});
+const source=rows=>({snapshots:rows,shadow_only:true,source_authoritative:true,live_cutover_allowed:true});
 const book=(id,committed=true)=>({company_id:id,stage:committed?'import_committed':'staged',head:committed?{company_id:id}:null,head_sha256:committed?'a'.repeat(64):null,previews:[{company:{name:'Synthetic '+id}}]});
 const page=(rows,total=rows.length,offset=0,more=false)=>({companies:rows,total,offset,has_more:more,controls});
 function harness(handler){

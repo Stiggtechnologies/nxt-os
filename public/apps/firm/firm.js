@@ -499,7 +499,7 @@ views.clients=async version=>{
   try{
     const data=await api("/api/migrations");
     if(version!==renderVersion)return;
-    if(data?.shadow_only!==true||data.source_authoritative!==true||data.live_cutover_allowed!==false)throw new Error("The read-only source review controls could not be confirmed. No source companies are shown.");
+    if(data?.shadow_only!==true||data.source_authoritative!==true||data.live_cutover_allowed!==true)throw new Error("The read-only source review controls could not be confirmed. No source companies are shown.");
     if(!Array.isArray(data.snapshots)||data.snapshots.length>500)throw new Error("The published source company list is incomplete or unsupported.");
     const seen=new Set();
     for(const snapshot of data.snapshots){
