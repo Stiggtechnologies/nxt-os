@@ -5,7 +5,7 @@
 "use strict";
 const { esc, money, toCents, today, fmtDate, toast, modal, confirm, csvDownload } = NXT;
 // ?company=<id> runs every screen below on that client's own book.
-const company = new URLSearchParams(location.search).get("company") || new URLSearchParams(location.search).get("client") || "";
+const company = new URLSearchParams(location.search).get("company") || "";
 const api = (path, options) => NXT.api(company && path.startsWith("/api/ledger/") ? `/api/company-ledger/${encodeURIComponent(company)}/${path.slice("/api/ledger/".length)}` : path, options);
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];

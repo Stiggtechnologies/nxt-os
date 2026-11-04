@@ -258,7 +258,7 @@ function route() {
     frame.hidden = false;
     frame.title = APPS[app].name;
     const co = NXTCompany.get();
-    const base = APPS[app].path + (co ? "?client=" + encodeURIComponent(co) + "&company=" + encodeURIComponent(co) : "");
+    const base = APPS[app].path + (co ? "?company=" + encodeURIComponent(co) : "");
     const want = base + (view ? "#" + view : "");
     const cur = frame.dataset.src || "";
     if (cur.split("#")[0] !== base) { frame.src = want; }

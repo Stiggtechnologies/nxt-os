@@ -1,7 +1,7 @@
 // NXT active company: ONE shared module loaded by the shell and every app.
 // The active company is the selected client_journey client, keyed by the same client id
 // that journeys (/api/journeys/{client}), company books and staff scoping (Identity::can_client) use.
-// It persists in localStorage and travels as ?client= so every page opens on the same company.
+// It persists in localStorage and travels as ?company= (the ledger's parameter) so every page opens on the same company.
 // Clicking any [data-client-row] row makes that client active and opens its journey home.
 (function () {
   "use strict";
@@ -13,7 +13,7 @@
 
   function fromUrl(loc) {
     const p = new URLSearchParams(loc.search || "");
-    const v = p.get("client") || p.get("company") || "";
+    const v = p.get("company") || "";
     return validId(v) ? v : "";
   }
 
@@ -24,7 +24,7 @@
   function syncUrl(id) {
     try {
       const u = new URL(location.href);
-      if (id) u.searchParams.set("client", id); else u.searchParams.delete("client");
+      if (id) u.searchParams.set("company", id); else u.searchParams.delete("company");
       if (u.searchParams.has("company") && u.searchParams.get("company") !== id) u.searchParams.delete("company");
       if (u.href !== location.href) history.replaceState(history.state, "", u.pathname + u.search + u.hash);
     } catch {}

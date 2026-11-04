@@ -8,14 +8,14 @@ function load({search='',top=true}={}){
   box.window=win;win.parent=top?win:{postMessage:(m)=>posted.push(m)};box.globalThis=box;
   vm.runInNewContext(code,box);return {C:box.NXTCompany,store,posted,handlers,box};
 }
-test('active company comes from ?client=, then ?company=, then localStorage',()=>{
-  assert.equal(load({search:'?client=co-a'}).C.get(),'co-a');
+test('active company comes from ?company=, then localStorage',()=>{
+  assert.equal(load({search:'?company=co-a'}).C.get(),'co-a');
   assert.equal(load({search:'?company=co-b'}).C.get(),'co-b');
   const t=load();t.store.set('nxt_active_client','co-c');assert.equal(t.C.get(),'co-c');
 });
-test('in the shell set persists, puts ?client= in the URL and notifies the header',()=>{
+test('in the shell set persists, puts ?company= in the URL and notifies the header',()=>{
   const t=load();const seen=[];t.C.onChange(id=>seen.push(id));t.C.set('co-a');
-  assert.equal(t.store.get('nxt_active_client'),'co-a');assert.match(t.box.location.search,/client=co-a/);assert.deepEqual(seen,['co-a']);
+  assert.equal(t.store.get('nxt_active_client'),'co-a');assert.match(t.box.location.search,/company=co-a/);assert.deepEqual(seen,['co-a']);
   t.C.set('');assert.equal(t.store.has('nxt_active_client'),false);
 });
 test('inside an app set tells the shell instead of navigating on its own',()=>{
@@ -40,7 +40,7 @@ test('row clicks open the journey; inner buttons and Enter/Space follow the rule
 });
 test('every app and the shell load the one shared module; lists are marked as client rows',()=>{
   for(const app of ['ledger','firm','tax','engagements','signatures','migrations','referrals','guardvoice','nixon'])assert.match(read(`public/apps/${app}/index.html`),/\/nxt\/company-switcher\.js/);
-  const shell=read('public/index.html');assert.match(shell,/id="companySwitch"/);assert.match(shell,/mountSwitcher/);assert.match(shell,/"\?client="/);
+  const shell=read('public/index.html');assert.match(shell,/id="companySwitch"/);assert.match(shell,/mountSwitcher/);assert.match(shell,/"\?company="/);
   assert.match(read('public/apps/firm/firm.js'),/data-client-row="\$\{esc\(c\.client_ref\)\}"/);assert.match(read('public/apps/firm/firm.js'),/client:c=>c\.company_id/);
   assert.doesNotMatch(read('public/apps/firm/firm.js'),/native company linking planned/);
   assert.match(read('public/apps/migrations/migrations.js'),/data-client-row="\$\{esc\(c\.company_id\)\}"/);
