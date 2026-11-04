@@ -154,6 +154,7 @@
   window.NXTTurbo = {
     async route(view, id, query, main) {
       main.classList.remove("workspace-mode");
+      if (view.startsWith("tt-desk") && window.NXTFilingDesk) return window.NXTFilingDesk.route(view, id, query, main);
       if (view === "tt-start") return start(main);
       if (view === "tt-t1" && id) return t1(main, id, query);
       if (view === "tt-spouse" && id) return spouse(main, id);

@@ -98,3 +98,28 @@ The evidence boundary and remaining work are tracked in [DTMAX_RECONSTRUCTION.md
 - `#tt-spouse/{family}`: spouse proposals from `POST /api/tax/families/{id}/optimize`. Proposals never change a return. `POST /api/tax/families/{id}/accept {kind}` records an audit event only.
 - `#tt-t2`: one-page T2 intake (`POST /api/tax/t2/intake`, `/start`). Routes: full T2, nil T2, personal return (not incorporated), out of scope (Quebec, several provinces, outside Canada). Dialogs: overlapping period, locked tax year, carry forward, .GT2 import (not supported).
 - Every guided screen shows "Internal workpaper. Not CRA-certified. NETFILE disabled. A human files." Nothing transmits to CRA.
+
+## Filing Desk (internal staff only)
+
+> Internal workpaper. Not CRA-certified. NETFILE disabled. A human files.
+
+The Filing Desk is the last internal step before a person files a return outside NXT. Rail link: **Filing Desk** (`#tt-desk`), next to Guided T1 and T2 intake.
+
+- **Queue** (`GET /api/tax/desk/queue`): approved T1 and T2 returns that have a paid filing fee and no valid confirmation, sorted by statutory deadline. For T1 that is April 30 of the next year; for T2 it is six months after the period end. Columns: client, return type and year, refund or owing, preparer. Staff set the fee flag with `POST /api/tax/returns/{id}/desk/fee {"paid":bool}`. Each change writes `filing_fee_paid` or `filing_fee_cleared` to the hash-chained tax audit.
+- **Walkthrough** (`GET /api/tax/returns/{id}/desk`, `POST …/desk/seen {"section","fingerprint"}`): the filer marks four sections seen in order: summary, slips, deductions, final. Blocking review items stop the walkthrough and come with Fix-it links back into guided review: not approved, stale or missing calculation, unsupported situation, or blocking diagnostics.
+- **Confirm** (`POST …/desk/confirm`): the filer ticks "I reviewed this return and authorize filing" and then re-authenticates. That means the account password plus either an SMS code (`POST /api/tax/desk/step-up/sms`) or an authenticator code. A password alone is not enough. Failed attempts count toward the sign-in lockout and are audited as `step_up_failed`. NXT then records `ready_to_submit` and calls the existing filing stub, which always answers 409. That refusal is stored as the result, with `transmitted:false`. Nothing goes to CRA, NXT makes no outside calls, and the return's own status stays `approved`.
+- **Log** (`GET /api/tax/desk/log?day=YYYY-MM-DD&filer=usr_…`): each entry records who confirmed, when, the version, the fingerprint and the result. Entries are hash-chained (`chain_verified`). Storage is append-only. In Supabase, `nxt_private.append_only_log` is written only through the security-definer RPCs `nxt_append_only_append` and `nxt_append_only_list`. Triggers refuse UPDATE, DELETE and TRUNCATE for every role, the owner included. No update or delete RPC or HTTP route exists. `supabase/tests/filing_log_contract.sql` checks all of this.
+
+Guardrails (all server-side):
+- Only staff with a **filer grant** may use the queue, walkthrough, confirm and log. Admin staff accounts grant filers with `POST /api/tax/desk/filers {"user_id","granted"}`, and each grant is audited. The break-glass key can never file.
+- **Two-person rule:** the account that signed the preparation off cannot file that return. If the preparer label is not a verified staff label, filing is also refused.
+- **Fingerprint:** a confirmation is tied to a hash of the full return input, input revision, calculation output hash and status. Any later edit, recalculation or reopen changes the fingerprint. That invalidates the confirmation and the seen marks, and the return goes back to the queue flagged `invalidated_confirmation`.
+
+### Internal-only gating (guided intake and Filing Desk)
+
+- **APIs:** every `/api/tax/*` route, including guided intake (`/api/tax/returns`, `/api/tax/families`, `/api/tax/t2/intake`) and all `/api/tax/desk/*` and `/api/tax/returns/{id}/desk*` routes, sits behind staff authorization. Only an MFA-complete `nxs_` staff session or the break-glass key is accepted. A public request, a client-portal token or a forged session gets 401. FrontDesk and ReadOnly staff cannot write intake or fee data (403). Non-filer staff get 403 on the desk. `tests/filing_desk.rs` proves each of these.
+- **UI:** the Guided T1, T2 intake and Filing Desk rail links render `hidden` (`data-internal`). They appear only after `GET /api/tax/desk/me` succeeds for a staff session. Filing Desk appears only for filers and admins. `tests/filing_desk.test.mjs` checks this.
+
+### Client-launch gate
+
+`client_launch_enabled` (`GET/POST /api/tax/desk/launch`) is **off by default**. An admin can turn it on only after recording an end-to-end internal test run with `POST /api/tax/desk/launch/test-run {"return_id"}`. The test run needs a synthetic return (client reference `TEST-…`) that went through intake, review, a Filing Desk confirmation and a filing-log entry. Its fingerprint must still match, so any later change to the test return closes the gate again. Test runs and flag changes are audited. Nothing client-facing reads this flag yet. Any future client exposure of guided intake must check `client_launch_enabled` server-side first.
