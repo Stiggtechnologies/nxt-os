@@ -15,8 +15,9 @@
       <button class="tax-logo" data-os="home" aria-label="NXT OS home">NXT</button>
       <a href="#worklist" data-nav="worklist"><span>▤</span>Worklist</a>
       <button data-action="new-return"><span>⊕</span>New return</button>
-      <a href="#tt-start" data-nav="tt-start"><span>✓</span>Guided T1</a>
-      <a href="#tt-t2" data-nav="tt-t2"><span>◫</span>T2 intake</a>
+      <a href="#tt-start" data-nav="tt-start" data-internal="intake" hidden><span>✓</span>Guided T1</a>
+      <a href="#tt-t2" data-nav="tt-t2" data-internal="intake" hidden><span>◫</span>T2 intake</a>
+      <a href="#tt-desk" data-nav="tt-desk" data-internal="desk" hidden><span>✎</span>Filing Desk</a>
       <a href="#import" data-nav="import"><span>⇄</span>Import</a>
       <a href="#audit" data-nav="audit"><span>◷</span>Audit</a>
       <a href="#capabilities" data-nav="capabilities"><span>ⓘ</span>Coverage</a>
@@ -36,6 +37,8 @@
 <script src="/nxt/company-switcher.js"></script>
   <script src="tt-core.js"></script>
   <script src="tt-ui.js"></script>
+  <script src="filing-desk-core.js"></script>
+  <script src="filing-desk.js"></script>
   <script src="tax.js"></script>
 </body>
 </html>

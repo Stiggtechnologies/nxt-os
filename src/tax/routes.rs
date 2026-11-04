@@ -23,6 +23,17 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/package",get(package))
         .route("/api/tax/returns/{id}/print",get(print))
         .route("/api/tax/returns/{id}/filing",post(filing))
+        .route("/api/tax/desk/me",get(desk_me))
+        .route("/api/tax/desk/queue",get(desk_queue))
+        .route("/api/tax/desk/log",get(desk_log))
+        .route("/api/tax/desk/filers",get(desk_filers).post(desk_set_filer))
+        .route("/api/tax/desk/launch",get(desk_launch).post(desk_set_launch))
+        .route("/api/tax/desk/launch/test-run",post(desk_test_run))
+        .route("/api/tax/desk/step-up/sms",post(desk_step_up))
+        .route("/api/tax/returns/{id}/desk",get(desk_detail))
+        .route("/api/tax/returns/{id}/desk/fee",post(desk_fee))
+        .route("/api/tax/returns/{id}/desk/seen",post(desk_seen))
+        .route("/api/tax/returns/{id}/desk/confirm",post(desk_confirm))
         .route("/api/tax/returns/{id}/parallel-compare",post(parallel_compare))
         .route("/api/tax/returns/{id}/prior-lines",post(prior_lines))
         .route("/api/tax/families",post(create_family))
@@ -77,9 +88,29 @@ async fn import_preview(State(t):S,Path(id):Path<String>) -> R { ok(t.import_pre
 #[derive(Deserialize)] #[serde(deny_unknown_fields)] struct CommitInput { preview_id:String }
 async fn commit(State(t):S,Json(input):Json<CommitInput>) -> R { ok(t.commit_import(&input.preview_id).await?) }
 async fn filing(State(t):S,Path(id):Path<String>) -> R {
-    t.get(&id).await?;
-    Err(conflict(&format!("Electronic filing is a stub (config_enabled={}). NXT is not CRA-certified, has no EFILE number and never transmits. File outside NXT, then record it with status \"filed\".", super::efile_status()["config_enabled"])))
+    // Always refuses (409 CONFLICT): NXT never transmits. The Filing Desk calls the same stub.
+    Err(t.filing_refusal(&id).await)
 }
+
+// ---- Filing Desk (internal staff only; see src/tax/filing_desk.rs) ----
+use super::filing_desk as fd;
+use axum::Extension;
+use crate::firm::staff::Identity;
+type W = Extension<Identity>;
+#[derive(Deserialize)] struct LogQuery { day:Option<String>, filer:Option<String> }
+async fn desk_me(State(t):S,Extension(w):W) -> R { ok(t.desk_me(&w).await?) }
+async fn desk_queue(State(t):S,Extension(w):W) -> R { ok(t.desk_queue(&w).await?) }
+async fn desk_log(State(t):S,Extension(w):W,Query(q):Query<LogQuery>) -> R { ok(t.desk_log(&w,q.day.as_deref(),q.filer.as_deref()).await?) }
+async fn desk_filers(State(t):S,Extension(w):W) -> R { ok(t.desk_filers(&w).await?) }
+async fn desk_set_filer(State(t):S,Extension(w):W,Json(i):Json<fd::FilerInput>) -> R { ok(t.desk_set_filer(&w,i).await?) }
+async fn desk_launch(State(t):S,Extension(_w):W) -> R { ok(t.desk_launch().await?) }
+async fn desk_set_launch(State(t):S,Extension(w):W,Json(i):Json<fd::LaunchInput>) -> R { ok(t.desk_set_launch(&w,i).await?) }
+async fn desk_test_run(State(t):S,Extension(w):W,Json(i):Json<fd::TestRunInput>) -> R { ok(t.desk_record_test_run(&w,i).await?) }
+async fn desk_step_up(State(t):S,Extension(w):W,Json(i):Json<fd::StepUpSmsInput>) -> R { ok(t.desk_step_up_sms(&w,i).await?) }
+async fn desk_detail(State(t):S,Extension(w):W,Path(id):Path<String>) -> R { ok(t.desk_detail(&w,&id).await?) }
+async fn desk_fee(State(t):S,Extension(w):W,Path(id):Path<String>,Json(i):Json<fd::FeeInput>) -> R { ok(t.desk_fee(&w,&id,i).await?) }
+async fn desk_seen(State(t):S,Extension(w):W,Path(id):Path<String>,Json(i):Json<fd::SeenInput>) -> R { ok(t.desk_seen(&w,&id,i).await?) }
+async fn desk_confirm(State(t):S,Extension(w):W,Path(id):Path<String>,Json(i):Json<fd::ConfirmInput>) -> R { ok(t.desk_confirm(&w,&id,i).await?) }
 async fn parallel_compare(State(t):S,Path(id):Path<String>,Json(source):Json<super::parallel::ParallelSource>) -> R {
     ok(t.compare_parallel(&id, source).await?)
 }
@@ -147,6 +178,6 @@ async fn t2_schedules(Json(input):Json<super::t2_schedules::T2Input>) -> R { ok(
 async fn t183_draft(State(t):S,Path(id):Path<String>) -> R { let r=t.get(&id).await?; ok(super::t183::draft(&r).map_err(|e|conflict(&e))?) }
 
 async fn client_scope(State(t): S, req: axum::extract::Request, next: middleware::Next) -> Response {
-    crate::firm::staff::scope_guard(req, next, "/api/tax/returns", &["/api/tax/catalog", "/api/tax/capabilities", "/api/tax/rates", "/api/tax/t2/schedules", "/api/tax/t5013/cca", "/api/tax/slips/catalog"],
+    crate::firm::staff::scope_guard(req, next, "/api/tax/returns", &["/api/tax/catalog", "/api/tax/capabilities", "/api/tax/rates", "/api/tax/t2/schedules", "/api/tax/t5013/cca", "/api/tax/slips/catalog", "/api/tax/desk/me", "/api/tax/desk/queue", "/api/tax/desk/log", "/api/tax/desk/step-up/sms", "/api/tax/desk/launch"],
         |id| async move { t.get(&id).await.ok().map(|r| r.client_ref) }).await
 }

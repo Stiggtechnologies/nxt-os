@@ -381,6 +381,54 @@ impl Staff {
         Ok(json!({"sent": true, "note": "if the username, password and phone on file are correct, a code was texted"}))
     }
 
+    /// Step-up: texts a fresh one-time code to the signed-in staff user's phone, after a
+    /// password check. Used before sensitive actions such as the Filing Desk confirmation.
+    pub async fn step_up_sms(&self, who: &Identity, password: &str) -> SResult<Value> {
+        if who.break_glass { return Err(ApiError(StatusCode::FORBIDDEN, "the break-glass key cannot step up; sign in with your staff account".into())); }
+        if !sms::configured() { return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "SMS codes are not configured; use your authenticator code".into())); }
+        let u = self.user(&who.user_id).await?.ok_or_else(unauth)?;
+        let ok = !u.disabled && ct_eq(hex::encode(pbkdf2(password.as_bytes(), u.salt.as_bytes(), u.iterations)).as_bytes(), u.password_hash.as_bytes());
+        if ok { if let Some(ph) = u.phone.as_deref() {
+            sms::send(ph).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, format!("SMS send failed: {e}")))?;
+            self.audit(&u.id, "step_up_sms_sent", &format!("to {}", mask_phone(ph))).await?;
+        } }
+        Ok(json!({"sent": true, "note": "if the password and phone on file are correct, a code was texted"}))
+    }
+
+    /// Step-up re-authentication of the signed-in staff user: their password plus a second
+    /// factor (an SMS code to the phone on file, or an authenticator code). With no second
+    /// factor on the account the step-up is refused while MFA is required. Failures count
+    /// toward the normal sign-in lockout and are audited.
+    pub async fn step_up(&self, who: &Identity, password: &str, sms_code: Option<&str>, totp: Option<&str>) -> SResult<()> {
+        let fail = || ApiError(StatusCode::UNAUTHORIZED, "re-authentication failed: password or code is wrong".into());
+        if who.break_glass { return Err(ApiError(StatusCode::FORBIDDEN, "the break-glass key cannot re-authenticate; sign in with your staff account".into())); }
+        let mut u = self.user(&who.user_id).await?.ok_or_else(unauth)?;
+        if let Some(l) = u.locked_until.as_deref().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()) {
+            if l > Utc::now() { return Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "account temporarily locked after failed sign-ins; try again later or ask an admin".into())); }
+        }
+        let pw_ok = !u.disabled && ct_eq(hex::encode(pbkdf2(password.as_bytes(), u.salt.as_bytes(), u.iterations)).as_bytes(), u.password_hash.as_bytes());
+        let sms_ok = match (pw_ok, sms_code.map(str::trim).filter(|c| !c.is_empty()), u.phone.as_deref()) {
+            (true, Some(c), Some(ph)) => sms::check(ph, c).await,
+            _ => false,
+        };
+        let totp_step = if pw_ok && !sms_ok && u.mfa_enabled {
+            totp.and_then(|c| u.totp_secret.as_deref().and_then(|s| totp_match(s, c, u.last_totp_step)))
+        } else { None };
+        let no_factor = !u.mfa_enabled && u.phone.is_none() && !require_mfa();
+        if !pw_ok || !(sms_ok || totp_step.is_some() || no_factor) {
+            u.failed_logins = u.failed_logins.saturating_add(1);
+            if u.failed_logins >= LOCK_AFTER { u.locked_until = Some((Utc::now() + chrono::Duration::minutes(LOCK_MINUTES)).to_rfc3339_opts(SecondsFormat::Secs, true)); u.failed_logins = 0; }
+            self.put(&u).await?;
+            self.audit(&u.id, "step_up_failed", "").await?;
+            return Err(fail());
+        }
+        u.failed_logins = 0; u.locked_until = None;
+        if let Some(step) = totp_step { u.last_totp_step = step; }
+        self.put(&u).await?;
+        self.audit(&u.id, "step_up", &format!("sms {sms_ok}; totp {}", totp_step.is_some())).await?;
+        Ok(())
+    }
+
     async fn session(&self, token: &str) -> SResult<Option<(Session, StaffUser)>> {
         let key = session_key(&sha_hex(token.as_bytes()));
         let Some(s) = self.store.get_json::<Session>(&key).await.map_err(st)? else { return Ok(None) };

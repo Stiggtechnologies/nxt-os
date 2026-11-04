@@ -11,6 +11,7 @@ pub mod t2_schedules;
 pub mod t5013_cca;
 pub mod spouse_optimize;
 pub mod t2_intake;
+pub mod filing_desk;
 mod routes;
 pub use routes::router;
 
@@ -349,6 +350,12 @@ impl Tax {
             if s.returns.iter().any(|r|r.rollforward_from.as_deref()==Some(record_id)&&r.tax_year==input.tax_year){return Err(conflict("this return has already been rolled forward"));}
             let mut r=record(&next,&new_id,&at); r.rollforward_from=Some(record_id.into()); s.returns.push(r.clone()); audit(s,&new_id,"rolled_forward","Profile copied; all year-specific financial inputs cleared"); Ok(r)
         }).await
+    }
+    /// The electronic-filing stub. It always refuses: NXT is not CRA-certified, has no EFILE
+    /// number and never transmits. Shared by the filing route and the Filing Desk.
+    pub async fn filing_refusal(&self, record_id: &str) -> ApiError {
+        if let Err(e) = self.get(record_id).await { return e; }
+        conflict(format!("Electronic filing is a stub (config_enabled={}). NXT is not CRA-certified, has no EFILE number and never transmits. File outside NXT, then record it with status \"filed\".", efile_status()["config_enabled"]))
     }
     pub async fn audit(&self) -> TResult<Vec<AuditEvent>> { Ok(self.load().await?.audit) }
     pub async fn package(&self, record_id: &str) -> TResult<Value> {

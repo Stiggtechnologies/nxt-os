@@ -110,7 +110,7 @@ fn slip_catalog_lists_every_kind_with_calculated_boxes() {
 /// Runs the guided-intake node tests (node is installed before `cargo test` in CI).
 #[test]
 fn guided_intake_node_tests_pass() {
-    let files = ["tests/t1_interview.test.mjs", "tests/t1_slips_search.test.mjs", "tests/t1_review.test.mjs", "tests/t2_intake.test.mjs", "tests/turbotax_no_cra_network.test.mjs"];
+    let files = ["tests/t1_interview.test.mjs", "tests/t1_slips_search.test.mjs", "tests/t1_review.test.mjs", "tests/t2_intake.test.mjs", "tests/turbotax_no_cra_network.test.mjs", "tests/filing_desk.test.mjs"];
     let out = std::process::Command::new("node").arg("--test").args(files).current_dir(env!("CARGO_MANIFEST_DIR")).output().expect("node must be installed to run the guided-intake UI tests");
     assert!(out.status.success(), "node tests failed:\n{}\n{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
 }

@@ -15,3 +15,6 @@
 .tt-result{border-top:2px solid #1f3a5f;margin-top:1rem;padding-top:.6rem}.tt-out_of_scope{border-color:#c0392b}
 .tt-t2 fieldset{border:0;border-top:1px solid var(--line,#ddd);padding:.8rem 0}.tt-yn{display:flex;gap:1rem}
 .tt-hint{color:#666;font-size:.9rem}.tt-scope{color:#8a5a00}
+/* Filing Desk. */
+.fd-table{width:100%;border-collapse:collapse;margin:.6rem 0}.fd-table td,.fd-table th{border-bottom:1px solid var(--line,#ddd);padding:.35rem .5rem;text-align:left}
+.fd-dl{display:grid;grid-template-columns:max-content 1fr;gap:.3rem 1rem}.fd-dl dt{color:#666;text-transform:capitalize}

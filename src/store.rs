@@ -186,8 +186,19 @@ impl Store {
         if let Store::Supabase { url, token, namespace, http } = self {
             // Service role is the intended server credential for this RPC. Company-books
             // keys are catalogued and appended to the company access audit inside it.
-            let mut request = http.post(format!("{url}/rest/v1/rpc/nxt_store_command"))
-                .header("apikey", token).json(&json!({"p_namespace": namespace, "p_command": cmd}));
+            return supabase_rpc(http, url, token, "nxt_store_command", json!({"p_namespace": namespace, "p_command": cmd})).await;
+        }
+        let Store::Redis { url, token, http } = self else {
+            return Err("remote storage is unavailable".into());
+        };
+        redis_call(http, url, token, &cmd).await
+    }
+}
+
+/// One PostgREST RPC call with the service credential. Every NXT RPC answers `{"result": ...}`.
+async fn supabase_rpc(http: &reqwest::Client, url: &str, token: &str, func: &str, payload: Value) -> StoreResult<Value> {
+            let mut request = http.post(format!("{url}/rest/v1/rpc/{func}"))
+                .header("apikey", token).json(&payload);
             // Modern secret keys are API keys, not JWT bearer tokens.
             if !token.starts_with("sb_secret_") { request = request.bearer_auth(token); }
             let mut response = request.send().await.map_err(|_| "Supabase storage request failed".to_string())?;
@@ -200,11 +211,10 @@ impl Store {
                 bytes.extend_from_slice(&chunk);
             }
             let body: Value = serde_json::from_slice(&bytes).map_err(|_| "Supabase storage returned invalid JSON".to_string())?;
-            return body.get("result").cloned().ok_or_else(|| "Supabase storage response is missing result".into());
-        }
-        let Store::Redis { url, token, http } = self else {
-            return Err("remote storage is unavailable".into());
-        };
+            body.get("result").cloned().ok_or_else(|| "Supabase storage response is missing result".into())
+}
+
+async fn redis_call(http: &reqwest::Client, url: &str, token: &str, cmd: &[Value]) -> StoreResult<Value> {
         let resp = http
             .post(url)
             .bearer_auth(token)
@@ -220,6 +230,49 @@ impl Store {
             return Err(format!("redis error: {err}"));
         }
         Ok(body.get("result").cloned().unwrap_or(Value::Null))
+}
+
+impl Store {
+    /// Appends one entry to an append-only stream. There is deliberately no update or delete
+    /// counterpart. On Supabase the stream is a table whose triggers refuse UPDATE, DELETE and
+    /// TRUNCATE, reached only through `nxt_append_only_append` / `nxt_append_only_list`.
+    pub async fn append_only(&self, stream: &str, entry: &Value) -> StoreResult<()> {
+        if !matches!(stream, "tax-filing") { return Err("unknown append-only stream".into()); }
+        let text = serde_json::to_string(entry).map_err(|_| "append-only entry could not be encoded".to_string())?;
+        let key = format!("{PREFIX}append-only:{stream}");
+        match self {
+            Store::Memory(m) => {
+                let mut m = m.lock().unwrap();
+                let mut list = m.lists.get(&key).cloned().unwrap_or_default();
+                list.insert(0, text);
+                m.record("l", &key, json!(list))?;
+                m.lists.insert(key, list);
+                Ok(())
+            }
+            Store::Redis { .. } => self.remote(vec![json!("LPUSH"), json!(key), json!(text)]).await.map(|_| ()),
+            Store::Supabase { url, token, namespace, http } => {
+                let v = supabase_rpc(http, url, token, "nxt_append_only_append", json!({"p_namespace": namespace, "p_stream": stream, "p_entry": entry})).await?;
+                if v.as_i64().is_some_and(|n| n > 0) { Ok(()) } else { Err("append-only response was invalid".into()) }
+            }
+            Store::Unavailable { reason } => Err(reason.clone()),
+        }
+    }
+
+    /// Newest-first entries of an append-only stream.
+    pub async fn read_append_only(&self, stream: &str, limit: usize) -> StoreResult<Vec<Value>> {
+        if !matches!(stream, "tax-filing") { return Err("unknown append-only stream".into()); }
+        if limit == 0 { return Ok(Vec::new()); }
+        let key = format!("{PREFIX}append-only:{stream}");
+        let rows: Vec<String> = match self {
+            Store::Memory(m) => m.lock().unwrap().lists.get(&key).map(|l| l.iter().take(limit).cloned().collect()).unwrap_or_default(),
+            Store::Redis { .. } => strings(self.remote(vec![json!("LRANGE"), json!(key), json!(0), json!(limit as i64 - 1)]).await?)?,
+            Store::Supabase { url, token, namespace, http } => {
+                let v = supabase_rpc(http, url, token, "nxt_append_only_list", json!({"p_namespace": namespace, "p_stream": stream, "p_limit": limit as i64})).await?;
+                return v.as_array().cloned().ok_or_else(|| "append-only list response was invalid".into());
+            }
+            Store::Unavailable { reason } => return Err(reason.clone()),
+        };
+        rows.iter().map(|r| serde_json::from_str(r).map_err(|_| "append-only entry is corrupt".to_string())).collect()
     }
 
     pub async fn get(&self, key: &str) -> StoreResult<Option<String>> {

@@ -176,6 +176,9 @@ pub struct TaxState {
     pub imports: Vec<ImportPreview>,
     #[serde(default)]
     pub families: Vec<FamilyLink>,
+    /// Filing Desk state: filer grants, fee flags, walkthrough marks, confirmations, launch gate.
+    #[serde(default)]
+    pub desk: super::filing_desk::DeskState,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
