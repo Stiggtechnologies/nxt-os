@@ -40,7 +40,7 @@ test('row clicks open the journey; inner buttons and Enter/Space follow the rule
 });
 test('every app and the shell load the one shared module; lists are marked as client rows',()=>{
   for(const app of ['ledger','firm','tax','engagements','signatures','migrations','referrals','guardvoice','nixon'])assert.match(read(`public/apps/${app}/index.html`),/\/nxt\/company-switcher\.js/);
-  const shell=read('public/index.html');assert.match(shell,/id="companySwitch"/);assert.match(shell,/mountSwitcher/);assert.match(shell,/"\?company="/);
+  const shell=read('public/index.html');assert.match(shell,/id="companySwitch"/);assert.match(shell,/mountSwitcher/);assert.doesNotMatch(shell,/window\.companySwitch\b/,'window.companySwitch is the #companySwitch element (named access)');assert.match(shell,/"\?company="/);
   assert.match(read('public/apps/firm/firm.js'),/data-client-row="\$\{esc\(c\.client_ref\)\}"/);assert.match(read('public/apps/firm/firm.js'),/client:c=>c\.company_id/);
   assert.doesNotMatch(read('public/apps/firm/firm.js'),/native company linking planned/);
   assert.match(read('public/apps/migrations/migrations.js'),/data-client-row="\$\{esc\(c\.company_id\)\}"/);

@@ -362,7 +362,7 @@ async function boot() {
   }
   $("#signOut").hidden = !status.auth_required;
   $("#signin").hidden = true; $("#os").hidden = false;
-  if (window.companySwitch) window.companySwitch.reload(); else window.companySwitch = NXTCompany.mountSwitcher($("#companySwitch"), { api, esc: NXT.esc });
+  if (window.nxtCompanySwitcher) window.nxtCompanySwitcher.reload(); else window.nxtCompanySwitcher = NXTCompany.mountSwitcher($("#companySwitch"), { api, esc: NXT.esc });
   route();
 }
 function signOut() { NXT.key.clear(); $("#frame").removeAttribute("src"); $("#frame").dataset.src = ""; closeDrawer(); boot(); }
