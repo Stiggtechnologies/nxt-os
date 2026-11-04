@@ -125,7 +125,10 @@ async fn staff_accounts_roles_mfa_scoping_and_break_glass() {
     assert_ne!(call(&r, "POST", "/api/sign/nosuchtoken/otp", None, None, "10.9.9.10").await.0, 429);
 
     // E-sign sweep runs for staff (front desk allowed) and is a no-op here.
-    let sw = ok(&r, "POST", "/api/signatures/esign/sweep", &desk, Some(json!({"operator_label":"x","dry_run":true}))).await;
+    // The e-sign sweep is firm-wide, so it is admin-only now that '*' is reserved for admins.
+    let sweep = || Some(json!({"operator_label":"x","dry_run":true}));
+    assert_eq!(call(&r, "POST", "/api/signatures/esign/sweep", Some(&desk), sweep(), "10.0.0.1").await.0, 403);
+    let sw = ok(&r, "POST", "/api/signatures/esign/sweep", "k", sweep()).await;
     assert_eq!(sw["email_sent"], false);
 
     // Break-glass can be switched off by config.
