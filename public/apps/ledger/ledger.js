@@ -5,7 +5,7 @@
 "use strict";
 const { esc, money, toCents, today, fmtDate, toast, modal, confirm, csvDownload } = NXT;
 // ?company=<id> runs every screen below on that client's own book.
-const company = new URLSearchParams(location.search).get("company") || "";
+const company = new URLSearchParams(location.search).get("company") || new URLSearchParams(location.search).get("client") || "";
 const api = (path, options) => NXT.api(company && path.startsWith("/api/ledger/") ? `/api/company-ledger/${encodeURIComponent(company)}/${path.slice("/api/ledger/".length)}` : path, options);
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -14,7 +14,7 @@ const companyBridgeHost = $("#ledger-company-bridge");
 const companyBridge = companyBridgeHost && window.NXTLedgerCompanyBridge?.mount(companyBridgeHost, {api, esc, current: company, openApp(app, view) {
   if (window.parent !== window) window.parent.postMessage({nxt:"open-app", app, view}, location.origin);
   else location.href = "/#/" + app + "/" + view;
-}, openLedger(id) { location.href = location.pathname + (id ? "?company=" + encodeURIComponent(id) : "") + "#dashboard"; }});
+}, openLedger(id) { if (window.NXTCompany && window.parent !== window) { NXTCompany.set(id); return; } location.href = location.pathname + (id ? "?company=" + encodeURIComponent(id) : "") + "#dashboard"; }});
 window.addEventListener("pagehide", () => companyBridge?.destroy(), {once:true});
 $("#mark").innerHTML = NXT.MARK + "<span>NXT Ledger</span>";
 try { const t = localStorage.getItem("nxt_theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
