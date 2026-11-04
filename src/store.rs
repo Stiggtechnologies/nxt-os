@@ -18,6 +18,10 @@ pub struct Memory {
     strings: HashMap<String, String>,
     sets: HashMap<String, HashSet<String>>,
     lists: HashMap<String, Vec<String>>,
+    /// Test-only read log (one entry per get/mget/smembers round trip) so tests can
+    /// prove a code path's store round trips and which keys it touched.
+    #[cfg(test)]
+    reads: Vec<Vec<String>>,
     /// Optional append-only JSONL log (NXT_DEV_STORE_FILE) so a local test copy
     /// survives a restart. Each line records the full resulting state of one key.
     log: Option<std::fs::File>,
@@ -79,6 +83,27 @@ pub enum Store {
 const PREFIX: &str = "nxt:";
 
 impl Store {
+    /// Test-only: drain the memory store's read log (keys without the prefix).
+    #[cfg(test)]
+    pub fn take_test_reads(&self) -> Vec<Vec<String>> {
+        match self {
+            Store::Memory(m) => std::mem::take(&mut m.lock().unwrap().reads)
+                .into_iter()
+                .map(|r| r.into_iter().map(|k| k.trim_start_matches(PREFIX).to_string()).collect())
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Stable per-tenant cache key for remote backends; None for process memory.
+    pub fn tenant_key(&self) -> Option<String> {
+        match self {
+            Store::Redis { url, .. } => Some(format!("redis:{url}")),
+            Store::Supabase { url, namespace, .. } => Some(format!("supabase:{url}#{namespace}")),
+            _ => None,
+        }
+    }
+
     pub fn memory() -> Self {
         Store::Memory(Arc::new(Mutex::new(Memory::default())))
     }
@@ -200,7 +225,13 @@ impl Store {
     pub async fn get(&self, key: &str) -> StoreResult<Option<String>> {
         let key = format!("{PREFIX}{key}");
         match self {
-            Store::Memory(m) => Ok(m.lock().unwrap().strings.get(&key).cloned()),
+            Store::Memory(m) => {
+                #[allow(unused_mut)]
+                let mut m = m.lock().unwrap();
+                #[cfg(test)]
+                m.reads.push(vec![key.clone()]);
+                Ok(m.strings.get(&key).cloned())
+            }
             _ => optional_string(self.remote(vec![json!("GET"), json!(key)]).await?),
         }
     }
@@ -295,13 +326,13 @@ impl Store {
     pub async fn smembers(&self, key: &str) -> StoreResult<Vec<String>> {
         let key = format!("{PREFIX}{key}");
         match self {
-            Store::Memory(m) => Ok(m
-                .lock()
-                .unwrap()
-                .sets
-                .get(&key)
-                .map(|s| s.iter().cloned().collect())
-                .unwrap_or_default()),
+            Store::Memory(m) => {
+                #[allow(unused_mut)]
+                let mut m = m.lock().unwrap();
+                #[cfg(test)]
+                m.reads.push(vec![key.clone()]);
+                Ok(m.sets.get(&key).map(|s| s.iter().cloned().collect()).unwrap_or_default())
+            }
             _ => strings(self.remote(vec![json!("SMEMBERS"), json!(key)]).await?),
         }
     }
@@ -358,7 +389,10 @@ impl Store {
         let full: Vec<String> = keys.iter().map(|k| format!("{PREFIX}{k}")).collect();
         match self {
             Store::Memory(m) => {
-                let m = m.lock().unwrap();
+                #[allow(unused_mut)]
+                let mut m = m.lock().unwrap();
+                #[cfg(test)]
+                m.reads.push(full.clone());
                 Ok(full.iter().map(|k| m.strings.get(k).cloned()).collect())
             }
             _ => {

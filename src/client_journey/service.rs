@@ -216,11 +216,15 @@ impl Journeys {
     pub async fn list(&self) -> Result<Value> {
         let mut ids = self.store.smembers(INDEX).await.map_err(storage)?;
         ids.sort();
+        ids.retain(|id| valid_client_id(id));
+        ids.truncate(MAX_JOURNEYS);
+        // One batched read for every record instead of one GET per client.
+        let keys: Vec<String> = ids.iter().map(|id| key(id)).collect();
+        let raws = self.store.mget(&keys).await.map_err(storage)?;
         let mut out = Vec::new();
-        for id in ids.iter().take(MAX_JOURNEYS) {
-            if let Ok((_, r)) = self.load(id).await {
-                out.push(json!({"client_id": id, "progress": r.journey.progress(&self.def), "last_assessment": r.last_assessment}));
-            }
+        for (id, raw) in ids.iter().zip(raws) {
+            let Some(r) = raw.and_then(|raw| serde_json::from_str::<JourneyRecord>(&raw).ok()) else { continue };
+            out.push(json!({"client_id": id, "progress": r.journey.progress(&self.def), "last_assessment": r.last_assessment, "pending_review": r.pending_review}));
         }
         Ok(json!({"journeys": out}))
     }

@@ -100,34 +100,71 @@
     decorate(doc);
   }
 
+  // Roster cache: the last good company list, per browser tab, so the header paints instantly
+  // and a slow roster refresh never blanks it. Ids and display names only.
+  const ROSTER_KEY = "nxt_company_roster_v1";
+  const ROSTER_TTL_MS = 5 * 60 * 1000;
+  const ss = () => { try { return globalThis.sessionStorage || null; } catch { return null; } };
+  function cachedRoster(now = Date.now()) {
+    try {
+      const v = JSON.parse(ss()?.getItem(ROSTER_KEY) || "null");
+      if (!v || !Array.isArray(v.rows) || now - v.at > ROSTER_TTL_MS) return null;
+      return v.rows.filter((r) => r && validId(r.id));
+    } catch { return null; }
+  }
+  function saveRoster(rows, now = Date.now()) { try { ss()?.setItem(ROSTER_KEY, JSON.stringify({ at: now, rows })); } catch {} }
+  function clearRoster() { try { ss()?.removeItem(ROSTER_KEY); } catch {} }
+
+  // Type-ahead: case-insensitive match on name or id, prefix matches first.
+  function filter(rows, q) {
+    q = String(q || "").trim().toLowerCase();
+    if (!q) return rows.slice();
+    const hit = (r) => (r.name || "").toLowerCase().includes(q) || r.id.toLowerCase().includes(q);
+    const pre = (r) => (r.name || "").toLowerCase().startsWith(q) || r.id.toLowerCase().startsWith(q);
+    return rows.filter(hit).sort((a, b) => Number(pre(b)) - Number(pre(a)));
+  }
+
   // The header switcher, mounted once in the shell topbar.
-  function mountSwitcher(host, { api, esc, timeoutMs = 45000 }) {
-    let rows = [], state = "loading";
+  function mountSwitcher(host, { api, esc, timeoutMs = 10000 }) {
+    let rows = cachedRoster() || [], state = rows.length ? "ready" : "loading";
     const draw = () => {
       const cur = get();
       const opts = rows.map((r) => `<option value="${esc(r.id)}"${r.id === cur ? " selected" : ""}>${esc(r.name || r.id)}</option>`).join("");
       const extra = cur && !rows.some((r) => r.id === cur) ? `<option value="${esc(cur)}" selected>${esc(cur)}</option>` : "";
-      host.innerHTML = `<label class="nxt-co-label" for="nxt-company">Company</label><select id="nxt-company" aria-describedby="nxt-company-state"><option value="">Firm workspace</option>${extra}${opts}</select><span id="nxt-company-state" class="nxt-co-state">${state === "loading" ? "Loading…" : state === "error" ? `Company list unavailable <button type="button" data-co-retry>Retry</button>` : ""}</span>`;
+      const finds = rows.map((r) => `<option value="${esc(r.name || r.id)}"></option>`).join("");
+      host.innerHTML = `<label class="nxt-co-label" for="nxt-company">Company</label><select id="nxt-company" aria-describedby="nxt-company-state"><option value="">Firm workspace</option>${extra}${opts}</select><input id="nxt-company-find" class="nxt-co-find" type="search" list="nxt-company-list" placeholder="Find company" aria-label="Find a company by name or id" autocomplete="off"><datalist id="nxt-company-list">${finds}</datalist><span id="nxt-company-state" class="nxt-co-state">${state === "loading" ? "Loading…" : state === "error" ? `Company list unavailable <button type="button" data-co-retry>Retry</button>` : ""}</span>`;
       host.querySelector("#nxt-company").onchange = (e) => set(e.target.value);
-      const retry = host.querySelector("[data-co-retry]"); if (retry) retry.onclick = load;
+      const find = host.querySelector("#nxt-company-find");
+      if (find) find.onchange = (e) => { const m = filter(rows, e.target.value)[0]; if (m) set(m.id); };
+      const retry = host.querySelector("[data-co-retry]"); if (retry) retry.onclick = () => { clearRoster(); load(); };
     };
     async function load() {
-      state = "loading"; draw();
+      if (!rows.length) { state = "loading"; draw(); }
       const c = new AbortController(); const t = setTimeout(() => c.abort(), timeoutMs);
-      try { rows = await list(api, { signal: c.signal }); state = "ready"; }
-      catch (e) { if (e.status === 401) { rows = []; state = "ready"; } else state = "error"; }
+      try { rows = await list(api, { signal: c.signal }); state = "ready"; saveRoster(rows); }
+      catch (e) { if (e.status === 401) { rows = []; state = "ready"; clearRoster(); } else if (!rows.length) state = "error"; }
       finally { clearTimeout(t); draw(); }
     }
     listeners.add(draw);
+    draw();
     load();
     return { reload: load, draw };
   }
 
-  const api = { KEY, get, set, list, validId, journeyView, openJourney, decorate, wireRows, mountSwitcher, onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }, _fromUrl: fromUrl };
+  // App-wide keyboard shortcuts ride along with this module, which every app already loads.
+  function loadShortcuts(doc = document) {
+    try {
+      if (globalThis.NXTShortcuts || !doc.querySelector || doc.querySelector("script[data-nxt-shortcuts]")) return;
+      const s = doc.createElement("script"); s.src = "/nxt/shortcuts.js"; s.defer = true; s.setAttribute("data-nxt-shortcuts", "1");
+      (doc.head || doc.documentElement).appendChild(s);
+    } catch {}
+  }
+
+  const api = { KEY, get, set, list, validId, journeyView, openJourney, decorate, wireRows, mountSwitcher, filter, cachedRoster, saveRoster, ROSTER_KEY, onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }, _fromUrl: fromUrl };
   globalThis.NXTCompany = api;
   if (globalThis.NXT) globalThis.NXT.company = api;
   if (typeof document !== "undefined" && document.addEventListener) {
     if (window.parent !== window) { const id = fromUrl(location); if (id) write(id); }
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => wireRows(document)); else wireRows(document);
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => { wireRows(document); loadShortcuts(document); }); else { wireRows(document); loadShortcuts(document); }
   }
 })();
