@@ -133,7 +133,22 @@
     return out;
   }
 
-  const api = { BANNER, TAX_YEAR, PROVINCES, SITUATIONS, DEDUCTIONS, FIELD_SCREEN, T2_STEPS, validSin, maskSin, meter, screenFor, profileInputs, outOfScope, searchSlips, slipForm, slipFromForm, toCents, mergeSlipInputs, reviewItems, t2Visible, t2Answer };
+
+  // ---- Filing fee (Stripe Checkout). Amount always comes from the server quote.
+  function formatFee(cents, currency) {
+    if (cents === null || cents === undefined || cents === "") return "—";
+    const n = Number(cents);
+    if (!Number.isFinite(n)) return "—";
+    const cur = String(currency || "cad").toUpperCase();
+    return cur + " $" + (n / 100).toFixed(2);
+  }
+  function payScreenState(status) {
+    const s = status || {};
+    if (s.fee_paid) return { kind: "paid", title: "Filing fee paid", cta: null };
+    if (!s.stripe_enabled) return { kind: "disabled", title: "Online payment is not available", cta: null };
+    return { kind: "ready", title: "Pay the filing fee", cta: "Pay with card" };
+  }
+  const api = { BANNER, TAX_YEAR, PROVINCES, SITUATIONS, DEDUCTIONS, FIELD_SCREEN, T2_STEPS, validSin, maskSin, meter, screenFor, profileInputs, outOfScope, searchSlips, slipForm, slipFromForm, toCents, mergeSlipInputs, reviewItems, t2Visible, t2Answer, formatFee, payScreenState };
   root.NXTTurboCore = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

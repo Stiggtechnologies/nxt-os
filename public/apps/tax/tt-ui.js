@@ -18,7 +18,7 @@
     const m = C.meter(calcOf(r));
     return `<div class="tt-meter tt-${m.kind}" aria-live="polite"><span>${esc(m.label)}</span><strong>${m.kind === "pending" ? "—" : money(m.cents)}</strong><small>${Number(r.tax_year)} · ${esc(r.jurisdiction)}</small></div>`;
   }
-  const SCREENS = [["profile", "About you"], ["situations", "What applies"], ["slips", "Slips"], ["deductions", "Deductions & credits"], ["review", "Review"]];
+  const SCREENS = [["profile", "About you"], ["situations", "What applies"], ["slips", "Slips"], ["deductions", "Deductions & credits"], ["review", "Review"], ["pay", "Pay fee"]];
   function steps(id, cur) { return `<ol class="tt-steps">${SCREENS.map(([s, l]) => `<li${s === cur ? ' aria-current="step"' : ""}><a href="#tt-t1/${encodeURIComponent(id)}?screen=${s}">${esc(l)}</a></li>`).join("")}</ol>`; }
   const provinceOptions = sel => C.PROVINCES.map(([c, n]) => `<option value="${c}"${c === sel ? " selected" : ""}>${esc(n)}</option>`).join("");
 
@@ -71,6 +71,7 @@
         const f = main.querySelector("#f");
         f.addEventListener("submit", async e => { e.preventDefault(); const s = [...f.querySelectorAll("input[name=s]:checked")].map(i => i.value); sessionStorage.setItem("tt-sit-" + id, JSON.stringify(s)); try { await commit(C.profileInputs({ full_year_resident: inputs.full_year_resident, scope_confirmed: inputs.scope_confirmed, situations: s }, inputs), "slips"); } catch (x) { err(x); } });
       } else if (screen === "slips") slipsScreen();
+      else if (screen === "pay") { pay().catch(err); }
       else if (screen === "deductions") {
         main.innerHTML = head() + `<section class="tt-card"><h2>Deductions & credits checklist</h2><form class="tt-form" id="f">${C.DEDUCTIONS.map(d => `<fieldset class="tt-ded${d.supported ? "" : " tt-off"}"><legend>${esc(d.label)}${d.supported ? "" : " — not calculated; note it for the preparer"}</legend>${d.keys.map(k => `<label>${esc(k.replace(/_cents$/, "").replace(/_/g, " "))}<input name="${k}" inputmode="decimal" value="${inputs[k] ? (inputs[k] / 100).toFixed(2) : ""}"${focus === k ? " autofocus" : ""}></label>`).join("")}${d.verify ? `<label><input type="checkbox" name="${d.verify}"${inputs[d.verify] ? " checked" : ""}${focus === d.verify ? " autofocus" : ""}> Receipts / support verified</label>` : ""}</fieldset>`).join("")}
           <button class="btn primary">Continue to review</button><p class="form-error"></p></form></section>`;
@@ -100,8 +101,34 @@
       main.innerHTML = head() + `<section class="tt-card"><h2>Review</h2>${oos.length ? `<p class="tt-scope">Outside scope: ${oos.map(esc).join(", ")}. A preparer must handle these in certified software.</p>` : ""}
         <h3>${rv.blocking.length ? rv.blocking.length + " item(s) to fix before review" : "No blocking items"}</h3><ul class="tt-list">${rv.blocking.map(item).join("")}</ul>
         <h3>Notes</h3><ul class="tt-list">${rv.notes.map(item).join("") || "<li>None.</li>"}</ul>
-        <p>${rv.ready ? "Ready for preparer review in the workpaper view." : "Not ready yet."} Filing is never done here: NETFILE is disabled.</p>
-        <a class="btn primary" href="#return/${encodeURIComponent(id)}">Open workpaper view</a> <a class="btn" href="#tt-spouse-for/${encodeURIComponent(id)}">Spouse proposals</a></section>`;
+        <p>${rv.ready ? "Ready for preparer review in the workpaper view." : "Not ready yet."} Filing is never done here: NETFILE is disabled. The Filing Desk stays blocked until the filing fee is paid.</p>
+        ${rv.ready ? `<a class="btn primary" href="#tt-t1/${encodeURIComponent(id)}?screen=pay">Continue to pay fee</a> ` : ""}<a class="btn" href="#return/${encodeURIComponent(id)}">Open workpaper view</a> <a class="btn" href="#tt-spouse-for/${encodeURIComponent(id)}">Spouse proposals</a></section>`;
+    }
+    async function pay() {
+      const status = await api("/api/tax/returns/" + encodeURIComponent(id) + "/stripe");
+      const st = C.payScreenState(status);
+      const fee = C.formatFee(status.fee_cents, status.currency);
+      const cancelled = q.get("cancelled") === "1";
+      main.innerHTML = head() + `<section class="tt-card"><h2>${esc(st.title)}</h2>
+        <p>Server-side fee: <strong>${esc(fee)}</strong>. The amount is never taken from the browser.</p>
+        ${cancelled ? `<p class="tt-scope" role="status">Checkout was cancelled. You can try again.</p>` : ""}
+        ${st.kind === "paid" ? `<p role="status">Paid. The Filing Desk fee gate is clear for this return.</p><a class="btn primary" href="#return/${encodeURIComponent(id)}">Open workpaper view</a>` : ""}
+        ${st.kind === "disabled" ? `<p class="tt-hint">Online checkout is off. A staff member can mark the fee paid on the Filing Desk, or enable Stripe (NXT_STRIPE_ENABLED).</p>` : ""}
+        ${st.kind === "ready" ? `<button class="btn primary" id="tt-pay">${esc(st.cta)}</button><p class="form-error"></p>` : ""}
+        <p class="tt-hint">After payment, Stripe notifies the server; this page refreshes payment status.</p></section>`;
+      const btn = main.querySelector("#tt-pay");
+      if (btn) btn.addEventListener("click", async () => {
+        try {
+          btn.disabled = true;
+          const sess = await api("/api/tax/returns/" + encodeURIComponent(id) + "/stripe/checkout", { method: "POST", body: {} });
+          if (sess.url) location.href = sess.url;
+          else throw new Error("Checkout session missing URL");
+        } catch (x) { err(x); btn.disabled = false; }
+      });
+      if (q.get("session_id") && !status.fee_paid) {
+        // Returning from Stripe success_url; poll once for webhook lag.
+        setTimeout(() => { location.hash = "#tt-t1/" + encodeURIComponent(id) + "?screen=pay"; }, 1500);
+      }
     }
     render();
   }

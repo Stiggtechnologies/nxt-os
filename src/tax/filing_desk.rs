@@ -29,11 +29,18 @@ pub struct DeskState {
     #[serde(default)] pub seen: Vec<SeenMark>,
     #[serde(default)] pub confirmations: Vec<DeskConfirmation>,
     #[serde(default)] pub launch: LaunchGate,
+    /// Stripe Checkout sessions / refunds for T1 filing fees (pay-before-file).
+    #[serde(default)] pub stripe_payments: Vec<super::stripe::StripePayment>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FilerGrant { pub user_id: String, pub granted_by: String, pub at: String }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FeeFlag { pub return_id: String, pub paid: bool, pub by: String, pub at: String }
+pub struct FeeFlag {
+    pub return_id: String, pub paid: bool, pub by: String, pub at: String,
+    /// Checkout session that marked this fee paid (webhook); absent for manual staff flags.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stripe_session_id: Option<String>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SeenMark { pub return_id: String, pub section: String, pub fingerprint: String, pub by: String, pub at: String }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -230,7 +237,7 @@ impl Tax {
         self.mutate(|s| {
             s.returns.iter().find(|r| r.id == rid).ok_or_else(missing)?;
             s.desk.fees.retain(|f| f.return_id != rid);
-            s.desk.fees.push(FeeFlag { return_id: rid.into(), paid: input.paid, by: by.clone(), at: at.clone() });
+            s.desk.fees.push(FeeFlag { return_id: rid.into(), paid: input.paid, by: by.clone(), at: at.clone(), stripe_session_id: None });
             audit(s, rid, if input.paid { "filing_fee_paid" } else { "filing_fee_cleared" }, format!("by {by}"));
             Ok(json!({"return_id":rid,"fee_paid":input.paid,"by":by,"at":at}))
         }).await
