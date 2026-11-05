@@ -129,8 +129,8 @@ async fn action(
     ok(service::block_action(&ledger.ledger, body).await)
 }
 
-async fn voice(State(scope): S, Json(body): Json<super::voice::VoiceTurn>) -> Result<Json<Value>, ApiError> {
-    ok(super::voice::handle(&scope, body).await)
+async fn voice(State(scope): S, Extension(id): Extension<Identity>, Json(body): Json<super::voice::VoiceTurn>) -> Result<Json<Value>, ApiError> {
+    ok(super::voice::handle_as(&scope, &id, body).await)
 }
 
 async fn realtime(State(scope): S, Json(body): Json<super::speech::RealtimeOffer>) -> Result<Json<Value>, ApiError> {
