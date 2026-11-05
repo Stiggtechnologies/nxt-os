@@ -88,6 +88,10 @@ async fn filing_desk_is_internal_filer_only_two_person_append_only_and_launch_ga
     let (_, desk) = onboard(&r, "desk", "Dana Desk", "front_desk", all.clone()).await;
     let (_, ro) = onboard(&r, "robin", "Robin Readonly", "read_only", all.clone()).await;
 
+    // The guided T1 Slips screen aggregates slips statelessly; scoped preparers must reach it.
+    let agg = ok(&r, "POST", "/api/tax/slips/aggregate", &prep, Some(json!({"slips":[{"kind":"T4","boxes":{"14":58000}}]}))).await;
+    assert!(agg.is_object(), "{agg}");
+    assert_eq!(st(&r, "POST", "/api/tax/slips/aggregate", None, Some(json!({"slips":[]}))).await, 401);
     // Any staff may ask what they can do; only filers/admins reach the desk itself.
     let me = ok(&r, "GET", "/api/tax/desk/me", &filer, None).await;
     assert_eq!(me["filer"], false);
