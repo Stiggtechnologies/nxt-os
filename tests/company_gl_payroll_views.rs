@@ -79,3 +79,17 @@ async fn general_ledger_date_filter_keeps_true_running_balances() {
     assert_eq!(s.general_ledger_range("co", 0, 10, Some("2024-13-01"), None).await.unwrap_err().0, 400);
     assert_eq!(s.general_ledger_range("co", 0, 10, Some("2024-06-01"), Some("2024-01-01")).await.unwrap_err().0, 400);
 }
+
+/// The company-book UI refuses any book page without the authority controls (bookBoundary),
+/// so the GL and payroll views must carry them exactly like the other company-book reads.
+#[tokio::test]
+async fn gl_and_payroll_views_carry_book_authority_controls() {
+    let s = committed().await;
+    for v in [s.general_ledger_page("co", 0, 100).await.ok().unwrap(), s.payroll_view("co").await.ok().unwrap()] {
+        assert_eq!(v["controls"]["source_authoritative"], true);
+        assert_eq!(v["controls"]["parallel_test"], true);
+        assert_eq!(v["controls"]["live_cutover_allowed"], false);
+        assert_eq!(v["offset"], 0);
+        assert!(v["total"].is_u64());
+    }
+}

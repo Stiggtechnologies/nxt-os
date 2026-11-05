@@ -72,6 +72,7 @@ impl CompanyBooks {
             "debit_total_cents": dr.to_string(), "credit_total_cents": cr.to_string(),
             "offset": offset, "limit": limit, "from": from, "to": to, "rows": rows,
             "has_more": next < total_lines, "next_offset": (next < total_lines).then_some(next),
+            "controls": controls(),
         }))
     }
 
@@ -108,7 +109,9 @@ impl CompanyBooks {
             "transactions_total": txns.len(),
             "by_year": years.iter().map(|(y, s)| json!({"year": y, "transactions": s.0,
                 "debit_cents": s.1.to_string(), "credit_cents": s.2.to_string()})).collect::<Vec<_>>(),
+            "offset": 0, "total": txns.len(), "has_more": false,
             "transactions": txns,
+            "controls": controls(),
         }))
     }
 }
