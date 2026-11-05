@@ -79,6 +79,7 @@ pub enum VoiceIntent {
     RefuseApprove,
     RefusePost,
     RefuseFile,
+    StartTaxReturn,
     Navigate,
     Help,
 }
@@ -186,6 +187,9 @@ pub fn classify(transcript: &str, channel: &str) -> Result<VoiceIntent, String> 
     if is_cash(&heard) {
         return Ok(VoiceIntent::Cash);
     }
+    if is_start_tax_return(&heard) {
+        return Ok(VoiceIntent::StartTaxReturn);
+    }
     if is_navigation(&heard) {
         return Ok(VoiceIntent::Navigate);
     }
@@ -215,6 +219,67 @@ fn is_navigation(heard: &str) -> bool {
         || heard.contains("journal")
         || heard.contains("advocate");
     verb && noun
+}
+
+fn is_start_tax_return(heard: &str) -> bool {
+    let verb = ["start", "begin", "create", "new", "open", "set up", "prepare"].iter().any(|v| heard.contains(v));
+    let noun = heard.contains("tax return") || heard.split(' ').any(|w| w == "t1") || heard.contains("personal return");
+    verb && noun && heard.contains(" for ")
+}
+
+/// The named person after the last " for " in what was heard, with spoken filler removed.
+pub fn spoken_client_name(transcript: &str) -> Option<String> {
+    let lower = transcript.to_lowercase();
+    let at = lower.rfind(" for ")?;
+    let raw = &transcript[at + 5..];
+    let mut words: Vec<&str> = raw
+        .split(|c: char| c.is_whitespace() || matches!(c, ',' | '.' | '!' | '?' | ';' | ':'))
+        .filter(|w| !w.is_empty())
+        .collect();
+    while let Some(last) = words.last() {
+        let l = last.to_lowercase();
+        if ["please", "nixon", "now", "thanks", "2025", "t1"].contains(&l.as_str()) { words.pop(); } else { break; }
+    }
+    (!words.is_empty()).then(|| words.join(" "))
+}
+
+const T1_YEAR: i32 = 2025;
+
+async fn start_tax_return(scope: &Scope, staff: &crate::firm::staff::Identity, transcript: &str) -> Result<VoiceAnswer, NixonError> {
+    if staff.staff_id().is_none() {
+        return Ok(answer_shell("start_tax_return", "Sign in as yourself to start a tax return by voice. The shared key can't.".into(), None, "none"));
+    }
+    let Some(spoken) = spoken_client_name(transcript) else {
+        return Ok(answer_shell("start_tax_return", "Whose return? Say start a tax return for, then the person's name.".into(), None, "none"));
+    };
+    let name = match service::require_person(&spoken) {
+        Ok(n) => n,
+        Err(_) => return Ok(answer_shell("start_tax_return", "I need the person's name, like start a tax return for Jane Doe.".into(), None, "none")),
+    };
+    let fail = |e: crate::referral::routes::ApiError| NixonError::new(e.0.as_u16(), e.1);
+    let returns = scope.tax.list(Some("T1")).await.map_err(fail)?;
+    let same = |r: &&serde_json::Value| r["name"].as_str().is_some_and(|n| n.trim().eq_ignore_ascii_case(&name));
+    let visible = |r: &&serde_json::Value| { let c = r["client_ref"].as_str().unwrap_or(""); staff.all_clients() || staff.can_client(c) };
+    let open = |id: &str| Some(navigate::OpenTarget { app: "tax".into(), view: format!("return/{id}") });
+    if let Some(r) = returns.iter().filter(same).filter(visible).find(|r| r["tax_year"].as_i64() == Some(T1_YEAR as i64)) {
+        let id = r["id"].as_str().unwrap_or_default().to_string();
+        let mut a = answer_shell("start_tax_return", format!("{name} already has a {T1_YEAR} T1. Opening it. Status {}.", r["status"].as_str().unwrap_or("draft")), None, "none");
+        a.open = open(&id);
+        return Ok(a);
+    }
+    if !staff.all_clients() {
+        return Ok(answer_shell("start_tax_return", format!("I couldn't find a {T1_YEAR} T1 for {name} among your clients. Start it from the tax screen with the client reference."), None, "none"));
+    }
+    let client_ref = returns.iter().filter(same).find_map(|r| r["client_ref"].as_str().filter(|c| !c.is_empty()).map(str::to_string)).unwrap_or_default();
+    let input = crate::tax::models::ReturnInput {
+        program: "T1".into(), tax_year: T1_YEAR, jurisdiction: "AB".into(), name: name.clone(), client_ref,
+        period_start: None, period_end: None, inputs: serde_json::json!({}), parties: vec![], corporate: None,
+        notes: format!("Started by voice by {}. Draft only; filing is off.", staff.label()), expected_revision: None,
+    };
+    let created = scope.tax.save(None, input).await.map_err(fail)?;
+    let mut a = answer_shell("start_tax_return", format!("I started a {T1_YEAR} T1 draft for {name}. Opening it. Nothing is filed."), None, "tax_return_drafted");
+    a.open = open(&created.id);
+    Ok(a)
 }
 
 fn is_refusal_file(heard: &str) -> bool {
@@ -297,6 +362,10 @@ fn answer_shell(intent: &str, say: String, review_id: Option<String>, effect: &s
 }
 
 pub async fn handle(scope: &Scope, turn: VoiceTurn) -> Result<VoiceAnswer, NixonError> {
+    handle_as(scope, &crate::firm::staff::Identity::break_glass(), turn).await
+}
+
+pub async fn handle_as(scope: &Scope, staff: &crate::firm::staff::Identity, turn: VoiceTurn) -> Result<VoiceAnswer, NixonError> {
     let ledger = scope.ledger.as_ref();
     if turn.transcript.chars().count() > 2_000 {
         return Err(NixonError::new(400, "transcript is too long"));
@@ -372,10 +441,11 @@ pub async fn handle(scope: &Scope, turn: VoiceTurn) -> Result<VoiceAnswer, Nixon
             None,
             "none",
         ),
+        VoiceIntent::StartTaxReturn => start_tax_return(scope, staff, &turn.transcript).await?,
         VoiceIntent::Navigate => open_records(scope, &heard).await?,
         VoiceIntent::Help => answer_shell(
             "help",
-            "I can run a review, explain a finding, show reconciliation gaps, give the cash position, or open a module, account, invoice, client, or engagement. I can't post, file, or approve.".into(),
+            "I can run a review, start or open a T1 for a named client, explain a finding, show reconciliation gaps, give the cash position, or open a module, account, invoice, client, or engagement. I can't post, file, or approve.".into(),
             None,
             "none",
         ),
