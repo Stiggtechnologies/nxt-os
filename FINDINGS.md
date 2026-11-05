@@ -26,3 +26,12 @@ Base: `main` @ 9fc1679 (#151), reviewed 2026-11-05. Live site https://os.nxtcorp
 
 ## Not touched
 .github/workflows, PR #4, PR #145, the `live_cutover_allowed` flags. Nothing was merged or deployed.
+
+## Implemented (follow-up, findings 1–7 and 10)
+- **1 Canonical alias resolver** — `src/client_alias.rs`: before routing, `/api/journeys/{id}`, `/api/company-books/{id}`, `/api/company-ledger/{id}` and `/api/nixon/clients/{id}` are rewritten to the alias (hash ↔ slug, from `client_directory::AliasGroups`) that already holds that module's record. Read-only; 15 s cache. Staff scope honours the original id (`AliasFrom`). `/api/clients` rows now carry `aliases`.
+- **2 Switcher** built from `/api/clients` (alias-merged, staff-scoped); roster is the fallback.
+- **3 Duplicate "Open ledger"** — opening under one alias lands on the alias that already holds the book/ledger (server-side), so a second book cannot be started from the other id.
+- **4 Bridge dedupe** — the ledger bridge folds hash/slug rows into one using the switcher's cached alias directory (reused, fetched once only if absent — finding 10).
+- **5 One ID rule** — `NXTCompany.ID_RE = ^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$`, valid for both server validators; the bridge uses it.
+- **6 Scope labels/filters** — Tax, Engagements, Signatures filter by the active company's aliases with a "Showing records for X only" note; Referrals and GuardVoice show "Firm-wide view: not filtered".
+- **7 Nixon** — the id button now sets the active company and opens the journey (same as the row) and shows the company name. Migrations rows: row → journey, "Open company" → migration view, stated in a tooltip.

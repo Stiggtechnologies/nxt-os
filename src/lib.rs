@@ -21,6 +21,7 @@ pub mod source_import;
 pub mod import_parsers;
 pub mod client_journey;
 pub mod client_directory;
+pub mod client_alias;
 
 use axum::Router;
 use std::sync::Arc;
@@ -63,7 +64,16 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
     let journeys = Arc::new(client_journey::service::Journeys::new(journey_store, capabilities));
     let backup = agent::openai::OpenAi::from_env().map(|m| Arc::new(m) as Arc<dyn agent::Model>);
     let agent = agent::Claude::from_env().map(|m| agent::Agent::new(journeys.clone(), Arc::new(m)).with_backup(backup));
-    Router::new()
+    let directory = Arc::new(client_directory::Directory {
+        company_books: company_books.clone(),
+        migrations: migrations.clone(),
+        tax: tax.clone(),
+        engagements: engagements.clone(),
+        signatures: signatures.clone(),
+        firm: firm.clone(),
+    });
+    let resolver = Arc::new(client_alias::Resolver::new(directory.clone(), journeys.clone(), ledger.store.clone()));
+    let inner = Router::new()
         .merge(ledger::routes::router(ledger.clone()))
         .merge(ledger::routes::company_router(ledger.store.clone(), company_books.clone()))
         .merge(firm::router(firm.clone()))
@@ -73,14 +83,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         .merge(signatures::router(signatures.clone()))
         .merge(company_books::router(company_books.clone()))
         .merge(company_books::source_lists::router(source_lists))
-        .merge(client_directory::router(Arc::new(client_directory::Directory {
-            company_books: company_books.clone(),
-            migrations: migrations.clone(),
-            tax: tax.clone(),
-            engagements: engagements.clone(),
-            signatures: signatures.clone(),
-            firm: firm.clone(),
-        })))
+        .merge(client_directory::router(directory.clone()))
         .merge(crate::nixon_finance::routes::router(crate::nixon_finance::voice::Scope {
             ledger: ledger.clone(),
             firm: firm.clone(),
@@ -95,7 +98,9 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
         .merge(source_import::router(source_import))
-        .merge(client_journey::router(journeys, agent))
+        .merge(client_journey::router(journeys, agent));
+    // Company alias resolution runs before routing, so a moved path reaches its own handler.
+    Router::new().fallback_service(inner).layer(axum::middleware::from_fn_with_state(resolver, client_alias::rewrite))
 }
 
 /// Builds the app with storage chosen per-module by `make_store`.

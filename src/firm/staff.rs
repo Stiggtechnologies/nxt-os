@@ -778,7 +778,8 @@ where F: FnOnce(String) -> Fut, Fut: std::future::Future<Output = Option<String>
         let rid = rest.split('/').next().unwrap_or("").to_string();
         if reserved.contains(&rid.as_str()) { return denied("firm-wide views need an account with access to all clients").into_response(); }
         return match lookup(rid).await {
-            Some(c) if id.can_client(&c) => {
+            // A path the alias resolver moved stays open to staff assigned under the id they asked for.
+            Some(c) if id.can_client(&c) || req.extensions().get::<crate::client_alias::AliasFrom>().is_some_and(|a| id.can_client(&a.0)) => {
                 if matches!(*req.method(), Method::GET | Method::HEAD) { return next.run(req).await; }
                 // A write may not move the record to a client outside the caller's scope.
                 let (parts, body) = req.into_parts();

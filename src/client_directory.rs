@@ -190,6 +190,85 @@ impl Directory {
     }
 }
 
+/// Alias groups for company ids: every roster and book id (original case) keyed by its lowercased
+/// form, mapped to every id of the same company. Built from the roster and the book index only.
+#[derive(Default, Clone)]
+pub struct AliasGroups {
+    groups: HashMap<String, Vec<String>>,
+    books: BTreeSet<String>,
+    names: HashMap<String, String>,
+}
+
+impl AliasGroups {
+    /// Every known id of the company `id` names, `id` first. Unknown ids stand alone.
+    pub fn members(&self, id: &str) -> Vec<String> {
+        let mut out = vec![id.to_string()];
+        for m in self.groups.get(&id.trim().to_ascii_lowercase()).into_iter().flatten() {
+            if !out.iter().any(|o| o.eq_ignore_ascii_case(m)) { out.push(m.clone()); }
+        }
+        out
+    }
+    pub fn has_book(&self, id: &str) -> bool { self.books.contains(&id.to_ascii_lowercase()) }
+    /// The id holding this company's book, when an alias (not `id` itself) holds it.
+    pub fn book_alias(&self, id: &str) -> Option<String> {
+        if self.has_book(id) { return None; }
+        self.members(id).into_iter().skip(1).find(|m| self.has_book(m))
+    }
+    pub fn name(&self, id: &str) -> Option<&str> { self.names.get(&id.to_ascii_lowercase()).map(String::as_str) }
+}
+
+/// One roster or book entry fed to [`AliasGroups::build`].
+pub struct AliasInput<'a> { pub id: &'a str, pub name: Option<&'a str>, pub source_ref: Option<&'a str>, pub book: bool, pub archived: bool, pub stage: Option<&'a str> }
+
+impl AliasGroups {
+    pub fn build(items: &[AliasInput]) -> Self {
+        let mut rows = Rows::default();
+        let mut out = AliasGroups::default();
+        for it in items.iter().filter(|i| !i.book) {
+            rows.roster(it.id, it.name, it.source_ref);
+            if let Some(n) = it.name { out.names.insert(it.id.to_ascii_lowercase(), n.to_string()); }
+        }
+        for it in items.iter().filter(|i| i.book) {
+            rows.book(it.id, it.name, it.source_ref, it.stage);
+            if !it.archived { out.books.insert(it.id.to_ascii_lowercase()); }
+            if let Some(n) = it.name { out.names.entry(it.id.to_ascii_lowercase()).or_insert_with(|| n.to_string()); }
+        }
+        let mut by_key: HashMap<String, Vec<String>> = HashMap::new();
+        for it in items.iter().filter(|i| !i.id.is_empty()) {
+            if let Some(k) = rows.key(it.id) { let g = by_key.entry(k).or_default(); if !g.iter().any(|x| x == it.id) { g.push(it.id.to_string()); } }
+        }
+        for g in by_key.into_values().filter(|g| g.len() > 1) {
+            for id in &g { out.groups.insert(id.to_ascii_lowercase(), g.clone()); }
+        }
+        out
+    }
+}
+
+impl Directory {
+    pub async fn alias_groups(&self) -> AliasGroups {
+        let roster = self.company_books.roster_view().await.ok();
+        let mut pages = vec![];
+        let mut offset = 0;
+        for _ in 0..BOOK_PAGES {
+            let Ok(page) = self.company_books.list_page(offset, BOOK_PAGE).await else { break };
+            let n = page["companies"].as_array().map_or(0, Vec::len);
+            let more = page["has_more"] == json!(true);
+            pages.push(page);
+            if !more || n == 0 { break; }
+            offset += n;
+        }
+        let mut items = vec![];
+        for c in roster.iter().flat_map(|v| v["companies"].as_array().into_iter().flatten()) {
+            items.push(AliasInput { id: c["company_id"].as_str().unwrap_or(""), name: c["company_name"].as_str(), source_ref: c["source_navigation_ref"].as_str(), book: false, archived: false, stage: None });
+        }
+        for b in pages.iter().flat_map(|p| p["companies"].as_array().into_iter().flatten()) {
+            let company = &b["previews"][0]["company"];
+            items.push(AliasInput { id: b["company_id"].as_str().unwrap_or(""), name: company["name"].as_str(), source_ref: company["source_company_id"].as_str(), book: true, archived: b["head"]["archived"] == json!(true), stage: b["stage"].as_str() });
+        }
+        AliasGroups::build(&items)
+    }
+}
+
 fn summary(r: &Row) -> Value {
     json!({"client_ref": r.client_ref, "name": r.name, "in_source_roster": r.in_source_roster, "source_snapshots": r.source_snapshots,
         "book_stage": r.book_stage, "tax_returns": r.tax_returns, "engagements": r.engagements,
@@ -203,7 +282,8 @@ async fn list(State(d): S, identity: Option<axum::Extension<crate::firm::staff::
     let mut clients: Vec<&Row> = rows.rows.values().collect();
     clients.sort_by_key(|r| r.name.as_deref().unwrap_or(&r.client_ref).to_ascii_lowercase());
     let scoped = identity.is_some_and(|i| !i.all_clients());
-    Json(json!({"clients": clients.into_iter().map(summary).collect::<Vec<_>>(), "unavailable": unavailable, "not_loaded": not_loaded(),
+    let clients: Vec<Value> = clients.into_iter().map(|r| { let mut v = summary(r); if let Some(k) = rows.key(&r.client_ref) { v["aliases"] = json!(rows.refs_of(&k).into_iter().filter(|a| !a.starts_with("qbo-selector:") && !a.contains(':')).collect::<Vec<_>>()); } v }).collect();
+    Json(json!({"clients": clients, "unavailable": unavailable, "not_loaded": not_loaded(),
         "scoped": scoped, "source_authoritative": true, "live_cutover_allowed": false}))
 }
 
@@ -223,7 +303,9 @@ async fn detail(State(d): S, Path(client): Path<String>) -> Result<Json<Value>, 
         .filter(|e| same(e, "client_ref")).map(|e| pick(e, &["id", "title", "status"])).collect();
     let snapshots: Vec<Value> = d.migrations.list().await.ok().and_then(|v| v["snapshots"].as_array().cloned()).unwrap_or_default().iter()
         .filter(|s| same(s, "cohort_ref")).map(|s| pick(s, &["id", "company_name"])).collect();
-    Ok(Json(json!({"client": summary(&row), "tax_returns": tax, "engagements": engagements, "signature_envelopes": envelopes,
+    let mut client = summary(&row);
+    client["aliases"] = json!(refs.iter().filter(|a| !a.contains(':')).collect::<Vec<_>>());
+    Ok(Json(json!({"client": client, "tax_returns": tax, "engagements": engagements, "signature_envelopes": envelopes,
         "source_snapshots": snapshots, "firm_work": d.firm.client_work(&row.client_ref, None).await.ok(),
         "unavailable": unavailable, "not_loaded": not_loaded(), "source_authoritative": true, "live_cutover_allowed": false})))
 }
@@ -266,6 +348,21 @@ mod tests {
         assert_eq!(row.client_ref, "qbo-client-26e212deac6c0219bd4a");
         let key = rows.key("qbo-1589548-alberta-ltd").unwrap();
         assert!(rows.refs_of(&key).contains("qbo-1589548-alberta-ltd"));
+    }
+
+    #[test]
+    fn alias_groups_join_hash_and_slug_and_find_the_book() {
+        let items = [
+            AliasInput { id: "qbo-client-26e212deac6c0219bd4a", name: Some("1589548 ALBERTA LTD."), source_ref: Some("qbo-selector:idsMenuItem4"), book: false, archived: false, stage: None },
+            AliasInput { id: "qbo-1589548-alberta-ltd", name: Some("1589548 Alberta Ltd"), source_ref: None, book: true, archived: false, stage: Some("import_committed") },
+            AliasInput { id: "qbo-client-other", name: Some("Other Co"), source_ref: None, book: false, archived: false, stage: None },
+        ];
+        let g = AliasGroups::build(&items);
+        assert_eq!(g.members("qbo-client-26e212deac6c0219bd4a"), vec!["qbo-client-26e212deac6c0219bd4a", "qbo-1589548-alberta-ltd"]);
+        assert_eq!(g.book_alias("qbo-client-26e212deac6c0219bd4a").as_deref(), Some("qbo-1589548-alberta-ltd"));
+        assert_eq!(g.book_alias("qbo-1589548-alberta-ltd"), None);
+        assert_eq!(g.members("qbo-client-other"), vec!["qbo-client-other"]);
+        assert_eq!(g.name("qbo-client-26e212deac6c0219bd4a"), Some("1589548 ALBERTA LTD."));
     }
 
     #[test]

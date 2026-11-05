@@ -91,7 +91,7 @@
   }
   function renderWorkRows() {
     const host = $("#return-table"); if (!host) return;
-    const records = state.returns.filter(r => (!state.program || r.program.toLowerCase() === state.program.toLowerCase()) && (!state.year || String(r.tax_year) === String(state.year)) && (!state.status || r.status === state.status) && (!state.search || `${r.name} ${r.client_ref || ""}`.toLowerCase().includes(state.search.toLowerCase())));
+    const records = state.returns.filter(r => (!window.NXTCompany || NXTCompany.inScope(r.client_ref)) && (!state.program || r.program.toLowerCase() === state.program.toLowerCase()) && (!state.year || String(r.tax_year) === String(state.year)) && (!state.status || r.status === state.status) && (!state.search || `${r.name} ${r.client_ref || ""}`.toLowerCase().includes(state.search.toLowerCase())));
     host.innerHTML = table(["Name / reference", "Program", "Year", "Jurisdiction", "Status", "Calculation", "Updated", ""], records, r => `<tr><td class="return-name"><strong>${esc(r.name)}</strong><div class="muted">${esc(r.client_ref || "No client reference")}</div></td><td>${esc(r.program.toUpperCase())}</td><td>${Number(r.tax_year)}</td><td>${esc(r.jurisdiction)}</td><td>${badge(r.status)}</td><td>${r.calculation ? badge(r.calculation.result?.supported ? "good" : "warning", r.calculation.input_revision === r.input_revision ? "Calculated" : "Needs recalculation") : '<span class="muted">Not calculated</span>'}</td><td>${esc(stamp(r.updated_at))}</td><td>${button("Open", "open-return", r.id, "sm")}</td></tr>`, state.returns.length ? "No matching workpapers" : "Create your first tax workpaper");
   }
   async function newReturn() {

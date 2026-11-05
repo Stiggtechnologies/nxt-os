@@ -7,7 +7,9 @@
   "use strict";
   const KEY = "nxt_active_client";
   const listeners = new Set();
-  const validId = (id) => typeof id === "string" && id.length > 0 && id.length <= 200 && !/[\u0000-\u001f]/.test(id);
+  // One id rule for every screen, matching the server: valid for both journeys (valid_client_id) and company books (valid_id).
+  const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/;
+  const validId = (id) => typeof id === "string" && ID_RE.test(id);
   const read = () => { try { return localStorage.getItem(KEY) || ""; } catch { return ""; } };
   const write = (id) => { try { id ? localStorage.setItem(KEY, id) : localStorage.removeItem(KEY); } catch {} };
 
@@ -53,15 +55,56 @@
 
   // The company list honours scoping: the roster is firm-wide (admins and '*' staff); a scoped
   // account falls back to its own assigned clients from the client directory.
+  // The client directory is alias-merged (one row per company, hash and slug ids folded together) and
+  // already scoped for assigned staff, so it is the one company list. The raw roster is a fallback.
   async function list(api, { signal } = {}) {
     try {
-      const r = await api("/api/company-books/roster", { signal });
-      return (r.companies || []).map((c) => ({ id: String(c.company_id), name: c.company_name || "" })).filter((c) => validId(c.id));
+      const d = await api("/api/clients", { signal });
+      return (d.clients || []).map((c) => ({ id: String(c.client_ref), name: c.name || "", aliases: (c.aliases || []).map(String).filter(validId) })).filter((c) => validId(c.id));
     } catch (e) {
       if (e.status === 401 || signal?.aborted) throw e;
-      const d = await api("/api/clients", { signal });
-      return (d.clients || []).map((c) => ({ id: String(c.client_ref), name: c.name || "" })).filter((c) => validId(c.id));
+      const r = await api("/api/company-books/roster", { signal });
+      return (r.companies || []).map((c) => ({ id: String(c.company_id), name: c.company_name || "" })).filter((c) => validId(c.id));
     }
+  }
+
+  // Every id (lowercased) of the company `id` names, from the cached directory; the id alone when unknown.
+  function aliasesOf(id, rows = cachedRoster() || []) {
+    const lower = String(id || "").toLowerCase();
+    const set = new Set(lower ? [lower] : []);
+    const row = rows.find((r) => r.id.toLowerCase() === lower || (r.aliases || []).some((a) => a.toLowerCase() === lower));
+    if (row) { set.add(row.id.toLowerCase()); (row.aliases || []).forEach((a) => set.add(a.toLowerCase())); }
+    return set;
+  }
+  // The canonical (directory) id for any alias.
+  function canonical(id, rows = cachedRoster() || []) {
+    const lower = String(id || "").toLowerCase();
+    const row = rows.find((r) => r.id.toLowerCase() === lower || (r.aliases || []).some((a) => a.toLowerCase() === lower));
+    return row ? row.id : id;
+  }
+  function nameOf(id, rows = cachedRoster() || []) {
+    const lower = String(id || "").toLowerCase();
+    const row = rows.find((r) => r.id.toLowerCase() === lower || (r.aliases || []).some((a) => a.toLowerCase() === lower));
+    return (row && row.name) || "";
+  }
+  // Whether a record's client reference belongs to the active company (always true in the firm workspace).
+  function inScope(ref, active = get()) {
+    if (!active) return true;
+    return aliasesOf(active).has(String(ref || "").trim().toLowerCase());
+  }
+  // Apps say how they treat the active company with <body data-company-scope="filtered|firm-wide">.
+  function scopeBanner(doc = document) {
+    try {
+      const mode = doc.body && doc.body.dataset && doc.body.dataset.companyScope;
+      const id = get();
+      if (!mode || !id || doc.querySelector("[data-nxt-scope-note]")) return;
+      const label = nameOf(id) || id;
+      const note = doc.createElement("div");
+      note.setAttribute("data-nxt-scope-note", mode); note.setAttribute("role", "status");
+      note.style.cssText = "padding:6px 14px;font-size:13px;background:var(--hover,rgba(127,127,127,.12));border-bottom:1px solid var(--line,rgba(127,127,127,.25))";
+      note.textContent = mode === "filtered" ? "Showing records for " + label + " only. Choose Firm workspace in the header to see every client." : "Firm-wide view: this module is not filtered by the active company (" + label + ").";
+      doc.body.insertBefore(note, doc.body.firstChild);
+    } catch {}
   }
 
   // Rows: any element with data-client-row="<id>" opens that client's journey and makes it active.
@@ -160,11 +203,11 @@
     } catch {}
   }
 
-  const api = { KEY, get, set, list, validId, journeyView, openJourney, decorate, wireRows, mountSwitcher, filter, cachedRoster, saveRoster, ROSTER_KEY, onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }, _fromUrl: fromUrl };
+  const api = { KEY, ID_RE, get, set, list, validId, aliasesOf, canonical, nameOf, inScope, scopeBanner, journeyView, openJourney, decorate, wireRows, mountSwitcher, filter, cachedRoster, saveRoster, ROSTER_KEY, onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }, _fromUrl: fromUrl };
   globalThis.NXTCompany = api;
   if (globalThis.NXT) globalThis.NXT.company = api;
   if (typeof document !== "undefined" && document.addEventListener) {
     if (window.parent !== window) { const id = fromUrl(location); if (id) write(id); }
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => { wireRows(document); loadShortcuts(document); }); else { wireRows(document); loadShortcuts(document); }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => { wireRows(document); loadShortcuts(document); scopeBanner(document); }); else { wireRows(document); loadShortcuts(document); scopeBanner(document); }
   }
 })();
