@@ -12,6 +12,7 @@ pub mod t5013_cca;
 pub mod spouse_optimize;
 pub mod t2_intake;
 pub mod filing_desk;
+pub mod stripe;
 mod routes;
 pub use routes::router;
 
@@ -171,6 +172,8 @@ impl Tax {
         }
         Ok(())
     }
+    pub(crate) async fn load_state(&self) -> TResult<TaxState> { self.load().await }
+    pub(crate) async fn mutate_state<T>(&self, f: impl FnMut(&mut TaxState) -> TResult<T>) -> TResult<T> { self.mutate(f).await }
     async fn load(&self) -> TResult<TaxState> { Ok(self.store.get_json(STATE_KEY).await?.unwrap_or_default()) }
     async fn mutate<T>(&self, mut f: impl FnMut(&mut TaxState) -> TResult<T>) -> TResult<T> {
         for _ in 0..16 {

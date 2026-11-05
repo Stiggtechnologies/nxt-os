@@ -92,6 +92,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
             referrals: referrals.clone(),
             journeys: journeys.clone(),
         }))
+        .merge(tax::stripe::router(std::sync::Arc::new(tax::stripe::StripePay::new(tax.clone(), ledger.clone()))))
         .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
         .merge(source_import::router(source_import))
