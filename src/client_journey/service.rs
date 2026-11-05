@@ -50,6 +50,9 @@ pub struct JourneyRecord {
     /// Append-only record of every agent action, newest last (bounded).
     #[serde(default)]
     pub agent_log: Vec<AgentAction>,
+    /// Where the person entered from (Nixon start URL), when entry points are enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<super::entry::EntrySource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,6 +174,7 @@ impl Journeys {
             "agent_log": r.agent_log.iter().rev().take(50).rev().collect::<Vec<_>>(),
             "ledger": r.journey.ledger,
             "created_at": r.created_at,
+            "entry": r.entry,
         })
     }
 
@@ -193,6 +197,10 @@ impl Journeys {
     }
 
     pub async fn create(&self, client: &str, sources: SourceProfile) -> Result<Value> {
+        self.create_with_entry(client, sources, None).await
+    }
+
+    pub async fn create_with_entry(&self, client: &str, sources: SourceProfile, entry: Option<super::entry::EntrySource>) -> Result<Value> {
         if !valid_client_id(client) {
             return Err(bad("invalid client id"));
         }
@@ -200,7 +208,7 @@ impl Journeys {
         if self.store.smembers(INDEX).await.map_err(storage)?.len() >= MAX_JOURNEYS {
             return Err(ApiError(StatusCode::CONFLICT, "journey capacity reached".into()));
         }
-        let rec = JourneyRecord { journey: ClientJourney::new(&self.def, client), sources, created_at: now(), last_assessment: None, pending_review: None, agent_log: Vec::new() };
+        let rec = JourneyRecord { journey: ClientJourney::new(&self.def, client), sources, created_at: now(), last_assessment: None, pending_review: None, agent_log: Vec::new(), entry };
         let raw = serde_json::to_string(&rec).map_err(storage)?;
         if !self.store.set_nx(&key(client), &raw).await.map_err(storage)? {
             return Err(ApiError(StatusCode::CONFLICT, "a journey already exists for this client".into()));

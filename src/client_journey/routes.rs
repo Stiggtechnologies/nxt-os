@@ -31,6 +31,9 @@ struct CreateBody {
     client_id: String,
     #[serde(default)]
     sources: SourceProfile,
+    /// Start-URL source/UTM fields; refused while entry points are disabled.
+    #[serde(default)]
+    entry: Option<super::entry::EntryQuery>,
 }
 
 #[derive(Deserialize)]
@@ -46,6 +49,7 @@ pub fn router(journeys: Arc<Journeys>, agent: Option<Agent>) -> Router {
     let api = Router::new()
         .route("/api/journeys", get(list).post(create))
         .route("/api/journeys/coverage", get(coverage))
+        .route("/api/nixon/start", get(entry_start))
         .route("/api/journeys/reviews", get(reviews))
         .route("/api/journeys/{client}/work", post(work))
         .route("/api/journeys/{client}", get(detail))
@@ -86,7 +90,25 @@ async fn coverage(State(api): S) -> Json<Value> {
 }
 async fn create(State(api): S, Extension(id): Extension<Identity>, Json(b): Json<CreateBody>) -> R {
     guard(&id, &b.client_id)?;
-    Ok(Json(api.journeys.create(&b.client_id, b.sources).await?))
+    let entry = match b.entry {
+        None => None,
+        Some(q) => {
+            if !super::entry::enabled() { return Err(entry_off()); }
+            Some(super::entry::classify(&q).map_err(|e| ApiError(axum::http::StatusCode::BAD_REQUEST, e))?)
+        }
+    };
+    Ok(Json(api.journeys.create_with_entry(&b.client_id, b.sources, entry).await?))
+}
+
+fn entry_off() -> ApiError {
+    ApiError(axum::http::StatusCode::FORBIDDEN, "Nixon entry points are disabled (internal only)".into())
+}
+
+/// Staff-only preview of the universal start URL: echoes the classified source and where it lands.
+async fn entry_start(axum::extract::Query(q): axum::extract::Query<super::entry::EntryQuery>) -> R {
+    if !super::entry::enabled() { return Err(entry_off()); }
+    let entry = super::entry::classify(&q).map_err(|e| ApiError(axum::http::StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(json!({ "enabled": true, "brand": "Nixon", "entry": entry, "next": "/apps/nixon/start.html#tax-request", "channels": super::entry::CHANNELS })))
 }
 async fn detail(State(api): S, Extension(id): Extension<Identity>, Path(client): Path<String>) -> R {
     guard(&id, &client)?;

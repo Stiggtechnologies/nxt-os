@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Nixon · Start a tax request (internal)</title>
+<link rel="stylesheet" href="/nxt/brand.css">
+<style>main{max-width:640px;margin:0 auto;padding:28px 16px 64px}.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-top:14px}.meta{color:var(--muted);font-size:13px}</style>
+</head>
+<body>
+<main>
+  <h1>Nixon</h1>
+  <p class="meta">Internal staff preview of the universal start link. Entry points are disabled unless NXT_NIXON_ENTRY_ENABLED is on. Use synthetic TEST- clients only.</p>
+  <section class="card" id="tax-request">
+    <h2>Start a tax request</h2>
+    <p id="entry-status" class="meta">Checking entry source…</p>
+    <form id="entry-form" hidden>
+      <label>Client reference <input name="client_id" value="TEST-ORVILLE" pattern="TEST-[A-Za-z0-9-]+" required></label>
+      <button type="submit">Start tax request</button>
+    </form>
+    <pre id="entry-result" class="meta"></pre>
+  </section>
+</main>
+<script src="/nxt/ui.js"></script>
+<script src="/apps/nixon/start.js"></script>
+</body>
+</html>
