@@ -17,3 +17,10 @@ test('payroll tab states journal basis and missing pay stubs',()=>{
   const s=load();const html=s.payrollMarkup({transactions_total:1,pay_stubs_available:false,note:'Derived from the committed journal.',payroll_accounts:[{name:'WCB',lines:1,debit_cents:'20255',credit_cents:'0'}],by_year:[{year:'2020',transactions:1,debit_cents:'20255',credit_cents:'0'}],transactions:[{date:'2020-03-01',transaction_type:'Cheque',source_id:'r:9',payroll_debit_cents:'20255',payroll_credit_cents:'0'}]});
   assert.match(html,/Not in this book/);assert.match(html,/WCB/);assert.match(html,/2020/);
 });
+test('general ledger shows running balances and a date filter preserved across pages',()=>{
+  const s=load();const route={id:'synthetic-a',section:'general-ledger',reference:'',offset:0,from:'2025-01-01',to:'2025-12-31'};
+  const html=s.generalLedgerMarkup({id:'synthetic-a'},route,{entries_total:1,lines_total:1,total:2,has_more:true,next_offset:1,debit_total_cents:'500',credit_total_cents:'0',rows:[
+    {entry_id:'e',date:'2025-01-01',transaction_type:'Cheque',source_id:'r:1',source_row:1,account_id:'a1',account_name:'Bank',memo:'',debit_cents:'500',credit_cents:'0',running_balance_cents:'1500',native:false}]});
+  assert.match(html,/Account running balance/);assert.match(html,/data-gl-range/);assert.match(html,/value="2025-01-01"/);
+  assert.match(html,/offset=1&amp;from=2025-01-01&amp;to=2025-12-31|offset=1&from=2025-01-01&to=2025-12-31/);
+});
