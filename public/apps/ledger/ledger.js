@@ -565,6 +565,11 @@ const REPORTS = {
   "ap-aging": ["Accounts payable aging", "Who you owe, and when it's due.", "asof"],
   "sales-tax": ["GST/HST return", "Working paper for CRA lines 101, 105, 108 and 109.", "range"],
   "general-ledger": ["General ledger", "Every line, by account, with running balances.", "range"],
+  "cash-flow": ["Statement of cash flows", "Operating, investing and financing cash for a period (indirect method).", "range"],
+  "profit-loss-by-month": ["Profit and loss by month", "Income, costs and net income, one column per month.", "range"],
+  "profit-loss-comparison": ["Profit and loss comparison", "This period against the same period last year.", "range"],
+  "customer-balances": ["Customer balance summary", "Open invoice balance per customer.", "asof"],
+  "vendor-balances": ["Vendor balance summary", "Open bill balance per vendor.", "asof"],
 };
 
 function presets() {
@@ -633,6 +638,18 @@ function renderReport(key, d) {
     <tr><td>Line 108 · Input tax credits (ITCs)</td><td class="num">${money(d.line_108_itcs)}</td></tr>
     <tr class="grand"><td>Line 109 · Net tax ${d.line_109_net_tax >= 0 ? "owing" : "refund"}</td><td class="num">${money(Math.abs(d.line_109_net_tax))}</td></tr></table>
     <div class="row no-print" style="margin-top:14px"><span class="muted" style="flex:1">${esc(d.note)}</span><button class="btn primary" id="remit">Record remittance</button></div>`;
+  if (key === "cash-flow") return `<table>
+    <tr><td colspan="2"><h2>Operating activities</h2></td></tr><tr><td class="indent">Net income</td><td class="num">${money(d.net_income)}</td></tr>${plain(d.operating_adjustments)}<tr class="total"><td>Net cash from operating activities</td><td class="num">${money(d.net_cash_operating)}</td></tr>
+    <tr><td colspan="2"><h2>Investing activities</h2></td></tr>${plain(d.investing)}<tr class="total"><td>Net cash from investing activities</td><td class="num">${money(d.net_cash_investing)}</td></tr>
+    <tr><td colspan="2"><h2>Financing activities</h2></td></tr>${plain(d.financing)}<tr class="total"><td>Net cash from financing activities</td><td class="num">${money(d.net_cash_financing)}</td></tr>
+    <tr class="total"><td>Net change in cash</td><td class="num">${money(d.net_change_in_cash)}</td></tr><tr><td>Cash at beginning of period</td><td class="num">${money(d.cash_beginning)}</td></tr>
+    <tr class="grand"><td>Cash at end of period</td><td class="num">${money(d.cash_ending)}</td></tr></table>`;
+  if (key === "profit-loss-by-month") return table([{ h: "Month", f: (r) => esc(r.label) }, { h: "Income", num: 1, f: (r) => money(r.total_income) }, { h: "COGS", num: 1, f: (r) => money(r.total_cogs) }, { h: "Expenses", num: 1, f: (r) => money(r.total_expenses) }, { h: "Net income", num: 1, f: (r) => `<b>${money(r.net_income)}</b>` }],
+    d.columns, { foot: ["Total", money(d.total.total_income), money(d.total.total_cogs), money(d.total.total_expenses), money(d.total.net_income)] });
+  if (key === "profit-loss-comparison") return table([{ h: "", f: (r) => esc(r[0]) }, { h: "This period", num: 1, f: (r) => money(r[1].current) }, { h: `${fmtDate(d.prior_from)} to ${fmtDate(d.prior_to)}`, num: 1, f: (r) => money(r[1].prior) }, { h: "Change", num: 1, f: (r) => money(r[1].change) }, { h: "%", num: 1, f: (r) => r[1].change_pct == null ? "" : `${r[1].change_pct}%` }],
+    [["Total income", d.comparison.total_income], ["Cost of goods sold", d.comparison.total_cogs], ["Gross profit", d.comparison.gross_profit], ["Total expenses", d.comparison.total_expenses], ["Net income", d.comparison.net_income]]);
+  if (key === "customer-balances" || key === "vendor-balances") return table([{ h: key === "customer-balances" ? "Customer" : "Vendor", f: (r) => esc(r.contact) }, { h: "Open documents", num: 1, f: (r) => r.open_documents }, { h: "Balance", num: 1, f: (r) => `<b>${money(r.balance)}</b>` }],
+    d.rows, { empty: "Nothing outstanding.", foot: ["Total", "", money(d.total)] });
   if (key === "general-ledger") return d.accounts.length ? d.accounts.map((a) => `<h2>${esc(a.code)} · ${esc(a.name)}</h2>
     <div class="table-wrap"><table><thead><tr><th>Date</th><th>#</th><th>Type</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead><tbody>
     <tr><td colspan="6" class="muted">Opening balance</td><td class="num">${money(a.opening)}</td></tr>
@@ -648,6 +665,10 @@ function reportCsv(key, d) {
   if (key === "trial-balance") return [["Code", "Account", "Debit", "Credit"], ...d.rows.map((r) => [r.code, r.name, $c(r.debit), $c(r.credit)])];
   if (key.endsWith("aging")) return [["Contact", "Current", "1-30", "31-60", "61-90", "90+", "Total"], ...d.rows.map((r) => [r.contact, $c(r.current), $c(r["1_30"]), $c(r["31_60"]), $c(r["61_90"]), $c(r.over_90), $c(r.total)])];
   if (key === "sales-tax") return [["Line", "Amount"], ["101", $c(d.line_101_sales)], ["105", $c(d.line_105_tax_collected)], ["108", $c(d.line_108_itcs)], ["109", $c(d.line_109_net_tax)]];
+  if (key === "cash-flow") return [["Section", "Account", "Amount"], ["Operating", "Net income", $c(d.net_income)], ...d.operating_adjustments.map((r) => ["Operating", r.name, $c(r.amount)]), ...d.investing.map((r) => ["Investing", r.name, $c(r.amount)]), ...d.financing.map((r) => ["Financing", r.name, $c(r.amount)]), ["", "Net change in cash", $c(d.net_change_in_cash)], ["", "Cash at end of period", $c(d.cash_ending)]];
+  if (key === "profit-loss-by-month") return [["Month", "Income", "COGS", "Expenses", "Net income"], ...d.columns.map((r) => [r.label, $c(r.total_income), $c(r.total_cogs), $c(r.total_expenses), $c(r.net_income)])];
+  if (key === "profit-loss-comparison") return [["Line", "Current", "Prior", "Change"], ...Object.entries(d.comparison).map(([k, v]) => [k, $c(v.current), $c(v.prior), $c(v.change)])];
+  if (key.endsWith("balances")) return [["Contact", "Open documents", "Balance"], ...d.rows.map((r) => [r.contact, r.open_documents, $c(r.balance)])];
   if (key === "general-ledger") return [["Account", "Date", "Number", "Type", "Description", "Debit", "Credit", "Balance"], ...d.accounts.flatMap((a) => a.lines.map((l) => [`${a.code} ${a.name}`, l.date, l.number, l.source, l.memo, $c(l.debit), $c(l.credit), $c(l.balance)]))];
   return [];
 }

@@ -805,7 +805,7 @@ pub(super) fn str_field(v: &Value, k: &str) -> Option<String> {
 pub(super) fn tool_defs() -> Value {
     json!([
         {"name":"get_dashboard","description":"Today's cash, receivables, payables, and GST/HST. Money is integer cents CAD.","input_schema":{"type":"object","properties":{}}},
-        {"name":"run_report","description":"A ledger report: profit-loss, balance-sheet, trial-balance, ar-aging, ap-aging, sales-tax, general-ledger.","input_schema":{"type":"object","properties":{"report":{"type":"string"},"from":{"type":"string"},"to":{"type":"string"},"account_code":{"type":"string"}},"required":["report"]}},
+        {"name":"run_report","description":"A ledger report: profit-loss, profit-loss-by-month, profit-loss-comparison, balance-sheet, cash-flow, trial-balance, ar-aging, ap-aging, customer-balances, vendor-balances, sales-tax, general-ledger.","input_schema":{"type":"object","properties":{"report":{"type":"string"},"from":{"type":"string"},"to":{"type":"string"},"account_code":{"type":"string"}},"required":["report"]}},
         {"name":"list_documents","description":"Invoices or bills.","input_schema":{"type":"object","properties":{"kind":{"type":"string","enum":["invoice","bill"]},"status":{"type":"string"}}}},
         {"name":"search_contacts","description":"Find a customer or vendor.","input_schema":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}},
         {"name":"referral_overview","description":"Referral program totals. Amounts here are dollars, not cents.","input_schema":{"type":"object","properties":{}}},
