@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub mod capability;
+pub mod entry;
 pub mod ladder;
 pub mod ledger;
 pub mod policy;
