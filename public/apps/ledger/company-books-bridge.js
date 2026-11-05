@@ -57,7 +57,7 @@
     return available.sources?'Observed only · no published records':'Source status unavailable · no journal import';
   }
   function companyView(id,section=''){
-    need(validId(id)&&['','trial-balance','entries','customers','suppliers'].includes(section),'Select a valid company view.');
+    need(validId(id)&&['','trial-balance','entries','general-ledger','customers','suppliers'].includes(section),'Select a valid company view.');
     return 'company/'+encodeURIComponent(id)+(section?'/'+section:'');
   }
   function mount(host,{api,esc,openApp,openLedger=null,current='',timeoutMs=20000}={}){
@@ -70,8 +70,8 @@
       if(!live(v))return;
       host.innerHTML=`<label for="ledger-company-choice">Company books</label><select id="ledger-company-choice" aria-describedby="ledger-company-scope"${loading||auth?' disabled':''}><option value="">Firm workspace · NXT native books</option>${current&&!rows.some(row=>row.id===current)?`<option value="${esc(current)}" selected>${esc(current)}</option>`:''}${rows.map(row=>`<option value="${esc(row.id)}"${row.id===current?' selected':''}>${esc(row.name)} — ${esc(status(row,available))}</option>`).join('')}</select><p id="ledger-company-scope">${current?`Current screen: ${esc(rows.find(row=>row.id===current)?.name||current)}'s own ledger.`:`Current screen: Firm workspace. Select a company to open its own ${openLedger?'ledger':'accounts, journals and saved contacts'}.`}</p>${current?'<a href="/#/migrations/companies" data-company-imported>Imported books for this company</a> ':''}${message?`<p class="company-directory-message" role="${auth?'alert':'status'}">${esc(message)}</p>`:''}<a href="/#/migrations/companies" data-company-directory>View all companies</a>${!loading?'<button class="btn sm" type="button" data-company-reload>Refresh companies</button>':''}`;
       const select=host.querySelector('#ledger-company-choice');
-      if(select)select.onchange=()=>{if(!live(v))return;if(openLedger){if(select.value===current)return;if(!select.value||rows.some(row=>row.id===select.value)){stop();disposed=true;openLedger(select.value);}return;}if(!select.value)return;const row=rows.find(row=>row.id===select.value);if(!row)return;navigate(companyView(row.id,row.book?.head?'trial-balance':''));};
-      const imported=host.querySelector('[data-company-imported]');if(imported)imported.onclick=event=>{event.preventDefault();if(live(v))navigate(companyView(current));};
+      if(select)select.onchange=()=>{if(!live(v))return;if(openLedger){if(select.value===current)return;if(!select.value){stop();disposed=true;openLedger('');return;}const row=rows.find(row=>row.id===select.value);if(row?.book?.head){const bookId=row.book.company_id||row.id;navigate(companyView(bookId,'general-ledger'));return;}if(rows.some(row=>row.id===select.value)){stop();disposed=true;openLedger(select.value);}return;}if(!select.value)return;const row=rows.find(row=>row.id===select.value);if(!row)return;navigate(companyView(row.book?.company_id||row.id,row.book?.head?'general-ledger':''));};
+      const imported=host.querySelector('[data-company-imported]');if(imported)imported.onclick=event=>{event.preventDefault();if(!live(v))return;const row=rows.find(row=>row.id===current);const bookId=row?.book?.company_id||current;navigate(companyView(bookId,row?.book?.head?'general-ledger':''));};
       const directory=host.querySelector('[data-company-directory]');if(directory)directory.onclick=event=>{event.preventDefault();if(live(v))navigate('companies');};
       const retry=host.querySelector('[data-company-reload]');if(retry)retry.onclick=()=>{if(live(v))reload();};
     }

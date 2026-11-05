@@ -24,7 +24,7 @@ function harness(handler){
 test('observed and imported companies remain distinct stable cohorts despite equal labels',async()=>{
  const h=harness(path=>path.endsWith('/roster')?roster([{company_id:'observed-A',company_name:'Same label'},{company_id:'imported-B',company_name:'Same label'}]):path==='/api/migrations'?source([]):page([book('imported-B')]));
  const m=h.mount();await m.ready;assert.match(h.host.innerHTML,/value="observed-A"/);assert.match(h.host.innerHTML,/value="imported-B"/);assert.match(h.host.innerHTML,/Journal imported/);assert.match(h.host.innerHTML,/Observed only/);
- const select=h.host.querySelector('#ledger-company-choice');select.value='imported-B';select.onchange();assert.deepEqual(h.opened,[{app:'migrations',view:'company/imported-B/trial-balance'}]);assert.ok(h.calls.every(c=>!c.path.includes('/api/ledger')&&c.signal));m.destroy();
+ const select=h.host.querySelector('#ledger-company-choice');select.value='imported-B';select.onchange();assert.deepEqual(h.opened,[{app:'migrations',view:'company/imported-B/general-ledger'}]);assert.ok(h.calls.every(c=>!c.path.includes('/api/ledger')&&c.signal));m.destroy();
 });
 test('observed and report-only choices open scoped receipts rather than global empty books',async()=>{
  for(const reports of [[],[{id:'snapshot-A',cohort_ref:'observed-A',company_name:'Synthetic A'}]]){
@@ -72,6 +72,7 @@ test('native default, startup hooks and legacy Ledger API routes remain intact',
  const ledger=read('public/apps/ledger/ledger.js'),index=read('public/apps/ledger/index.html');
  assert.match(index,/id="ledger-company-bridge"/);assert.ok(index.indexOf('company-books-bridge.js')<index.indexOf('src="ledger.js"'));
  assert.match(ledger,/Firm workspace · NXT native books/);assert.match(ledger,/data-qb-open-view="companies"/);assert.match(ledger,/pagehide/);
+ assert.match(ledger,/resolveImportedBook/);assert.match(ledger,/openImportedGl/);assert.match(ledger,/general-ledger/);
  for(const route of ['/api/ledger/accounts','/api/ledger/contacts','/api/ledger/invoices','/api/ledger/company'])assert.ok(ledger.includes(route));assert.ok(!code.includes('method:')&&!code.includes('POST')&&!code.includes('/api/ledger/'));
 });
 test('with openLedger a company choice opens its own ledger, including clients only Nixon lists',async()=>{
@@ -81,6 +82,15 @@ test('with openLedger a company choice opens its own ledger, including clients o
   assert.match(h.host.innerHTML,/client-a — Ledger open/);
   const select=h.host.querySelector('#ledger-company-choice');select.value='client-a';select.onchange();
   assert.deepEqual(opened,['client-a']);
+});
+test('with openLedger an imported journal opens Parallel testing general ledger, not an empty native book',async()=>{
+  const h=harness(path=>path.endsWith('/roster')?roster([{company_id:'observed-A',company_name:'Synthetic A'}]):path==='/api/migrations'?source([]):page([book('imported-B')]));
+  const opened=[];
+  const m=h.mount({openLedger:id=>opened.push(id)});await m.ready;
+  const select=h.host.querySelector('#ledger-company-choice');select.value='imported-B';select.onchange();
+  assert.deepEqual(opened,[]);
+  assert.deepEqual(h.opened,[{app:'migrations',view:'company/imported-B/general-ledger'}]);
+  m.destroy();
 });
 
 test('shared api forwards cancellation without altering legacy GET/body behavior',async()=>{
