@@ -130,6 +130,9 @@ async fn open_book(store: &Store, company: &str, req: Request) -> R {
     let storage = |e: String| ApiError::from(LedgerError::Storage(e));
     let ledger = Ledger::for_company(store.clone(), company);
     // The first request settles the book's identity; a retry changes nothing.
+    // Imported company-books and native company-ledger can coexist: Parallel testing reads the
+    // import via migrations GL, while opening-balances may still seed a native book from it.
+    // Empty-state UX is handled in ledger.js (probe company-books on 404 and open the import GL).
     if store.get(&opened_key(company)).await.map_err(storage)?.is_some() {
         store.sadd(OPENED, company).await.map_err(storage)?;
         return Ok(Json(json!({"company_id": company, "company": ledger.company().await?, "already_open": true})));

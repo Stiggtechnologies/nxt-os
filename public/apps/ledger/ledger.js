@@ -741,12 +741,46 @@ views.opening = async () => {
 };
 
 // ---------------------------------------------------------------- boot
-function openBook() {
+/** Imported book under this company id (alias middleware maps roster hash → book slug). */
+async function resolveImportedBook(id) {
+  if (!id) return null;
+  try {
+    const d = await NXT.api(`/api/company-books/${encodeURIComponent(id)}`);
+    if (d && d.head && d.head.archived !== true && d.company_id) return d;
+  } catch (_) {}
+  return null;
+}
+
+function openImportedGl(book) {
+  const id = book.company_id;
+  const view = `company/${encodeURIComponent(id)}/general-ledger`;
+  const label = book.head?.company_name || book.previews?.[0]?.company?.name || id;
+  main.innerHTML = `<div class="page-head"><div><h1>${esc(label)}</h1><p>This client has an imported QuickBooks general ledger. Native NXT Ledger stays empty by design — balances are not copied. Opening the imported book under Parallel testing.</p></div></div>
+    <div class="card"><p>Imported journal is ready. Use Parallel testing → General ledger for balances and every line.</p>
+    <div class="row" style="margin-top:12px"><button class="btn primary" type="button" id="openImportedGl">Open general ledger</button>
+    <a class="btn" href="/#/migrations/company/${encodeURIComponent(id)}">Company overview</a></div></div>`;
+  const go = () => {
+    if (window.parent !== window) window.parent.postMessage({ nxt: "open-app", app: "migrations", view }, location.origin);
+    else location.href = "/#/migrations/" + view;
+  };
+  $("#openImportedGl").onclick = go;
+  go();
+}
+
+async function openBook() {
+  const book = await resolveImportedBook(company);
+  if (book) return openImportedGl(book);
   main.innerHTML = `<div class="page-head"><div><h1>Open a ledger for ${esc(company)}</h1><p>This client has no ledger yet. It starts with the standard chart of accounts and no balances. Imported QuickBooks history stays in the company's imported books and is not copied in.</p></div></div>
     <form class="card" id="openBook"><label>Company name <input name="name" required maxlength="300"></label><button class="btn primary" type="submit">Open ledger</button></form>`;
   $("#openBook").onsubmit = async (e) => {
     e.preventDefault();
-    try { await api("/api/ledger/open", { body: { name: e.target.name.value } }); location.reload(); } catch (x) { err(x); }
+    try { await api("/api/ledger/open", { body: { name: e.target.name.value } }); location.reload(); } catch (x) {
+      if (x.status === 409) {
+        const again = await resolveImportedBook(company);
+        if (again) return openImportedGl(again);
+      }
+      err(x);
+    }
   };
 }
 

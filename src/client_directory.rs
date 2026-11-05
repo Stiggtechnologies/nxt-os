@@ -47,8 +47,51 @@ struct Rows {
 }
 
 /// Lowercase alphanumeric words only, so "1589548 ALBERTA LTD." and "1589548 Alberta Ltd" match.
+/// Trailing legal-entity suffixes (Inc, Ltd, Corp, …) are dropped so a roster label without the
+/// suffix still joins the imported book that carries it. Only trailing tokens are removed; a
+/// leading word like "Limited" in "Limited Resources" is kept.
+/// Trailing long digit runs (capture timestamps glued onto a label) are dropped. Light plural
+/// stemming (oilfields→oilfield, services→service) keeps roster/book spelling variants aligned.
 fn normalize_name(name: &str) -> String {
-    name.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ")
+    const SUFFIXES: &[&str] = &[
+        "inc", "incorporated", "ltd", "limited", "llc", "corp", "corporation", "co", "company",
+        "ulc", "lp", "llp", "plc", "pc", "pllc",
+    ];
+    let lower = name.to_lowercase();
+    let mut words: Vec<&str> = lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    // Capture glitches append `_1783011415482`-style timestamps after the legal suffix.
+    // Drop legal suffixes and trailing digit runs until neither applies (order can interleave).
+    loop {
+        let before = words.len();
+        while words.last().is_some_and(|w| SUFFIXES.contains(w)) {
+            words.pop();
+        }
+        while words.last().is_some_and(|w| w.len() >= 10 && w.bytes().all(|b| b.is_ascii_digit())) {
+            words.pop();
+        }
+        if words.len() == before {
+            break;
+        }
+    }
+    words
+        .into_iter()
+        .map(|w| {
+            if w.len() > 4
+                && w.ends_with('s')
+                && !w.ends_with("ss")
+                && !w.ends_with("us")
+                && !w.ends_with("is")
+            {
+                &w[..w.len() - 1]
+            } else {
+                w
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl Rows {
@@ -79,13 +122,28 @@ impl Rows {
         Some(row)
     }
 
-    /// A roster company: its own row (two selector entries are two source companies, even with
-    /// one name), with the QuickBooks selector reference as an alias.
+    /// A roster company. When a second selector entry carries the same normalized name as exactly
+    /// one existing roster key, fold it onto that key (duplicate QBO listings of one company).
+    /// Distinct companies that only share a name stay separate when more than one key already
+    /// holds that name. The QuickBooks selector reference is always an alias of the chosen key.
     fn roster(&mut self, id: &str, name: Option<&str>, selector: Option<&str>) {
+        let Some(own) = self.key(id) else { return };
+        let fold = name
+            .map(normalize_name)
+            .filter(|n| !n.is_empty())
+            .and_then(|n| {
+                self.names.get(&n).and_then(|keys| {
+                    if keys.len() == 1 { keys.iter().next().cloned() } else { None }
+                })
+            })
+            .filter(|k| k != &own);
+        if let Some(ref existing) = fold {
+            self.alias(id, existing);
+        }
         let Some(key) = self.key(id) else { return };
         let Some(row) = self.get(id) else { return };
         row.in_source_roster = true;
-        row.name = name.map(str::to_string);
+        if row.name.is_none() { row.name = name.map(str::to_string); }
         self.remember_name(&key, name);
         if let Some(sel) = selector { self.alias(sel, &key); }
     }
@@ -131,19 +189,36 @@ fn not_loaded() -> Value {
 
 impl Directory {
     async fn book_rows(&self, rows: &mut Rows) -> Option<()> {
+        // Two-pass: shared source_company_id values (e.g. load-fixture "synthetic-fixture") must not
+        // join unrelated companies. Only unique source refs participate in the by-ref alias join.
+        let mut pages = Vec::new();
         let mut offset = 0;
         for _ in 0..BOOK_PAGES {
             let page = self.company_books.list_page(offset, BOOK_PAGE).await.ok()?;
-            let companies = page["companies"].as_array()?;
-            for book in companies {
-                let company = &book["previews"][0]["company"];
-                rows.book(book["company_id"].as_str().unwrap_or(""), company["name"].as_str(),
-                    company["source_company_id"].as_str(), book["stage"].as_str());
-            }
-            if page["has_more"] != json!(true) { return Some(()); }
-            offset += companies.len();
+            let n = page["companies"].as_array().map_or(0, Vec::len);
+            let more = page["has_more"] == json!(true);
+            pages.push(page);
+            if !more || n == 0 { break; }
+            offset += n;
         }
-        None
+        if pages.len() == BOOK_PAGES && pages.last().is_some_and(|p| p["has_more"] == json!(true)) {
+            return None;
+        }
+        let mut source_counts: HashMap<String, usize> = HashMap::new();
+        for book in pages.iter().flat_map(|p| p["companies"].as_array().into_iter().flatten()) {
+            if let Some(r) = book["previews"][0]["company"]["source_company_id"].as_str() {
+                let k = r.trim().to_ascii_lowercase();
+                if !k.is_empty() { *source_counts.entry(k).or_default() += 1; }
+            }
+        }
+        for book in pages.iter().flat_map(|p| p["companies"].as_array().into_iter().flatten()) {
+            let company = &book["previews"][0]["company"];
+            let source = company["source_company_id"].as_str().filter(|r| {
+                source_counts.get(&r.trim().to_ascii_lowercase()).copied().unwrap_or(0) == 1
+            });
+            rows.book(book["company_id"].as_str().unwrap_or(""), company["name"].as_str(), source, book["stage"].as_str());
+        }
+        Some(())
     }
 
     async fn collect(&self) -> (Rows, Vec<&'static str>) {
@@ -224,12 +299,20 @@ impl AliasGroups {
     pub fn build(items: &[AliasInput]) -> Self {
         let mut rows = Rows::default();
         let mut out = AliasGroups::default();
+        let mut source_counts: HashMap<String, usize> = HashMap::new();
+        for it in items.iter().filter(|i| i.book) {
+            if let Some(r) = it.source_ref {
+                let k = r.trim().to_ascii_lowercase();
+                if !k.is_empty() { *source_counts.entry(k).or_default() += 1; }
+            }
+        }
         for it in items.iter().filter(|i| !i.book) {
             rows.roster(it.id, it.name, it.source_ref);
             if let Some(n) = it.name { out.names.insert(it.id.to_ascii_lowercase(), n.to_string()); }
         }
         for it in items.iter().filter(|i| i.book) {
-            rows.book(it.id, it.name, it.source_ref, it.stage);
+            let source = it.source_ref.filter(|r| source_counts.get(&r.trim().to_ascii_lowercase()).copied().unwrap_or(0) == 1);
+            rows.book(it.id, it.name, source, it.stage);
             if !it.archived { out.books.insert(it.id.to_ascii_lowercase()); }
             if let Some(n) = it.name { out.names.entry(it.id.to_ascii_lowercase()).or_insert_with(|| n.to_string()); }
         }
@@ -366,11 +449,71 @@ mod tests {
     }
 
     #[test]
-    fn same_name_on_two_roster_entries_stays_separate_and_book_is_not_guessed() {
-        let mut rows = Rows::default();
-        rows.roster("qbo-client-a", Some("Synergy Welding & Cattle LTD"), Some("qbo-selector:idsMenuItem136"));
-        rows.roster("qbo-client-b", Some("Synergy Welding & Cattle LTD."), Some("qbo-selector:idsMenuItem137"));
-        rows.book("qbo-synergy-welding-and-cattle-ltd", Some("Synergy Welding & Cattle Ltd"), None, Some("import_committed"));
-        assert_eq!(rows.rows.len(), 3);
+    fn duplicate_roster_name_folds_so_book_joins_both_hashes() {
+        // Two QBO selector listings of the same company share one row; the imported book joins both.
+        let items = [
+            AliasInput { id: "qbo-client-a", name: Some("Synergy Welding & Cattle LTD"), source_ref: Some("qbo-selector:idsMenuItem136"), book: false, archived: false, stage: None },
+            AliasInput { id: "qbo-client-b", name: Some("Synergy Welding & Cattle LTD."), source_ref: Some("qbo-selector:idsMenuItem137"), book: false, archived: false, stage: None },
+            AliasInput { id: "qbo-synergy-welding-and-cattle-ltd", name: Some("Synergy Welding & Cattle Ltd"), source_ref: None, book: true, archived: false, stage: Some("import_committed") },
+        ];
+        let g = AliasGroups::build(&items);
+        assert_eq!(g.book_alias("qbo-client-a").as_deref(), Some("qbo-synergy-welding-and-cattle-ltd"));
+        assert_eq!(g.book_alias("qbo-client-b").as_deref(), Some("qbo-synergy-welding-and-cattle-ltd"));
+    }
+
+    #[test]
+    fn capture_timestamp_and_plural_variants_still_join() {
+        let items = [
+            AliasInput { id: "qbo-client-mike", name: Some("Mike's Diesel & Heavy Equipment Repair LTD_1783011415482"), source_ref: None, book: false, archived: false, stage: None },
+            AliasInput { id: "qbo-mike-s-diesel-heavy-equipment-repair-ltd", name: Some("Mike's Diesel & Heavy Equipment Repair LTD"), source_ref: None, book: true, archived: false, stage: Some("import_committed") },
+            AliasInput { id: "qbo-client-martell", name: Some("Martell's Oilfield Services Ltd"), source_ref: None, book: false, archived: false, stage: None },
+            AliasInput { id: "qbo-martell-s-oilfields-services-ltd", name: Some("Martell's Oilfields Services Ltd."), source_ref: None, book: true, archived: false, stage: Some("import_committed") },
+        ];
+        let g = AliasGroups::build(&items);
+        assert_eq!(g.book_alias("qbo-client-mike").as_deref(), Some("qbo-mike-s-diesel-heavy-equipment-repair-ltd"));
+        assert_eq!(g.book_alias("qbo-client-martell").as_deref(), Some("qbo-martell-s-oilfields-services-ltd"));
+    }
+
+    #[test]
+    fn trailing_legal_suffix_does_not_block_roster_to_book_join() {
+        // Roster label without Inc still joins the imported book that carries Inc.
+        let items = [
+            AliasInput { id: "qbo-client-9484de35fbdc7c14b417", name: Some("KNM Services and Maintenance"), source_ref: Some("qbo-selector:idsMenuItem86"), book: false, archived: false, stage: None },
+            AliasInput { id: "qbo-knm-services-and-maintenance-inc", name: Some("KNM Services and Maintenance Inc"), source_ref: Some("quickbooks_online:knm-services-and-maintenance-inc"), book: true, archived: false, stage: Some("import_committed") },
+        ];
+        let g = AliasGroups::build(&items);
+        assert_eq!(g.book_alias("qbo-client-9484de35fbdc7c14b417").as_deref(), Some("qbo-knm-services-and-maintenance-inc"));
+        assert_eq!(g.members("qbo-client-9484de35fbdc7c14b417"), vec!["qbo-client-9484de35fbdc7c14b417", "qbo-knm-services-and-maintenance-inc"]);
+    }
+
+    #[test]
+    fn shared_source_company_id_does_not_join_unrelated_books() {
+        let items = [
+            AliasInput { id: "qbo-client-a", name: Some("Alpha Co"), source_ref: Some("qbo-selector:1"), book: false, archived: false, stage: None },
+            AliasInput { id: "qbo-client-b", name: Some("Beta Co"), source_ref: Some("qbo-selector:2"), book: false, archived: false, stage: None },
+            AliasInput { id: "qbo-alpha", name: Some("Alpha Co Inc"), source_ref: Some("synthetic-fixture"), book: true, archived: false, stage: Some("import_committed") },
+            AliasInput { id: "qbo-beta", name: Some("Beta Co Inc"), source_ref: Some("synthetic-fixture"), book: true, archived: false, stage: Some("import_committed") },
+        ];
+        let g = AliasGroups::build(&items);
+        assert_eq!(g.book_alias("qbo-client-a").as_deref(), Some("qbo-alpha"));
+        assert_eq!(g.book_alias("qbo-client-b").as_deref(), Some("qbo-beta"));
+        assert_ne!(g.members("qbo-alpha"), g.members("qbo-beta"));
+    }
+
+    #[test]
+    fn normalize_name_strips_only_trailing_legal_suffixes() {
+        assert_eq!(normalize_name("KNM Services and Maintenance Inc"), "knm service and maintenance");
+        assert_eq!(normalize_name("KNM Services and Maintenance"), "knm service and maintenance");
+        assert_eq!(normalize_name("1589548 ALBERTA LTD."), "1589548 alberta");
+        assert_eq!(normalize_name("Limited Resources Inc"), "limited resource");
+        assert_eq!(normalize_name("ABC Co Ltd"), "abc");
+        assert_eq!(
+            normalize_name("Mike's Diesel & Heavy Equipment Repair LTD_1783011415482"),
+            normalize_name("Mike's Diesel & Heavy Equipment Repair LTD")
+        );
+        assert_eq!(
+            normalize_name("Martell's Oilfield Services Ltd"),
+            normalize_name("Martell's Oilfields Services Ltd.")
+        );
     }
 }
