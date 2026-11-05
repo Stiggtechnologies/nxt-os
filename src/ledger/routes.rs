@@ -118,7 +118,7 @@ async fn json_body<T: serde::de::DeserializeOwned>(req: Request) -> Result<T, Ap
     serde_json::from_slice(&bytes).map_err(|e| ApiError(StatusCode::BAD_REQUEST, format!("invalid request: {e}")))
 }
 
-async fn open_book(store: &Store, books: &CompanyBooks, company: &str, req: Request) -> R {
+async fn open_book(store: &Store, company: &str, req: Request) -> R {
     let bytes = axum::body::to_bytes(req.into_body(), 64 * 1024)
         .await
         .map_err(|_| ApiError(StatusCode::PAYLOAD_TOO_LARGE, "request body too large".into()))?;
@@ -130,22 +130,12 @@ async fn open_book(store: &Store, books: &CompanyBooks, company: &str, req: Requ
     let storage = |e: String| ApiError::from(LedgerError::Storage(e));
     let ledger = Ledger::for_company(store.clone(), company);
     // The first request settles the book's identity; a retry changes nothing.
+    // Imported company-books and native company-ledger can coexist: Parallel testing reads the
+    // import via migrations GL, while opening-balances may still seed a native book from it.
+    // Empty-state UX is handled in ledger.js (probe company-books on 404 and open the import GL).
     if store.get(&opened_key(company)).await.map_err(storage)?.is_some() {
         store.sadd(OPENED, company).await.map_err(storage)?;
         return Ok(Json(json!({"company_id": company, "company": ledger.company().await?, "already_open": true})));
-    }
-    // Refuse an empty native open when an imported (non-archived) book already exists under this
-    // id — alias middleware has already moved hash ids onto the slug that holds the import.
-    if let Ok(detail) = books.detail(company).await {
-        let head = detail.get("head");
-        let has_head = head.map(|h| !h.is_null()).unwrap_or(false);
-        let archived = head.and_then(|h| h.get("archived")).and_then(|v| v.as_bool()).unwrap_or(false);
-        if has_head && !archived {
-            return Err(ApiError(
-                StatusCode::CONFLICT,
-                "this company already has an imported book; open Parallel testing → General ledger instead of creating an empty native ledger".into(),
-            ));
-        }
     }
     let defaults = Company::default();
     let book = Company { name: name.into(), province: input.province.unwrap_or(defaults.province.clone()), ..defaults };
@@ -167,7 +157,7 @@ async fn company_book(State(state): State<Arc<CompanyState>>, mut req: Request) 
         return ApiError(StatusCode::BAD_REQUEST, "Invalid company id".into()).into_response();
     }
     if rest == "open" && req.method() == axum::http::Method::POST {
-        return open_book(store, &state.books, company, req).await.into_response();
+        return open_book(store, company, req).await.into_response();
     }
     match store.get(&opened_key(company)).await {
         Ok(Some(_)) => {}
