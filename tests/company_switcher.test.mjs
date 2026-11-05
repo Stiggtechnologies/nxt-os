@@ -23,8 +23,10 @@ test('inside an app set tells the shell instead of navigating on its own',()=>{
 });
 test('list uses the firm roster and falls back to assigned clients for scoped staff',async()=>{
   const {C}=load();
-  const all=await C.list(async p=>({companies:[{company_id:'co-a',company_name:'Synthetic A'}]}));assert.deepEqual(JSON.parse(JSON.stringify(all)),[{id:'co-a',name:'Synthetic A'}]);
-  const scoped=await C.list(async p=>{if(p.endsWith('/roster'))throw Object.assign(Error('firm-wide'),{status:403});return {clients:[{client_ref:'co-b',name:''}]};});
+  const all=await C.list(async p=>({clients:[{client_ref:'co-a',name:'Synthetic A',aliases:['qbo-a','bad id']}]}));assert.deepEqual(JSON.parse(JSON.stringify(all)),[{id:'co-a',name:'Synthetic A',aliases:['qbo-a']}]);
+  assert.deepEqual([...C.aliasesOf('QBO-A',all)].sort(),['co-a','qbo-a']);assert.equal(C.canonical('qbo-a',all),'co-a');assert.equal(C.nameOf('qbo-a',all),'Synthetic A');
+  assert.equal(C.validId('a'.repeat(80)),true);assert.equal(C.validId('a'.repeat(81)),false);assert.equal(C.validId('-x'),false);assert.equal(C.validId('a:b'),false);
+  const scoped=await C.list(async p=>{if(p==='/api/clients')throw Object.assign(Error('down'),{status:503});return {companies:[{company_id:'co-b',company_name:''}]};});
   assert.deepEqual(scoped.map(r=>r.id),['co-b']);
   await assert.rejects(C.list(async()=>{throw Object.assign(Error('x'),{status:401});}));
 });

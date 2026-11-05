@@ -34,7 +34,7 @@
   }
   function worklist(view) {
     const filters={drafts:"draft",review:"in_review",approved:"approved"};
-    const rows=workspace.envelopes.filter(r=>!filters[view]||r.status===filters[view]);
+    const rows=workspace.envelopes.filter(r=>(!window.NXTCompany||NXTCompany.inScope(r.client_ref))&&(!filters[view]||r.status===filters[view]));
     const heading={home:"Agreement preparation",drafts:"Drafts",review:"Review queue",approved:"Prepared packages"}[view];
     const cards=view==="home"?`<div class="cards">${[["draft","Drafts","drafts"],["in_review","Awaiting internal review","review"],["approved","Prepared","approved"],["cancelled","Cancelled","home"]].map(([s,n,v])=>`<div class="card"><span class="muted">${n}</span><strong>${workspace.envelopes.filter(r=>r.status===s).length}</strong><a href="#${v}">View preparations →</a></div>`).join("")}</div>`:"";
     main.innerHTML=title(heading,view==="approved"?"Reviewed internal preparation packages. No recipient has signed or received these drafts.":"Prepare original documents and routing details, then review the exact revision before any future connector handoff.")+cards+identity+`<section class="panel"><div class="panel-head"><h2>${view==="home"?"All preparations":heading}</h2><input class="search" id="search" type="search" aria-label="Search preparations" placeholder="Search preparation or context"></div><div id="results">${table(rows)}</div></section>`;

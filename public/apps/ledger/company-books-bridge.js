@@ -1,7 +1,8 @@
 /* Company navigation reads metadata only. It never copies records into Ledger. */
 (() => {
   'use strict';
-  const validId=value=>typeof value==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/.test(value);
+  // The shared id rule (company-switcher.js), so a company the bridge lists is one every screen and the server accept.
+  const validId=value=>typeof value==='string'&&(globalThis.NXTCompany?.ID_RE||/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/).test(value);
   const hash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
   const name=value=>typeof value==='string'&&value.trim()&&value.length<=300;
   const need=(condition,message)=>{if(!condition)throw Error(message);};
@@ -36,9 +37,11 @@
     }
     throw Error('Company book inventory exceeds its supported bound.');
   }
-  function join(roster,sources,books,clients){
-    const rows=new Map();
-    const get=(id,label)=>{if(!rows.has(id))rows.set(id,{id,name:label||id,observed:false,sources:0,book:null});return rows.get(id);};
+  // aliasRows: the switcher's alias-merged directory ({id,name,aliases}); hash and slug ids of one company fold into one row.
+  function join(roster,sources,books,clients,aliasRows){
+    const rows=new Map();const canon=new Map();
+    for(const r of aliasRows||[])for(const a of [r.id,...(r.aliases||[])])canon.set(String(a).toLowerCase(),r);
+    const get=(raw,label)=>{const g=canon.get(String(raw).toLowerCase());const id=g?g.id:raw;if(g&&g.name&&!label)label=g.name;if(!rows.has(id))rows.set(id,{id,name:label||id,observed:false,sources:0,book:null});return rows.get(id);};
     for(const row of roster||[])get(row.company_id,row.company_name).observed=true;
     for(const row of sources||[])get(row.cohort_ref,row.company_name).sources++;
     for(const row of books||[]){const label=row.previews?.[0]?.company?.name;get(row.company_id,name(label)?label:row.company_id).book=row;}
@@ -83,19 +86,22 @@
           request('/api/migrations').then(sourceRows),
           booksRows(request,()=>live(v))
         ]);
+        // Reuse the header switcher's cached directory for alias folding; fetch it once only when absent.
+        let aliasRows=globalThis.NXTCompany?.cachedRoster?.()||null;
+        if(!aliasRows&&globalThis.NXTCompany?.list){try{aliasRows=await globalThis.NXTCompany.list(api,{signal});globalThis.NXTCompany.saveRoster?.(aliasRows);}catch{aliasRows=null;}}
         if(!live(v))return;
         if(result.some(r=>r.status==='rejected'&&r.reason?.status===401)){rows=[];message='Sign in to view company books. Company coverage is unavailable.';draw(v,false,true);return;}
         const values=result.map(r=>r.status==='fulfilled'?r.value:null);
         // A slow page no longer empties the list: whatever arrived (the roster is fast) stays selectable.
         if(signal.aborted&&!values.some(Boolean)){rows=[];message='Company directory timed out. Refresh to check company coverage.';draw(v);return;}
-        available={sources:values[1]!==null,books:values[2]!==null};rows=join(...values);
+        available={sources:values[1]!==null,books:values[2]!==null};rows=join(...values,undefined,aliasRows);
         const missing=result.slice(0,3).filter(r=>r.status==='rejected').length;
         const scopedOnly=result.slice(0,3).some(r=>r.status==='rejected'&&r.reason?.status===403);
         message=scopedOnly?'Your account sees only its assigned clients. Choose one of them below to open its own ledger.':missing?'Some company status is unavailable. No missing data is treated as an empty company.':rows.length?'Company journals and saved source contacts open in their own company views.':'No company directory records are published. This does not establish an empty source.';
         if(signal.aborted)message='Some company status is still loading slowly. Companies listed below can be opened.';
         draw(v);
         // Ledger-open flags are a nicety: they load after the list and never block or disable it.
-        if(openLedger)api('/api/nixon/clients',{}).then(c=>{if(!live(v))return;rows=join(...values,c);draw(v);}).catch(()=>{});
+        if(openLedger)api('/api/nixon/clients',{}).then(c=>{if(!live(v))return;rows=join(...values,c,aliasRows);draw(v);}).catch(()=>{});
       }catch{if(live(v)){rows=[];message='Company directory unavailable. Refresh or sign in again.';draw(v);}}
       finally{if(live(v)&&timer!==null){clearTimeout(timer);timer=null;}}
     }
