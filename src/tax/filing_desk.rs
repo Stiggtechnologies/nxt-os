@@ -137,7 +137,11 @@ pub fn blockers(r: &TaxReturn) -> Vec<Value> {
     out
 }
 
-fn fee_paid(d: &DeskState, rid: &str) -> bool { d.fees.iter().find(|f| f.return_id == rid).is_some_and(|f| f.paid) }
+fn fee_paid(d: &DeskState, rid: &str) -> bool { fee_paid_at(d, rid).is_some() }
+/// Timestamp when the filing fee was marked paid, if it currently is.
+pub fn fee_paid_at(d: &DeskState, rid: &str) -> Option<String> {
+    d.fees.iter().find(|f| f.return_id == rid && f.paid).map(|f| f.at.clone())
+}
 fn is_filer(d: &DeskState, who: &Identity) -> bool { !who.break_glass && d.filers.iter().any(|g| g.user_id == who.user_id) }
 fn valid_confirmation<'a>(d: &'a DeskState, r: &TaxReturn, fp: &str) -> Option<&'a DeskConfirmation> {
     d.confirmations.iter().rev().find(|c| c.return_id == r.id && c.fingerprint == fp && c.revision == r.revision)
