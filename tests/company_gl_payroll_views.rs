@@ -64,3 +64,18 @@ async fn payroll_view_counts_only_payroll_account_transactions() {
     assert_eq!(v["by_year"][1]["credit_cents"], "2000");
     assert_eq!(v["payroll_accounts"].as_array().unwrap().len(), 2);
 }
+
+#[tokio::test]
+async fn general_ledger_date_filter_keeps_true_running_balances() {
+    let s = committed().await;
+    let all = s.general_ledger_page("co", 0, 1000).await.ok().unwrap();
+    assert_eq!(all["rows"][1]["running_balance_cents"], "-100000");
+    let f = s.general_ledger_range("co", 0, 1000, Some("2024-01-01"), Some("2024-05-31")).await.ok().unwrap();
+    assert_eq!(f["lines_total"], 3);
+    assert_eq!(f["rows"][0]["entry_id"], "e2");
+    // bank carries the 2023 credit into the filtered window
+    assert_eq!(f["rows"][2]["running_balance_cents"], "-103000");
+    assert_eq!(f["rows"][0]["running_balance_cents"], "105000");
+    assert_eq!(s.general_ledger_range("co", 0, 10, Some("2024-13-01"), None).await.unwrap_err().0, 400);
+    assert_eq!(s.general_ledger_range("co", 0, 10, Some("2024-06-01"), Some("2024-01-01")).await.unwrap_err().0, 400);
+}

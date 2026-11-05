@@ -143,6 +143,10 @@ struct Page {
     max_bytes: usize,
     #[serde(default, rename = "path")]
     transport_path: Option<String>,
+    #[serde(default)]
+    from: Option<String>,
+    #[serde(default)]
+    to: Option<String>,
 }
 fn limit() -> usize {
     100
@@ -179,7 +183,7 @@ async fn register(State(s): S, Path((c, a)): Path<(String, String)>, Query(p): Q
 }
 async fn general_ledger(State(s): S, Path(c): Path<String>, Query(p): Query<Page>) -> R {
     p.check(&format!("company-books/{c}/general-ledger"))?;
-    Ok(Json(s.general_ledger_page(&c, p.offset, p.limit).await?))
+    Ok(Json(s.general_ledger_range(&c, p.offset, p.limit, p.from.as_deref(), p.to.as_deref()).await?))
 }
 async fn payroll_view(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.payroll_view(&c).await?)) }
 async fn tb(State(s): S, Path(c): Path<String>, Query(p): Query<Page>) -> R {

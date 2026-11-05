@@ -23,6 +23,16 @@ pub(crate) fn is_payroll_account(name: &str) -> bool {
 
 impl CompanyBooks {
     pub async fn general_ledger_page(&self, company: &str, offset: usize, limit: usize) -> Result<Value> {
+        self.general_ledger_range(company, offset, limit, None, None).await
+    }
+
+    /// Flat GL limited to `from..=to` (ISO dates, inclusive). Each row carries the account's
+    /// running net (debit - credit) including every earlier line, so balances stay true under a filter.
+    pub async fn general_ledger_range(&self, company: &str, offset: usize, limit: usize, from: Option<&str>, to: Option<&str>) -> Result<Value> {
+        let iso = |d: &str| d.len() == 10 && chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok();
+        if from.is_some_and(|d| !iso(d)) || to.is_some_and(|d| !iso(d)) || matches!((from, to), (Some(f), Some(t)) if f > t) {
+            return Err(bad("Date filter must be YYYY-MM-DD with from <= to"));
+        }
         if limit == 0 || limit > 1000 {
             return Err(bad("Page limit must be 1-1000"));
         }
@@ -30,9 +40,14 @@ impl CompanyBooks {
         let names: BTreeMap<&str, &str> = accounts.iter().map(|a| (a.id.as_str(), a.name.as_str())).collect();
         let (mut total_lines, mut dr, mut cr) = (0usize, 0i128, 0i128);
         let mut rows = vec![];
+        let mut running: BTreeMap<&str, i128> = BTreeMap::new();
         for (ei, e) in entries.iter().enumerate() {
             for (li, l) in e.lines.iter().enumerate() {
                 let (d, c) = (money(&l.debit_cents)?, money(&l.credit_cents)?);
+                let bal = running.entry(l.account_id.as_str()).or_default();
+                *bal = bal.checked_add(d).and_then(|b| b.checked_sub(c)).ok_or_else(corrupt)?;
+                let bal = *bal;
+                if from.is_some_and(|f| e.date.as_str() < f) || to.is_some_and(|t| e.date.as_str() > t) { continue; }
                 dr = dr.checked_add(d).ok_or_else(corrupt)?;
                 cr = cr.checked_add(c).ok_or_else(corrupt)?;
                 if total_lines >= offset && rows.len() < limit {
@@ -43,6 +58,7 @@ impl CompanyBooks {
                         "account_name": names.get(l.account_id.as_str()).copied().unwrap_or(""),
                         "memo": l.memo, "debit_cents": l.debit_cents, "credit_cents": l.credit_cents,
                         "source_row": l.source_row, "native": ei >= p.analysis.entries,
+                        "running_balance_cents": bal.to_string(),
                     }));
                 }
                 total_lines += 1;
@@ -54,7 +70,7 @@ impl CompanyBooks {
             "entries_total": entries.len(), "lines_total": total_lines, "total": total_lines,
             "source_entries": p.analysis.entries, "source_lines": p.analysis.lines,
             "debit_total_cents": dr.to_string(), "credit_total_cents": cr.to_string(),
-            "offset": offset, "limit": limit, "rows": rows,
+            "offset": offset, "limit": limit, "from": from, "to": to, "rows": rows,
             "has_more": next < total_lines, "next_offset": (next < total_lines).then_some(next),
         }))
     }
