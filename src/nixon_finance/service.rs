@@ -84,7 +84,12 @@ struct Idempotency {
 }
 
 pub fn require_person(name: &str) -> Result<String, NixonError> {
-    let trimmed = name.trim();
+    let full = name.trim();
+    // Signed-in staff are stamped as "Name [usr_id]"; validate the name and keep the id for audit.
+    let (trimmed, tag) = match full.rsplit_once(" [") {
+        Some((n, id)) if id.ends_with(']') && id[..id.len() - 1].chars().all(|c| c.is_ascii_alphanumeric() || c == '_') => (n.trim(), true),
+        _ => (full, false),
+    };
     let count = trimmed.chars().count();
     if !(2..=80).contains(&count) {
         return Err(NixonError::new(400, "a named person is required"));
@@ -113,7 +118,20 @@ pub fn require_person(name: &str) -> Result<String, NixonError> {
     {
         return Err(NixonError::new(400, "use the person's name"));
     }
-    Ok(trimmed.to_string())
+    Ok(if tag { full.to_string() } else { trimmed.to_string() })
+}
+
+#[cfg(test)]
+mod person_tests {
+    use super::require_person;
+    #[test]
+    fn staff_stamped_label_is_a_person() {
+        assert_eq!(require_person("Orville Test [usr_70c3cb7ddf0e4fe6]").ok().unwrap(), "Orville Test [usr_70c3cb7ddf0e4fe6]");
+        assert!(require_person("Nixon [usr_1]").is_err());
+        assert!(require_person("x9 [usr_1]").is_err());
+        assert!(require_person("Bob [usr_1; drop]").is_err());
+        assert_eq!(require_person(" Orville Test ").ok().unwrap(), "Orville Test");
+    }
 }
 
 fn nid(prefix: &str) -> String {
