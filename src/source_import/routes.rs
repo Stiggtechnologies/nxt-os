@@ -54,6 +54,11 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/returns", post(test_copy_returns))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/t5008", post(test_copy_slips))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/summary", get(test_copy_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/family-files", post(test_copy_family_files))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/historical-lines", post(test_copy_historical_lines))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/afr-slips", post(test_copy_afr_slips))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-fact-summary", get(test_copy_source_fact_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/source-facts", get(test_copy_client_source_facts))
         .layer(axum::extract::DefaultBodyLimit::max(super::files::MAX_FILE_BYTES * 2 + 64 * 1024))
         .layer(middleware::from_fn(client_scope))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
@@ -169,4 +174,20 @@ async fn test_copy_slips(State(state): S, Path(company): Path<String>, Json(body
 
 async fn test_copy_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_summary(&company).await?))
+}
+
+async fn test_copy_family_files(State(state): S, Path(company): Path<String>, Json(body): Json<super::preserved_records::SourceFactBatch>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_family_files(&company, body).await?))
+}
+async fn test_copy_historical_lines(State(state): S, Path(company): Path<String>, Json(body): Json<super::preserved_records::SourceFactBatch>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_historical_lines(&company, body).await?))
+}
+async fn test_copy_afr_slips(State(state): S, Path(company): Path<String>, Json(body): Json<super::preserved_records::SourceFactBatch>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_afr_slips(&company, body).await?))
+}
+async fn test_copy_source_fact_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_source_fact_summary(&company).await?))
+}
+async fn test_copy_client_source_facts(State(state): S, Path((company,client)): Path<(String,String)>, Query(page): Query<super::preserved_records::SourceFactPage>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_client_source_facts(&company,&client,page).await?))
 }
