@@ -68,3 +68,21 @@ A local REA browser scenario exercised client opening, year comparison and
 original T1 page selection; visual verification is bounded to that scenario.
 Full printed-page coverage across all clients and years remains a separately
 measured migration requirement.
+
+## Legacy reconciliation audit
+
+`GET test-copy/legacy-records?kind=returns|t5008&linkage=unlinked|linked|all`
+reads the actual stored legacy index and CSV-slip records, with stable ordering
+and pages of at most 100 rows. The default linkage filter is `unlinked`.
+It inherits the firm's admin, scope, owner-switch and private/no-store checks.
+Unknown filters, malformed identities, missing bodies and body/index mismatches
+fail explicitly. Its digest is SHA-256 of the returned record serialized as
+UTF-8 JSON with sorted object keys and no insignificant whitespace.
+
+The response preserves the original file stem or client number, source hash,
+year, CSV row and verbatim box strings. It reports whether that raw client
+number exists in the imported roster. For a return-file index, family context
+is included only when family ID, year and the exact file SHA-256 all match a
+preserved family-file fact. This is provenance: a multi-person family file is
+not reassigned to a single individual. No source rows or identities are edited,
+no owner candidates are committed, and no tax cases are created by this read.
