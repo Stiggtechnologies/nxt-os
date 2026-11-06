@@ -15,7 +15,7 @@ test('worklist rejects wrong scope, case creation and malicious years even on an
 });
 test('historical totals preserve absence, zero and pending labels; source slip text is escaped',()=>{
   const values=Object.fromEntries(['15000','23600','26000','42000','48400','48500'].map((x,i)=>[x,i===0?'0':null]));
-  const html=api.recordsHtml('historical-lines',[{tax_year:2013,mapping_state:'pending_year_verification',values_cents:values}]);assert.ok(html.includes('$0.00'));assert.ok(html.includes('Absent'));assert.ok(html.includes('Mapping needs verification'));
+  const html=api.recordsHtml('historical-lines',[{tax_year:2013,vendor_module:'T1',mapping_state:'pending_year_verification',values_cents:values}]);assert.ok(html.includes('$0.00'));assert.ok(html.includes('Absent'));assert.ok(html.includes('Mapping needs verification'));
   const slips=api.recordsHtml('afr-slips',[{slip_kind:'T4Slip',tax_year:null,source_folder_year:2025,vendor_field_tree:{tag:'T4Slip',attributes:{},text:'<img src=x>',children:[]}}]);assert.ok(slips.includes('Missing tax year'));assert.ok(!slips.includes('<img'));assert.ok(slips.includes('&#60;img'));
 });
 test('late source responses cannot replace another tax view',async()=>{
@@ -27,7 +27,7 @@ function harness(recordClient='100') {
   const node=key=>{if(!nodes.has(key))nodes.set(key,{innerHTML:'',value:'',querySelector:node,querySelectorAll:()=>[],scrollIntoView(){}});return nodes.get(key);};
   const host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:key=>key==='[data-imported-client]'?buttons:[]};
   const values=Object.fromEntries(['15000','23600','26000','42000','48400','48500'].map((x,i)=>[x,i===0?'12345':null]));
-  const request=async path=>{requests.push(path);return path.includes('/source-clients?')?page():{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:1,tax_cases_imported:0,records:[{client_number:recordClient,tax_year:2025,mapping_state:'vendor_static_verified',values_cents:values}]};};
+  const request=async path=>{requests.push(path);return path.includes('/source-clients?')?page():{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:1,tax_cases_imported:0,records:[{client_number:recordClient,tax_year:2025,vendor_module:'T1',mapping_state:'vendor_static_verified',values_cents:values}]};};
   return {host,node,buttons,requests,controller:api.mount(host,{request})};
 }
 test('T1 list opens the selected client source totals and encodes global source search',async()=>{
@@ -73,4 +73,18 @@ test('client sorting, status and province stay global request filters; keyword s
 test('family navigation exposes only exact numeric client identities',()=>{
   const h=api.recordsHtml('family-files',[{family_file_id:'999',tax_year:2024,member_client_numbers:['100','200']}]);assert.ok(h.includes('data-family-client="200"'));
   assert.throws(()=>api.recordsHtml('family-files',[{family_file_id:'999',tax_year:2024,member_client_numbers:['<img>']}]));
+});
+
+test('T3 source candidates cannot appear as T1 totals in entry, comparison or history',async()=>{
+  const values=Object.fromEntries(['15000','23600','26000','42000','48400','48500'].map(x=>[x,'987654']));
+  const trust={client_number:'100',tax_year:2025,vendor_module:'T3',mapping_state:'pending_module_verification',values_cents:values};
+  const recordHtml=api.recordsHtml('historical-lines',[trust]);assert.ok(recordHtml.includes('Source module T3'));assert.ok(!recordHtml.includes('$9,876.54'));
+  const entry=api.entryHtml(page().clients[0],trust,'');assert.ok(entry.includes('not shown as T1 totals'));assert.ok(!entry.includes('$9,876.54'));
+  const h=harness();await h.controller.ready;
+  const controller=api.mount(h.host,{request:async path=>path.includes('/source-clients?')?page():{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:1,tax_cases_imported:0,records:[trust]}});
+  await controller.ready;await controller.open('100');
+  h.node('[data-dtmax-compare]').onchange({target:{value:'2025'}});
+  assert.ok(h.node('[data-dtmax-comparison]').innerHTML.includes('Source module T3'));
+  assert.ok(!h.node('[data-dtmax-comparison]').innerHTML.includes('$9,876.54'));
+  for(const changed of [{...trust,vendor_module:'T2'},{...trust,vendor_module:undefined},{...trust,mapping_state:'vendor_static_verified'}])assert.throws(()=>api.recordsHtml('historical-lines',[changed]));
 });

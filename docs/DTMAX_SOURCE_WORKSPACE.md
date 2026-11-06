@@ -27,6 +27,13 @@ export were also inspected directly. Private artifacts remain outside Git.
 | Source slips | Preserved CRA field trees and occurrence records | No economic deduplication or inferred slip year |
 | Historical values | Six exact integer-cent source totals with mapping status and absent/zero distinction | No recalculation or automatic approval |
 
+Contexts identifying as another source module are retained but their candidate
+amounts are suppressed in T1 totals, comparison and history. In particular,
+the installed converter's T3 summary selects E11 variant 991, while T1 uses
+variant 1; its field meanings also differ. A `pending_module_verification`
+record must not be presented with T1 line labels. The interface shows the
+source module and need for separate mapping without changing stored facts.
+
 REA also found a separate compiled batch-PDF archive workflow, distinct from
 production printing. Its dialog describes eligibility based on the print queue.
 That is a lead for acquiring more original PDFs, not proof that every historical
