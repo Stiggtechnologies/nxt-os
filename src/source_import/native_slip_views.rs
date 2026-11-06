@@ -142,12 +142,15 @@ impl SourceImport {
         let keys:Vec<_>=selected.iter().map(|id|k(company,&format!("record:{id}"))).collect();
         let rows=self.store.mget(&keys).await.map_err(|e|storage(&e))?;
         if rows.len()!=selected.len() {return Err(storage("Native source page cardinality mismatch"))}
+        let mut views=Vec::new();
         for (id,raw) in selected.into_iter().zip(rows) {
             let raw=raw.ok_or_else(||storage("Native source index points to missing record"))?;
             let v:NativeSlipView=serde_json::from_str(&raw).map_err(|_|storage("Stored native source view is corrupt"))?;validate(&v).map_err(|_|storage("Stored native source view fails validation"))?;
             if v.client_number!=client || identity(&v)!=id || page.source_return_year.is_some_and(|y|y!=v.source_return_year) {return Err(storage("Native source client, year or identity mismatch"))}
             records.push(describe(&v));
+            views.push(v);
         }
+        self.attach_native_supplements(company,&views,&mut records).await?;
         Ok(json!({"test_copy":true,"source_scope":company,"client_number":client,"source_return_year":page.source_return_year,"kind":"native-slip-views","offset":page.offset,"total":total,"records":records,"normalized_slips_created":0,"tax_cases_imported":0,"live_cutover_allowed":false}))
     }
     pub async fn test_copy_native_slip_summary(&self, company: &str) -> Result<Value> {

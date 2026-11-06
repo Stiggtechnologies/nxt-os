@@ -43,3 +43,27 @@ async fn optional_private_print_output_passes_the_same_parser_and_round_trip(){
     let (status,result)=req(&app,"GET",&format!("clients/{client}/return-pdfs/2024/{sha}"),Value::Null,true).await;assert_eq!(status,200);assert_eq!(result["content_hex"],hex::encode(&bytes));
     println!("PRIVATE_ORIGINAL_PDF_PARSED_AND_ROUND_TRIPPED: pages={pages}; bytes={}",bytes.len());
 }
+#[tokio::test]
+async fn optional_retained_originals_all_pass_static_parser_and_exact_replay(){
+    let Ok(path)=std::env::var("NXT_DTMAX_RETAINED_PDF_MANIFEST")else{return};let path=std::path::Path::new(&path);
+    let manifest_bytes=std::fs::read(path).unwrap();assert_eq!(hex::encode(Sha256::digest(&manifest_bytes)),"c32b2d8eb1a3c5ded5da8b59e64b8ad2c1311409475551789bcfbf00e82e1991");
+    let manifest:Value=serde_json::from_slice(&manifest_bytes).unwrap();let records=manifest["records"].as_array().unwrap();assert_eq!(records.len(),66);
+    let app=app();let clients:std::collections::BTreeSet<_>=records.iter().map(|r|r["client_number"].as_str().unwrap()).collect();
+    let registered=clients.into_iter().map(|id|json!({"client_number":id,"name":"Private original-PDF parser verification"})).collect::<Vec<_>>();
+    assert_eq!(req(&app,"POST","clients",json!({"test_copy":true,"clients":registered}),true).await.0,200);
+    let before=req(&app,"GET","summary",Value::Null,true).await.1;let mut pages=0;
+    for r in records {
+        let file=path.parent().unwrap().join(r["file"].as_str().unwrap());let bytes=std::fs::read(file).unwrap();
+        assert!(hex::encode(Sha256::digest(&bytes))==r["sha256"].as_str().unwrap(),"Pinned original PDF hash changed");
+        assert_eq!(bytes.len(),r["bytes"].as_u64().unwrap() as usize);
+        let v=json!({"test_copy":true,"client_number":r["client_number"],"tax_year":r["tax_year"],"sha256":r["sha256"],"page_labels":r["page_labels"],"content_hex":hex::encode(&bytes)});
+        let(status,result)=req(&app,"POST","return-pdfs",v.clone(),true).await;assert_eq!(status,200,"Original PDF static parser rejected a verified staged document: {result}");
+        assert_eq!(result["record"]["page_count"],r["page_count"]);assert_eq!(result["created"],true);
+        assert_eq!(req(&app,"POST","return-pdfs",v.clone(),true).await.1["created"],false);
+        let url=format!("clients/{}/return-pdfs/{}/{}",r["client_number"].as_str().unwrap(),r["tax_year"],r["sha256"].as_str().unwrap());
+        let(status,result)=req(&app,"GET",&url,Value::Null,true).await;assert_eq!(status,200);assert!(result["content_hex"]==v["content_hex"],"Original PDF bytes changed during round trip");
+        assert_eq!(result["record"]["page_labels"],r["page_labels"]);pages+=r["page_count"].as_u64().unwrap();
+    }
+    assert_eq!(pages,1276);assert_eq!(req(&app,"GET","summary",Value::Null,true).await.1,before);
+    println!("PRIVATE_RETAINED_ORIGINAL_PDFS=66; PAGES=1276; BYTE_EXACT_ROUND_TRIP_AND_REPLAY=true; ORIGINAL_SOURCE_CONTROLS_UNCHANGED=true");
+}

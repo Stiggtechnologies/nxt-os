@@ -60,6 +60,8 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-exceptions", post(test_copy_preserve_source_exception).get(test_copy_source_exceptions))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-exceptions/{archive}/{offset}", get(test_copy_source_exception_content))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-slip-views", post(test_copy_native_slip_views))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-slip-supplements", post(test_copy_native_slip_supplements))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-slip-supplements/summary", get(test_copy_native_supplement_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-slip-views/summary", get(test_copy_native_slip_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/family-files", post(test_copy_family_files))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/historical-lines", post(test_copy_historical_lines))
@@ -206,6 +208,12 @@ async fn test_copy_source_exception_content(State(state): S, Path((company,archi
 }
 async fn test_copy_native_slip_views(State(state): S, Path(company): Path<String>, Json(body): Json<super::native_slip_views::NativeSlipBatch>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_native_slip_views(&company,body).await?))
+}
+async fn test_copy_native_slip_supplements(State(state): S, Path(company): Path<String>, Json(body): Json<super::native_slip_supplements::SupplementBatch>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_native_slip_supplements(&company,body).await?))
+}
+async fn test_copy_native_supplement_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_native_supplement_summary(&company).await?))
 }
 async fn test_copy_native_slip_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_native_slip_summary(&company).await?))
