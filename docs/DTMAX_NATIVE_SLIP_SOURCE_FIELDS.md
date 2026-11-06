@@ -60,18 +60,21 @@ are not invented or given default zeros.
 request. Every row must match an existing immutable historical context by
 client, family, source year, original archive and converter module. Reviewed
 field IDs and active type/value pairs are checked before writing any row in
-that request. Source-view identity is the pinned view-file digest plus its
-one-based original row number. A different replay conflicts; a matching retry
+that request. Projection identity includes the pinned financial-profile digest,
+view-file digest and one-based original row number. A later reviewed profile
+can preserve a separate projection without replacing earlier values. A
+different replay of the same projection conflicts; a matching retry
 repairs interrupted global/client/client-year indexes without replacing values.
 Storage interruption or a later immutable conflict can leave earlier records
 accepted; requests are replayable rather than database transactions.
 
 `GET .../test-copy/clients/{client}/source-facts?kind=native-slip-views`
 returns at most 100 views per page. `source_return_year` filters through a
-client-year index before pagination and each loaded row is revalidated against
+client-year/profile index before pagination and each loaded row is revalidated against
 the requested identity and year. The original-source indexes and totals are
 unchanged. `GET .../test-copy/native-slip-views/summary` reports source-view
-count without claiming normalized slips. Existing firm-admin authentication,
+count for the current profile without claiming normalized slips. The explicit
+`source_view_projections` count is not an economic-slip count. Existing firm-admin authentication,
 hosted owner switch and test-copy guards apply to every route.
 
 Archive/view-file/line digests are provenance supplied by the pinned authorized
