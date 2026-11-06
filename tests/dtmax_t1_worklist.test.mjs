@@ -88,3 +88,16 @@ test('T3 source candidates cannot appear as T1 totals in entry, comparison or hi
   assert.ok(!h.node('[data-dtmax-comparison]').innerHTML.includes('$9,876.54'));
   for(const changed of [{...trust,vendor_module:'T2'},{...trust,vendor_module:undefined},{...trust,mapping_state:'vendor_static_verified'}])assert.throws(()=>api.recordsHtml('historical-lines',[changed]));
 });
+
+const exception=()=>({source_archive_sha256:'a'.repeat(64),source_archive_bytes:1000,source_context_offset:100,source_context_sha256:'b'.repeat(64),source_context_bytes:70,source_year_frame_offset:56,source_year_frame_sha256:'c'.repeat(64),family_file_id:'99',client_number:'100',tax_year:2024,reason:'missing_identity_information',frame_tags:['EXC','EXP'],immutable:true,identity_metadata_readable:false,normalized_amounts_created:false,header_ids_are_source_references_only:true});
+test('source exceptions retain unreadable state and distinguish header references from ownership',()=>{
+  const r=exception();api.validateException(r);const html=api.exceptionsHtml([r]);assert.ok(html.includes('Header client #'));assert.ok(html.includes('do not establish a person, ownership or tax figures'));assert.ok(html.includes('Identity information missing'));assert.ok(!html.includes('$0.00'));
+  for(const change of [{immutable:false},{identity_metadata_readable:true},{normalized_amounts_created:true},{source_context_bytes:65537},{source_context_offset:999},{frame_tags:['EXC','EXC']},{client_number:'<img>'},{reason:'guessed'}])assert.throws(()=>api.validateException({...r,...change}));
+});
+test('exception retrieval is lazy, scope checked and stops when another workspace is selected',async()=>{
+  const h=harness();let resolve;const pending=new Promise(r=>resolve=r);let count=0;
+  const c=api.mount(h.host,{request:async path=>{if(path.includes('/source-exceptions?')){count++;return pending;}return page();}});await c.ready;assert.equal(count,0);
+  const work=h.node('[data-dtmax-exceptions]').ontoggle({target:{open:true}});assert.equal(count,1);
+  c.dispose();h.node('[data-dtmax-exception-content]').innerHTML='Different view';resolve({test_copy:true,source_scope:'dtmax-test-copy',source_rows_modified:0,tax_cases_imported:0,offset:0,limit:25,total:1,records:[exception()]});await work;assert.equal(h.node('[data-dtmax-exception-content]').innerHTML,'Different view');
+  const d=api.mount(h.host,{request:async path=>path.includes('/source-exceptions?')?{source_scope:'another-company'}:page()});await d.ready;await h.node('[data-dtmax-exceptions]').ontoggle({target:{open:true}});assert.ok(h.node('[data-dtmax-exception-content]').innerHTML.includes('role="alert"'));
+});

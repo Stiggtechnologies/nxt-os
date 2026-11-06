@@ -61,23 +61,55 @@
   function validatePdf(r,client){
     if(!r||r.client_number!==client||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||! /^[a-f0-9]{64}$/.test(r.sha256)||r.original_print_output!==true||r.immutable!==true||!integer(r.bytes)||r.bytes===0||r.bytes>2097152||!Array.isArray(r.page_labels)||r.page_labels.length!==r.page_count||r.page_count<1||r.page_count>500||r.page_labels.some(x=>typeof x!=='string'||!x||x.length>120||/[\x00-\x1f]/.test(x)))throw Error('Original PDF identity or page index did not match');return r;
   }
+  function validateException(r){
+    const digest=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
+    if(!r||!digest(r.source_archive_sha256)||!digest(r.source_context_sha256)||!digest(r.source_year_frame_sha256)||!integer(r.source_context_offset)||!integer(r.source_year_frame_offset)||r.source_year_frame_offset<56||r.source_year_frame_offset+12>r.source_context_offset||!integer(r.source_archive_bytes)||!integer(r.source_context_bytes)||r.source_context_bytes<70||r.source_context_bytes>65536||r.source_context_offset+r.source_context_bytes>r.source_archive_bytes||!/^\d{1,10}$/.test(r.client_number)||!/^\d{1,10}$/.test(r.family_file_id)||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||!['missing_identity_information','empty_information_payload'].includes(r.reason)||r.immutable!==true||r.identity_metadata_readable!==false||r.normalized_amounts_created!==false||r.header_ids_are_source_references_only!==true||!Array.isArray(r.frame_tags)||r.frame_tags.length<2||r.frame_tags.length>256||r.frame_tags[0]!=='EXC'||r.frame_tags[1]!=='EXP'||r.frame_tags.slice(2).some(t=>!['EXR','EXA'].includes(t)))throw Error('Unreadable source context metadata did not match');return r;
+  }
+  function exceptionsHtml(records){
+    records.forEach(validateException);
+    if(!records.length)return '<p>No unreadable source contexts are preserved in this scope.</p>';
+    return '<p>Original archive fragments are preserved below. Header IDs are source references; they do not establish a person, ownership or tax figures.</p><div class="table-wrap"><table><thead><tr><th>Year</th><th>Header client #</th><th>Family file #</th><th>Source reader exception</th><th>Original bytes</th></tr></thead><tbody>'+records.map((r,i)=>'<tr><td>'+r.tax_year+'</td><td>'+esc(r.client_number)+'</td><td>'+esc(r.family_file_id)+'</td><td>'+esc(r.reason==='missing_identity_information'?'Identity information missing':'Identity information payload empty')+(r.frame_tags.includes('EXA')?'<small>Opaque family auxiliary data included</small>':'')+'</td><td><button type="button" data-exception-download="'+i+'">Download fragment · '+r.source_context_bytes+' bytes</button></td></tr>').join('')+'</tbody></table></div>';
+  }
   function mount(host,{request,isCurrent=()=>true}) {
     let sequence=0,offset=0,search='',year='',activeClient='',kind='historical-lines',factOffset=0;
     let page=null,view='list',selectedYear='',comparison='',history=[],pdfs=[],pdfUrl='',pdfRecord=null,pdfPage=1;
-    let sort='client_number',direction='asc',status='',province='';const clientCache=new Map();
+    let sort='client_number',direction='asc',status='',province='',exceptionSequence=0;const clientCache=new Map(),exceptionUrls=[];
+    const releaseExceptions=()=>{exceptionUrls.splice(0).forEach(url=>URL.revokeObjectURL(url));};
     const current=n=>host.isConnected!==false&&isCurrent()&&n===sequence;
     const q=s=>host.querySelector(s),all=s=>host.querySelectorAll(s);
     const selected=()=>clientCache.get(activeClient);
     const releasePdf=()=>{if(pdfUrl){URL.revokeObjectURL(pdfUrl);pdfUrl='';}pdfRecord=null;};
     function tabs(){return '<div class="dtmax-tabs" role="tablist" aria-label="Imported T1 workspace">'+[['list','Client list','F10'],['entry','Data entry','F2'],['return','Tax return','F9']].map(([id,label,key])=>'<button role="tab" id="dtmax-tab-'+id+'" aria-controls="dtmax-panel" aria-selected="'+(id===view)+'" tabindex="'+(id===view?'0':'-1')+'" data-dtmax-view="'+id+'"'+(id!=='list'&&!activeClient?' disabled':'')+'>'+label+'<kbd>'+key+'</kbd></button>').join('')+'<span class="dtmax-module">T1</span></div>';}
     function shell(body){
+      if(view==='list')body='<details data-dtmax-exceptions><summary>Unreadable source contexts</summary><div data-dtmax-exception-content><p>Open to load preserved source exceptions.</p></div></details>'+body;
       host.innerHTML='<section class="dtmax-workspace" aria-label="DT Max source workspace"><div class="dtmax-caption"><h2>T1 clients imported from DT Max</h2><span>Firm-wide source workspace</span></div>'+tabs()+'<p class="dtmax-notice">Preserved source records · Read-only. NXT preparation workpapers remain separate below.</p><div id="dtmax-panel" role="tabpanel" aria-labelledby="dtmax-tab-'+view+'">'+body+'</div></section>';
       all('[data-dtmax-view]').forEach(b=>{b.onclick=()=>show(b.dataset.dtmaxView);b.onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const ids=activeClient?['list','entry','return']:['list'];const at=ids.indexOf(view);return show(ids[(at+(e.key==='ArrowRight'?1:ids.length-1))%ids.length],true);}};});
+      if(view==='list')q('[data-dtmax-exceptions]').ontoggle=e=>{if(e.target.open)return loadExceptions(0);};
       host.onkeydown=e=>{
         if(e.ctrlKey&&!e.altKey&&!e.metaKey&&e.key.toLowerCase()==='f'&&view==='list'){e.preventDefault();q('[name=search]')?.focus?.();return;}
         if(e.altKey&&e.key==='F7'&&view==='entry'){e.preventDefault();q('[data-dtmax-keyword-find]')?.focus?.();return;}
         if(e.altKey||e.ctrlKey||e.metaKey||/INPUT|SELECT|TEXTAREA/.test(e.target?.tagName||''))return;const id={F10:'list',F2:'entry',F9:'return'}[e.key];if(id&&(activeClient||id==='list')){e.preventDefault();show(id,true);}
       };
+    }
+    async function loadExceptions(at){
+      const n=sequence,generation=++exceptionSequence,detail=q('[data-dtmax-exception-content]');if(!detail)return;detail.innerHTML='<p>Loading preserved source exceptions…</p>';
+      try{
+        const p=await request(BASE+'source-exceptions?offset='+at+'&limit=25');if(!current(n)||view!=='list'||generation!==exceptionSequence)return;
+        if(p.source_scope!==SCOPE||p.test_copy!==true||p.source_rows_modified!==0||p.tax_cases_imported!==0||p.offset!==at||p.limit!==25||!integer(p.total)||!Array.isArray(p.records)||p.records.length!==Math.min(25,Math.max(0,p.total-at)))throw Error('Source exception response did not match');
+        detail.innerHTML=exceptionsHtml(p.records)+'<p>'+(p.total?at+1:0)+'–'+(at+p.records.length)+' of '+p.total+' source contexts</p><button type="button" data-exception-prev '+(!at?'disabled':'')+'>Previous contexts</button> <button type="button" data-exception-next '+(at+p.records.length>=p.total?'disabled':'')+'>Next contexts</button>';
+        detail.querySelector('[data-exception-prev]').onclick=()=>loadExceptions(Math.max(0,at-25));detail.querySelector('[data-exception-next]').onclick=()=>loadExceptions(at+25);
+        detail.querySelectorAll('[data-exception-download]').forEach(b=>b.onclick=()=>downloadException(p.records[Number(b.dataset.exceptionDownload)],n,generation));
+      }catch(e){if(current(n)&&view==='list'&&generation===exceptionSequence)detail.innerHTML='<p role="alert">Source exceptions unavailable: '+esc(e.message)+'</p>';}
+    }
+    async function downloadException(record,n,generation){
+      try{
+        const p=await request(BASE+'source-exceptions/'+record.source_archive_sha256+'/'+record.source_context_offset);if(!current(n)||generation!==exceptionSequence)return;
+        validateException(p.record);
+        if(p.source_scope!==SCOPE||p.test_copy!==true||p.source_rows_modified!==0||p.tax_cases_imported!==0||JSON.stringify(p.record)!==JSON.stringify(record)||typeof p.source_context_hex!=='string'||p.source_context_hex.length!==record.source_context_bytes*2||!/^[a-f0-9]+$/.test(p.source_context_hex))throw Error('Source exception content did not match');
+        const bytes=Uint8Array.from(p.source_context_hex.match(/../g),s=>parseInt(s,16));
+        const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');if(!current(n)||generation!==exceptionSequence)return;if(digest!==record.source_context_sha256)throw Error('Source fragment failed browser hash verification');
+        const url=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));exceptionUrls.push(url);const link=document.createElement('a');link.href=url;link.download='dtmax-source-context-'+record.tax_year+'-'+record.source_context_sha256.slice(0,12)+'.dtmax-frames';link.click();
+      }catch(e){if(current(n)&&generation===exceptionSequence){const detail=q('[data-dtmax-exception-content]');if(detail)detail.innerHTML='<p role="alert">Source fragment unavailable: '+esc(e.message)+'</p>';}}
     }
     function clientHead(){const c=selected();return '<div class="dtmax-client-head">Client #'+esc(c.client_number)+' · '+esc(c.name)+'<small>Imported source · '+(selectedYear?'Tax year '+esc(selectedYear):'No historical year')+'</small></div><div class="dtmax-toolbar"><label>Tax year<select data-dtmax-year>'+c.historical_years.slice().sort((a,b)=>b-a).map(y=>'<option'+(String(y)===selectedYear?' selected':'')+'>'+y+'</option>').join('')+'</select></label><button type="button" data-dtmax-back>Back to client list</button></div>';}
     function bindClient(){q('[data-dtmax-back]').onclick=()=>show('list');q('[data-dtmax-year]').onchange=e=>{selectedYear=e.target.value;show(view);};}
@@ -89,7 +121,7 @@
       all('[data-imported-client]').forEach(b=>b.onclick=()=>open(b.dataset.importedClient));
     }
     async function load(next=0){
-      const n=++sequence;offset=next;activeClient='';view='list';releasePdf();
+      const n=++sequence;offset=next;activeClient='';view='list';releasePdf();releaseExceptions();
       host.innerHTML='<div class="card"><h2>T1 clients imported from DT Max</h2><p>Loading imported clients…</p></div>';
       try{
         const p=validatePage(await request(BASE+'source-clients?offset='+offset+'&limit=100&search='+encodeURIComponent(search)+(year?'&year='+year:'')+'&sort='+sort+'&direction='+direction+(status?'&status='+encodeURIComponent(status):'')+(province?'&province='+encodeURIComponent(province):'')),offset);
@@ -159,7 +191,7 @@
     function renderPdfCanvas(){
       if(!pdfUrl||!pdfRecord)return;const title=pdfRecord.page_labels[pdfPage-1];q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-tools"><p>'+esc(pdfRecord.tax_year)+' · Page '+pdfPage+' of '+pdfRecord.page_count+' · Original bytes verified</p><a href="'+esc(pdfUrl)+'" download="dtmax-t1-'+esc(activeClient)+'-'+pdfRecord.tax_year+'.pdf">Download original PDF</a></div><iframe title="Original DT Max printed return: '+esc(title)+'" referrerpolicy="no-referrer" src="'+esc(pdfUrl)+'#page='+pdfPage+'&view=FitH&navpanes=0"></iframe>';
     }
-    return {ready:load(),load,facts,show,open,dispose:()=>{++sequence;releasePdf();host.onkeydown=null;}};
+    return {ready:load(),load,facts,show,open,dispose:()=>{++sequence;releasePdf();releaseExceptions();host.onkeydown=null;}};
   }
-  globalThis.NXTDTMaxT1={mount,cents,validatePage,recordsHtml,entryHtml,validatePdf};
+  globalThis.NXTDTMaxT1={mount,cents,validatePage,recordsHtml,entryHtml,validatePdf,validateException,exceptionsHtml};
 })();
