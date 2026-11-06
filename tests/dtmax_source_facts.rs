@@ -11,11 +11,26 @@ fn app() -> Router {
 #[tokio::test]
 async fn source_fact_routes_reject_unauthenticated_reads_and_writes() {
     let app=app();
-    for (method,path) in [("POST","family-files"),("POST","historical-lines"),("POST","afr-slips"),("GET","source-fact-summary"),("GET","clients/100/source-facts?kind=historical-lines")] {
+    for (method,path) in [("POST","family-files"),("POST","historical-lines"),("POST","afr-slips"),("GET","source-fact-summary"),("GET","source-clients"),("GET","clients/100/source-facts?kind=historical-lines")] {
         let req=Request::builder().method(method).uri(format!("{BASE}/{path}"))
             .header("content-type","application/json").body(Body::from("{\"test_copy\":true,\"records\":[]}")).unwrap();
         assert_eq!(app.clone().oneshot(req).await.unwrap().status(),401);
     }
+}
+#[tokio::test]
+async fn t1_source_worklist_uses_individual_years_and_search_without_creating_cases() {
+    let app=app();
+    request(&app,"POST","clients",json!({"test_copy":true,"clients":[{"client_number":"100","name":"Synthetic Person"},{"client_number":"999","name":"Separate Family Stem"}]})).await;
+    request(&app,"POST","historical-lines",json!({"test_copy":true,"records":[lines(2025),lines(2013)]})).await;
+    let (status,page)=request(&app,"GET","source-clients?limit=100&year=2013&search=person",Value::Null).await;
+    assert_eq!(status,200);assert_eq!(page["source_scope"],"source-fact-test");assert_eq!(page["program"],"T1");assert_eq!(page["total"],1);assert_eq!(page["tax_cases_created"],0);
+    assert_eq!(page["clients"][0]["client_number"],"100");assert_eq!(page["clients"][0]["historical_years"],json!([2013,2025]));assert_eq!(page["clients"][0]["pending_years"],json!([2013]));
+    let (status,hosted)=request(&app,"GET","source-clients?limit=100&year=2013&search=person&path=%2Fapi%2Fignored-rewrite",Value::Null).await;assert_eq!(status,200);assert_eq!(hosted,page);
+    let (status,hosted)=request(&app,"GET","clients/100/source-facts?kind=historical-lines&offset=0&limit=100&path=%2Fapi%2Fother-company",Value::Null).await;assert_eq!(status,200);assert_eq!(hosted["client_number"],"100");assert_eq!(hosted["records"].as_array().unwrap().len(),2);
+    assert_eq!(request(&app,"GET","clients/100/source-facts?kind=historical-lines&unexpected=1",Value::Null).await.0,400);
+    assert!(page["clients"][0].get("email").is_none());
+    let (_,page)=request(&app,"GET","source-clients?limit=1&offset=1",Value::Null).await;assert_eq!(page["total"],2);assert_eq!(page["clients"][0]["client_number"],"999");assert_eq!(page["clients"][0]["historical_years"],json!([]));
+    assert_eq!(request(&app,"GET","source-clients?limit=101",Value::Null).await.0,400);
 }
 #[tokio::test]
 async fn conflicting_concurrent_source_facts_cannot_overwrite_the_winner() {
@@ -35,7 +50,8 @@ async fn request(app: &Router, method: &str, path: &str, body: Value) -> (u16,Va
         .header("authorization","Bearer source-fact-local-test").header("content-type","application/json")
         .body(if method=="GET" {Body::empty()} else {Body::from(body.to_string())}).unwrap();
     let response=app.clone().oneshot(request).await.unwrap();let status=response.status().as_u16();
-    (status,serde_json::from_slice(&axum::body::to_bytes(response.into_body(),usize::MAX).await.unwrap()).unwrap())
+    let bytes=axum::body::to_bytes(response.into_body(),usize::MAX).await.unwrap();
+    (status,serde_json::from_slice(&bytes).unwrap_or_else(|_|json!({"error":String::from_utf8_lossy(&bytes)})))
 }
 fn lines(year: u16) -> Value {
     json!({"client_number":"100","family_file_id":"999","tax_year":year,"archive_sha256":"a".repeat(64),"vendor_module":"T1", "mapping_state":if (2015..=2025).contains(&year){"vendor_static_verified"}else{"pending_year_verification"},
