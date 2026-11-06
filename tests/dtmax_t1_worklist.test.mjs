@@ -30,16 +30,21 @@ test('native view historical bindings remain pending and unreviewed or normalize
   r.financial_fields=[];r.original_field_count=0;html=api.recordsHtml('native-slip-views',[r]);assert.ok(html.includes('No fields from this financial profile'));
   for(const changed of [{...r,financial_profile_sha256:'0'.repeat(64)},{...r,normalized_tax_slip_created:true},{...r,taxpayer_allocations_applied:true}])assert.throws(()=>api.recordsHtml('native-slip-views',[changed]));
 });
+test('linked T5008 source retains the raw owner reference and rejects reassignment or normalization claims',()=>{
+  const r={client_number:'100',tax_year:2024,original_source_record:{client_number:'0',tax_year:2024,source_file_sha256:'a'.repeat(64),row:7,boxes:{20:'1,234.50',21:'<img src=x>'}},owner_link:{legacy_record_id:'0:2024:'+'a'.repeat(64)+':7',legacy_record_sha256:'b'.repeat(64),owner_client_number:'100',evidence_mode:'recipient_name_and_all_boxes',matching_cra_records:[{}]},source_owner_id_changed:false,normalized_tax_slip_created:false,economic_slip_uniqueness_verified:false,financial_values_approved:false};
+  const html=api.recordsHtml('linked-t5008',[r]);assert.ok(html.includes('1,234.50'));assert.ok(html.includes('Original source client reference: 0'));assert.ok(!html.includes('<img'));assert.ok(html.includes('&#60;img'));assert.ok(html.includes('No additional tax slip has been created'));
+  for(const changed of [{...r,client_number:'200'},{...r,source_owner_id_changed:true},{...r,normalized_tax_slip_created:true},{...r,tax_year:2023}])assert.throws(()=>api.recordsHtml('linked-t5008',[changed]));
+});
 test('late source responses cannot replace another tax view',async()=>{
   let resolve,active=true;const pending=new Promise(r=>resolve=r),host={isConnected:true,innerHTML:'',querySelector:()=>null};
   const controller=api.mount(host,{request:()=>pending,isCurrent:()=>active});active=false;host.innerHTML='Different tax view';resolve(page());await controller.ready;assert.equal(host.innerHTML,'Different tax view');
 });
-function harness(recordClient='100') {
+function harness(recordClient='100',extra) {
   const nodes=new Map(),buttons=[{dataset:{importedClient:'100'}}],requests=[];
   const node=key=>{if(!nodes.has(key))nodes.set(key,{innerHTML:'',value:'',querySelector:node,querySelectorAll:()=>[],scrollIntoView(){}});return nodes.get(key);};
   const host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:key=>key==='[data-imported-client]'?buttons:[]};
   const values=Object.fromEntries(['15000','23600','26000','42000','48400','48500'].map((x,i)=>[x,i===0?'12345':null]));
-  const request=async path=>{requests.push(path);return path.includes('/source-clients?')?page():{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:1,tax_cases_imported:0,records:[{client_number:recordClient,tax_year:2025,vendor_module:'T1',mapping_state:'vendor_static_verified',values_cents:values}]};};
+  const request=async path=>{requests.push(path);const supplied=extra?.(path);if(supplied!==undefined)return supplied;return path.includes('/source-clients?')?page():{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:1,tax_cases_imported:0,records:[{client_number:recordClient,tax_year:2025,vendor_module:'T1',mapping_state:'vendor_static_verified',values_cents:values}]};};
   return {host,node,buttons,requests,controller:api.mount(host,{request})};
 }
 test('T1 list opens the selected client source totals and encodes global source search',async()=>{
@@ -50,6 +55,12 @@ test('T1 list opens the selected client source totals and encodes global source 
   h.node('[name=search]').value='Name & client';h.node('[name=year]').value='2013';await h.node('[data-dtmax-search]').onsubmit({preventDefault(){}});
   assert.ok(h.requests.at(-1).includes('search=Name%20%26%20client&year=2013'));
   assert.ok(h.requests.every(p=>p.startsWith('/api/source-imports/dtmax/companies/dtmax-test-copy/test-copy/')));
+});
+test('owner reconciliation loads lazily and verifies raw, resolved and remaining counts',async()=>{
+  const response={source_scope:'dtmax-test-copy',test_copy:true,source_rows_modified:0,normalized_slips_created:0,tax_cases_imported:0,raw_legacy_CSV_owner_ids_unregistered:31,verified_owner_links:31,remaining_owner_exceptions:0};
+  const h=harness('100',path=>path.endsWith('legacy-owner-links/summary')?response:undefined);await h.controller.ready;assert.equal(h.requests.length,1);
+  await h.node('[data-dtmax-owner-review]').ontoggle({target:{open:true}});let html=h.node('[data-dtmax-owner-content]').innerHTML;assert.ok(html.includes('31 of 31'));assert.ok(html.includes('0 ownership exceptions remain'));
+  response.remaining_owner_exceptions=1;await h.node('[data-dtmax-owner-review]').ontoggle({target:{open:true}});html=h.node('[data-dtmax-owner-content]').innerHTML;assert.ok(html.includes('role="alert"'));assert.ok(!html.includes('31 of 31'));
 });
 test('another client record cannot display under the selected imported T1',async()=>{
   const h=harness('200');await h.controller.ready;await h.buttons[0].onclick();const html=h.host.innerHTML+h.node('[data-dtmax-details]').innerHTML;

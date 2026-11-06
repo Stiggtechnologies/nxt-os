@@ -55,6 +55,8 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/t5008", post(test_copy_slips))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/summary", get(test_copy_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-records", get(test_copy_legacy_page))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-owner-links", post(test_copy_legacy_owner_links))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-owner-links/summary", get(test_copy_legacy_owner_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-exceptions", post(test_copy_preserve_source_exception).get(test_copy_source_exceptions))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-exceptions/{archive}/{offset}", get(test_copy_source_exception_content))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-slip-views", post(test_copy_native_slip_views))
@@ -97,6 +99,12 @@ async fn client_scope(req: axum::extract::Request, next: middleware::Next) -> Re
 
 async fn coverage() -> Json<Value> {
     Json(SourceImport::coverage())
+}
+async fn test_copy_legacy_owner_links(State(state): S, Path(company): Path<String>, Json(body): Json<super::legacy_owner_links::LegacyOwnerBatch>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_legacy_owner_links(&company, body).await?))
+}
+async fn test_copy_legacy_owner_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_legacy_owner_summary(&company).await?))
 }
 
 async fn open(State(state): S, Path(lane): Path<String>, Json(batch): Json<OpenBatch>) -> Result<Json<Value>, ImportError> {
