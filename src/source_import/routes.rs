@@ -54,6 +54,7 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/returns", post(test_copy_returns))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/t5008", post(test_copy_slips))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/summary", get(test_copy_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-records", get(test_copy_legacy_page))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/family-files", post(test_copy_family_files))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/historical-lines", post(test_copy_historical_lines))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/afr-slips", post(test_copy_afr_slips))
@@ -178,6 +179,9 @@ async fn test_copy_slips(State(state): S, Path(company): Path<String>, Json(body
 
 async fn test_copy_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_summary(&company).await?))
+}
+async fn test_copy_legacy_page(State(state): S, Path(company): Path<String>, Query(page): Query<super::test_copy::LegacyPage>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_legacy_page(&company,page).await?))
 }
 
 async fn test_copy_family_files(State(state): S, Path(company): Path<String>, Json(body): Json<super::preserved_records::SourceFactBatch>) -> Result<Json<Value>, ImportError> {

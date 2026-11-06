@@ -4,17 +4,39 @@
 //! is the local memory/dev-file backend, or Supabase with the owner's NXT_DTMAX_HOSTED=on. Clients are keyed by the DT Max `Client #`. Return files are
 //! indexed by client number and tax year from the file's own `DTMAX\0YY` header; their
 //! section payloads are vendor-encoded and are not decoded or stored here.
-//! SIN is never accepted. Load responses carry counts and reasons, never client fields; only
-//! `test_copy_client_page` returns client fields, and it refuses on hosted stores too.
+//! The structured roster rejects SIN. Load responses carry counts and reasons.
+//! Read routes require firm-wide admin access and the same hosted owner switch;
+//! source rows are never reinterpreted as calculated or approved tax returns.
 
 use super::{ImportError, bad, conflict, storage, valid_token};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 type Result<T> = std::result::Result<T, ImportError>;
 const MAX_BATCH: usize = 1_000;
 const PAGE_MAX: usize = 100;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyPage {
+    pub kind: String,
+    #[serde(default)] pub offset: usize,
+    #[serde(default = "legacy_page_limit")] pub limit: usize,
+    #[serde(default = "unlinked_filter")] pub linkage: String,
+    // Infrastructure rewrite only; the authenticated route selects the scope.
+    #[serde(default, rename="path")] pub _routing_path: Option<String>,
+}
+fn legacy_page_limit() -> usize { 50 }
+fn unlinked_filter() -> String { "unlinked".into() }
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyFamilyContext {
+    family_file_id: String, tax_year: u16, source_file_sha256: String,
+    archive_sha256: String, member_client_numbers: Vec<String>,
+}
 const TEXT_FIELDS: &[(&str, usize)] = &[
     ("name", 200), ("processing_status", 80), ("email", 200), ("home_phone", 40), ("work_phone", 40),
     ("cell_phone", 40), ("street", 200), ("city", 100), ("postal_code", 16), ("province", 40), ("country", 60),
@@ -94,6 +116,70 @@ impl super::SourceImport {
             return Err(conflict("test_copy_only: real DT Max data loads only into a local test-copy store unless the owner sets NXT_DTMAX_HOSTED=on"));
         }
         Ok(())
+    }
+
+    /// Read the actual hosted legacy ledger before applying any reconciliation.
+    /// File stems and individual client numbers remain distinct. An exact
+    /// family-file hash match provides lineage, not ownership reassignment.
+    pub async fn test_copy_legacy_page(&self, company: &str, page: LegacyPage) -> Result<Value> {
+        self.test_copy_guard(company, true)?;
+        if !["returns", "t5008"].contains(&page.kind.as_str()) ||
+           !["all", "linked", "unlinked"].contains(&page.linkage.as_str()) ||
+           page.limit == 0 || page.limit > PAGE_MAX { return Err(bad("Invalid legacy ledger filter")); }
+        let clients: BTreeSet<_> = self.store.smembers(&k(company,"clients")).await.map_err(|e|s(&e))?.into_iter().collect();
+        let mut members = self.store.smembers(&k(company,&page.kind)).await.map_err(|e|s(&e))?;
+        if members.len()>100_000 { return Err(storage("Legacy ledger exceeds read bound")); }
+        for member in &members {
+            let parts:Vec<_>=member.split(':').collect();
+            let valid=match parts.as_slice() {
+                [client,year] if page.kind=="returns" => client_number_ok(client) && year.parse::<u16>().is_ok_and(|y|(1990..=2035).contains(&y)),
+                [client,year,sha,row] if page.kind=="t5008" => client_number_ok(client) && year.parse::<u16>().is_ok_and(|y|(1990..=2035).contains(&y)) && sha.len()==64 && sha.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) && row.parse::<u32>().is_ok_and(|n|n>0 && n<=100_000),
+                _=>false,
+            };
+            if !valid { return Err(storage("Invalid legacy ledger identity")); }
+        }
+        let source_total=members.len();
+        let linked=|m:&str|clients.contains(m.split(':').next().unwrap_or(""));
+        let raw_unlinked=members.iter().filter(|m|!linked(m)).count();
+        members.retain(|m|page.linkage=="all" || linked(m)==(page.linkage=="linked"));
+        members.sort_by(|a,b| {
+            let ac=a.split(':').next().unwrap_or("");let bc=b.split(':').next().unwrap_or("");
+            (ac.len(),ac,a).cmp(&(bc.len(),bc,b))
+        });
+        let total=members.len();let selected:Vec<_>=members.into_iter().skip(page.offset).take(page.limit).collect();
+        let prefix=if page.kind=="returns" {"return"} else {"t5008"};
+        let keys:Vec<_>=selected.iter().map(|m|k(company,&format!("{prefix}:{m}"))).collect();
+        let mut records=Vec::new();
+        for (identity,raw) in selected.iter().zip(self.store.mget(&keys).await.map_err(|e|s(&e))?) {
+            let raw=raw.ok_or_else(||storage("Legacy ledger body missing"))?;
+            let record:Value=serde_json::from_str(&raw).map_err(|_|storage("Unreadable legacy ledger body"))?;
+            let mut family_context=Value::Null;
+            let body_identity=if page.kind=="returns" {
+                let row:ReturnIndex=serde_json::from_value(record.clone()).map_err(|_|storage("Invalid legacy return body"))?;
+                check_return(&row).map_err(storage)?;
+                if serde_json::to_value(&row).map_err(|_|storage("Legacy return encoding failed"))? != record { return Err(storage("Unexpected legacy return fields")); }
+                let family_key=k(company,&format!("family_file:{}:{}:{}",row.client_number,row.tax_year,row.sha256));
+                if let Some(body)=self.store.get(&family_key).await.map_err(|e|s(&e))? {
+                    let family:LegacyFamilyContext=serde_json::from_str(&body).map_err(|_|storage("Invalid legacy family context"))?;
+                    if family.family_file_id!=row.client_number || family.tax_year!=row.tax_year || family.source_file_sha256!=row.sha256 || family.member_client_numbers.len()>128 || family.member_client_numbers.iter().any(|n|!client_number_ok(n)) || !family.member_client_numbers.windows(2).all(|w|w[0]<w[1]) {
+                        return Err(storage("Legacy family context does not match source file"));
+                    }
+                    family_context=serde_json::to_value(&family).map_err(|_|storage("Family context encoding failed"))?;
+                }
+                format!("{}:{}",row.client_number,row.tax_year)
+            } else {
+                let row:T5008Slip=serde_json::from_value(record.clone()).map_err(|_|storage("Invalid legacy slip body"))?;
+                check_slip(&row).map_err(storage)?;
+                format!("{}:{}:{}:{}",row.client_number,row.tax_year,row.source_file_sha256,row.row)
+            };
+            if body_identity!=*identity { return Err(storage("Legacy ledger body identity mismatch")); }
+            let canonical=serde_json::to_vec(&record).map_err(|_|storage("Legacy record encoding failed"))?;
+            records.push(json!({"record_id":identity,"record_sha256":hex::encode(Sha256::digest(canonical)),
+                "raw_client_registered":linked(identity),"record":record,"exact_family_file_context":family_context}));
+        }
+        Ok(json!({"test_copy":true,"source_scope":company,"kind":page.kind,"linkage":page.linkage,
+            "offset":page.offset,"limit":page.limit,"total":total,"source_total":source_total,
+            "raw_unlinked_total":raw_unlinked,"records":records,"source_rows_modified":0,"tax_cases_imported":0}))
     }
 
     /// Upsert clients by `client_number`. Rows are validated one by one; a bad row is
@@ -187,8 +273,8 @@ impl super::SourceImport {
             "linked": linked, "unlinked": unlinked, "unchanged_replays": unchanged, "rejected": rejected}))
     }
 
-    /// One sorted page of test-copy clients with their indexed return years, so staff can check
-    /// the load. Refused on hosted stores like every other test-copy route.
+    /// One sorted page of test-copy clients with their indexed return years.
+    /// Hosted reads require the owner's explicit switch, like test-copy writes.
     pub async fn test_copy_client_page(&self, company: &str, offset: usize, limit: usize) -> Result<Value> {
         self.test_copy_guard(company, true)?;
         if limit == 0 || limit > PAGE_MAX { return Err(bad("Page limit must be 1-100")); }
