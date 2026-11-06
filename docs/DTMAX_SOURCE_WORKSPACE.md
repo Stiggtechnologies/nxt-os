@@ -148,3 +148,22 @@ reviewed binding count and remaining pending count. Both are evidence of field
 mapping scope, not tax approval or full historical-runtime validation. Reads
 verify the pending bodies and exact identities in bounded 500-key chunks and
 fail explicitly on corrupt indexes or records.
+
+The same independent object/field-array checks now cover T1 2009, 2010, 2011,
+2012 and 2026. Exact package pins, record offsets and limitations are in
+`docs/evidence/dtmax-t1-additional-e11-bindings.json`. The source field IDs
+remain the legacy three-digit IDs even where the printed codes have five
+digits. Each year has its own artifact pin. This adds 74 binding-reviewed
+contexts to the 2,499 reviewed 2013/2014 contexts in the current source set.
+The two 2005 contexts use an older structure and remain unresolved; no layout
+assumptions apply. Source-2026 data may be preliminary or planning data, which
+the UI explicitly labels. Binding checks do not approve those figures.
+
+The converter's T3 label is also an import-reader classification, not an
+authoritative native source-module enum. Independent Info1/CRC inspection and
+managed-reader control-flow inspection show that zero SIN plus blank birth
+date cause the 88 labels in the current extract. The original EXC descriptor
+branch does not distinguish them from the other contexts. Preserve the reader
+label and suppress its T1-shaped candidates until source-module mapping is
+independently reviewed. The UI describes a converter label, without asserting
+that the source itself identifies a trust return.

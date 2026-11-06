@@ -121,15 +121,15 @@ async fn refuses_false_mapping_guesses_unknown_fields_bad_hashes_and_conflicting
 }
 #[tokio::test]
 async fn original_year_form_review_never_changes_amounts_or_upgrades_other_modules_and_years() {
-    let app=app();let mut records=vec![lines(2012),lines(2013),lines(2014),lines(2026)];let mut trust=lines(2014);trust["vendor_module"]=json!("T3");trust["mapping_state"]=json!("pending_module_verification");trust["archive_sha256"]=json!("b".repeat(64));records.push(trust);
+    let app=app();let mut records=vec![lines(2005),lines(2013),lines(2014),lines(2026)];let mut trust=lines(2014);trust["vendor_module"]=json!("T3");trust["mapping_state"]=json!("pending_module_verification");trust["archive_sha256"]=json!("b".repeat(64));records.push(trust);
     request(&app,"POST","clients",json!({"test_copy":true,"clients":[{"client_number":"100","name":"Synthetic Person"}]})).await;
     request(&app,"POST","historical-lines",json!({"test_copy":true,"records":records})).await;
-    let (_,summary)=request(&app,"GET","source-fact-summary",Value::Null).await;assert_eq!(summary["counts"]["historical_lines_pending"],5);assert_eq!(summary["historical_mapping_review"]["original_form_bindings_checked"],2);assert_eq!(summary["historical_mapping_review"]["remaining_pending"],3);
-    let (_,page)=request(&app,"GET","source-clients?limit=100",Value::Null).await;assert_eq!(page["clients"][0]["pending_years"],json!([2012,2014,2026]));assert_eq!(page["clients"][0]["pending_years_at_import"],json!([2012,2013,2014,2026]));
+    let (_,summary)=request(&app,"GET","source-fact-summary",Value::Null).await;assert_eq!(summary["counts"]["historical_lines_pending"],5);assert_eq!(summary["historical_mapping_review"]["original_form_bindings_checked"],3);assert_eq!(summary["historical_mapping_review"]["remaining_pending"],2);
+    let (_,page)=request(&app,"GET","source-clients?limit=100",Value::Null).await;assert_eq!(page["clients"][0]["pending_years"],json!([2005,2014]));assert_eq!(page["clients"][0]["pending_years_at_import"],json!([2005,2013,2014,2026]));
     let (_,page)=request(&app,"GET","clients/100/source-facts?kind=historical-lines",Value::Null).await;
     for r in page["records"].as_array().unwrap() {
         let original=records.iter().find(|v|v["tax_year"]==r["tax_year"]&&v["archive_sha256"]==r["archive_sha256"]).unwrap();assert_eq!(r["values_cents"],original["values_cents"]);assert_eq!(r["mapping_state"],original["mapping_state"]);
-        if r["vendor_module"]=="T1" && [json!(2013),json!(2014)].contains(&r["tax_year"]) {assert_eq!(r["year_mapping_review"]["state"],"original_form_bindings_checked");assert_eq!(r["year_mapping_review"]["field_ids"]["15000"],150);assert_eq!(r["year_mapping_review"]["tax_figures_approved"],false);} else {assert!(r.get("year_mapping_review").is_none());}
+        if r["vendor_module"]=="T1" && [json!(2013),json!(2014),json!(2026)].contains(&r["tax_year"]) {assert_eq!(r["year_mapping_review"]["state"],"original_form_bindings_checked");assert_eq!(r["year_mapping_review"]["field_ids"]["15000"],150);assert_eq!(r["year_mapping_review"]["tax_figures_approved"],false);} else {assert!(r.get("year_mapping_review").is_none());}
     }
     let (_,replay)=request(&app,"POST","historical-lines",json!({"test_copy":true,"records":records})).await;assert_eq!(replay["unchanged_replays"],5);
 }
@@ -164,7 +164,7 @@ async fn optional_private_pending_rows_keep_every_stored_byte_during_binding_rev
     for chunk in rows.chunks(1000) {let response=service.test_copy_historical_lines(company,nxt_os::source_import::preserved_records::SourceFactBatch{test_copy:true,records:chunk.to_vec()}).await.unwrap();assert!(response["rejected"].as_object().unwrap().is_empty());}
     let mut originals=Vec::new();
     for r in &rows {let key=format!("dtmaxtc:{company}:historical_lines:{}:{}:{}",r["client_number"].as_str().unwrap(),r["tax_year"].as_u64().unwrap(),r["archive_sha256"].as_str().unwrap());let raw=store.get(&key).await.unwrap().unwrap();originals.push((key,raw));}
-    let summary=service.test_copy_source_fact_summary(company).await.unwrap();assert_eq!(summary["counts"]["historical_lines_pending"],2663);assert_eq!(summary["historical_mapping_review"]["original_form_bindings_checked"],2499);assert_eq!(summary["historical_mapping_review"]["remaining_pending"],164);assert_eq!(summary["tax_cases_imported"],0);
+    let summary=service.test_copy_source_fact_summary(company).await.unwrap();assert_eq!(summary["counts"]["historical_lines_pending"],2663);assert_eq!(summary["historical_mapping_review"]["original_form_bindings_checked"],2573);assert_eq!(summary["historical_mapping_review"]["remaining_pending"],90);assert_eq!(summary["tax_cases_imported"],0);
     for (key,raw) in originals {assert_eq!(store.get(&key).await.unwrap().as_deref(),Some(raw.as_str()));}
-    println!("PRIVATE_PENDING_ROWS_REVIEWED=2663; ORIGINAL_FORM_BINDINGS_CHECKED=2499; OTHER_PENDING=164; STORED_BYTES_CHANGED=0");
+    println!("PRIVATE_PENDING_ROWS_REVIEWED=2663; ORIGINAL_FORM_BINDINGS_CHECKED=2573; OTHER_PENDING=90; STORED_BYTES_CHANGED=0");
 }

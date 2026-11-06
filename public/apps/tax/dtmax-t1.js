@@ -34,23 +34,24 @@
     if(!r||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||!r.values_cents||!['T1','T3'].includes(r.vendor_module)||!['vendor_static_verified','pending_year_verification','pending_module_verification'].includes(r.mapping_state))throw Error('Invalid source figures');
     if((r.vendor_module==='T3')!==(r.mapping_state==='pending_module_verification'))throw Error('Source module mapping did not match');
     if(r.year_mapping_review!==undefined){
-      const v=r.year_mapping_review,pins={2013:'9d7254fabd95f679025e3fc7e441304709f259fd7fbfc2425787a231fa3ed07e',2014:'412666ff325b72b66a7a60a50701bcde019357d9a6db991ac2bccaea85256b54'};
-      if(!v||r.vendor_module!=='T1'||r.mapping_state!=='pending_year_verification'||v.tax_year!==r.tax_year||!pins[r.tax_year]||v.package_sha256!==pins[r.tax_year]||v.state!=='original_form_bindings_checked'||v.source_form!=='E11'||v.profile!=='dtmax-T1-E11-2013-2014/v1'||v.amounts_recalculated!==false||v.tax_figures_approved!==false||!v.field_ids||Object.keys(v.field_ids).length!==6||lines.some(l=>v.field_ids[l]!==Number(l)/100))throw Error('Year-specific source mapping review did not match');
+      const v=r.year_mapping_review,pins={2009:'78451f0ea751567f4c34ce308bbca508c9f8a6dc0f13697249e5e008b7a4229f',2010:'d51d03f137a7b9c7a37e91bd8aeb5655e887fda56dfb800254829bb125092082',2011:'fc934ed6c99be48e65729cc1f4187e49eb15a66f7010a64ddafab52e7007e6b0',2012:'8ce020c728d0cf6b9ea8804c368dd281f7732d2b03103d6f8f69c68efd9013ce',2013:'9d7254fabd95f679025e3fc7e441304709f259fd7fbfc2425787a231fa3ed07e',2014:'412666ff325b72b66a7a60a50701bcde019357d9a6db991ac2bccaea85256b54',2026:'0f20e028ba2dbf059f6d585c16c56f4243c2cdbe332a7e1b1ef8de14985ccbb5'};
+      const profile=[2013,2014].includes(r.tax_year)?'dtmax-T1-E11-2013-2014/v1':'dtmax-T1-E11-additional-years/v1';
+      if(!v||r.vendor_module!=='T1'||r.mapping_state!=='pending_year_verification'||v.tax_year!==r.tax_year||!pins[r.tax_year]||v.package_sha256!==pins[r.tax_year]||v.state!=='original_form_bindings_checked'||v.source_form!=='E11'||v.profile!==profile||v.amounts_recalculated!==false||v.tax_figures_approved!==false||(![2013,2014].includes(r.tax_year)&&v.source_year_may_be_preliminary!==(r.tax_year===2026))||!v.field_ids||Object.keys(v.field_ids).length!==6||lines.some(l=>v.field_ids[l]!==Number(l)/100))throw Error('Year-specific source mapping review did not match');
     }
     lines.forEach(l=>cents(r.values_cents[l]));return r;
   }
-  function mappingLabel(r){return r.year_mapping_review?'Year-specific form bindings checked; source totals':r.mapping_state==='vendor_static_verified'?'Vendor mapping checked; source totals':'Mapping needs verification';}
+  function mappingLabel(r){return r.year_mapping_review?'Year-specific form bindings checked; source totals'+(r.tax_year===2026?' — may be preliminary or planning data':''):r.mapping_state==='vendor_static_verified'?'Vendor mapping checked; source totals':'Mapping needs verification';}
   function historicalTotalsHtml(record){
     if(!record)return '<p>No imported totals for the selected year.</p>';
     const r=checkHistorical(record);
-    if(r.vendor_module!=='T1')return '<h3>Source module '+esc(r.vendor_module)+' · '+r.tax_year+'</h3><p class="dtmax-notice">This source context identifies a different tax module. Its candidate values are not shown as T1 totals. The original source is preserved; separate module mapping is required.</p>';
+    if(r.vendor_module!=='T1')return '<h3>Converter label '+esc(r.vendor_module)+' · '+r.tax_year+'</h3><p class="dtmax-notice">The converter inferred this module label. Its candidate values are not shown as T1 totals while the original source module is verified. The original source is preserved.</p>';
     return '<h3>Historical totals · '+r.tax_year+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])]))+'<p>'+esc(mappingLabel(r))+'</p>';
   }
   function recordsHtml(kind,records) {
     if(!records.length)return '<p>No records of this kind are imported for this client.</p>';
     if(kind==='historical-lines')return '<p>Absent means no source value; $0.00 is an explicit zero. Imported totals have not been recalculated.</p><div class="table-wrap"><table><thead><tr><th>Year</th>'+lines.map((l,i)=>'<th>'+labels[i]+' ('+l+')</th>').join('')+'<th>Verification</th></tr></thead><tbody>'+records.map(r=>{
       checkHistorical(r);
-      if(r.vendor_module!=='T1')return '<tr><td>'+r.tax_year+'</td><td colspan="6">Source module '+esc(r.vendor_module)+'; T1 totals are unavailable.</td><td>Separate module mapping required</td></tr>';
+      if(r.vendor_module!=='T1')return '<tr><td>'+r.tax_year+'</td><td colspan="6">Converter label '+esc(r.vendor_module)+'; T1 totals are unavailable.</td><td>Source module verification required</td></tr>';
       return '<tr><td>'+r.tax_year+'</td>'+lines.map(l=>'<td>'+esc(cents(r.values_cents[l]))+'</td>').join('')+'<td>'+esc(mappingLabel(r))+'</td></tr>';
     }).join('')+'</tbody></table></div>';
     if(kind==='family-files')return records.map(r=>'<p>Family file '+esc(r.family_file_id)+' · '+esc(r.tax_year)+'</p><div class="dtmax-family-members">'+(r.member_client_numbers||[]).map(id=>{if(!/^\d{1,12}$/.test(id))throw Error('Invalid family member');return '<button class="dtmax-action" type="button" data-family-client="'+id+'">Client #'+id+'</button>';}).join(' ')+'</div>').join('');
