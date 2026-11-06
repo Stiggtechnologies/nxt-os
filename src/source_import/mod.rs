@@ -8,6 +8,7 @@ mod routes;
 pub mod test_copy;
 pub mod preserved_records;
 pub mod return_pdfs;
+pub mod source_exceptions;
 
 use crate::store::Store;
 use axum::http::StatusCode;

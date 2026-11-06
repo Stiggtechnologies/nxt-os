@@ -21,6 +21,11 @@
 .dtmax-workspace button:disabled { opacity: .48; cursor: default; }
 .dtmax-workspace :is(button, a, input, select, summary):focus-visible { outline: 3px solid #2165a8; outline-offset: 2px; }
 .dtmax-workspace a { color: #315e93; text-underline-offset: 3px; }
+.dtmax-workspace [data-dtmax-exceptions] { margin: 12px 20px 0; border: 1px solid var(--dtmax-line); border-radius: 8px; background: #fff; }
+.dtmax-workspace [data-dtmax-exceptions] summary { padding: 10px 12px; color: #465465; background: var(--dtmax-surface); cursor: pointer; font-weight: 500; }
+.dtmax-workspace [data-dtmax-exception-content] { padding: 0 12px 12px; }
+.dtmax-workspace [data-dtmax-exception-content] .table-wrap { overflow-x: auto; }
+.dtmax-workspace [data-dtmax-exception-content] small { display: block; color: var(--dtmax-muted); }
 .dtmax-caption { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px 13px; }
 .dtmax-caption h2 { margin: 0; color: #111923; font: 600 16px/1.4 var(--ui, system-ui, sans-serif); letter-spacing: -.25px; }
 .dtmax-caption span { padding: 4px 9px; border: 1px solid var(--dtmax-line); border-radius: 20px; background: var(--dtmax-surface); color: var(--dtmax-muted); font-size: 11px; white-space: nowrap; }
@@ -36,7 +41,7 @@
 .dtmax-workspace input, .dtmax-workspace select { min-height: 36px; border: 1px solid #bfcbd9; border-radius: 6px; padding: 7px 10px; background: #fff; color: var(--dtmax-ink); font-size: 12px; }
 .dtmax-toolbar input { width: 285px; max-width: 100%; }
 .dtmax-toolbar select { min-width: 145px; }
-.dtmax-toolbar button, .dtmax-footer button, .dtmax-action, .dtmax-error button { min-height: 36px; border: 1px solid #becada; border-radius: 6px; padding: 6px 13px; background: #fff; color: #24384f; cursor: pointer; font-size: 12px; font-weight: 500; }
+.dtmax-toolbar button, .dtmax-footer button, .dtmax-action, .dtmax-error button, .dtmax-workspace [data-dtmax-exceptions] button { min-height: 36px; border: 1px solid #becada; border-radius: 6px; padding: 6px 13px; background: #fff; color: #24384f; cursor: pointer; font-size: 12px; font-weight: 500; }
 .dtmax-toolbar button[type=submit] { border-color: #efa10d; background: var(--dtmax-accent); color: #211800; }
 .dtmax-toolbar button:hover:not(:disabled), .dtmax-footer button:hover:not(:disabled), .dtmax-action:hover:not(:disabled), .dtmax-error button:hover:not(:disabled) { border-color: #7c94b0; background: #eef3f8; }
 .dtmax-toolbar button[type=submit]:hover { border-color: #dd9408; background: #f4a40e; }

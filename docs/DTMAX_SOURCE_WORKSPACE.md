@@ -93,3 +93,29 @@ is included only when family ID, year and the exact file SHA-256 all match a
 preserved family-file fact. This is provenance: a multi-person family file is
 not reassigned to a single individual. No source rows or identities are edited,
 no owner candidates are committed, and no tax cases are created by this read.
+
+## Unreadable original contexts
+
+`POST test-copy/source-exceptions` preserves one exact archive fragment with
+the original EXY year frame and hash/offset references into its source archive.
+It is independent of the synthetic opaque-file lane and of client profiles.
+The server checks canonical SHA-256/hex, a 64 KiB context bound, source ranges,
+the EXY year, EXC header references, and an EXC/EXP/EXR/EXA frame sequence.
+It does not decompress or execute vendor records, infer identities, normalize
+amounts, or assert that the reader's reported exception reason is decoded fact.
+Archive provenance is pinned by the authorized uploader; storing a digest does
+not independently verify an external archive that is not stored in this lane.
+
+Records are immutable by archive hash and original context offset. Matching
+replays repair an interrupted index write. Private firm-admin reads require
+the hosted owner switch and fail on corrupt records. Listing supports global
+client-header/year filters before pagination, at most 100 rows per page and a
+1,000-context read bound. Downloading revalidates the exact preserved bytes.
+
+The Client list has an expandable **Unreadable source contexts** section with
+original-fragment downloads checked by SHA-256 in the browser. Header client
+and family IDs are source references only; they do not establish ownership.
+In particular, EXA is opaque family/year auxiliary content and must not inherit
+the preceding EXC client's identity or plan. Its bytes remain inside the
+original wrapper without any semantic reassignment. The original archive and
+separately CRC-verified expanded payloads remain in the migration handoff.
