@@ -1,0 +1,2900 @@
+{
+  "format": "dtmax-remaining-original-E11-form-bindings/v1",
+  "parser_sha256": "8bab5e22065deb9b247f6331a34e18b841a25736af6a31e90467341bf3001123",
+  "shared_parser_sha256": "60e83d6ff93d46f99564a5c61dd34bcdc6052b6bbabf20ff4d391c8947f31769",
+  "evidence_kind": "format-aware offline installed-artifact byte inspection",
+  "source_client_data_read": false,
+  "vendor_target_executed": false,
+  "source_mutations": 0,
+  "hosted_mutations": 0,
+  "mapping_upgrades_applied": 0,
+  "artifact_inventory": [
+    {
+      "year": 2005,
+      "files": [
+        {
+          "name": "DT1WFO05",
+          "present": true,
+          "bytes": 6911171,
+          "sha256": "90e36c34c9ad98691c872b6d0bc5482459ec5db84f9f32f86b926f234234f745",
+          "header_hex": "4b4a440076070000c7da6800fc9900002dad4744010000000000000001000000"
+        },
+        {
+          "name": "DT1WFR05",
+          "present": true,
+          "bytes": 56200,
+          "sha256": "129d59cd40c9d3964f2eb481a28573fd7324043a955bca979e9f21df60062e41",
+          "header_hex": "4b4a4400760700004cc600003c15000004d5154401000000c501000041303100"
+        },
+        {
+          "name": "DT1WAD05.XML",
+          "present": false
+        }
+      ]
+    },
+    {
+      "year": 2009,
+      "files": [
+        {
+          "name": "DT1WFO09",
+          "present": true,
+          "bytes": 12608214,
+          "sha256": "78451f0ea751567f4c34ce308bbca508c9f8a6dc0f13697249e5e008b7a4229f",
+          "header_hex": "4b4a4400e7070000a291bf0034d10000508aab4b010000000000000001000000"
+        },
+        {
+          "name": "DT1WFR09",
+          "present": true,
+          "bytes": 72692,
+          "sha256": "8a3ef9f056ce0eb8c78ff0cd97220344c925c433de291e4d62c6de95856b6f3c",
+          "header_hex": "4b4a4400e70700007c000100781b0000d297a34b010000004a02000041303100"
+        },
+        {
+          "name": "DT1WAD09.XML",
+          "present": true,
+          "bytes": 20209,
+          "sha256": "754d241e8a01a52013c17e3f366da87c3910c849a4ea7b3067a74bf0c438b7f9",
+          "header_hex": "3c44544d41585f4558504f52545f524551554553543e0d0a20203c5645525349"
+        }
+      ]
+    },
+    {
+      "year": 2010,
+      "files": [
+        {
+          "name": "DT1WFO10",
+          "present": true,
+          "bytes": 13799070,
+          "sha256": "d51d03f137a7b9c7a37e91bd8aeb5655e887fda56dfb800254829bb125092082",
+          "header_hex": "4b4a4400e70700000ab4d10094da0000396f9c4d010000000000000001000000"
+        },
+        {
+          "name": "DT1WFR10",
+          "present": true,
+          "bytes": 77404,
+          "sha256": "e9b0d770be76a8bea7de6186f7030336503b1235738dd8136ec7bdfa87942be4",
+          "header_hex": "4b4a4400e70700001c110100401d00009dad874d010000007002000041303100"
+        },
+        {
+          "name": "DT1WAD10.XML",
+          "present": true,
+          "bytes": 20913,
+          "sha256": "59f757dab3c3451c3cbadbcb1ddc6c77cf8ee5e1d3d4a5a638fd1832ca27c454",
+          "header_hex": "3c44544d41585f4558504f52545f524551554553543e0d0a20203c5645525349"
+        }
+      ]
+    },
+    {
+      "year": 2011,
+      "files": [
+        {
+          "name": "DT1WFO11",
+          "present": true,
+          "bytes": 14551091,
+          "sha256": "fc934ed6c99be48e65729cc1f4187e49eb15a66f7010a64ddafab52e7007e6b0",
+          "header_hex": "4b4a4400d80900000f2add0024de0000b250df4f010000000000000001000000"
+        },
+        {
+          "name": "DT1WFR11",
+          "present": true,
+          "bytes": 78148,
+          "sha256": "1ba2f10a3e7e68c76e18f4cc9bc63f579a4159d3457b03c68908ab80911a6852",
+          "header_hex": "4b4a4400d8090000bc130100881d0000159b2a50010000007602000041303100"
+        },
+        {
+          "name": "DT1WAD11.XML",
+          "present": true,
+          "bytes": 21265,
+          "sha256": "0c46a1585c488e0de5e213dc01124c9d7123c56a5ba6c21e418a126e0258dca6",
+          "header_hex": "3c44544d41585f4558504f52545f524551554553543e0d0a20203c5645525349"
+        }
+      ]
+    },
+    {
+      "year": 2012,
+      "files": [
+        {
+          "name": "DT1WFO12",
+          "present": true,
+          "bytes": 16027092,
+          "sha256": "8ce020c728d0cf6b9ea8804c368dd281f7732d2b03103d6f8f69c68efd9013ce",
+          "header_hex": "4b4a4400380a000080a6f30054e70000a0d55951010000000000000001000000"
+        },
+        {
+          "name": "DT1WFR12",
+          "present": true,
+          "bytes": 84100,
+          "sha256": "959e50413e46afbac2098b07e1d68c460b857b6584bd67ebc6e423feed1a5215",
+          "header_hex": "4b4a4400330a0000bc280100c81f00001b762b5101000000a602000041303100"
+        },
+        {
+          "name": "DT1WAD12.XML",
+          "present": true,
+          "bytes": 21617,
+          "sha256": "79b5e23f09719901982a105baf0182db9ad55c3f29ae587bc023dc2aa852c529",
+          "header_hex": "3c44544d41585f4558504f52545f524551554553543e0d0a20203c5645525349"
+        }
+      ]
+    },
+    {
+      "year": 2026,
+      "files": [
+        {
+          "name": "DT1WFO26",
+          "present": true,
+          "bytes": 27477710,
+          "sha256": "0f20e028ba2dbf059f6d585c16c56f4243c2cdbe332a7e1b1ef8de14985ccbb5",
+          "header_hex": "4b4a4400690b00005a22a20174240100592b2c6a010000000000000001000000"
+        },
+        {
+          "name": "DT1WFR26",
+          "present": true,
+          "bytes": 102452,
+          "sha256": "a61c72ea40f52e8768bb4849eef22368e946d3bfb15a9edafd7cceecf621e1a9",
+          "header_hex": "4b4a4400690b00007c690100b82600009baa156a010000003a03000041303100"
+        },
+        {
+          "name": "DT1WAD26.XML",
+          "present": true,
+          "bytes": 25539,
+          "sha256": "c791e8a9c01937ca31984915859689d2bcf28a0846c5163a6f60d30f1e9cfb9a",
+          "header_hex": "3c44544d41585f4558504f52545f524551554553543e0d0a20203c5645525349"
+        }
+      ]
+    }
+  ],
+  "years": [
+    {
+      "year": 2005,
+      "status": "unsupported_structure_or_missing_year_metadata",
+      "bindings": [],
+      "reason": "DT1WAD05.XML is absent. The E11E resource uses DTFIELD rather than the verified DTFORM structure; no guessed parser or year association is used."
+    },
+    {
+      "year": 2009,
+      "status": "six_original_form_bindings_verified",
+      "bindings": [
+        {
+          "requested_NXT_line": "15000",
+          "source_form": "E11",
+          "production_column_field_id": 150,
+          "label_offset": 3178678,
+          "label_bytes": 12,
+          "label_sha256": "28090e4e870c134b196f9ee0d65e3dc851370cdd2c41af98e4ac1c601a73a497",
+          "label_drawing_record_offset": 3185999,
+          "label_drawing_record_sha256": "96f17fd6861e8a258caa97114dc4e002b83d25f898baf644211d1f900edd49f6",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 150,
+              "coordinates": [
+                1800,
+                5062
+              ],
+              "drawing_record_offset": 3186055,
+              "drawing_record_sha256": "40ee55203d6451fa26529f0f3c99ba6664207e5d0dee3bdad40f93a10308af2f",
+              "field_record_offset": 3207869,
+              "field_record_sha256": "4f2f0f87e681c63b187ea6171780ea60f2bb4bdee4acadaadb68f6cf577c6422"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1150,
+              "coordinates": [
+                2350,
+                5062
+              ],
+              "drawing_record_offset": 3186083,
+              "drawing_record_sha256": "e7c92cf2e1a279dde62a9d11814200b10cd476d118bfb3c3e7ca24965f6d09f5",
+              "field_record_offset": 3207893,
+              "field_record_sha256": "ffbe135eeb5ae8894ec2d9d210d4fffdc5b313df95d2fc1d8e6c58c43fecd78c"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2150,
+              "coordinates": [
+                2900,
+                5062
+              ],
+              "drawing_record_offset": 3186111,
+              "drawing_record_sha256": "53e61be7e13a8f04b33f9c35459e2e6846b227e4159e6b4a849d9bc2290719d5",
+              "field_record_offset": 3207917,
+              "field_record_sha256": "d32acee01ae62d732dc3c618159d972f7cab97c1dfe87b043bf444c01ce4fd5d"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3150,
+              "coordinates": [
+                3450,
+                5062
+              ],
+              "drawing_record_offset": 3186139,
+              "drawing_record_sha256": "dab0ab0f19cbb15cc053a25eba16e819e6d81bb9617f008c93c4ec8eebad9a57",
+              "field_record_offset": 3207941,
+              "field_record_sha256": "1e1340e1dcbfbe8dc3567a2da9187a697e168408ba56c80178ef6d2667ea7c49"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4150,
+              "coordinates": [
+                4000,
+                5062
+              ],
+              "drawing_record_offset": 3186167,
+              "drawing_record_sha256": "5ed783cffc4ea517d212e84dd2d7b5a2376646f3814b318193dc218171549186",
+              "field_record_offset": 3207965,
+              "field_record_sha256": "d6529248dc52226ef958d4be006daf1663e101ef528b94ec31816eafe3d6983f"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "150",
+            "offset": 3178690,
+            "drawing_record_offset": 3186027,
+            "drawing_record_sha256": "d4c98723f5a5e0b8772c0ae62cc938e89c30207ef93babdcade93abc53644364"
+          }
+        },
+        {
+          "requested_NXT_line": "23600",
+          "source_form": "E11",
+          "production_column_field_id": 236,
+          "label_offset": 3179022,
+          "label_bytes": 10,
+          "label_sha256": "7561c934f60f784f1eb5368d7e0b6ae832112bbb66ebba739489ddf25a8de9c3",
+          "label_drawing_record_offset": 3189975,
+          "label_drawing_record_sha256": "c20620d657cad590450df6b1f935c40775437f3b98e20b9367997422d4665d29",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 236,
+              "coordinates": [
+                1800,
+                8172
+              ],
+              "drawing_record_offset": 3190031,
+              "drawing_record_sha256": "e62b664810d18deaf850e9030cfa548428c7b40bdb2b20172c763ee4e5403b70",
+              "field_record_offset": 3210269,
+              "field_record_sha256": "31b4fee5b653e0c748b31dffb3ba00af7b5a9420449f2e431c106712fc3d1b30"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1236,
+              "coordinates": [
+                2350,
+                8172
+              ],
+              "drawing_record_offset": 3190059,
+              "drawing_record_sha256": "a71e520fc4a7fb96dd0fc64ea14ceb28bd500dcedf335e2f72a3b142b7809810",
+              "field_record_offset": 3210293,
+              "field_record_sha256": "d41c733a877322ca392eabbb2163341feba45ad485082b45ba9b8749fa0cf795"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2236,
+              "coordinates": [
+                2900,
+                8172
+              ],
+              "drawing_record_offset": 3190087,
+              "drawing_record_sha256": "32f0a08fb4db401b1bff78d0a44a12d6a35acf44e63d9cd04bc3e67edec53262",
+              "field_record_offset": 3210317,
+              "field_record_sha256": "feab700b1ac71206e7842d07190037257a075c7ac4ba858135b462d0741819bd"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3236,
+              "coordinates": [
+                3450,
+                8172
+              ],
+              "drawing_record_offset": 3190115,
+              "drawing_record_sha256": "bf0cd4184035406f2e92e762651fed0490e9e7a0cdd0809992d27912ad292cd2",
+              "field_record_offset": 3210341,
+              "field_record_sha256": "481d9f052ba69c124d280d8ffc8e38df82994e90259c8cead563019782a26b50"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4236,
+              "coordinates": [
+                4000,
+                8172
+              ],
+              "drawing_record_offset": 3190143,
+              "drawing_record_sha256": "7cfacbf2634d9a474436b73ccf17a82a4757df8900e3a419c5ec70fec2500cad",
+              "field_record_offset": 3210365,
+              "field_record_sha256": "925c6dd5a71d158d623882f2fb60edd4ab599295af3ff9b10c87ed0ae9254194"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "236",
+            "offset": 3179032,
+            "drawing_record_offset": 3190003,
+            "drawing_record_sha256": "f6c4dd712051702349f2b2c5a71461cd886f36688dea57838b7524b5e3cc06ef"
+          }
+        },
+        {
+          "requested_NXT_line": "26000",
+          "source_form": "E11",
+          "production_column_field_id": 260,
+          "label_offset": 3179228,
+          "label_bytes": 14,
+          "label_sha256": "f81179a306efaea330cb1ecd1423dacf7813168efd40cd91a90ef07b31ccaae7",
+          "label_drawing_record_offset": 3192131,
+          "label_drawing_record_sha256": "0e3a19963b963b8abe370a3bd8199fd5120f1728597680d5071d59d0ffd5641f",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 260,
+              "coordinates": [
+                1800,
+                9812
+              ],
+              "drawing_record_offset": 3192187,
+              "drawing_record_sha256": "2778597bb6a3043e70a4340cebd90cf4326cfa56d13c63c94467cfb5ba5a324f",
+              "field_record_offset": 3211589,
+              "field_record_sha256": "ab239d94aec2ca9236a16fd660c16b6f7bf7dab3b5c07436d8f049a6d0c79547"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1260,
+              "coordinates": [
+                2350,
+                9812
+              ],
+              "drawing_record_offset": 3192215,
+              "drawing_record_sha256": "110e53539027546309a2c9e22d9deff54a4d8a3542438dc98d8445c41d2e9dbf",
+              "field_record_offset": 3211613,
+              "field_record_sha256": "50b7cd7d007ea29cb870af87b8526ae808fcc20f8df02e3ed49d26365cf7e7d4"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2260,
+              "coordinates": [
+                2900,
+                9812
+              ],
+              "drawing_record_offset": 3192243,
+              "drawing_record_sha256": "c260e102e75e8c6db0a46b5cd278e7b98b91bb54a072bba11faae4384798b813",
+              "field_record_offset": 3211637,
+              "field_record_sha256": "dc9409d7fa2750b4569f82ad04d3c79a546b5e7f2cf1df3cd1fc78e1c9d92ab9"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3260,
+              "coordinates": [
+                3450,
+                9812
+              ],
+              "drawing_record_offset": 3192271,
+              "drawing_record_sha256": "e0783df0d37b544e94275adcc0dca1f57f48bbf6611cbe603b95acc55b85eac6",
+              "field_record_offset": 3211661,
+              "field_record_sha256": "c3968fd4e866b658edfacaf2b23812e72e266266d36b3a8042dd4e800029a43a"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4260,
+              "coordinates": [
+                4000,
+                9812
+              ],
+              "drawing_record_offset": 3192299,
+              "drawing_record_sha256": "30b362cdd1b1ffbbb58b70ced64dd20e031f1af1759a4cf10e514a56bbd95253",
+              "field_record_offset": 3211685,
+              "field_record_sha256": "ab7692c774deb42849cab8c3d0eefeb8753cf72beeef5f635ce7f7e58b363310"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "260",
+            "offset": 3179242,
+            "drawing_record_offset": 3192159,
+            "drawing_record_sha256": "96fc5c87507ef69da7cc9d75061d251ead3fcab70837838e8a95f8f2e61442a5"
+          }
+        },
+        {
+          "requested_NXT_line": "42000",
+          "source_form": "E11",
+          "production_column_field_id": 420,
+          "label_offset": 3179981,
+          "label_bytes": 15,
+          "label_sha256": "5fd87a8358d3a0dbd5ed55935e9bb3c58f0874ea73281a029c6902797b55cf0b",
+          "label_drawing_record_offset": 3199803,
+          "label_drawing_record_sha256": "740addb806d994db991e68428da63c9a1e962298740d3e613ac1dcafedfa1834",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 420,
+              "coordinates": [
+                5800,
+                6973
+              ],
+              "drawing_record_offset": 3199859,
+              "drawing_record_sha256": "4e47f5387d6b290c36006580617c680f483c66b170bf5261eb75c478f2581503",
+              "field_record_offset": 3216029,
+              "field_record_sha256": "c4f3c34fd05cfb2bef15cb99721b9a13c7603d893849592d23319c7ab20d66d2"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1420,
+              "coordinates": [
+                6350,
+                6973
+              ],
+              "drawing_record_offset": 3199887,
+              "drawing_record_sha256": "23fad8106c38e839baccc454c37f5d2225066abb3ed6793aaffbfae6f3fa5d68",
+              "field_record_offset": 3216053,
+              "field_record_sha256": "8ff7689b7522320c0781abbb06743499fe9c4bbf215c645cd06cd042e814163b"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2420,
+              "coordinates": [
+                6900,
+                6973
+              ],
+              "drawing_record_offset": 3199915,
+              "drawing_record_sha256": "62f6d0701bdd6983cf52707090acd5f37caef92821c1d9ed30ef5dfba0f1e949",
+              "field_record_offset": 3216077,
+              "field_record_sha256": "a5a117634bd2c356bb13bda4fab36a445eab07a358576c696c950a023b296c89"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3420,
+              "coordinates": [
+                7450,
+                6973
+              ],
+              "drawing_record_offset": 3199943,
+              "drawing_record_sha256": "966e98f258b148a56710b2d022c8003ce520cc46511842196ac6147487ea67e0",
+              "field_record_offset": 3216101,
+              "field_record_sha256": "a68fd6c4ca0cc704403482e8b2cd7d77a10bba4ac5deca5c9d6a679e1f69ab9a"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4420,
+              "coordinates": [
+                8000,
+                6973
+              ],
+              "drawing_record_offset": 3199971,
+              "drawing_record_sha256": "dbd2f97f386c455a2cdfa74755b2be5673c6e11620772db836c9758baac4a45a",
+              "field_record_offset": 3216125,
+              "field_record_sha256": "2f4af6ea4b9e8d100689d219dfbf6178c2b48a76c42767744f8b1419a67266b7"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "420",
+            "offset": 3179996,
+            "drawing_record_offset": 3199831,
+            "drawing_record_sha256": "475db039ed8e933f37450d0113166b952c13fab243fa3442b0971b2554e5477b"
+          }
+        },
+        {
+          "requested_NXT_line": "48400",
+          "source_form": "E11",
+          "production_column_field_id": 484,
+          "label_offset": 3180362,
+          "label_bytes": 6,
+          "label_sha256": "6b37bd35081fcbc6676dcfdfa7a7389f70be9ed70f7d50f5163708e2fafe65f8",
+          "label_drawing_record_offset": 3203863,
+          "label_drawing_record_sha256": "6e015d7371d1220534c2fcda3fb3e4d6cbc6a01be5e6bf76ae1c882eb7e2cc5d",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 484,
+              "coordinates": [
+                5800,
+                10083
+              ],
+              "drawing_record_offset": 3203919,
+              "drawing_record_sha256": "c0c064fd24167b5f852aa205a735132c46e77c2ebce9c80c278a4ef9ca9a314c",
+              "field_record_offset": 3218621,
+              "field_record_sha256": "95bd675d8b59b0bedcd582f06431175c63d3513de1c7c3fa1f7c83853f36d01a"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1484,
+              "coordinates": [
+                6350,
+                10083
+              ],
+              "drawing_record_offset": 3203947,
+              "drawing_record_sha256": "55dc8273243e0df58a05a4b1cbf286fd57c903322e662908c7ca4a7660937581",
+              "field_record_offset": 3218645,
+              "field_record_sha256": "b258d89d9bf63ae5bd2cbf594208861093d4833b9bf2c821c5744a09e26073cb"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2484,
+              "coordinates": [
+                6900,
+                10083
+              ],
+              "drawing_record_offset": 3203975,
+              "drawing_record_sha256": "95903b651d9be9a235c3dc6b94f9cd6033d2f406d0e6efcdfce744ae41916e16",
+              "field_record_offset": 3218669,
+              "field_record_sha256": "188d35fe3ef95286be7b8cc4094c198ce38a7648af310ebe26300ad8213fc924"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3484,
+              "coordinates": [
+                7450,
+                10083
+              ],
+              "drawing_record_offset": 3204003,
+              "drawing_record_sha256": "514af1886b9b9a2dd8b5125d16cd2641abe25b56f652b7b022cad9f027148de7",
+              "field_record_offset": 3218693,
+              "field_record_sha256": "2714c51c567386fe6969a2246eb8633d7cc1d7eebebfc1f1898d459607dec973"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4484,
+              "coordinates": [
+                8000,
+                10083
+              ],
+              "drawing_record_offset": 3204031,
+              "drawing_record_sha256": "0df358cc51439ac852b27d9fc3c1526872a657f33712b5bb202a5fe5a6e2d6d2",
+              "field_record_offset": 3218717,
+              "field_record_sha256": "4fdc6bf3f0e45bcd088541e4c43d7c4b7f197b5c12fb814469320a1e16c5ee97"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "484",
+            "offset": 3180368,
+            "drawing_record_offset": 3203891,
+            "drawing_record_sha256": "21ff4d45b1cd88a0d037631ac12689b42780e6fe6729e816c956cb70c2912fb7"
+          }
+        },
+        {
+          "requested_NXT_line": "48500",
+          "source_form": "E11",
+          "production_column_field_id": 485,
+          "label_offset": 3180371,
+          "label_bytes": 13,
+          "label_sha256": "19a154a4ba07c59640b936f34bcef8bac5782ad56b4d51a524dae79237001e32",
+          "label_drawing_record_offset": 3204059,
+          "label_drawing_record_sha256": "ea3139fdc27ccd059fe04e342a4c5524daa421b4e68c7a620426e15ab51c60e2",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 485,
+              "coordinates": [
+                5800,
+                10230
+              ],
+              "drawing_record_offset": 3204115,
+              "drawing_record_sha256": "b9b97b93c29b17032151ba89ee4daeb5e5ee6852e5a16db73895cba192e480a9",
+              "field_record_offset": 3218741,
+              "field_record_sha256": "5846eaa2ae69cc6611d801ad40335ce11ec3fdbe2b287b2192430d26da297dd8"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1485,
+              "coordinates": [
+                6350,
+                10230
+              ],
+              "drawing_record_offset": 3204143,
+              "drawing_record_sha256": "62b5b896dd662cc0f0d186b038f7c7d1aa609018bd71fd84849d8395fb3cfa02",
+              "field_record_offset": 3218765,
+              "field_record_sha256": "367eca7f4daf118704527c342872bf653da4722d3834690acca3a86625426fe5"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2485,
+              "coordinates": [
+                6900,
+                10230
+              ],
+              "drawing_record_offset": 3204171,
+              "drawing_record_sha256": "00aa47c4c1a4d95e32da4d00497d2615ea6ff839ea413dd17ffdcaaeccb3691a",
+              "field_record_offset": 3218789,
+              "field_record_sha256": "aeca2d99102fdac9bd390ecfc68530336cfb3dfdb17b10bf2d858216d79f3082"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3485,
+              "coordinates": [
+                7450,
+                10230
+              ],
+              "drawing_record_offset": 3204199,
+              "drawing_record_sha256": "7c15ff1ae62bafc04e72ea1174901c55ce9792244ca4de26ba30ba96602875bd",
+              "field_record_offset": 3218813,
+              "field_record_sha256": "edf76819b903672b2917d1569f8a3150ea73b8b44b6e7689785d07a6b566212e"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4485,
+              "coordinates": [
+                8000,
+                10230
+              ],
+              "drawing_record_offset": 3204227,
+              "drawing_record_sha256": "71ea02e4acd9d62b8f54c5e8acffcfa4ed93f35e5463c53b3c215afdf13625ee",
+              "field_record_offset": 3218837,
+              "field_record_sha256": "6c6e4b7cb6ef08922edbf020f7603a84e7a55f23424a119c21d72032afb8ade6"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "485",
+            "offset": 3180384,
+            "drawing_record_offset": 3204087,
+            "drawing_record_sha256": "4972b6afa63ad57720c25e70e36b4b7af2a786c5959b7f565d05686556e883f6"
+          }
+        }
+      ],
+      "resources": [
+        {
+          "key": "E11E",
+          "directory_record_offset": 12560766,
+          "offset": 3177977,
+          "bytes": 26278,
+          "sha256": "031a8b3e3141020645f4effb7652162edc35996ca83467934f56e0b4b498b14a"
+        },
+        {
+          "key": "E11H",
+          "directory_record_offset": 12560790,
+          "offset": 3204255,
+          "bytes": 14606,
+          "sha256": "b646c52f9d7c99b9d7d9fc83975d32487f1306a9a8ae946b4d42e81da7161305"
+        },
+        {
+          "key": "E11",
+          "directory_record_offset": 67184,
+          "offset": 14252,
+          "bytes": 112,
+          "sha256": "9c98a2cdf029d4d8a0792c2b135527dccfba715a1188e7c323b58cfce7c9fbee"
+        }
+      ],
+      "drawing_segments": [
+        {
+          "header_offset": 2410,
+          "kind": 1,
+          "record_bytes": 12,
+          "count": 1
+        },
+        {
+          "header_offset": 2438,
+          "kind": 3,
+          "record_bytes": 8,
+          "count": 1
+        },
+        {
+          "header_offset": 2462,
+          "kind": 7,
+          "record_bytes": 28,
+          "count": 850
+        }
+      ],
+      "field_record_count": 598,
+      "field_identifiers_unique": true,
+      "complete_segment_boundaries_verified": true,
+      "year_association": {
+        "kind": "explicit_installed_DTMAXT1_XML_year_with_same_package_annual_text_when_available",
+        "XML_file": "DT1WAD09.XML",
+        "XML_sha256": "754d241e8a01a52013c17e3f366da87c3910c849a4ea7b3067a74bf0c438b7f9",
+        "XML_product": "DTMAXT1",
+        "XML_year": "2009",
+        "same_package_annual_references": [
+          {
+            "resource": {
+              "key": "SD9E",
+              "directory_record_offset": 12577470,
+              "offset": 10766231,
+              "bytes": 5010,
+              "sha256": "06ef86cc80ce209cdde83e24e5890029a7c78158a6b0be100f2e0821d56a7752"
+            },
+            "reference_offset": 10766964,
+            "reference_bytes": 17,
+            "reference_sha256": "de015413319ecb98767c7f2259bdcb4d49785684918c41d4713c26a4e2f33b6b"
+          }
+        ],
+        "E11_uses_YEAR_placeholder": false,
+        "year_runtime_loader_binding_independently_proven": false
+      },
+      "six_label_binding_and_field_coordinate_matches": true
+    },
+    {
+      "year": 2010,
+      "status": "six_original_form_bindings_verified",
+      "bindings": [
+        {
+          "requested_NXT_line": "15000",
+          "source_form": "E11",
+          "production_column_field_id": 150,
+          "label_offset": 3354001,
+          "label_bytes": 12,
+          "label_sha256": "28090e4e870c134b196f9ee0d65e3dc851370cdd2c41af98e4ac1c601a73a497",
+          "label_drawing_record_offset": 3361549,
+          "label_drawing_record_sha256": "199a38cea3b980f562181843466232b1c3a6bcd58abfcf5a68dc8ec842e2b15c",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 150,
+              "coordinates": [
+                1800,
+                5074
+              ],
+              "drawing_record_offset": 3361605,
+              "drawing_record_sha256": "730a145b9f3188695b3e11da35f11ec1cfdebb398a0f2078a011dab91a1fb3f5",
+              "field_record_offset": 3384043,
+              "field_record_sha256": "6f07dfa9cea4f7419a0ddc6a759519d1df56e2ec098ddbcd542b28028daac00b"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1150,
+              "coordinates": [
+                2350,
+                5074
+              ],
+              "drawing_record_offset": 3361633,
+              "drawing_record_sha256": "e8bcb22edbec780ada3afbda34ca0ba2e89e68a54f6455cb4fa810cfc14bb95d",
+              "field_record_offset": 3384067,
+              "field_record_sha256": "0d35dac32cdc64b545841b1d432838b80c1a51a5c6232665ed9809bdf82c8a72"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2150,
+              "coordinates": [
+                2900,
+                5074
+              ],
+              "drawing_record_offset": 3361661,
+              "drawing_record_sha256": "697150972fe29a0eec4342ec46cb6176a69fe4616e608565adc87fcdfac7dd1f",
+              "field_record_offset": 3384091,
+              "field_record_sha256": "51226634f3b00649a3211df9ea3c09637a38a27ea9f21c31fb681991a9b6cafd"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3150,
+              "coordinates": [
+                3450,
+                5074
+              ],
+              "drawing_record_offset": 3361689,
+              "drawing_record_sha256": "3e7c5528246493e3ea98b443dac7397a506ad2783ccaf316d03c80d30d59756c",
+              "field_record_offset": 3384115,
+              "field_record_sha256": "901fa2f2613320f8079c219208114483c3587dbc0dcc6e0487e2fac921f56499"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4150,
+              "coordinates": [
+                4000,
+                5074
+              ],
+              "drawing_record_offset": 3361717,
+              "drawing_record_sha256": "86cc059069d915810a51c55acb68028b425ddfed07be486e34cfc623847492bd",
+              "field_record_offset": 3384139,
+              "field_record_sha256": "ec79fdd0cb407c1223c32cc3a5dce48fee8087ab6b96371c6a6c10700359e84d"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "150",
+            "offset": 3354013,
+            "drawing_record_offset": 3361577,
+            "drawing_record_sha256": "cb67ab48261964f64e07642ca012f77bcb20eeddf97f877fcfccc98c143e8984"
+          }
+        },
+        {
+          "requested_NXT_line": "23600",
+          "source_form": "E11",
+          "production_column_field_id": 236,
+          "label_offset": 3354345,
+          "label_bytes": 10,
+          "label_sha256": "7561c934f60f784f1eb5368d7e0b6ae832112bbb66ebba739489ddf25a8de9c3",
+          "label_drawing_record_offset": 3365581,
+          "label_drawing_record_sha256": "0c2ad33ca708e922e5ee2b76abf5ebea981e9fe2071c5a2fbbaa62c4b86e56c3",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 236,
+              "coordinates": [
+                1800,
+                8084
+              ],
+              "drawing_record_offset": 3365637,
+              "drawing_record_sha256": "5356265396230630ce79e0a6fe28ff275a95b097a15f3ef48313afbb9108da39",
+              "field_record_offset": 3386491,
+              "field_record_sha256": "16e12b709c89efd0febe6c0b28c9dce4b5bc38da6261bbb0bf59d742e25c4f24"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1236,
+              "coordinates": [
+                2350,
+                8084
+              ],
+              "drawing_record_offset": 3365665,
+              "drawing_record_sha256": "eb91dec0365a0e0ab96db00b9e845821d5ac9e189da4504c2bf86bf3ce143054",
+              "field_record_offset": 3386515,
+              "field_record_sha256": "31c7cf7639ca2fbfe19327883aaabb72a59f66005b2cb6fe892a937577c2f7e6"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2236,
+              "coordinates": [
+                2900,
+                8084
+              ],
+              "drawing_record_offset": 3365693,
+              "drawing_record_sha256": "79f913b0a7e6a1a2f9f33f608d3fcc08578c6e3f3392a828833bb16d288eee6e",
+              "field_record_offset": 3386539,
+              "field_record_sha256": "be25f109e100d808f6237c48b33cfd39599291ecb9edba50b37af1bff811ce4f"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3236,
+              "coordinates": [
+                3450,
+                8084
+              ],
+              "drawing_record_offset": 3365721,
+              "drawing_record_sha256": "245ec1b580be31bfea7230cf0167cbb16e116085ff4d5fe8abfaa934f1458a3d",
+              "field_record_offset": 3386563,
+              "field_record_sha256": "755dfa3fff868705be41f89dc61d13d735757c019567a2e83a0e399d49731050"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4236,
+              "coordinates": [
+                4000,
+                8084
+              ],
+              "drawing_record_offset": 3365749,
+              "drawing_record_sha256": "5e8692ff2b3bfd400cfeb75cb4117c0f5b10a3304bf148704a640013bc0ef25f",
+              "field_record_offset": 3386587,
+              "field_record_sha256": "2a5e39578f567d55a34f34b2f94197bb27a1647b4921cc9e95db2b09acc71368"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "236",
+            "offset": 3354355,
+            "drawing_record_offset": 3365609,
+            "drawing_record_sha256": "94376b6402d6eee8a8c2d78cd84226f5ae615ccfafdd311688c7c6b84e3dfac3"
+          }
+        },
+        {
+          "requested_NXT_line": "26000",
+          "source_form": "E11",
+          "production_column_field_id": 260,
+          "label_offset": 3354551,
+          "label_bytes": 14,
+          "label_sha256": "f81179a306efaea330cb1ecd1423dacf7813168efd40cd91a90ef07b31ccaae7",
+          "label_drawing_record_offset": 3367737,
+          "label_drawing_record_sha256": "4ea069a56530a110fe0b979fd8cb2faae2ac56800eeb4e7dea5c7e74cc1bbb42",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 260,
+              "coordinates": [
+                1800,
+                9674
+              ],
+              "drawing_record_offset": 3367793,
+              "drawing_record_sha256": "d5e409b62a4c11698d0807a114a59e9adb44c324d189474158847716377c4f4a",
+              "field_record_offset": 3387811,
+              "field_record_sha256": "a8f42c375cd90baa401ada34a8215cf27145a83af4896fbd559b2b2e51e9309e"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1260,
+              "coordinates": [
+                2350,
+                9674
+              ],
+              "drawing_record_offset": 3367821,
+              "drawing_record_sha256": "6548d9324b3fc30011bfb10d8690dd76483a82190747d80a3c7830f740d6c800",
+              "field_record_offset": 3387835,
+              "field_record_sha256": "b566f633d2ad74efe8e1b2fdda2207780f61368b15181d871524155562b4e51e"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2260,
+              "coordinates": [
+                2900,
+                9674
+              ],
+              "drawing_record_offset": 3367849,
+              "drawing_record_sha256": "3813b9b589a1a0f82328d569aec14384354f643472184e2575ebbe3e3f60b137",
+              "field_record_offset": 3387859,
+              "field_record_sha256": "5ec2608e1ea7d9f69fc22f94a12775e68ad48a3f31b798a46586baf9679518a1"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3260,
+              "coordinates": [
+                3450,
+                9674
+              ],
+              "drawing_record_offset": 3367877,
+              "drawing_record_sha256": "c62a11f3c01c7f416697ba21c89050aa72c1d25f1f2a8e265af1857c72580587",
+              "field_record_offset": 3387883,
+              "field_record_sha256": "35f3cb9dc15679b0de8babb8cafa0f74f7389cdea651f30eff2096d611bcfb18"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4260,
+              "coordinates": [
+                4000,
+                9674
+              ],
+              "drawing_record_offset": 3367905,
+              "drawing_record_sha256": "2be47e66b51d90add76a3294bca666fa9f3afa5d4cd1206d1bccf48288f7ee61",
+              "field_record_offset": 3387907,
+              "field_record_sha256": "94a84e5a1ec2af1bdc123063b2927c6d69df4630f5aab177ba75670c4b410d2e"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "260",
+            "offset": 3354565,
+            "drawing_record_offset": 3367765,
+            "drawing_record_sha256": "a6f81a873580b291e478f504acb23e4a239bf2268621b8ca21dd6c8f2d054d0d"
+          }
+        },
+        {
+          "requested_NXT_line": "42000",
+          "source_form": "E11",
+          "production_column_field_id": 420,
+          "label_offset": 3355316,
+          "label_bytes": 15,
+          "label_sha256": "5fd87a8358d3a0dbd5ed55935e9bb3c58f0874ea73281a029c6902797b55cf0b",
+          "label_drawing_record_offset": 3375745,
+          "label_drawing_record_sha256": "d7841dc60fcfc1b5e7dda3b5f87d44f39520bc43b1e10680a9211bc1724d53e9",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 420,
+              "coordinates": [
+                5800,
+                6892
+              ],
+              "drawing_record_offset": 3375801,
+              "drawing_record_sha256": "4d3f7741bbf5dea35bf5960e69d60f0ca31da8eb9b33760b66041edf43921103",
+              "field_record_offset": 3392491,
+              "field_record_sha256": "2cd353e611f19ade439222afa5ff43f429e043ffbdfd9d9db88278d26145fa46"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1420,
+              "coordinates": [
+                6350,
+                6892
+              ],
+              "drawing_record_offset": 3375829,
+              "drawing_record_sha256": "00fdbc884583c1bc0c5f8bf7af4dcffaa2057ba754b469b9127b8f864766e730",
+              "field_record_offset": 3392515,
+              "field_record_sha256": "c58e6d64ffa1143737ccc6b0424c0da68fd199202b6250c0b9481589b2c63d1e"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2420,
+              "coordinates": [
+                6900,
+                6892
+              ],
+              "drawing_record_offset": 3375857,
+              "drawing_record_sha256": "7dddd5b6b4b9d818cad73b742909e818cc34780c8a4f3d22bbf04fbf52dcb87f",
+              "field_record_offset": 3392539,
+              "field_record_sha256": "c7123176ef4563738741542db16b0f9185dc3e635b478576d272ab9baf4940df"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3420,
+              "coordinates": [
+                7450,
+                6892
+              ],
+              "drawing_record_offset": 3375885,
+              "drawing_record_sha256": "9611ccf4e282347dc966fd179b57d9e1eb5bf1b0ffa4b2bd91f06d6b33bd3b11",
+              "field_record_offset": 3392563,
+              "field_record_sha256": "fccdeff7aeb17faee5b4c9572928de0f909aa8695f8136b59e3b3490fac44bdc"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4420,
+              "coordinates": [
+                8000,
+                6892
+              ],
+              "drawing_record_offset": 3375913,
+              "drawing_record_sha256": "0898ea5913017d3e31d7b99af3229797877ba97751402a01cae90c16c13551b1",
+              "field_record_offset": 3392587,
+              "field_record_sha256": "67c23913e36752b348d805c46bfc4041748606520abff049ef114498cca634d2"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "420",
+            "offset": 3355331,
+            "drawing_record_offset": 3375773,
+            "drawing_record_sha256": "9fe483d7550ffbefacfa093aada9b1fd5098cc37beffa6c732c32fcd59f42fa1"
+          }
+        },
+        {
+          "requested_NXT_line": "48400",
+          "source_form": "E11",
+          "production_column_field_id": 484,
+          "label_offset": 3355716,
+          "label_bytes": 6,
+          "label_sha256": "6b37bd35081fcbc6676dcfdfa7a7389f70be9ed70f7d50f5163708e2fafe65f8",
+          "label_drawing_record_offset": 3379917,
+          "label_drawing_record_sha256": "54939a031f9a93176718f2a7a133fdeb67db685630dd2fd84bae18b38bd829a5",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 484,
+              "coordinates": [
+                5800,
+                10016
+              ],
+              "drawing_record_offset": 3379973,
+              "drawing_record_sha256": "b4d89635c5b6b999b441bbc1937b3aff6b4f6afcc3250892e1dbc58131b64626",
+              "field_record_offset": 3395131,
+              "field_record_sha256": "a120b340f06c485e76ec826aa4657ba3307a9dd9bccb28a2fce7b1392cb28685"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1484,
+              "coordinates": [
+                6350,
+                10016
+              ],
+              "drawing_record_offset": 3380001,
+              "drawing_record_sha256": "18a3428fad93afef95a0e42fed9bd5cc93f908f432f835b30f8715daf34036f2",
+              "field_record_offset": 3395155,
+              "field_record_sha256": "718d7c1d19e46c6164156f930047316794bed37d959e1b669ab8e767dcba8793"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2484,
+              "coordinates": [
+                6900,
+                10016
+              ],
+              "drawing_record_offset": 3380029,
+              "drawing_record_sha256": "97eab4679b91c97aab66758d925b054ce6b2b2a70f1f56eb975bffc88b5338f6",
+              "field_record_offset": 3395179,
+              "field_record_sha256": "23af991128a26aa88f9bf58cde6cf20a67c9d213d1d5b1f0d4eece6ecbb1a69e"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3484,
+              "coordinates": [
+                7450,
+                10016
+              ],
+              "drawing_record_offset": 3380057,
+              "drawing_record_sha256": "fc43ee27069609b5c53a6b57a7793f08eddaeab6702a5d3aa5d3e3bbfa378746",
+              "field_record_offset": 3395203,
+              "field_record_sha256": "0423efd4f217fb6fcf236e67f84523f037af8d8a85a1652a6f49c877fdbacf28"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4484,
+              "coordinates": [
+                8000,
+                10016
+              ],
+              "drawing_record_offset": 3380085,
+              "drawing_record_sha256": "7c9d49830802085c925c7acfd1385329a554b37df8b62775982b4cf9b97f02c0",
+              "field_record_offset": 3395227,
+              "field_record_sha256": "69bd30597e403ea82d40e2d261a2046c89f7b36c17570e79cadcc5820b8c5fc8"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "484",
+            "offset": 3355722,
+            "drawing_record_offset": 3379945,
+            "drawing_record_sha256": "b14514b3baf7b6c0d7e4011ad0b9b11f411ec1352b9a8cc6b42f9a50064ea1c5"
+          }
+        },
+        {
+          "requested_NXT_line": "48500",
+          "source_form": "E11",
+          "production_column_field_id": 485,
+          "label_offset": 3355725,
+          "label_bytes": 13,
+          "label_sha256": "19a154a4ba07c59640b936f34bcef8bac5782ad56b4d51a524dae79237001e32",
+          "label_drawing_record_offset": 3380113,
+          "label_drawing_record_sha256": "6beaca213d75c8d602d4ea3013db5d6f9ea33fd51a71fda20d508841c73a7bb4",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 485,
+              "coordinates": [
+                5800,
+                10158
+              ],
+              "drawing_record_offset": 3380169,
+              "drawing_record_sha256": "eeaf15067037c34b0910f14cd01532a9a2a4cd1c857b97af7c2c2d38393cbf00",
+              "field_record_offset": 3395251,
+              "field_record_sha256": "f1622d737ad81dd68abb9357390936d6fd1922f72a2c8c7584cebc25ca962f30"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1485,
+              "coordinates": [
+                6350,
+                10158
+              ],
+              "drawing_record_offset": 3380197,
+              "drawing_record_sha256": "0e81ba1c6971dadc90904b11f6106526cbf09170bb5cb3aaf02fdc951017aa2d",
+              "field_record_offset": 3395275,
+              "field_record_sha256": "7a00b4a2d2fa808d97d9a3e0aa5e02b8d6fc114661beaafa79f59666c339eb91"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2485,
+              "coordinates": [
+                6900,
+                10158
+              ],
+              "drawing_record_offset": 3380225,
+              "drawing_record_sha256": "894ed074e76896b8c24532ce38e0c41171d07d4fe26b7f80dbd2b09af3df0d10",
+              "field_record_offset": 3395299,
+              "field_record_sha256": "281d286a28ce63bb68a87323ef0c6594c94c115b05c909d01f981778767f5a9a"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3485,
+              "coordinates": [
+                7450,
+                10158
+              ],
+              "drawing_record_offset": 3380253,
+              "drawing_record_sha256": "2f3496a96ea4ab78ba689f3fd688e1947f3ef75b7abd3273f9c5d80580039991",
+              "field_record_offset": 3395323,
+              "field_record_sha256": "d95e8e1c596ebc75fe32fc2c621164909f37ea15fb803e02485d70d7092f92ae"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4485,
+              "coordinates": [
+                8000,
+                10158
+              ],
+              "drawing_record_offset": 3380281,
+              "drawing_record_sha256": "ee7cc1e68b3406368ba564e4be0e22563a5617e263d185854d531acc3ddaef72",
+              "field_record_offset": 3395347,
+              "field_record_sha256": "5e3b82394dab28825f5810784651de1a9c0b6ff8b602093db63d0ba1bfab988f"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "485",
+            "offset": 3355738,
+            "drawing_record_offset": 3380141,
+            "drawing_record_sha256": "5fe0b43a6a6da4c56649fd9f33d5ea0f74c6a334fe377bcdc184279a84171228"
+          }
+        }
+      ],
+      "resources": [
+        {
+          "key": "E11E",
+          "directory_record_offset": 13749366,
+          "offset": 3353281,
+          "bytes": 27028,
+          "sha256": "fd5f62f3c922943558dbc60fac40c9313581e8761f6d846d0922336564b97cc6"
+        },
+        {
+          "key": "E11H",
+          "directory_record_offset": 13749390,
+          "offset": 3380309,
+          "bytes": 15062,
+          "sha256": "85f36e19b439edc08467612e72f15fca44a3d8e65478edd9e7bc6e34f0c1416d"
+        },
+        {
+          "key": "E11",
+          "directory_record_offset": 71476,
+          "offset": 14588,
+          "bytes": 112,
+          "sha256": "5b4823c9537c8e7fae5d6b17b743c9b0d6d42de9f83049a03b10cad5e5a219bd"
+        }
+      ],
+      "drawing_segments": [
+        {
+          "header_offset": 2460,
+          "kind": 1,
+          "record_bytes": 12,
+          "count": 1
+        },
+        {
+          "header_offset": 2488,
+          "kind": 3,
+          "record_bytes": 8,
+          "count": 1
+        },
+        {
+          "header_offset": 2512,
+          "kind": 7,
+          "record_bytes": 28,
+          "count": 875
+        }
+      ],
+      "field_record_count": 617,
+      "field_identifiers_unique": true,
+      "complete_segment_boundaries_verified": true,
+      "year_association": {
+        "kind": "explicit_installed_DTMAXT1_XML_year_with_same_package_annual_text_when_available",
+        "XML_file": "DT1WAD10.XML",
+        "XML_sha256": "59f757dab3c3451c3cbadbcb1ddc6c77cf8ee5e1d3d4a5a638fd1832ca27c454",
+        "XML_product": "DTMAXT1",
+        "XML_year": "2010",
+        "same_package_annual_references": [
+          {
+            "resource": {
+              "key": "A03E",
+              "directory_record_offset": 13743222,
+              "offset": 39486,
+              "bytes": 8408,
+              "sha256": "ff283fdb9f37fd9390df797a0b687642a42fc1a41432933506f1f6416c708407"
+            },
+            "reference_offset": 39885,
+            "reference_bytes": 17,
+            "reference_sha256": "9ea52cd047dbf3edf2e599a7d387ac63704964d79dea4acaa56bc200127c070a"
+          }
+        ],
+        "E11_uses_YEAR_placeholder": false,
+        "year_runtime_loader_binding_independently_proven": false
+      },
+      "six_label_binding_and_field_coordinate_matches": true
+    },
+    {
+      "year": 2011,
+      "status": "six_original_form_bindings_verified",
+      "bindings": [
+        {
+          "requested_NXT_line": "15000",
+          "source_form": "E11",
+          "production_column_field_id": 150,
+          "label_offset": 3488603,
+          "label_bytes": 12,
+          "label_sha256": "28090e4e870c134b196f9ee0d65e3dc851370cdd2c41af98e4ac1c601a73a497",
+          "label_drawing_record_offset": 3496297,
+          "label_drawing_record_sha256": "43e202b301f11bd9fbc784dce27ff098ea2f1c46d6ee7365cd4e1c964465119f",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 150,
+              "coordinates": [
+                1800,
+                5020
+              ],
+              "drawing_record_offset": 3496353,
+              "drawing_record_sha256": "522296e638708e6729b6dfdc739789c8ee68eb6a346ad5495015910b107be98b",
+              "field_record_offset": 3519451,
+              "field_record_sha256": "955b48922ed1eafd2e14cf98277ae1da1a17da26ec85cefd14f000374c7b511c"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1150,
+              "coordinates": [
+                2350,
+                5020
+              ],
+              "drawing_record_offset": 3496381,
+              "drawing_record_sha256": "73a711571086a75decf92c99ad9a30601d0c1e29850f87276d7d874886c324fd",
+              "field_record_offset": 3519475,
+              "field_record_sha256": "b1311f6f795abea7d042e21c9f92919410aba61ef2a4f1f772f525935546e792"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2150,
+              "coordinates": [
+                2900,
+                5020
+              ],
+              "drawing_record_offset": 3496409,
+              "drawing_record_sha256": "526be0ccc5db2a5fc8c781c0c6eb4016092af679c699db46f3c1d765916b7a36",
+              "field_record_offset": 3519499,
+              "field_record_sha256": "1408faced73513808330ae42d08451ee483bf52ff13f68fa5e21fac6e2c38002"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3150,
+              "coordinates": [
+                3450,
+                5020
+              ],
+              "drawing_record_offset": 3496437,
+              "drawing_record_sha256": "30dc928fb8d81af482b1a6d3b2d87e3d19db10b8dd3d9f27fa47a8aa59398acd",
+              "field_record_offset": 3519523,
+              "field_record_sha256": "31cb3131e102b360e6c37c8a272f0f3aad4a7ffb17fb2ecf6e9331951d972ed5"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4150,
+              "coordinates": [
+                4000,
+                5020
+              ],
+              "drawing_record_offset": 3496465,
+              "drawing_record_sha256": "03c0048c41f14357fd096db0dfd8582235c0c5e764af1e5cdf1ca1a420bf59f8",
+              "field_record_offset": 3519547,
+              "field_record_sha256": "c53a93fb7f7dc23116a81b9b159c8530df0f501eea48f897541d1598e74946e1"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "150",
+            "offset": 3488615,
+            "drawing_record_offset": 3496325,
+            "drawing_record_sha256": "bf4f32d38fe452c94c3363f928c9ce5107e45678d101fe01f41e8f9915d519b6"
+          }
+        },
+        {
+          "requested_NXT_line": "23600",
+          "source_form": "E11",
+          "production_column_field_id": 236,
+          "label_offset": 3488947,
+          "label_bytes": 10,
+          "label_sha256": "7561c934f60f784f1eb5368d7e0b6ae832112bbb66ebba739489ddf25a8de9c3",
+          "label_drawing_record_offset": 3500357,
+          "label_drawing_record_sha256": "a92b987f298079769eb4d9641f2d1c59308c6fa4e1bea0f0ba3de517d4eb2e76",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 236,
+              "coordinates": [
+                1800,
+                7990
+              ],
+              "drawing_record_offset": 3500413,
+              "drawing_record_sha256": "0d3bbb501f8989b596cc361cec2da9d26dd854a74268d08269e1f41931dc13fc",
+              "field_record_offset": 3521923,
+              "field_record_sha256": "39b9305fbef1d9eef6c7909d2edc57f71cfef0c2eda7bf9a3c2248d94112716b"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1236,
+              "coordinates": [
+                2350,
+                7990
+              ],
+              "drawing_record_offset": 3500441,
+              "drawing_record_sha256": "b45e89d7d0d0b7ee2c19edee5d438379d1d730fc09e464606303101a8a348afb",
+              "field_record_offset": 3521947,
+              "field_record_sha256": "d89430cbe8f17ed85f7f8e4870ffd439b96255bcc3465b1ea89a8ea1cc9e27d5"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2236,
+              "coordinates": [
+                2900,
+                7990
+              ],
+              "drawing_record_offset": 3500469,
+              "drawing_record_sha256": "dad9fa6581445ad8007b3d518c411e22648ddf4f6986de11438124750fda2aba",
+              "field_record_offset": 3521971,
+              "field_record_sha256": "3faff0c5ff6af7687ef554c2705ddedf820daae785f4b3c2a610252f5aa6856b"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3236,
+              "coordinates": [
+                3450,
+                7990
+              ],
+              "drawing_record_offset": 3500497,
+              "drawing_record_sha256": "b0e8c5885e942dce735069d1630817fe0368f0f41d4d3ae93dc2497e5bae3263",
+              "field_record_offset": 3521995,
+              "field_record_sha256": "cb1de90889d3f456c43c7cdd5460f1b0231c284406678773b29742f0a76522ce"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4236,
+              "coordinates": [
+                4000,
+                7990
+              ],
+              "drawing_record_offset": 3500525,
+              "drawing_record_sha256": "7128a129a32776fc9d55907136a55895ca2062cbaf4bd7f48b4f596c8cd75877",
+              "field_record_offset": 3522019,
+              "field_record_sha256": "d41f945301eaba630f10b8874ab9b352b0b0572c7c7b7cac63705e4eec1695c0"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "236",
+            "offset": 3488957,
+            "drawing_record_offset": 3500385,
+            "drawing_record_sha256": "9d400bb610d58f35beb50791bb0a1610d39f87a452744a271919696b8b322b48"
+          }
+        },
+        {
+          "requested_NXT_line": "26000",
+          "source_form": "E11",
+          "production_column_field_id": 260,
+          "label_offset": 3489153,
+          "label_bytes": 14,
+          "label_sha256": "f81179a306efaea330cb1ecd1423dacf7813168efd40cd91a90ef07b31ccaae7",
+          "label_drawing_record_offset": 3502513,
+          "label_drawing_record_sha256": "b00de96723027b708240463dccd72170c920fdc632f2b6ae97a8b62ef445b867",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 260,
+              "coordinates": [
+                1800,
+                9560
+              ],
+              "drawing_record_offset": 3502569,
+              "drawing_record_sha256": "cc5609e35e5895d21c32ff59b5b70dad5faaafa0a4c4143dfbe3edaf3d3cb3f7",
+              "field_record_offset": 3523243,
+              "field_record_sha256": "c81dd7d43ad7838fc7478e8ab964ae49b9df691d278122c41bc567dac2abb968"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1260,
+              "coordinates": [
+                2350,
+                9560
+              ],
+              "drawing_record_offset": 3502597,
+              "drawing_record_sha256": "6c60c3215c1559e3d148591b0d4e782091214e89cdd016b3bde7403ad395e7f2",
+              "field_record_offset": 3523267,
+              "field_record_sha256": "f92feaa1f9fc41e9d5a894e470655ef5b3655aa531f200ddc20c5d986e734287"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2260,
+              "coordinates": [
+                2900,
+                9560
+              ],
+              "drawing_record_offset": 3502625,
+              "drawing_record_sha256": "6a4e8c896bd15748b5f909b5ec855fc90e30753221f04c41ddd4940803455d8b",
+              "field_record_offset": 3523291,
+              "field_record_sha256": "0f9d54123a5671ba1bc0d50550b5a83d993ec19ab50be22d8e795fecb2abe0e2"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3260,
+              "coordinates": [
+                3450,
+                9560
+              ],
+              "drawing_record_offset": 3502653,
+              "drawing_record_sha256": "d68df7ee28e681f67841735c7042e302d8ff2b37493dae45f94b500d4cd99ef9",
+              "field_record_offset": 3523315,
+              "field_record_sha256": "429905a2dd572018b030fa62c7da33301147cbbcff2076c4f20ea57390bf0b0b"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4260,
+              "coordinates": [
+                4000,
+                9560
+              ],
+              "drawing_record_offset": 3502681,
+              "drawing_record_sha256": "99ed797726a0b420478da5e7c712022ecd8be2af6befea0057ab1078bf6b7d30",
+              "field_record_offset": 3523339,
+              "field_record_sha256": "8ac01783fcc4981f6fa57f680468c5f071a111c42b779cc1c90cd740d8adfe59"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "260",
+            "offset": 3489167,
+            "drawing_record_offset": 3502541,
+            "drawing_record_sha256": "dede62702528907d111957144fa15ae637dbd488d91f55c5ed132dab7193ffa1"
+          }
+        },
+        {
+          "requested_NXT_line": "42000",
+          "source_form": "E11",
+          "production_column_field_id": 420,
+          "label_offset": 3489958,
+          "label_bytes": 15,
+          "label_sha256": "5fd87a8358d3a0dbd5ed55935e9bb3c58f0874ea73281a029c6902797b55cf0b",
+          "label_drawing_record_offset": 3510829,
+          "label_drawing_record_sha256": "e370a2a5cad17dbf790efa85ed612d4cf158337c4a7a086245ae060609d5b77b",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 420,
+              "coordinates": [
+                5800,
+                6810
+              ],
+              "drawing_record_offset": 3510885,
+              "drawing_record_sha256": "c8a34e9abecfc70fae10b7cc6289c040963aac645cd81a71b932c31d7e61ca4e",
+              "field_record_offset": 3528091,
+              "field_record_sha256": "67cc78e57f34c10a09918ee34ee271611f670e66c24f07786afe5b6a54565456"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1420,
+              "coordinates": [
+                6350,
+                6810
+              ],
+              "drawing_record_offset": 3510913,
+              "drawing_record_sha256": "4290fcf4df856e18b8b524decee4b7f1167f5968b71a6da09d9213e549b82ab8",
+              "field_record_offset": 3528115,
+              "field_record_sha256": "1132a9941a92f41e01c8bb49bec4d2f7a87ae58ae381f2fce27cf3b54531ee3f"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2420,
+              "coordinates": [
+                6900,
+                6810
+              ],
+              "drawing_record_offset": 3510941,
+              "drawing_record_sha256": "20f6759793e5c7219c6f3921f4b9042fba0fa5c57495ae5479b4164656b2ca6e",
+              "field_record_offset": 3528139,
+              "field_record_sha256": "a3347c49e5fd9ec52b4fed7e0c71b5e752e91f5d1f72b549239f91046b45d34d"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3420,
+              "coordinates": [
+                7450,
+                6810
+              ],
+              "drawing_record_offset": 3510969,
+              "drawing_record_sha256": "fac0aaac2a7b8a4fba5bf94f85bf672abb8f35727e6d1e4eae6539d050b5d8e3",
+              "field_record_offset": 3528163,
+              "field_record_sha256": "af0380e7312582174b8faba533fbccbe5f5ee2b114101755130f05df3845b6a4"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4420,
+              "coordinates": [
+                8000,
+                6810
+              ],
+              "drawing_record_offset": 3510997,
+              "drawing_record_sha256": "04dc0523a564cc1dec53a4d3f656e40afc3187039a9628a575ea1837cb2913d5",
+              "field_record_offset": 3528187,
+              "field_record_sha256": "7d632684cde489f4547e63844e6838c0b87519d7bb8f39310964c9a125a1639b"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "420",
+            "offset": 3489973,
+            "drawing_record_offset": 3510857,
+            "drawing_record_sha256": "6f5be86300023efc21cb6d429bcb19efcc80ec924e6ec6966692eb6f487cd113"
+          }
+        },
+        {
+          "requested_NXT_line": "48400",
+          "source_form": "E11",
+          "production_column_field_id": 484,
+          "label_offset": 3490380,
+          "label_bytes": 6,
+          "label_sha256": "6b37bd35081fcbc6676dcfdfa7a7389f70be9ed70f7d50f5163708e2fafe65f8",
+          "label_drawing_record_offset": 3515253,
+          "label_drawing_record_sha256": "27f788796682811b9106415b5e823cb991ed41ccb2fa5c97730b4a5fa33e3760",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 484,
+              "coordinates": [
+                5800,
+                10030
+              ],
+              "drawing_record_offset": 3515309,
+              "drawing_record_sha256": "8da8117d7a44ab5f7ebd51376ff9053b1f74a097766b0a0d42439e0286efe8b7",
+              "field_record_offset": 3530899,
+              "field_record_sha256": "763360e010fd36fe3a1602e3cbe0ae752cedce458e912e47e7f59b2a685fd0fc"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1484,
+              "coordinates": [
+                6350,
+                10030
+              ],
+              "drawing_record_offset": 3515337,
+              "drawing_record_sha256": "d65a386f3852816c653f0b9b6f8cd6bc3944e98fe4f6579f0926d78cb7706d9b",
+              "field_record_offset": 3530923,
+              "field_record_sha256": "45963b79a8bd6848206f13d726a0603f0680d34e6f227938ee39f3d6d0b9a1ac"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2484,
+              "coordinates": [
+                6900,
+                10030
+              ],
+              "drawing_record_offset": 3515365,
+              "drawing_record_sha256": "d942025d12a22c790cd714d305e0ff3c6f22377f15d3f606918732e372368ff9",
+              "field_record_offset": 3530947,
+              "field_record_sha256": "c142d088586dbaa705c93e36171c79be2bc7d2b6e347ade391ce49bae5c9a4ac"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3484,
+              "coordinates": [
+                7450,
+                10030
+              ],
+              "drawing_record_offset": 3515393,
+              "drawing_record_sha256": "8894e4c2d8e77be1ab3500217c23d3e073fd4ae6fa6a94b1bd7c2d634809e56f",
+              "field_record_offset": 3530971,
+              "field_record_sha256": "863aca43973ff46f465b1f1e04d4cbe7856322442a91e06412ee2ab87c401bce"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4484,
+              "coordinates": [
+                8000,
+                10030
+              ],
+              "drawing_record_offset": 3515421,
+              "drawing_record_sha256": "1084b8cf9b9bff4744d1952afd8c7925e7ae7d94528b374b754115b9d81fa0cb",
+              "field_record_offset": 3530995,
+              "field_record_sha256": "e6436093451161db9f7a50efec20cc4202fc7435945599b45dc729d683596f55"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "484",
+            "offset": 3490386,
+            "drawing_record_offset": 3515281,
+            "drawing_record_sha256": "832be988790549c81f0845a034cd93026f9b72e1b2075bc614f31c2c12dcd94e"
+          }
+        },
+        {
+          "requested_NXT_line": "48500",
+          "source_form": "E11",
+          "production_column_field_id": 485,
+          "label_offset": 3490389,
+          "label_bytes": 13,
+          "label_sha256": "19a154a4ba07c59640b936f34bcef8bac5782ad56b4d51a524dae79237001e32",
+          "label_drawing_record_offset": 3515449,
+          "label_drawing_record_sha256": "09b08484224043d4103590cc66507247a9ff67aa7ca30fa931aa96ac8658e41c",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 485,
+              "coordinates": [
+                5800,
+                10170
+              ],
+              "drawing_record_offset": 3515505,
+              "drawing_record_sha256": "067b7ac64c1adfe3a7a5c517d6586a2ce377c6c70bfb8c2bd62728a1d60e18cb",
+              "field_record_offset": 3531019,
+              "field_record_sha256": "e82b13fe41db2f274d67eea203a89cb1db9d2c58812ce36f22c4b28698a2e741"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1485,
+              "coordinates": [
+                6350,
+                10170
+              ],
+              "drawing_record_offset": 3515533,
+              "drawing_record_sha256": "a71d66d17715aa7f7220fc934e768ac1a39f364b789cda273ceceaf65964fe61",
+              "field_record_offset": 3531043,
+              "field_record_sha256": "f7a0e17e716a8eef7c9e466493efd8439bd9f532d6f288e5101fc4339d439b4b"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2485,
+              "coordinates": [
+                6900,
+                10170
+              ],
+              "drawing_record_offset": 3515561,
+              "drawing_record_sha256": "20f195c0628e007666ec937737c92077da84d3c1ee2498bb0c2c8d128704dd9c",
+              "field_record_offset": 3531067,
+              "field_record_sha256": "f126c4ed6be27b51fd7a605f87927fbc412a11c071de6704d1514dd5decbbf9a"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3485,
+              "coordinates": [
+                7450,
+                10170
+              ],
+              "drawing_record_offset": 3515589,
+              "drawing_record_sha256": "b6d7611caeaf1e590587b2b37ee822b4fe63930d1706de23e8c93eb4e0f766eb",
+              "field_record_offset": 3531091,
+              "field_record_sha256": "c70c5a517814f7f0127faced485aa23397b297420455ed8849083913976708f2"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4485,
+              "coordinates": [
+                8000,
+                10170
+              ],
+              "drawing_record_offset": 3515617,
+              "drawing_record_sha256": "7ef77b9f0118bf8b221775e221bd71078f80080f272e68beba214ddbe8b357f1",
+              "field_record_offset": 3531115,
+              "field_record_sha256": "ce0853063c1f65e7e6a5543caa903b8145e8899de2671a7e9b0497c31ef934d7"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "485",
+            "offset": 3490402,
+            "drawing_record_offset": 3515477,
+            "drawing_record_sha256": "d901c43cd60ffbf166d17d27253da169f6a649c17453e2bd4a3c617f3bed6f59"
+          }
+        }
+      ],
+      "resources": [
+        {
+          "key": "E11E",
+          "directory_record_offset": 14500427,
+          "offset": 3487874,
+          "bytes": 27771,
+          "sha256": "6a920c9c4a5769d96aa035ea87593beeab2a82cc803b8d698cca935c6c8a39db"
+        },
+        {
+          "key": "E11H",
+          "directory_record_offset": 14500451,
+          "offset": 3515645,
+          "bytes": 15494,
+          "sha256": "5c03a0797694e70a74ec791d8de9c4070dbe0eb23fdc4a637c6229fbf8475931"
+        },
+        {
+          "key": "E11",
+          "directory_record_offset": 72136,
+          "offset": 14476,
+          "bytes": 112,
+          "sha256": "2389d72942770871a88365c42af03cbb6a6eecc28904cb2033a330ade2495d86"
+        }
+      ],
+      "drawing_segments": [
+        {
+          "header_offset": 2531,
+          "kind": 1,
+          "record_bytes": 12,
+          "count": 1
+        },
+        {
+          "header_offset": 2559,
+          "kind": 3,
+          "record_bytes": 8,
+          "count": 1
+        },
+        {
+          "header_offset": 2583,
+          "kind": 7,
+          "record_bytes": 28,
+          "count": 899
+        }
+      ],
+      "field_record_count": 635,
+      "field_identifiers_unique": true,
+      "complete_segment_boundaries_verified": true,
+      "year_association": {
+        "kind": "explicit_installed_DTMAXT1_XML_year_with_same_package_annual_text_when_available",
+        "XML_file": "DT1WAD11.XML",
+        "XML_sha256": "0c46a1585c488e0de5e213dc01124c9d7123c56a5ba6c21e418a126e0258dca6",
+        "XML_product": "DTMAXT1",
+        "XML_year": "2011",
+        "same_package_annual_references": [
+          {
+            "resource": {
+              "key": "PC2E",
+              "directory_record_offset": 14512187,
+              "offset": 9122784,
+              "bytes": 7616,
+              "sha256": "674121a7c062be26d6132e486a14b47baf5c8ce4ad2e0dc72bfbc3148e07752e"
+            },
+            "reference_offset": 9124610,
+            "reference_bytes": 17,
+            "reference_sha256": "100d0f69e08a3ae7f5d1776184fc30fdc1b76a2269ca4ebee92352407128ac71"
+          }
+        ],
+        "E11_uses_YEAR_placeholder": true,
+        "year_runtime_loader_binding_independently_proven": false
+      },
+      "six_label_binding_and_field_coordinate_matches": true
+    },
+    {
+      "year": 2012,
+      "status": "six_original_form_bindings_verified",
+      "bindings": [
+        {
+          "requested_NXT_line": "15000",
+          "source_form": "E11",
+          "production_column_field_id": 150,
+          "label_offset": 4323514,
+          "label_bytes": 12,
+          "label_sha256": "28090e4e870c134b196f9ee0d65e3dc851370cdd2c41af98e4ac1c601a73a497",
+          "label_drawing_record_offset": 4331264,
+          "label_drawing_record_sha256": "43e202b301f11bd9fbc784dce27ff098ea2f1c46d6ee7365cd4e1c964465119f",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 150,
+              "coordinates": [
+                1800,
+                5020
+              ],
+              "drawing_record_offset": 4331320,
+              "drawing_record_sha256": "522296e638708e6729b6dfdc739789c8ee68eb6a346ad5495015910b107be98b",
+              "field_record_offset": 4354606,
+              "field_record_sha256": "955b48922ed1eafd2e14cf98277ae1da1a17da26ec85cefd14f000374c7b511c"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1150,
+              "coordinates": [
+                2350,
+                5020
+              ],
+              "drawing_record_offset": 4331348,
+              "drawing_record_sha256": "73a711571086a75decf92c99ad9a30601d0c1e29850f87276d7d874886c324fd",
+              "field_record_offset": 4354630,
+              "field_record_sha256": "b1311f6f795abea7d042e21c9f92919410aba61ef2a4f1f772f525935546e792"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2150,
+              "coordinates": [
+                2900,
+                5020
+              ],
+              "drawing_record_offset": 4331376,
+              "drawing_record_sha256": "526be0ccc5db2a5fc8c781c0c6eb4016092af679c699db46f3c1d765916b7a36",
+              "field_record_offset": 4354654,
+              "field_record_sha256": "1408faced73513808330ae42d08451ee483bf52ff13f68fa5e21fac6e2c38002"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3150,
+              "coordinates": [
+                3450,
+                5020
+              ],
+              "drawing_record_offset": 4331404,
+              "drawing_record_sha256": "30dc928fb8d81af482b1a6d3b2d87e3d19db10b8dd3d9f27fa47a8aa59398acd",
+              "field_record_offset": 4354678,
+              "field_record_sha256": "31cb3131e102b360e6c37c8a272f0f3aad4a7ffb17fb2ecf6e9331951d972ed5"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4150,
+              "coordinates": [
+                4000,
+                5020
+              ],
+              "drawing_record_offset": 4331432,
+              "drawing_record_sha256": "03c0048c41f14357fd096db0dfd8582235c0c5e764af1e5cdf1ca1a420bf59f8",
+              "field_record_offset": 4354702,
+              "field_record_sha256": "c53a93fb7f7dc23116a81b9b159c8530df0f501eea48f897541d1598e74946e1"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "150",
+            "offset": 4323526,
+            "drawing_record_offset": 4331292,
+            "drawing_record_sha256": "bf4f32d38fe452c94c3363f928c9ce5107e45678d101fe01f41e8f9915d519b6"
+          }
+        },
+        {
+          "requested_NXT_line": "23600",
+          "source_form": "E11",
+          "production_column_field_id": 236,
+          "label_offset": 4323858,
+          "label_bytes": 10,
+          "label_sha256": "7561c934f60f784f1eb5368d7e0b6ae832112bbb66ebba739489ddf25a8de9c3",
+          "label_drawing_record_offset": 4335296,
+          "label_drawing_record_sha256": "a92b987f298079769eb4d9641f2d1c59308c6fa4e1bea0f0ba3de517d4eb2e76",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 236,
+              "coordinates": [
+                1800,
+                7990
+              ],
+              "drawing_record_offset": 4335352,
+              "drawing_record_sha256": "0d3bbb501f8989b596cc361cec2da9d26dd854a74268d08269e1f41931dc13fc",
+              "field_record_offset": 4357054,
+              "field_record_sha256": "39b9305fbef1d9eef6c7909d2edc57f71cfef0c2eda7bf9a3c2248d94112716b"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1236,
+              "coordinates": [
+                2350,
+                7990
+              ],
+              "drawing_record_offset": 4335380,
+              "drawing_record_sha256": "b45e89d7d0d0b7ee2c19edee5d438379d1d730fc09e464606303101a8a348afb",
+              "field_record_offset": 4357078,
+              "field_record_sha256": "d89430cbe8f17ed85f7f8e4870ffd439b96255bcc3465b1ea89a8ea1cc9e27d5"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2236,
+              "coordinates": [
+                2900,
+                7990
+              ],
+              "drawing_record_offset": 4335408,
+              "drawing_record_sha256": "dad9fa6581445ad8007b3d518c411e22648ddf4f6986de11438124750fda2aba",
+              "field_record_offset": 4357102,
+              "field_record_sha256": "3faff0c5ff6af7687ef554c2705ddedf820daae785f4b3c2a610252f5aa6856b"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3236,
+              "coordinates": [
+                3450,
+                7990
+              ],
+              "drawing_record_offset": 4335436,
+              "drawing_record_sha256": "b0e8c5885e942dce735069d1630817fe0368f0f41d4d3ae93dc2497e5bae3263",
+              "field_record_offset": 4357126,
+              "field_record_sha256": "cb1de90889d3f456c43c7cdd5460f1b0231c284406678773b29742f0a76522ce"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4236,
+              "coordinates": [
+                4000,
+                7990
+              ],
+              "drawing_record_offset": 4335464,
+              "drawing_record_sha256": "7128a129a32776fc9d55907136a55895ca2062cbaf4bd7f48b4f596c8cd75877",
+              "field_record_offset": 4357150,
+              "field_record_sha256": "d41f945301eaba630f10b8874ab9b352b0b0572c7c7b7cac63705e4eec1695c0"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "236",
+            "offset": 4323868,
+            "drawing_record_offset": 4335324,
+            "drawing_record_sha256": "9d400bb610d58f35beb50791bb0a1610d39f87a452744a271919696b8b322b48"
+          }
+        },
+        {
+          "requested_NXT_line": "26000",
+          "source_form": "E11",
+          "production_column_field_id": 260,
+          "label_offset": 4324064,
+          "label_bytes": 14,
+          "label_sha256": "f81179a306efaea330cb1ecd1423dacf7813168efd40cd91a90ef07b31ccaae7",
+          "label_drawing_record_offset": 4337452,
+          "label_drawing_record_sha256": "b00de96723027b708240463dccd72170c920fdc632f2b6ae97a8b62ef445b867",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 260,
+              "coordinates": [
+                1800,
+                9560
+              ],
+              "drawing_record_offset": 4337508,
+              "drawing_record_sha256": "cc5609e35e5895d21c32ff59b5b70dad5faaafa0a4c4143dfbe3edaf3d3cb3f7",
+              "field_record_offset": 4358374,
+              "field_record_sha256": "c81dd7d43ad7838fc7478e8ab964ae49b9df691d278122c41bc567dac2abb968"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1260,
+              "coordinates": [
+                2350,
+                9560
+              ],
+              "drawing_record_offset": 4337536,
+              "drawing_record_sha256": "6c60c3215c1559e3d148591b0d4e782091214e89cdd016b3bde7403ad395e7f2",
+              "field_record_offset": 4358398,
+              "field_record_sha256": "f92feaa1f9fc41e9d5a894e470655ef5b3655aa531f200ddc20c5d986e734287"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2260,
+              "coordinates": [
+                2900,
+                9560
+              ],
+              "drawing_record_offset": 4337564,
+              "drawing_record_sha256": "6a4e8c896bd15748b5f909b5ec855fc90e30753221f04c41ddd4940803455d8b",
+              "field_record_offset": 4358422,
+              "field_record_sha256": "0f9d54123a5671ba1bc0d50550b5a83d993ec19ab50be22d8e795fecb2abe0e2"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3260,
+              "coordinates": [
+                3450,
+                9560
+              ],
+              "drawing_record_offset": 4337592,
+              "drawing_record_sha256": "d68df7ee28e681f67841735c7042e302d8ff2b37493dae45f94b500d4cd99ef9",
+              "field_record_offset": 4358446,
+              "field_record_sha256": "429905a2dd572018b030fa62c7da33301147cbbcff2076c4f20ea57390bf0b0b"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4260,
+              "coordinates": [
+                4000,
+                9560
+              ],
+              "drawing_record_offset": 4337620,
+              "drawing_record_sha256": "99ed797726a0b420478da5e7c712022ecd8be2af6befea0057ab1078bf6b7d30",
+              "field_record_offset": 4358470,
+              "field_record_sha256": "8ac01783fcc4981f6fa57f680468c5f071a111c42b779cc1c90cd740d8adfe59"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "260",
+            "offset": 4324078,
+            "drawing_record_offset": 4337480,
+            "drawing_record_sha256": "dede62702528907d111957144fa15ae637dbd488d91f55c5ed132dab7193ffa1"
+          }
+        },
+        {
+          "requested_NXT_line": "42000",
+          "source_form": "E11",
+          "production_column_field_id": 420,
+          "label_offset": 4324890,
+          "label_bytes": 15,
+          "label_sha256": "5fd87a8358d3a0dbd5ed55935e9bb3c58f0874ea73281a029c6902797b55cf0b",
+          "label_drawing_record_offset": 4346104,
+          "label_drawing_record_sha256": "f19375f5a0d46df85b0073df224e48ba256aaf8cdd0514f0b8780ca10d83101f",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 420,
+              "coordinates": [
+                5800,
+                6950
+              ],
+              "drawing_record_offset": 4346160,
+              "drawing_record_sha256": "ff75acaa81c3ce3d0bdb0ac57c172691e9edd650b747e656d4cd05d4cc472865",
+              "field_record_offset": 4363342,
+              "field_record_sha256": "17d32b8a05b9c581d49de5ea7842f3b08729703563b0b9759b104d9e85b976c6"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1420,
+              "coordinates": [
+                6350,
+                6950
+              ],
+              "drawing_record_offset": 4346188,
+              "drawing_record_sha256": "fac868d048c220645531721fbe36b1563a61dcdd99fc0ce411a8e1e2acaa83b5",
+              "field_record_offset": 4363366,
+              "field_record_sha256": "900d39176bdd7c6ff5bf82087393e742cc6119dab88ce55372736a85821b5f6c"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2420,
+              "coordinates": [
+                6900,
+                6950
+              ],
+              "drawing_record_offset": 4346216,
+              "drawing_record_sha256": "9fa9d67e4e8cdbdd22e3c9f863c5b69dd368ecd4346e16e1c63506ad6f845abb",
+              "field_record_offset": 4363390,
+              "field_record_sha256": "9c8851639224e9d1c08280f28471fa294420503f93b6b143b1b6a11bf90a5326"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3420,
+              "coordinates": [
+                7450,
+                6950
+              ],
+              "drawing_record_offset": 4346244,
+              "drawing_record_sha256": "42686c0956af286054e1e7b7d8ceaf01b602ea20ee9610c308e392778dca2551",
+              "field_record_offset": 4363414,
+              "field_record_sha256": "09be4034d5e63ceca528fff321491277501f30f4e320104d214129574c4d3a43"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4420,
+              "coordinates": [
+                8000,
+                6950
+              ],
+              "drawing_record_offset": 4346272,
+              "drawing_record_sha256": "6557821911281ab0167b2bb169b04c62ffaffac465fbebc45a9c751fd2be08ba",
+              "field_record_offset": 4363438,
+              "field_record_sha256": "c53c19ff309bcb7aaff798bc1c8cd4ad1c3aec0cddeaeb3de11170e8c22987f1"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "420",
+            "offset": 4324905,
+            "drawing_record_offset": 4346132,
+            "drawing_record_sha256": "606b7c8b6eb1df2914ac9565e22139ee21ff63563cb0c6e031af043cd23aa46f"
+          }
+        },
+        {
+          "requested_NXT_line": "48400",
+          "source_form": "E11",
+          "production_column_field_id": 484,
+          "label_offset": 4325291,
+          "label_bytes": 6,
+          "label_sha256": "6b37bd35081fcbc6676dcfdfa7a7389f70be9ed70f7d50f5163708e2fafe65f8",
+          "label_drawing_record_offset": 4350360,
+          "label_drawing_record_sha256": "27f788796682811b9106415b5e823cb991ed41ccb2fa5c97730b4a5fa33e3760",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 484,
+              "coordinates": [
+                5800,
+                10030
+              ],
+              "drawing_record_offset": 4350416,
+              "drawing_record_sha256": "8da8117d7a44ab5f7ebd51376ff9053b1f74a097766b0a0d42439e0286efe8b7",
+              "field_record_offset": 4366174,
+              "field_record_sha256": "763360e010fd36fe3a1602e3cbe0ae752cedce458e912e47e7f59b2a685fd0fc"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1484,
+              "coordinates": [
+                6350,
+                10030
+              ],
+              "drawing_record_offset": 4350444,
+              "drawing_record_sha256": "d65a386f3852816c653f0b9b6f8cd6bc3944e98fe4f6579f0926d78cb7706d9b",
+              "field_record_offset": 4366198,
+              "field_record_sha256": "45963b79a8bd6848206f13d726a0603f0680d34e6f227938ee39f3d6d0b9a1ac"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2484,
+              "coordinates": [
+                6900,
+                10030
+              ],
+              "drawing_record_offset": 4350472,
+              "drawing_record_sha256": "d942025d12a22c790cd714d305e0ff3c6f22377f15d3f606918732e372368ff9",
+              "field_record_offset": 4366222,
+              "field_record_sha256": "c142d088586dbaa705c93e36171c79be2bc7d2b6e347ade391ce49bae5c9a4ac"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3484,
+              "coordinates": [
+                7450,
+                10030
+              ],
+              "drawing_record_offset": 4350500,
+              "drawing_record_sha256": "8894e4c2d8e77be1ab3500217c23d3e073fd4ae6fa6a94b1bd7c2d634809e56f",
+              "field_record_offset": 4366246,
+              "field_record_sha256": "863aca43973ff46f465b1f1e04d4cbe7856322442a91e06412ee2ab87c401bce"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4484,
+              "coordinates": [
+                8000,
+                10030
+              ],
+              "drawing_record_offset": 4350528,
+              "drawing_record_sha256": "1084b8cf9b9bff4744d1952afd8c7925e7ae7d94528b374b754115b9d81fa0cb",
+              "field_record_offset": 4366270,
+              "field_record_sha256": "e6436093451161db9f7a50efec20cc4202fc7435945599b45dc729d683596f55"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "484",
+            "offset": 4325297,
+            "drawing_record_offset": 4350388,
+            "drawing_record_sha256": "832be988790549c81f0845a034cd93026f9b72e1b2075bc614f31c2c12dcd94e"
+          }
+        },
+        {
+          "requested_NXT_line": "48500",
+          "source_form": "E11",
+          "production_column_field_id": 485,
+          "label_offset": 4325300,
+          "label_bytes": 13,
+          "label_sha256": "19a154a4ba07c59640b936f34bcef8bac5782ad56b4d51a524dae79237001e32",
+          "label_drawing_record_offset": 4350556,
+          "label_drawing_record_sha256": "09b08484224043d4103590cc66507247a9ff67aa7ca30fa931aa96ac8658e41c",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 485,
+              "coordinates": [
+                5800,
+                10170
+              ],
+              "drawing_record_offset": 4350612,
+              "drawing_record_sha256": "067b7ac64c1adfe3a7a5c517d6586a2ce377c6c70bfb8c2bd62728a1d60e18cb",
+              "field_record_offset": 4366294,
+              "field_record_sha256": "e82b13fe41db2f274d67eea203a89cb1db9d2c58812ce36f22c4b28698a2e741"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1485,
+              "coordinates": [
+                6350,
+                10170
+              ],
+              "drawing_record_offset": 4350640,
+              "drawing_record_sha256": "a71d66d17715aa7f7220fc934e768ac1a39f364b789cda273ceceaf65964fe61",
+              "field_record_offset": 4366318,
+              "field_record_sha256": "f7a0e17e716a8eef7c9e466493efd8439bd9f532d6f288e5101fc4339d439b4b"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2485,
+              "coordinates": [
+                6900,
+                10170
+              ],
+              "drawing_record_offset": 4350668,
+              "drawing_record_sha256": "20f195c0628e007666ec937737c92077da84d3c1ee2498bb0c2c8d128704dd9c",
+              "field_record_offset": 4366342,
+              "field_record_sha256": "f126c4ed6be27b51fd7a605f87927fbc412a11c071de6704d1514dd5decbbf9a"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3485,
+              "coordinates": [
+                7450,
+                10170
+              ],
+              "drawing_record_offset": 4350696,
+              "drawing_record_sha256": "b6d7611caeaf1e590587b2b37ee822b4fe63930d1706de23e8c93eb4e0f766eb",
+              "field_record_offset": 4366366,
+              "field_record_sha256": "c70c5a517814f7f0127faced485aa23397b297420455ed8849083913976708f2"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4485,
+              "coordinates": [
+                8000,
+                10170
+              ],
+              "drawing_record_offset": 4350724,
+              "drawing_record_sha256": "7ef77b9f0118bf8b221775e221bd71078f80080f272e68beba214ddbe8b357f1",
+              "field_record_offset": 4366390,
+              "field_record_sha256": "ce0853063c1f65e7e6a5543caa903b8145e8899de2671a7e9b0497c31ef934d7"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "485",
+            "offset": 4325313,
+            "drawing_record_offset": 4350584,
+            "drawing_record_sha256": "d901c43cd60ffbf166d17d27253da169f6a649c17453e2bd4a3c617f3bed6f59"
+          }
+        }
+      ],
+      "resources": [
+        {
+          "key": "E11E",
+          "directory_record_offset": 15975660,
+          "offset": 4322785,
+          "bytes": 27967,
+          "sha256": "a7c2f05ee0eb8cc83401b7f9c2955ca171bb67d298ddade0d8f45b4e934d4144"
+        },
+        {
+          "key": "E11H",
+          "directory_record_offset": 15975684,
+          "offset": 4350752,
+          "bytes": 15662,
+          "sha256": "b0be7dcbe7b434737840dd7a0c67ad32ef75c202b9bf5a94ace3a2a13e87a26e"
+        },
+        {
+          "key": "E11",
+          "directory_record_offset": 77908,
+          "offset": 18172,
+          "bytes": 112,
+          "sha256": "d2922f8ec6daf18c96a30e78f33155817aa938d0665b71a819cd2cfd2f78dacf"
+        }
+      ],
+      "drawing_segments": [
+        {
+          "header_offset": 2531,
+          "kind": 1,
+          "record_bytes": 12,
+          "count": 1
+        },
+        {
+          "header_offset": 2559,
+          "kind": 3,
+          "record_bytes": 8,
+          "count": 1
+        },
+        {
+          "header_offset": 2583,
+          "kind": 7,
+          "record_bytes": 28,
+          "count": 906
+        }
+      ],
+      "field_record_count": 642,
+      "field_identifiers_unique": true,
+      "complete_segment_boundaries_verified": true,
+      "year_association": {
+        "kind": "explicit_installed_DTMAXT1_XML_year_with_same_package_annual_text_when_available",
+        "XML_file": "DT1WAD12.XML",
+        "XML_sha256": "79b5e23f09719901982a105baf0182db9ad55c3f29ae587bc023dc2aa852c529",
+        "XML_product": "DTMAXT1",
+        "XML_year": "2012",
+        "same_package_annual_references": [
+          {
+            "resource": {
+              "key": "A05E",
+              "directory_record_offset": 15968076,
+              "offset": 70319,
+              "bytes": 10183,
+              "sha256": "6f841558adc000801442102721a2380af9e9f1264fbcffa1018bb04d2dcee92d"
+            },
+            "reference_offset": 70734,
+            "reference_bytes": 17,
+            "reference_sha256": "4b70e67008ce4f5bd876d082cf9e0c5784435de1674b936f16f87bab9a24f074"
+          }
+        ],
+        "E11_uses_YEAR_placeholder": true,
+        "year_runtime_loader_binding_independently_proven": false
+      },
+      "six_label_binding_and_field_coordinate_matches": true
+    },
+    {
+      "year": 2026,
+      "status": "six_original_form_bindings_verified",
+      "bindings": [
+        {
+          "requested_NXT_line": "15000",
+          "source_form": "E11",
+          "production_column_field_id": 150,
+          "label_offset": 7288844,
+          "label_bytes": 12,
+          "label_sha256": "28090e4e870c134b196f9ee0d65e3dc851370cdd2c41af98e4ac1c601a73a497",
+          "label_drawing_record_offset": 7297678,
+          "label_drawing_record_sha256": "ed78e1bc3b46d97b1dcda7edf6f8ea1963c54c382aa91f4ee09aa98f4018daaf",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 150,
+              "coordinates": [
+                2050,
+                5259
+              ],
+              "drawing_record_offset": 7297706,
+              "drawing_record_sha256": "9232eaa191f06696e8c2444c675771fa265ad8189f786379413383235e0ec39b",
+              "field_record_offset": 7323312,
+              "field_record_sha256": "7158631ef427ac176cf1b3f1173179cee17325b8ed3c8deed402db1f48fd0ad3"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1150,
+              "coordinates": [
+                2600,
+                5259
+              ],
+              "drawing_record_offset": 7297734,
+              "drawing_record_sha256": "9486a9ef18c733f1ad711986cf25d1769ebb331400424b5fe8b9dd98138d27bf",
+              "field_record_offset": 7323336,
+              "field_record_sha256": "53dc5c55b77ed69a8254c5c1c4046616763a6530ada1f0648cc081ba633f4101"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2150,
+              "coordinates": [
+                3150,
+                5259
+              ],
+              "drawing_record_offset": 7297762,
+              "drawing_record_sha256": "3b9266eda4e6aad513cf69481131aaa636f3c90ac681aac594364e6ab3b458d1",
+              "field_record_offset": 7323360,
+              "field_record_sha256": "51f52a71d2d5a108de8b152a67d5d76f36c03861e900bda34b21580c3219b975"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3150,
+              "coordinates": [
+                3700,
+                5259
+              ],
+              "drawing_record_offset": 7297790,
+              "drawing_record_sha256": "0f7e3fc15167f3f14e7ea200dd62bf977fd320fba47cad9ec0dec34ed0af5384",
+              "field_record_offset": 7323384,
+              "field_record_sha256": "7ca279d33bf80a6e010f0b1a75de91fffdbee4e8204c7b9ba45ee53b5a790afd"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4150,
+              "coordinates": [
+                4250,
+                5259
+              ],
+              "drawing_record_offset": 7297818,
+              "drawing_record_sha256": "6e28fdb8fdc1eb058b6fe9ae9b25989eb2d12d4f5b2bce69ce1ac06c7e109f56",
+              "field_record_offset": 7323408,
+              "field_record_sha256": "681ab9b60f0fb6fcb6810e350e193b9b5730ccd9d7809e5e41e333c81c1e9b7c"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "15000",
+            "offset": 7288839,
+            "drawing_record_offset": 7297650,
+            "drawing_record_sha256": "37983a2682b4f48d14cc292378a7d714f2b400360759d45141ec4599d8a2a62b"
+          }
+        },
+        {
+          "requested_NXT_line": "23600",
+          "source_form": "E11",
+          "production_column_field_id": 236,
+          "label_offset": 7289271,
+          "label_bytes": 10,
+          "label_sha256": "7561c934f60f784f1eb5368d7e0b6ae832112bbb66ebba739489ddf25a8de9c3",
+          "label_drawing_record_offset": 7302046,
+          "label_drawing_record_sha256": "706151e0ed6e59e5c6a5f6e857d6775849397aa83b32d3b4d6e3955345739f0e",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 236,
+              "coordinates": [
+                2050,
+                8387
+              ],
+              "drawing_record_offset": 7302074,
+              "drawing_record_sha256": "c8be30f8a2f2dd86172b6d9e534464dc536b43f4c9add6599678a71efa34bf4d",
+              "field_record_offset": 7325952,
+              "field_record_sha256": "24d14f137762aadb542c308904c4125e4005d97b5a9e04b0114d1ada1c4b0653"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1236,
+              "coordinates": [
+                2600,
+                8387
+              ],
+              "drawing_record_offset": 7302102,
+              "drawing_record_sha256": "1403319f425af5394877055a02bbec2340dcb8e304fada0cdc5ab27739aaecc4",
+              "field_record_offset": 7325976,
+              "field_record_sha256": "d06399873ed545b654d2f146eea593ded1ecba5f39bc4994cb207726357435e1"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2236,
+              "coordinates": [
+                3150,
+                8387
+              ],
+              "drawing_record_offset": 7302130,
+              "drawing_record_sha256": "b226894f71baa0543b50b806eb4bc37f459670d0b4f9e8c8933930d9be8f17c9",
+              "field_record_offset": 7326000,
+              "field_record_sha256": "a042c76b3dd4b3de11340eadd985f6e04d6e942780b8ae4dc841be7320dc6a20"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3236,
+              "coordinates": [
+                3700,
+                8387
+              ],
+              "drawing_record_offset": 7302158,
+              "drawing_record_sha256": "683d116938df70f1113d2425eeb9f1ffaf8ad5f082c520c6f4622ab84f196512",
+              "field_record_offset": 7326024,
+              "field_record_sha256": "034e42e8f816be5b29998953f059c2771f8d3be4d9574685a0d02fa7b73d05a6"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4236,
+              "coordinates": [
+                4250,
+                8387
+              ],
+              "drawing_record_offset": 7302186,
+              "drawing_record_sha256": "9450f2da17ff314eb59fa9454d0d126299cc25fde969a2f843ce358b6877a617",
+              "field_record_offset": 7326048,
+              "field_record_sha256": "95fbc2acff0f07b766c835638ed8d6d146d50002c67104288982be9f1c768f5c"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "23600",
+            "offset": 7289266,
+            "drawing_record_offset": 7302018,
+            "drawing_record_sha256": "0b9c909cd078a5f0e7eb2a353d5a08c6eb1a2b43a15d37354e9b9d108832b973"
+          }
+        },
+        {
+          "requested_NXT_line": "26000",
+          "source_form": "E11",
+          "production_column_field_id": 260,
+          "label_offset": 7289532,
+          "label_bytes": 14,
+          "label_sha256": "f81179a306efaea330cb1ecd1423dacf7813168efd40cd91a90ef07b31ccaae7",
+          "label_drawing_record_offset": 7304230,
+          "label_drawing_record_sha256": "f8038460533eef8d89b0d8acb2b21b94fa2d9e9716556e92f02793df8d74e3bf",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 260,
+              "coordinates": [
+                2050,
+                10019
+              ],
+              "drawing_record_offset": 7304258,
+              "drawing_record_sha256": "8dcb3ed9eae0421340cb8344fc39b5ccef6bfb6d2105d89eec2d8644ec83c3db",
+              "field_record_offset": 7327248,
+              "field_record_sha256": "b4df42f994f83c6a429d320e63090828401e79dff9e71487faea4057c22f03b8"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1260,
+              "coordinates": [
+                2600,
+                10019
+              ],
+              "drawing_record_offset": 7304286,
+              "drawing_record_sha256": "f3d359cb934688d0b85ac1bcad529fe5699c7bc76346c5ab10b9db8b20065d30",
+              "field_record_offset": 7327272,
+              "field_record_sha256": "c6885718b650bdb8079d3696ca66754d264b980cfe6244d834ca27bec8dd5515"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2260,
+              "coordinates": [
+                3150,
+                10019
+              ],
+              "drawing_record_offset": 7304314,
+              "drawing_record_sha256": "c5cd56f6841c98ab87a6a872cf549c0244d39c6f56d5cd41ee338673de578a50",
+              "field_record_offset": 7327296,
+              "field_record_sha256": "21ef2483d1f0aca7669d76bd2c6123fe4467495a94f6cdc1bc3bf3c11c82ef9a"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3260,
+              "coordinates": [
+                3700,
+                10019
+              ],
+              "drawing_record_offset": 7304342,
+              "drawing_record_sha256": "732f749eaa2a4b3dfe79138b16c8f79678ef9d5f3b90c2291194a5a2d09def48",
+              "field_record_offset": 7327320,
+              "field_record_sha256": "f5ee26ac5fdae2fd5a1aca5a4159a9da20f4a4672a3babdd4deaf7968de640be"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4260,
+              "coordinates": [
+                4250,
+                10019
+              ],
+              "drawing_record_offset": 7304370,
+              "drawing_record_sha256": "5926074a69234a8d551b1705406c2527073980a869fdac27b20f82060ac372e8",
+              "field_record_offset": 7327344,
+              "field_record_sha256": "5c52425de7d4a2a533394e6f79c2d2e6e9fa40f787ddbaa356d088751de2d047"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "26000",
+            "offset": 7289527,
+            "drawing_record_offset": 7304202,
+            "drawing_record_sha256": "7e31d4719fa986f1caf8e27d0275b55dea37c4100256d8d4bc63a228499924e7"
+          }
+        },
+        {
+          "requested_NXT_line": "42000",
+          "source_form": "E11",
+          "production_column_field_id": 420,
+          "label_offset": 7290494,
+          "label_bytes": 15,
+          "label_sha256": "5fd87a8358d3a0dbd5ed55935e9bb3c58f0874ea73281a029c6902797b55cf0b",
+          "label_drawing_record_offset": 7313246,
+          "label_drawing_record_sha256": "eab3956eaff01dc69bf70bde96e8ad487842891b628c59add6c95b6543667884",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 420,
+              "coordinates": [
+                6050,
+                6755
+              ],
+              "drawing_record_offset": 7313274,
+              "drawing_record_sha256": "b4c27440f4b051a084cf79edd1f547823927bbe6ce0c27b519bf4522bcb49236",
+              "field_record_offset": 7332408,
+              "field_record_sha256": "289fadb0e0ff349c99763758c09f1bbcaea73ed66196177c451269a401c6b546"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1420,
+              "coordinates": [
+                6600,
+                6755
+              ],
+              "drawing_record_offset": 7313302,
+              "drawing_record_sha256": "888816d6098b819edff33194d8e5a34096b46e6922bec1ac75e15b47b9d00bb0",
+              "field_record_offset": 7332432,
+              "field_record_sha256": "edc883418a8808f1e894c8188ff57357abb9423e1ad080989397d5037b0ff984"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2420,
+              "coordinates": [
+                7150,
+                6755
+              ],
+              "drawing_record_offset": 7313330,
+              "drawing_record_sha256": "f2c59f563adce2a18f0971b7fc040ef376b937561dc516ae242eea1baa514500",
+              "field_record_offset": 7332456,
+              "field_record_sha256": "3e34066bd63c678d6d83d06d33e45db9006a809a90cf5fd89de632f024037581"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3420,
+              "coordinates": [
+                7700,
+                6755
+              ],
+              "drawing_record_offset": 7313358,
+              "drawing_record_sha256": "b1e672372339f5fc067273728c21ddfa04a6319bb2b067a1a84af391a27a375d",
+              "field_record_offset": 7332480,
+              "field_record_sha256": "3f4e07e90c5cf6a71a7eaada1f218bb040ffd39b39013ca0ef700365a7f8b331"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4420,
+              "coordinates": [
+                8250,
+                6755
+              ],
+              "drawing_record_offset": 7313386,
+              "drawing_record_sha256": "6c56d7eeb435c362731bbca87286a7e663eca324de588d9a1122867b470d440b",
+              "field_record_offset": 7332504,
+              "field_record_sha256": "09beaebaeba0848c102af0d09a7adc5af5e8df384d4934fae6d92c23532953a5"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "42000",
+            "offset": 7290489,
+            "drawing_record_offset": 7313218,
+            "drawing_record_sha256": "91b833d8d8cf5b0ab52de0ab2dfadb5c5fb20e6d8a9d535a2111b3d2d9012deb"
+          }
+        },
+        {
+          "requested_NXT_line": "48400",
+          "source_form": "E11",
+          "production_column_field_id": 484,
+          "label_offset": 7291090,
+          "label_bytes": 6,
+          "label_sha256": "6b37bd35081fcbc6676dcfdfa7a7389f70be9ed70f7d50f5163708e2fafe65f8",
+          "label_drawing_record_offset": 7318706,
+          "label_drawing_record_sha256": "8673e6e18a83d98a692c6976ac10ebb6b30dc0775b044e605edbc582d700bcfe",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 484,
+              "coordinates": [
+                6050,
+                10563
+              ],
+              "drawing_record_offset": 7318734,
+              "drawing_record_sha256": "4bf739f3c48f84be39a7f87e9cb3610e09356f02d6c72c1449651117526ffabb",
+              "field_record_offset": 7335912,
+              "field_record_sha256": "4d582d217fc062fa99a43ccc00f61030dc9ad133f5a032b66c821a5b3bce6244"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1484,
+              "coordinates": [
+                6600,
+                10563
+              ],
+              "drawing_record_offset": 7318762,
+              "drawing_record_sha256": "a2582e0e5689d1fbcea9126bbb0cb180847a16890c64c498cc86ac35e45fae2b",
+              "field_record_offset": 7335936,
+              "field_record_sha256": "3e2f59eb58235374ffadac3128681a2b64db6677c3219af515d8ff288839eb5e"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2484,
+              "coordinates": [
+                7150,
+                10563
+              ],
+              "drawing_record_offset": 7318790,
+              "drawing_record_sha256": "67ec281bc9ee1120dcd752bfcc0751d8de3e13e5570a636d91c7524e4dcd0552",
+              "field_record_offset": 7335960,
+              "field_record_sha256": "4159b4a8e7cbf87b09ec275d212880528b1e3b18bac62c31644ec626bdcbcec6"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3484,
+              "coordinates": [
+                7700,
+                10563
+              ],
+              "drawing_record_offset": 7318818,
+              "drawing_record_sha256": "02be218c54ffe8aa44e9fb3cf3088cb66c37d69f233223592176653bb81240f0",
+              "field_record_offset": 7335984,
+              "field_record_sha256": "7602d5c830acbb163266c129d32680c8403f2b9183a4b2e2cd70a35dac80d18d"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4484,
+              "coordinates": [
+                8250,
+                10563
+              ],
+              "drawing_record_offset": 7318846,
+              "drawing_record_sha256": "8d2e1621fca3606174f5bf89c4a2166f0a177e2f8d5bff102a4b8b45baebca83",
+              "field_record_offset": 7336008,
+              "field_record_sha256": "091623b5dcde70ac22eab478694c6aacc96045a45fd3a8c234a28c756e9c2351"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "48400",
+            "offset": 7291085,
+            "drawing_record_offset": 7318678,
+            "drawing_record_sha256": "ecde9ab3ecf10d7b7f58ff6771616358d42fb64a115d276ed4e0a96caef6bf59"
+          }
+        },
+        {
+          "requested_NXT_line": "48500",
+          "source_form": "E11",
+          "production_column_field_id": 485,
+          "label_offset": 7291101,
+          "label_bytes": 13,
+          "label_sha256": "19a154a4ba07c59640b936f34bcef8bac5782ad56b4d51a524dae79237001e32",
+          "label_drawing_record_offset": 7318930,
+          "label_drawing_record_sha256": "5950ab263e4a831af84b77d935359abb9fcac0a5a2cd9d526ad3d89d7778758a",
+          "columns": [
+            {
+              "column": 0,
+              "serialized_field_id": 485,
+              "coordinates": [
+                6050,
+                10699
+              ],
+              "drawing_record_offset": 7318958,
+              "drawing_record_sha256": "f8d0bbd62c441082effa72c1ea2205be4fc2de91f68a0905d6e64852600e1044",
+              "field_record_offset": 7336032,
+              "field_record_sha256": "7db5b655ae9f53d6c9386af8f25d88336d31ca400521a0bed122a1c55f832567"
+            },
+            {
+              "column": 1,
+              "serialized_field_id": 1485,
+              "coordinates": [
+                6600,
+                10699
+              ],
+              "drawing_record_offset": 7318986,
+              "drawing_record_sha256": "4160a3fa6ee49acb747aad42aa55936d6afad397df4e2652ad504f9e3f640662",
+              "field_record_offset": 7336056,
+              "field_record_sha256": "132b4bbcc45d5a2bf38d439242f8ad00f61395942fb7865270e3e68669ebab3b"
+            },
+            {
+              "column": 2,
+              "serialized_field_id": 2485,
+              "coordinates": [
+                7150,
+                10699
+              ],
+              "drawing_record_offset": 7319014,
+              "drawing_record_sha256": "c0c36186885c8561ed627e595bb2fb9b35274ec9a76b11a4894b25c6595243a9",
+              "field_record_offset": 7336080,
+              "field_record_sha256": "df88ef8bea7da6e155064bc7fbc499fdd15a318da5203884dff095b64d508909"
+            },
+            {
+              "column": 3,
+              "serialized_field_id": 3485,
+              "coordinates": [
+                7700,
+                10699
+              ],
+              "drawing_record_offset": 7319042,
+              "drawing_record_sha256": "4d16e55de5b5f2c2871d5a35c08930a1e3be8be8bf8be307433e2184fd256a92",
+              "field_record_offset": 7336104,
+              "field_record_sha256": "9854f759a76b1e97777d83153c04728d3f9c301e2ffc5550c91621ce6aa120fb"
+            },
+            {
+              "column": 4,
+              "serialized_field_id": 4485,
+              "coordinates": [
+                8250,
+                10699
+              ],
+              "drawing_record_offset": 7319070,
+              "drawing_record_sha256": "be801fd4f84f521f49c579df7b38194804753a4335ecb7c9a61e0d6c6026ae9e",
+              "field_record_offset": 7336128,
+              "field_record_sha256": "0a58baf1229401d1b72e2d62581fe691470d8d70155c18938aa6d9fb476b04ac"
+            }
+          ],
+          "separate_printed_line_code": {
+            "code": "48500",
+            "offset": 7291096,
+            "drawing_record_offset": 7318902,
+            "drawing_record_sha256": "4df8384477246ed7cd25f5bf7d1a726ca710477e758f48943bca8299d0d35930"
+          }
+        }
+      ],
+      "resources": [
+        {
+          "key": "E11E",
+          "directory_record_offset": 27412550,
+          "offset": 7288007,
+          "bytes": 31091,
+          "sha256": "933d37cebfe1d98419de54076ae7779f69166ff967bc6de1bc7e11640c26cb61"
+        },
+        {
+          "key": "E11H",
+          "directory_record_offset": 27412574,
+          "offset": 7319098,
+          "bytes": 17054,
+          "sha256": "e1df4b122f743741778c58a525f0ca1ad0d1854cea0c4bd4bd0e0843ef9e8b61"
+        },
+        {
+          "key": "E11",
+          "directory_record_offset": 94964,
+          "offset": 22652,
+          "bytes": 112,
+          "sha256": "262b18d34bbbc911f1f543e83147d4f5632146345fd080bb136f8127cf82c5d5"
+        }
+      ],
+      "drawing_segments": [
+        {
+          "header_offset": 3107,
+          "kind": 1,
+          "record_bytes": 12,
+          "count": 1
+        },
+        {
+          "header_offset": 3135,
+          "kind": 3,
+          "record_bytes": 8,
+          "count": 1
+        },
+        {
+          "header_offset": 3159,
+          "kind": 7,
+          "record_bytes": 28,
+          "count": 997
+        }
+      ],
+      "field_record_count": 700,
+      "field_identifiers_unique": true,
+      "complete_segment_boundaries_verified": true,
+      "year_association": {
+        "kind": "explicit_installed_DTMAXT1_XML_year_with_same_package_annual_text_when_available",
+        "XML_file": "DT1WAD26.XML",
+        "XML_sha256": "c791e8a9c01937ca31984915859689d2bcf28a0846c5163a6f60d30f1e9cfb9a",
+        "XML_product": "DTMAXT1",
+        "XML_year": "2026",
+        "same_package_annual_references": [],
+        "E11_uses_YEAR_placeholder": true,
+        "year_runtime_loader_binding_independently_proven": false
+      },
+      "six_label_binding_and_field_coordinate_matches": true
+    }
+  ],
+  "verified_years": [
+    2009,
+    2010,
+    2011,
+    2012,
+    2026
+  ],
+  "unresolved_years": [
+    2005
+  ],
+  "limitations": [
+    "The KJD/DTFORM/DTFIELD byte layouts are derived and bounded, not vendor runtime observation. REA does not support KJD; Windows PTY process capture is unavailable. No genuine REA success ID is claimed.",
+    "Only explicitly inventoried installed same-year artifacts were read; no client data was accessed.",
+    "The source field IDs are independently present in same-row numeric drawing objects and separate DTFIELD records. Unrelated display property semantics remain undecoded.",
+    "The vendor selector tuple and native year-loader calls were not independently decoded. XML YEAR and same-package annual instructions corroborate package-year association, while E11 may use placeholders.",
+    "2026 source values may be planning or preliminary data; a verified field binding does not approve their business meaning, final figures or filing.",
+    "2005 remains unresolved: its original resources differ and its explicit XML-year file is absent.",
+    "No hosted facts or mapping states were changed."
+  ]
+}

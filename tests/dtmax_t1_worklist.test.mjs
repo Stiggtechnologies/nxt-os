@@ -78,13 +78,13 @@ test('family navigation exposes only exact numeric client identities',()=>{
 test('T3 source candidates cannot appear as T1 totals in entry, comparison or history',async()=>{
   const values=Object.fromEntries(['15000','23600','26000','42000','48400','48500'].map(x=>[x,'987654']));
   const trust={client_number:'100',tax_year:2025,vendor_module:'T3',mapping_state:'pending_module_verification',values_cents:values};
-  const recordHtml=api.recordsHtml('historical-lines',[trust]);assert.ok(recordHtml.includes('Source module T3'));assert.ok(!recordHtml.includes('$9,876.54'));
+  const recordHtml=api.recordsHtml('historical-lines',[trust]);assert.ok(recordHtml.includes('Converter label T3'));assert.ok(!recordHtml.includes('$9,876.54'));
   const entry=api.entryHtml(page().clients[0],trust,'');assert.ok(entry.includes('not shown as T1 totals'));assert.ok(!entry.includes('$9,876.54'));
   const h=harness();await h.controller.ready;
   const controller=api.mount(h.host,{request:async path=>path.includes('/source-clients?')?page():{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:1,tax_cases_imported:0,records:[trust]}});
   await controller.ready;await controller.open('100');
   h.node('[data-dtmax-compare]').onchange({target:{value:'2025'}});
-  assert.ok(h.node('[data-dtmax-comparison]').innerHTML.includes('Source module T3'));
+  assert.ok(h.node('[data-dtmax-comparison]').innerHTML.includes('Converter label T3'));
   assert.ok(!h.node('[data-dtmax-comparison]').innerHTML.includes('$9,876.54'));
   for(const changed of [{...trust,vendor_module:'T2'},{...trust,vendor_module:undefined},{...trust,mapping_state:'vendor_static_verified'}])assert.throws(()=>api.recordsHtml('historical-lines',[changed]));
 });
@@ -99,6 +99,13 @@ test('year-specific binding review labels preserved totals and rejects scope or 
   const r={tax_year:2013,vendor_module:'T1',mapping_state:'pending_year_verification',values_cents:{15000:'123456',23600:'0',26000:null,42000:null,48400:null,48500:null},year_mapping_review:review};
   const html=api.recordsHtml('historical-lines',[r]);assert.ok(html.includes('Year-specific form bindings checked'));assert.ok(html.includes('$1,234.56'));assert.ok(html.includes('$0.00'));assert.ok(html.includes('Absent'));assert.equal(r.mapping_state,'pending_year_verification');
   for(const changed of [{...r,vendor_module:'T3',mapping_state:'pending_module_verification'},{...r,tax_year:2012},{...r,year_mapping_review:{...review,package_sha256:'0'.repeat(64)}},{...r,year_mapping_review:{...review,tax_figures_approved:true}},{...r,year_mapping_review:{...review,field_ids:{...review.field_ids,15000:20}}}])assert.throws(()=>api.recordsHtml('historical-lines',[changed]));
+});
+test('2026 binding evidence keeps preliminary source figures labelled and cannot cover 2005',()=>{
+  const review={state:'original_form_bindings_checked',tax_year:2026,source_form:'E11',package_sha256:'0f20e028ba2dbf059f6d585c16c56f4243c2cdbe332a7e1b1ef8de14985ccbb5',profile:'dtmax-T1-E11-additional-years/v1',field_ids:Object.fromEntries(['15000','23600','26000','42000','48400','48500'].map(c=>[c,Number(c)/100])),amounts_recalculated:false,tax_figures_approved:false,source_year_may_be_preliminary:true};
+  const r={tax_year:2026,vendor_module:'T1',mapping_state:'pending_year_verification',values_cents:{15000:'0',23600:null,26000:null,42000:null,48400:null,48500:null},year_mapping_review:review};
+  assert.ok(api.recordsHtml('historical-lines',[r]).includes('may be preliminary or planning data'));
+  assert.throws(()=>api.recordsHtml('historical-lines',[{...r,year_mapping_review:{...review,source_year_may_be_preliminary:false}}]));
+  assert.throws(()=>api.recordsHtml('historical-lines',[{...r,tax_year:2005,year_mapping_review:{...review,tax_year:2005}}]));
 });
 test('exception retrieval is lazy, scope checked and stops when another workspace is selected',async()=>{
   const h=harness();let resolve;const pending=new Promise(r=>resolve=r);let count=0;
