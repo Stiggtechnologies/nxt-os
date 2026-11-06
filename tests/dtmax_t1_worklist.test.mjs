@@ -5,6 +5,7 @@ import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../public/apps/tax/dtmax-t1.js',import.meta.url),'utf8');
 const sandbox={};vm.runInNewContext(source,sandbox);const api=sandbox.NXTDTMaxT1;
 const page=()=>({source_scope:'dtmax-test-copy',program:'T1',imported_source_only:true,tax_cases_created:0,total:1,offset:0,available_years:[2013,2025],clients:[{client_number:'100',name:'Synthetic <img>',historical_years:[2013,2025],pending_years:[2013]}]});
+const nativeView=()=>({client_number:'100',family_file_id:'999',source_return_year:2025,vendor_module:'T1',vendor_slip_kind:'T4',vendor_slip_ordinal:0,source_view_number:1,from_data_segment:false,source_archive_sha256:'a'.repeat(64),source_view_file_sha256:'b'.repeat(64),source_view_line_sha256:'c'.repeat(64),financial_profile_sha256:'4bb64f7185d758cc4a1ccacd3a62b6a00b9656d320ca7412b9fe2598d68d69fc',original_field_count:5,field_labels:{13908:'Box 16 · CPP contributions'},financial_fields:[{source_field_index:1,field_id:13908,source_type_tag:4,value:{kind:'text',text:'123.45'}}],economic_slip_uniqueness_verified:false,normalized_tax_slip_created:false,taxpayer_allocations_applied:false,financial_values_approved:false,selection_review:'Source order and cached origin retained.'});
 test('source cents retain absent and exact signed i64 cents without floating-point rounding',()=>{
   assert.equal(api.cents(null),'Absent');assert.equal(api.cents('0'),'$0.00');assert.equal(api.cents('-1'),'-$0.01');assert.equal(api.cents('9223372036854775807'),'$92,233,720,368,547,758.07');
   for(const value of [undefined,'1.00','-0','01','9223372036854775808'])assert.throws(()=>api.cents(value));
@@ -17,6 +18,17 @@ test('historical totals preserve absence, zero and pending labels; source slip t
   const values=Object.fromEntries(['15000','23600','26000','42000','48400','48500'].map((x,i)=>[x,i===0?'0':null]));
   const html=api.recordsHtml('historical-lines',[{tax_year:2013,vendor_module:'T1',mapping_state:'pending_year_verification',values_cents:values}]);assert.ok(html.includes('$0.00'));assert.ok(html.includes('Absent'));assert.ok(html.includes('Mapping needs verification'));
   const slips=api.recordsHtml('afr-slips',[{slip_kind:'T4Slip',tax_year:null,source_folder_year:2025,vendor_field_tree:{tag:'T4Slip',attributes:{},text:'<img src=x>',children:[]}}]);assert.ok(slips.includes('Missing tax year'));assert.ok(!slips.includes('<img'));assert.ok(slips.includes('&#60;img'));
+});
+test('native financial views retain active text and cached origin without using numeric defaults',()=>{
+  const r=nativeView();r.financial_fields[0].value.text='0';let html=api.recordsHtml('native-slip-views',[r]);assert.ok(html.includes('Cached source'));assert.ok(html.includes('>0</span>'));assert.ok(!html.includes('$0.00'));assert.ok(html.includes('Allocations and duplicate removal have not been applied'));
+  r.financial_fields[0].value.text=null;html=api.recordsHtml('native-slip-views',[r]);assert.ok(html.includes('Present, blank'));
+  r.financial_fields[0].value.text='<img src=x>';html=api.recordsHtml('native-slip-views',[r]);assert.ok(!html.includes('<img'));assert.ok(html.includes('&#60;img'));
+  r.financial_fields[0].value={kind:'float32',bits_hex:'00000000'};assert.throws(()=>api.recordsHtml('native-slip-views',[r]));
+});
+test('native view historical bindings remain pending and unreviewed or normalized profiles fail',()=>{
+  const r=nativeView();r.source_return_year=2014;let html=api.recordsHtml('native-slip-views',[r]);assert.ok(html.includes('Historical box binding pending'));assert.ok(!html.includes('Box 16'));
+  r.financial_fields=[];r.original_field_count=0;html=api.recordsHtml('native-slip-views',[r]);assert.ok(html.includes('No fields from this financial profile'));
+  for(const changed of [{...r,financial_profile_sha256:'0'.repeat(64)},{...r,normalized_tax_slip_created:true},{...r,taxpayer_allocations_applied:true}])assert.throws(()=>api.recordsHtml('native-slip-views',[changed]));
 });
 test('late source responses cannot replace another tax view',async()=>{
   let resolve,active=true;const pending=new Promise(r=>resolve=r),host={isConnected:true,innerHTML:'',querySelector:()=>null};

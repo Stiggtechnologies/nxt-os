@@ -134,3 +134,4 @@
 }
 @media (prefers-reduced-motion: reduce) { .dtmax-workspace button { transition: none; } }
 @media print { .dtmax-workspace { display: none; } }
+.dtmax-source-value{white-space:pre-wrap;overflow-wrap:anywhere}.dtmax-native-slip{margin:12px 0}.dtmax-native-slip th{max-width:34rem}.dtmax-native-slip th small{display:block;font-weight:normal}

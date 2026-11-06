@@ -27,6 +27,7 @@ pub struct SourceFactBatch { pub test_copy: bool, pub records: Vec<Value> }
 #[serde(deny_unknown_fields)]
 pub struct SourceFactPage {
     pub kind: String, #[serde(default)] pub offset: usize, #[serde(default = "page_limit")] pub limit: usize,
+    pub source_return_year: Option<u16>,
     // Vercel's API rewrite supplies this infrastructure query parameter. The
     // authenticated Axum Path remains authoritative; never use it for scope.
     #[serde(default,rename="path")] pub _routing_path: Option<String>,
@@ -161,7 +162,7 @@ mod recovery_tests {
         let summary=service.test_copy_source_fact_summary(company).await.unwrap();
         assert_eq!(summary["counts"],json!({"family_files":1,"family_member_links":1,"historical_lines":1,"historical_lines_pending":1,"afr_occurrences":1,"afr_contents":1,"afr_missing_year":1}));
         for kind in ["family-files","historical-lines","afr-slips"] {
-            let page=service.test_copy_client_source_facts(company,"100",SourceFactPage{kind:kind.into(),offset:0,limit:25,_routing_path:None}).await.unwrap();assert_eq!(page["total"],1);assert_eq!(page["records"].as_array().unwrap().len(),1);
+            let page=service.test_copy_client_source_facts(company,"100",SourceFactPage{kind:kind.into(),offset:0,limit:25,source_return_year:None,_routing_path:None}).await.unwrap();assert_eq!(page["total"],1);assert_eq!(page["records"].as_array().unwrap().len(),1);
         }
     }
 }
@@ -314,6 +315,8 @@ impl SourceImport {
     /// Paginated source evidence for a stable individual client number. Pending mappings
     /// remain labelled in the returned record, and no return is recalculated or created.
     pub async fn test_copy_client_source_facts(&self, company: &str, client: &str, page: SourceFactPage) -> Result<Value> {
+        if page.kind=="native-slip-views" {return self.test_copy_client_native_slip_views(company,client,page).await}
+        if page.source_return_year.is_some() {return Err(bad("Source return year filter applies only to native slip views"))}
         self.test_copy_guard(company,true)?;
         if !number(client) || page.limit == 0 || page.limit > 100 { return Err(bad("Invalid client or page limit")) }
         let (index, record) = match page.kind.as_str() {

@@ -5,7 +5,7 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
   const lines=['15000','23600','26000','42000','48400','48500'];
   const labels=['Total income','Net income','Taxable income','Net federal tax','Refund','Balance owing'];
-  const kinds={'historical-lines':'Historical totals','afr-slips':'CRA slips','family-files':'Family files'};
+  const kinds={'historical-lines':'Historical totals','afr-slips':'CRA slips','native-slip-views':'Native slip fields','family-files':'Family files'};
   const integer=v=>Number.isSafeInteger(v)&&v>=0;
   function cents(value) {
     if(value===null)return 'Absent';
@@ -47,8 +47,30 @@
     if(r.vendor_module!=='T1')return '<h3>Converter label '+esc(r.vendor_module)+' · '+r.tax_year+'</h3><p class="dtmax-notice">The converter inferred this module label. Its candidate values are not shown as T1 totals while the original source module is verified. The original source is preserved.</p>';
     return '<h3>Historical totals · '+r.tax_year+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])]))+'<p>'+esc(mappingLabel(r))+'</p>';
   }
+  function nativeSlipViewsHtml(records) {
+    const hash=v=>typeof v==='string'&&/^[0-9a-f]{64}$/.test(v),profile='4bb64f7185d758cc4a1ccacd3a62b6a00b9656d320ca7412b9fe2598d68d69fc';
+    return '<p>Raw financial source fields. Source return year is not an inferred slip year. Allocations and duplicate removal have not been applied.</p>'+records.map(r=>{
+      if(!r||!/^\d{1,12}$/.test(r.client_number)||!/^\d{1,12}$/.test(r.family_file_id)||!Number.isInteger(r.source_return_year)||r.source_return_year<1990||r.source_return_year>2100||!['T1','T3'].includes(r.vendor_module)||typeof r.vendor_slip_kind!=='string'||!integer(r.vendor_slip_ordinal)||!integer(r.source_view_number)||r.source_view_number===0||typeof r.from_data_segment!=='boolean'||![r.source_archive_sha256,r.source_view_file_sha256,r.source_view_line_sha256].every(hash)||r.financial_profile_sha256!==profile||!r.field_labels||!Array.isArray(r.financial_fields)||!integer(r.original_field_count)||r.financial_fields.length>512||r.financial_fields.length>r.original_field_count||r.economic_slip_uniqueness_verified!==false||r.normalized_tax_slip_created!==false||r.taxpayer_allocations_applied!==false||r.financial_values_approved!==false)throw Error('Native slip source profile did not match');
+      let previous=-1;
+      const body=r.financial_fields.map(f=>{
+        if(!f||!integer(f.field_id)||!integer(f.source_field_index)||f.source_field_index<=previous||f.source_field_index>=r.original_field_count||!Number.isInteger(f.source_type_tag)||f.source_type_tag<0||f.source_type_tag>255||typeof r.field_labels[f.field_id]!=='string'||!f.value)throw Error('Native financial field order or profile did not match');
+        previous=f.source_field_index;const v=f.value;let display;
+        if(v.kind==='text'&&![2,6,8,11].includes(f.source_type_tag)&&(v.text===null||typeof v.text==='string'&&v.text.length<=4096))display=v.text===null||!v.text.trim()?'<span class="dtmax-missing">Present, blank</span>':'<span class="dtmax-source-value">'+esc(v.text)+'</span>';
+        else if(v.kind==='integer'&&[8,11].includes(f.source_type_tag)&&Number.isInteger(v.value)&&v.value>=-2147483648&&v.value<=2147483647&&(f.source_type_tag!==8||v.value>=-32768&&v.value<=32767))display=esc(v.value);
+        else if(v.kind==='flag'&&f.source_type_tag===6&&[0,1].includes(v.value))display='Flag '+v.value;
+        else if(v.kind==='float32'&&f.source_type_tag===2&&/^[0-9a-f]{8}$/.test(v.bits_hex))display='<span class="dtmax-missing">Numeric format review needed</span>';
+        else if(v.kind==='held'&&hash(v.source_field_sha256))display='<span class="dtmax-missing">Unparsed; original source retained</span>';
+        else throw Error('Native value does not match its active type');
+        const label=r.source_return_year===2025&&r.vendor_module==='T1'?r.field_labels[f.field_id]:'Historical box binding pending';
+        return '<tr><th scope="row">'+esc(label)+'<small>Source field '+f.field_id+'</small></th><td>'+display+'</td></tr>';
+      }).join('');
+      const pending=(r.vendor_module!=='T1'?'Converter module label needs verification.':r.source_return_year!==2025?'Historical year bindings need review.':'Source-2025 financial field profile checked; box conversion remains pending.')+(r.source_return_year===2026?' May be preliminary or planning source data.':'');
+      return '<details class="dtmax-native-slip"><summary>'+esc(r.vendor_slip_kind)+' · Source return year '+r.source_return_year+' · View '+(r.vendor_slip_ordinal+1)+' · '+(r.from_data_segment?'Data source':'Cached source')+'</summary><p>'+esc(pending)+'</p>'+(body?'<div class="table-wrap"><table><thead><tr><th>Source field</th><th>Active source value</th></tr></thead><tbody>'+body+'</tbody></table></div>':'<p>No fields from this financial profile are present in this view. Other original fields remain in the preserved extract.</p>')+'<details><summary>Source selection and provenance</summary><p>'+esc(r.selection_review)+'</p><p>Archive '+esc(r.source_archive_sha256)+'<br>View file '+esc(r.source_view_file_sha256)+'<br>Original view '+r.source_view_number+' · '+esc(r.source_view_line_sha256)+'</p></details></details>';
+    }).join('');
+  }
   function recordsHtml(kind,records) {
     if(!records.length)return '<p>No records of this kind are imported for this client.</p>';
+    if(kind==='native-slip-views')return nativeSlipViewsHtml(records);
     if(kind==='historical-lines')return '<p>Absent means no source value; $0.00 is an explicit zero. Imported totals have not been recalculated.</p><div class="table-wrap"><table><thead><tr><th>Year</th>'+lines.map((l,i)=>'<th>'+labels[i]+' ('+l+')</th>').join('')+'<th>Verification</th></tr></thead><tbody>'+records.map(r=>{
       checkHistorical(r);
       if(r.vendor_module!=='T1')return '<tr><td>'+r.tax_year+'</td><td colspan="6">Converter label '+esc(r.vendor_module)+'; T1 totals are unavailable.</td><td>Source module verification required</td></tr>';
@@ -167,14 +189,15 @@
       if(focus&&current(sequence))q('[data-dtmax-view="'+view+'"]')?.focus?.();
     }
     function renderComparison(){const node=q('[data-dtmax-comparison]');if(!node)return;const r=historicalRecord(comparison);node.innerHTML=comparison?(r?historicalTotalsHtml(r):'<p>No single imported source version for this comparison year.</p>'):'<p class="dtmax-missing">Choose a year to compare the six preserved totals.</p>';}
-    function checkFacts(p,client,requestedKind,at,limit){
+    function checkFacts(p,client,requestedKind,at,limit,requestedYear){
       if(!p||p.client_number!==client||p.kind!==requestedKind||p.test_copy!==true||p.tax_cases_imported!==0||p.offset!==at||!integer(p.total)||!Array.isArray(p.records)||p.records.length>limit||at+p.records.length>p.total)throw Error('Source client response did not match');
       if(p.records.some(r=>requestedKind==='family-files'?!Array.isArray(r.member_client_numbers)||!r.member_client_numbers.includes(client):r.client_number!==client))throw Error('Source record belongs to another client');
+      if(requestedKind==='native-slip-views'&&requestedYear&&(p.source_return_year!==Number(requestedYear)||p.records.some(r=>r.source_return_year!==Number(requestedYear))))throw Error('Native source return year did not match');
     }
     async function facts(next=0,existingSequence){
-      const n=existingSequence??++sequence,client=activeClient,requestedKind=kind;factOffset=next;const detail=q('[data-dtmax-details]');if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
+      const n=existingSequence??++sequence,client=activeClient,requestedKind=kind,requestedYear=kind==='native-slip-views'?selectedYear:'';factOffset=next;const detail=q('[data-dtmax-details]');if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
       try{
-        const p=await request(BASE+'clients/'+client+'/source-facts?kind='+requestedKind+'&offset='+next+'&limit=25');if(!current(n))return;checkFacts(p,client,requestedKind,next,25);
+        const p=await request(BASE+'clients/'+client+'/source-facts?kind='+requestedKind+'&offset='+next+'&limit=25'+(requestedYear?'&source_return_year='+encodeURIComponent(requestedYear):''));if(!current(n))return;checkFacts(p,client,requestedKind,next,25,requestedYear);
         detail.innerHTML='<div class="dtmax-fact-nav">'+Object.entries(kinds).map(([k,label])=>'<button type="button" data-source-kind="'+k+'" aria-pressed="'+(k===kind)+'">'+label+'</button>').join('')+'</div>'+recordsHtml(kind,p.records)+'<p>'+(p.total?next+1:0)+'–'+(next+p.records.length)+' of '+p.total+' source records</p><button class="dtmax-action" data-fact-prev '+(!next?'disabled':'')+'>Previous records</button> <button class="dtmax-action" data-fact-next '+(next+p.records.length>=p.total?'disabled':'')+'>Next records</button>';
         detail.querySelectorAll('[data-source-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.sourceKind;return facts(0);});detail.querySelector('[data-fact-prev]').onclick=()=>facts(Math.max(0,factOffset-25));detail.querySelector('[data-fact-next]').onclick=()=>facts(factOffset+25);
         detail.querySelectorAll('[data-family-client]').forEach(b=>b.onclick=()=>open(b.dataset.familyClient));

@@ -26,6 +26,7 @@ jobs:
         run: cargo test --locked
       - name: Verify browser and operational scripts
         run: |
+          python3 scripts/build-dtmax-native-financial-profiles.py --check
           node --check public/apps/tax/tax.js
           node --check public/apps/tax/dtmax-t1.js
           node --test tests/dtmax_t1_worklist.test.mjs
