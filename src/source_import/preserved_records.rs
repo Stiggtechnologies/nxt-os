@@ -25,8 +25,23 @@ pub struct SourceFactBatch { pub test_copy: bool, pub records: Vec<Value> }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SourceFactPage { pub kind: String, #[serde(default)] pub offset: usize, #[serde(default = "page_limit")] pub limit: usize }
+pub struct SourceFactPage {
+    pub kind: String, #[serde(default)] pub offset: usize, #[serde(default = "page_limit")] pub limit: usize,
+    // Vercel's API rewrite supplies this infrastructure query parameter. The
+    // authenticated Axum Path remains authoritative; never use it for scope.
+    #[serde(default,rename="path")] pub _routing_path: Option<String>,
+}
 fn page_limit() -> usize { 25 }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceClientPage {
+    #[serde(default)] pub offset: usize,
+    #[serde(default = "page_limit")] pub limit: usize,
+    #[serde(default)] pub search: String,
+    pub year: Option<u16>,
+    #[serde(default,rename="path")] pub _routing_path: Option<String>,
+}
 
 #[derive(Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -122,12 +137,46 @@ mod recovery_tests {
         let summary=service.test_copy_source_fact_summary(company).await.unwrap();
         assert_eq!(summary["counts"],json!({"family_files":1,"family_member_links":1,"historical_lines":1,"historical_lines_pending":1,"afr_occurrences":1,"afr_contents":1,"afr_missing_year":1}));
         for kind in ["family-files","historical-lines","afr-slips"] {
-            let page=service.test_copy_client_source_facts(company,"100",SourceFactPage{kind:kind.into(),offset:0,limit:25}).await.unwrap();assert_eq!(page["total"],1);assert_eq!(page["records"].as_array().unwrap().len(),1);
+            let page=service.test_copy_client_source_facts(company,"100",SourceFactPage{kind:kind.into(),offset:0,limit:25,_routing_path:None}).await.unwrap();assert_eq!(page["total"],1);assert_eq!(page["records"].as_array().unwrap().len(),1);
         }
     }
 }
 
 impl SourceImport {
+    /// Personal T1 source clients are a firm-wide import scope, not QBO companies
+    /// or independently calculated NXT tax cases. Years come from individual
+    /// historical facts rather than legacy physical-file stems.
+    pub async fn test_copy_source_clients(&self, company: &str, page: SourceClientPage) -> Result<Value> {
+        self.test_copy_guard(company,true)?;
+        if page.limit==0 || page.limit>100 || page.search.chars().count()>100 || page.year.is_some_and(|y| !year(y)) { return Err(bad("Invalid source client filter")) }
+        let mut years: BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
+        let mut pending: BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
+        for (index,target) in [("historical_lines",&mut years),("historical_lines_pending",&mut pending)] {
+            for identity in self.store.smembers(&k(company,index)).await.map_err(|e| storage(&e))? {
+                let mut parts=identity.split(':');
+                let client=parts.next().ok_or_else(|| storage("invalid historical index"))?;
+                let tax_year=parts.next().and_then(|x| x.parse::<u16>().ok()).ok_or_else(|| storage("invalid historical index year"))?;
+                target.entry(client.into()).or_default().insert(tax_year);
+            }
+        }
+        let available: BTreeSet<u16>=years.values().flat_map(|v|v.iter().copied()).collect();
+        let mut numbers=self.store.smembers(&k(company,"clients")).await.map_err(|e| storage(&e))?;
+        numbers.sort_by(|a,b|(a.len(),a).cmp(&(b.len(),b)));
+        let needle=page.search.trim().to_lowercase();let mut clients=Vec::new();
+        for chunk in numbers.chunks(500) {
+            let keys:Vec<_>=chunk.iter().map(|n|k(company,&format!("client:{n}"))).collect();
+            for (number,raw) in chunk.iter().zip(self.store.mget(&keys).await.map_err(|e| storage(&e))?) {
+                let raw=raw.ok_or_else(|| storage("client index points to missing record"))?;
+                let client:Value=serde_json::from_str(&raw).map_err(|_|storage("stored client unreadable"))?;
+                let name=client["name"].as_str().ok_or_else(||storage("stored client name missing"))?;
+                let historical=years.get(number).cloned().unwrap_or_default();
+                if page.year.is_some_and(|y|!historical.contains(&y)) || !format!("{number} {name}").to_lowercase().contains(&needle) { continue }
+                clients.push(json!({"client_number":number,"name":name,"historical_years":historical,"pending_years":pending.get(number).cloned().unwrap_or_default()}));
+            }
+        }
+        let total=clients.len();let clients:Vec<_>=clients.into_iter().skip(page.offset).take(page.limit).collect();
+        Ok(json!({"source_scope":company,"program":"T1","imported_source_only":true,"total":total,"offset":page.offset,"limit":page.limit,"available_years":available,"clients":clients,"tax_cases_created":0}))
+    }
     // Claim immutable facts atomically. A matching retry must still repair every
     // derived index: an earlier request may have stopped after storing the body.
     async fn claim_source_fact(&self, key: &str, body: &str) -> Result<Option<bool>> {

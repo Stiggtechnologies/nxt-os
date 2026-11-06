@@ -50,6 +50,25 @@ field, the imported year must be null. A source folder year never supplies it.
 (default 25, maximum 100) for reviewing source records by an individual client ID.
 These reads retain the test-copy store and admin guards.
 
+## T1 worklist
+
+The T1 (and All programs) Tax worklist shows the imported DT Max personal-client
+list above independently calculated NXT workpapers. It uses
+`GET source-clients?offset=0&limit=100&search=...&year=2025`, with global name/client
+search and optional imported-year filtering. The server derives individual years
+from historical source facts, never from a physical family-file stem. Pending
+years remain visible. Only client ID, display name and source years are returned;
+contact fields are not exposed by this view.
+
+The office's verified import scope is `dtmax-test-copy`. It is a firm-wide
+personal-T1 source list, independent of the QBO/company selector, and remains
+restricted to existing admin/firm-wide authorization and the hosted switch.
+Opening a client reads paginated historical totals, CRA slip occurrences and
+family-file membership. Null amounts display as absent; exact integer-cent
+strings retain their values without floating-point conversion. Missing slip
+years are not supplied from the source folder. This view does not create,
+recalculate, approve or file a native NXT tax case.
+
 ## Mapping and source limits
 
 Installed vendor converter code maps the E11 selector `E11/0/1/-1` field IDs
