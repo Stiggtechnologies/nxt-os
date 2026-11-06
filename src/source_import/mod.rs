@@ -10,6 +10,7 @@ pub mod preserved_records;
 pub mod return_pdfs;
 pub mod source_exceptions;
 pub mod native_slip_views;
+pub mod legacy_owner_links;
 
 use crate::store::Store;
 use axum::http::StatusCode;

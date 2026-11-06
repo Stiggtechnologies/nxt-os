@@ -315,6 +315,7 @@ impl SourceImport {
     /// Paginated source evidence for a stable individual client number. Pending mappings
     /// remain labelled in the returned record, and no return is recalculated or created.
     pub async fn test_copy_client_source_facts(&self, company: &str, client: &str, page: SourceFactPage) -> Result<Value> {
+        if page.kind=="linked-t5008" {return self.test_copy_client_legacy_slips(company,client,page).await}
         if page.kind=="native-slip-views" {return self.test_copy_client_native_slip_views(company,client,page).await}
         if page.source_return_year.is_some() {return Err(bad("Source return year filter applies only to native slip views"))}
         self.test_copy_guard(company,true)?;

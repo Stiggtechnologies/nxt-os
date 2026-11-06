@@ -5,7 +5,7 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
   const lines=['15000','23600','26000','42000','48400','48500'];
   const labels=['Total income','Net income','Taxable income','Net federal tax','Refund','Balance owing'];
-  const kinds={'historical-lines':'Historical totals','afr-slips':'CRA slips','native-slip-views':'Native slip fields','family-files':'Family files'};
+  const kinds={'historical-lines':'Historical totals','afr-slips':'CRA slips','native-slip-views':'Native slip fields','linked-t5008':'Linked T5008 CSV','family-files':'Family files'};
   const integer=v=>Number.isSafeInteger(v)&&v>=0;
   function cents(value) {
     if(value===null)return 'Absent';
@@ -71,6 +71,11 @@
   function recordsHtml(kind,records) {
     if(!records.length)return '<p>No records of this kind are imported for this client.</p>';
     if(kind==='native-slip-views')return nativeSlipViewsHtml(records);
+    if(kind==='linked-t5008')return '<p>Original CSV rows linked by recipient name and matching stored CRA records. The same CRA evidence is available under CRA slips. No additional tax slip has been created.</p>'+records.map(r=>{
+      const s=r?.original_source_record,l=r?.owner_link;
+      if(!s||!l||!/^\d{1,12}$/.test(r.client_number)||l.owner_client_number!==r.client_number||r.tax_year!==s.tax_year||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||l.legacy_record_id!==[s.client_number,s.tax_year,s.source_file_sha256,s.row].join(':')||! /^[a-f0-9]{64}$/.test(l.legacy_record_sha256)||!['recipient_name_and_all_boxes','same_recipient_file_and_all_boxes'].includes(l.evidence_mode)||!Array.isArray(l.matching_cra_records)||!l.matching_cra_records.length||r.source_owner_id_changed!==false||r.normalized_tax_slip_created!==false||r.economic_slip_uniqueness_verified!==false||r.financial_values_approved!==false||!s.boxes||Object.entries(s.boxes).some(([b,v])=>!['11','13','15','16','17','18','19','20','21','22','23','24'].includes(b)||typeof v!=='string'||v.length>4096))throw Error('Linked CSV source or owner did not match');
+      return '<details><summary>T5008 CSV · '+r.tax_year+' · Source row '+esc(s.row)+'</summary><dl>'+Object.entries(s.boxes).map(([b,v])=>'<dt>Box '+b+'</dt><dd>'+esc(v||'Blank in source')+'</dd>').join('')+'</dl><p>Original source client reference: '+esc(s.client_number)+' · '+l.matching_cra_records.length+' matching CRA source occurrence(s). '+(l.evidence_mode==='same_recipient_file_and_all_boxes'?'Other verified rows in the same recipient file also corroborate this link.':'Recipient name and every populated source box are corroborated.')+'</p></details>';
+    }).join('');
     if(kind==='historical-lines')return '<p>Absent means no source value; $0.00 is an explicit zero. Imported totals have not been recalculated.</p><div class="table-wrap"><table><thead><tr><th>Year</th>'+lines.map((l,i)=>'<th>'+labels[i]+' ('+l+')</th>').join('')+'<th>Verification</th></tr></thead><tbody>'+records.map(r=>{
       checkHistorical(r);
       if(r.vendor_module!=='T1')return '<tr><td>'+r.tax_year+'</td><td colspan="6">Converter label '+esc(r.vendor_module)+'; T1 totals are unavailable.</td><td>Source module verification required</td></tr>';
@@ -101,7 +106,7 @@
   function mount(host,{request,isCurrent=()=>true}) {
     let sequence=0,offset=0,search='',year='',activeClient='',kind='historical-lines',factOffset=0;
     let page=null,view='list',selectedYear='',comparison='',history=[],pdfs=[],pdfUrl='',pdfRecord=null,pdfPage=1;
-    let sort='client_number',direction='asc',status='',province='',exceptionSequence=0;const clientCache=new Map(),exceptionUrls=[];
+    let sort='client_number',direction='asc',status='',province='',exceptionSequence=0,ownerSequence=0;const clientCache=new Map(),exceptionUrls=[];
     const releaseExceptions=()=>{exceptionUrls.splice(0).forEach(url=>URL.revokeObjectURL(url));};
     const current=n=>host.isConnected!==false&&isCurrent()&&n===sequence;
     const q=s=>host.querySelector(s),all=s=>host.querySelectorAll(s);
@@ -109,15 +114,24 @@
     const releasePdf=()=>{if(pdfUrl){URL.revokeObjectURL(pdfUrl);pdfUrl='';}pdfRecord=null;};
     function tabs(){return '<div class="dtmax-tabs" role="tablist" aria-label="Imported T1 workspace">'+[['list','Client list','F10'],['entry','Data entry','F2'],['return','Tax return','F9']].map(([id,label,key])=>'<button role="tab" id="dtmax-tab-'+id+'" aria-controls="dtmax-panel" aria-selected="'+(id===view)+'" tabindex="'+(id===view?'0':'-1')+'" data-dtmax-view="'+id+'"'+(id!=='list'&&!activeClient?' disabled':'')+'>'+label+'<kbd>'+key+'</kbd></button>').join('')+'<span class="dtmax-module">T1</span></div>';}
     function shell(body){
-      if(view==='list')body='<details data-dtmax-exceptions><summary>Unreadable source contexts</summary><div data-dtmax-exception-content><p>Open to load preserved source exceptions.</p></div></details>'+body;
+      if(view==='list')body='<details data-dtmax-owner-review><summary>Legacy CSV ownership reconciliation</summary><div data-dtmax-owner-content><p>Open to load verified ownership counts.</p></div></details><details data-dtmax-exceptions><summary>Unreadable source contexts</summary><div data-dtmax-exception-content><p>Open to load preserved source exceptions.</p></div></details>'+body;
       host.innerHTML='<section class="dtmax-workspace" aria-label="DT Max source workspace"><div class="dtmax-caption"><h2>T1 clients imported from DT Max</h2><span>Firm-wide source workspace</span></div>'+tabs()+'<p class="dtmax-notice">Preserved source records · Read-only. NXT preparation workpapers remain separate below.</p><div id="dtmax-panel" role="tabpanel" aria-labelledby="dtmax-tab-'+view+'">'+body+'</div></section>';
       all('[data-dtmax-view]').forEach(b=>{b.onclick=()=>show(b.dataset.dtmaxView);b.onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const ids=activeClient?['list','entry','return']:['list'];const at=ids.indexOf(view);return show(ids[(at+(e.key==='ArrowRight'?1:ids.length-1))%ids.length],true);}};});
       if(view==='list')q('[data-dtmax-exceptions]').ontoggle=e=>{if(e.target.open)return loadExceptions(0);};
+      if(view==='list')q('[data-dtmax-owner-review]').ontoggle=e=>{if(e.target.open)return loadOwnerReview();};
       host.onkeydown=e=>{
         if(e.ctrlKey&&!e.altKey&&!e.metaKey&&e.key.toLowerCase()==='f'&&view==='list'){e.preventDefault();q('[name=search]')?.focus?.();return;}
         if(e.altKey&&e.key==='F7'&&view==='entry'){e.preventDefault();q('[data-dtmax-keyword-find]')?.focus?.();return;}
         if(e.altKey||e.ctrlKey||e.metaKey||/INPUT|SELECT|TEXTAREA/.test(e.target?.tagName||''))return;const id={F10:'list',F2:'entry',F9:'return'}[e.key];if(id&&(activeClient||id==='list')){e.preventDefault();show(id,true);}
       };
+    }
+    async function loadOwnerReview(){
+      const n=sequence,g=++ownerSequence,detail=q('[data-dtmax-owner-content]');if(!detail)return;detail.innerHTML='<p>Loading owner reconciliation…</p>';
+      try{
+        const p=await request(BASE+'legacy-owner-links/summary');if(!current(n)||view!=='list'||g!==ownerSequence)return;
+        if(p.source_scope!==SCOPE||p.test_copy!==true||p.source_rows_modified!==0||p.normalized_slips_created!==0||p.tax_cases_imported!==0||![p.raw_legacy_CSV_owner_ids_unregistered,p.verified_owner_links,p.remaining_owner_exceptions].every(integer)||p.verified_owner_links+p.remaining_owner_exceptions!==p.raw_legacy_CSV_owner_ids_unregistered)throw Error('Owner reconciliation did not match');
+        detail.innerHTML='<p>'+p.verified_owner_links+' of '+p.raw_legacy_CSV_owner_ids_unregistered+' CSV source rows have verified owner links. '+p.remaining_owner_exceptions+' ownership exceptions remain.</p><p>Open a linked client’s Data entry → Linked T5008 CSV. Original CSV client references remain preserved; these links do not create additional slips or approve tax figures.</p>';
+      }catch(e){if(current(n)&&view==='list'&&g===ownerSequence)detail.innerHTML='<p role="alert">Owner reconciliation unavailable: '+esc(e.message)+'</p>';}
     }
     async function loadExceptions(at){
       const n=sequence,generation=++exceptionSequence,detail=q('[data-dtmax-exception-content]');if(!detail)return;detail.innerHTML='<p>Loading preserved source exceptions…</p>';
@@ -192,10 +206,10 @@
     function checkFacts(p,client,requestedKind,at,limit,requestedYear){
       if(!p||p.client_number!==client||p.kind!==requestedKind||p.test_copy!==true||p.tax_cases_imported!==0||p.offset!==at||!integer(p.total)||!Array.isArray(p.records)||p.records.length>limit||at+p.records.length>p.total)throw Error('Source client response did not match');
       if(p.records.some(r=>requestedKind==='family-files'?!Array.isArray(r.member_client_numbers)||!r.member_client_numbers.includes(client):r.client_number!==client))throw Error('Source record belongs to another client');
-      if(requestedKind==='native-slip-views'&&requestedYear&&(p.source_return_year!==Number(requestedYear)||p.records.some(r=>r.source_return_year!==Number(requestedYear))))throw Error('Native source return year did not match');
+      if(['native-slip-views','linked-t5008'].includes(requestedKind)&&requestedYear&&(p.source_return_year!==Number(requestedYear)||p.records.some(r=>(requestedKind==='native-slip-views'?r.source_return_year:r.tax_year)!==Number(requestedYear))))throw Error('Selected source return year did not match');
     }
     async function facts(next=0,existingSequence){
-      const n=existingSequence??++sequence,client=activeClient,requestedKind=kind,requestedYear=kind==='native-slip-views'?selectedYear:'';factOffset=next;const detail=q('[data-dtmax-details]');if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
+      const n=existingSequence??++sequence,client=activeClient,requestedKind=kind,requestedYear=['native-slip-views','linked-t5008'].includes(kind)?selectedYear:'';factOffset=next;const detail=q('[data-dtmax-details]');if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
       try{
         const p=await request(BASE+'clients/'+client+'/source-facts?kind='+requestedKind+'&offset='+next+'&limit=25'+(requestedYear?'&source_return_year='+encodeURIComponent(requestedYear):''));if(!current(n))return;checkFacts(p,client,requestedKind,next,25,requestedYear);
         detail.innerHTML='<div class="dtmax-fact-nav">'+Object.entries(kinds).map(([k,label])=>'<button type="button" data-source-kind="'+k+'" aria-pressed="'+(k===kind)+'">'+label+'</button>').join('')+'</div>'+recordsHtml(kind,p.records)+'<p>'+(p.total?next+1:0)+'–'+(next+p.records.length)+' of '+p.total+' source records</p><button class="dtmax-action" data-fact-prev '+(!next?'disabled':'')+'>Previous records</button> <button class="dtmax-action" data-fact-next '+(next+p.records.length>=p.total?'disabled':'')+'>Next records</button>';
