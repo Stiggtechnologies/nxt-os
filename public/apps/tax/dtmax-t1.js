@@ -30,10 +30,22 @@
     const label=node.tag.split('}').at(-1),box=node.attributes?.boxNumber;
     return '<li><strong>'+esc(label)+(box?' · Box '+esc(box):'')+'</strong>'+ (node.text===null?'':': '+esc(node.text))+(node.children.length?'<ul>'+node.children.map(c=>tree(c,depth+1)).join('')+'</ul>':'')+'</li>';
   }
+  function checkHistorical(r){
+    if(!r||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||!r.values_cents||!['T1','T3'].includes(r.vendor_module)||!['vendor_static_verified','pending_year_verification','pending_module_verification'].includes(r.mapping_state))throw Error('Invalid source figures');
+    if((r.vendor_module==='T3')!==(r.mapping_state==='pending_module_verification'))throw Error('Source module mapping did not match');
+    lines.forEach(l=>cents(r.values_cents[l]));return r;
+  }
+  function historicalTotalsHtml(record){
+    if(!record)return '<p>No imported totals for the selected year.</p>';
+    const r=checkHistorical(record);
+    if(r.vendor_module!=='T1')return '<h3>Source module '+esc(r.vendor_module)+' · '+r.tax_year+'</h3><p class="dtmax-notice">This source context identifies a different tax module. Its candidate values are not shown as T1 totals. The original source is preserved; separate module mapping is required.</p>';
+    return '<h3>Historical totals · '+r.tax_year+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])]))+'<p>'+esc(r.mapping_state==='vendor_static_verified'?'Vendor mapping checked; preserved source totals.':'Mapping needs verification.')+'</p>';
+  }
   function recordsHtml(kind,records) {
     if(!records.length)return '<p>No records of this kind are imported for this client.</p>';
     if(kind==='historical-lines')return '<p>Absent means no source value; $0.00 is an explicit zero. Imported totals have not been recalculated.</p><div class="table-wrap"><table><thead><tr><th>Year</th>'+lines.map((l,i)=>'<th>'+labels[i]+' ('+l+')</th>').join('')+'<th>Verification</th></tr></thead><tbody>'+records.map(r=>{
-      if(!Number.isInteger(r.tax_year)||!r.values_cents||!['vendor_static_verified','pending_year_verification','pending_module_verification'].includes(r.mapping_state))throw Error('Invalid source figures');
+      checkHistorical(r);
+      if(r.vendor_module!=='T1')return '<tr><td>'+r.tax_year+'</td><td colspan="6">Source module '+esc(r.vendor_module)+'; T1 totals are unavailable.</td><td>Separate module mapping required</td></tr>';
       return '<tr><td>'+r.tax_year+'</td>'+lines.map(l=>'<td>'+esc(cents(r.values_cents[l]))+'</td>').join('')+'<td>'+esc(r.mapping_state==='vendor_static_verified'?'Vendor mapping checked; source totals':'Mapping needs verification')+'</td></tr>';
     }).join('')+'</tbody></table></div>';
     if(kind==='family-files')return records.map(r=>'<p>Family file '+esc(r.family_file_id)+' · '+esc(r.tax_year)+'</p><div class="dtmax-family-members">'+(r.member_client_numbers||[]).map(id=>{if(!/^\d{1,12}$/.test(id))throw Error('Invalid family member');return '<button class="dtmax-action" type="button" data-family-client="'+id+'">Client #'+id+'</button>';}).join(' ')+'</div>').join('');
@@ -43,7 +55,7 @@
   function keywordRows(rows){return '<dl>'+rows.map(([label,value])=>'<dt data-dtmax-keyword="'+esc(label.toLowerCase())+'">'+esc(label)+'</dt><dd>'+(value===undefined||value===null||value===''?missing:esc(value))+'</dd>').join('')+'</dl>';}
   function entryHtml(client,record,comparison){
     const profile=client.source_profile||{};
-    const totals=r=>r?'<h3>Historical totals · '+esc(r.tax_year)+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])]))+'<p>'+esc(r.mapping_state==='vendor_static_verified'?'Vendor mapping checked; preserved source totals.':'Mapping needs verification.')+'</p>':'<p>No imported totals for the selected year.</p>';
+    const totals=historicalTotalsHtml;
     return '<div class="dtmax-entry"><section class="dtmax-keyword-pane"><h3>Personal information</h3>'+keywordRows([['Client #',client.client_number],['Name',client.name]])+'<details><summary>7 personal fields not imported</summary>'+keywordRows([['Relation',null],['SIN',null],['BirthDate',null],['Status',null],['Sex',null],['Prov-Residence',null],['Language',null]])+'</details>'+totals(record)+'<h3>Mailing address · client-list snapshot</h3>'+keywordRows([['Street',profile.street],['City',profile.city],['Province',profile.province],['PostalCode',profile.postal_code],['Country',profile.country]])+'<h3>Contact · client-list snapshot</h3>'+keywordRows([['Email',profile.email],['Home phone',profile.home_phone],['Work phone',profile.work_phone],['Cell phone',profile.cell_phone]])+'<p>Address, contact and processing status come from the imported client list. They are not established as the historical return’s values.</p></section><section class="dtmax-keyword-pane"><label>Compare historical year <select data-dtmax-compare><option value="">&lt;none&gt;</option>'+(client.historical_years||[]).map(y=>'<option value="'+y+'"'+(String(y)===comparison?' selected':'')+'>'+y+'</option>').join('')+'</select></label><div data-dtmax-comparison></div><h3>Source records</h3><p>Browse the preserved slips and family links below. Source values are read-only.</p><div data-dtmax-details></div></section></div>';
   }
   function validatePdf(r,client){
@@ -116,7 +128,7 @@
       }
       if(focus&&current(sequence))q('[data-dtmax-view="'+view+'"]')?.focus?.();
     }
-    function renderComparison(){const node=q('[data-dtmax-comparison]');if(!node)return;const r=historicalRecord(comparison);node.innerHTML=comparison?(r?'<h3>Historical totals · '+esc(comparison)+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])])):'<p>No single imported source version for this comparison year.</p>'):'<p class="dtmax-missing">Choose a year to compare the six preserved totals.</p>';}
+    function renderComparison(){const node=q('[data-dtmax-comparison]');if(!node)return;const r=historicalRecord(comparison);node.innerHTML=comparison?(r?historicalTotalsHtml(r):'<p>No single imported source version for this comparison year.</p>'):'<p class="dtmax-missing">Choose a year to compare the six preserved totals.</p>';}
     function checkFacts(p,client,requestedKind,at,limit){
       if(!p||p.client_number!==client||p.kind!==requestedKind||p.test_copy!==true||p.tax_cases_imported!==0||p.offset!==at||!integer(p.total)||!Array.isArray(p.records)||p.records.length>limit||at+p.records.length>p.total)throw Error('Source client response did not match');
       if(p.records.some(r=>requestedKind==='family-files'?!Array.isArray(r.member_client_numbers)||!r.member_client_numbers.includes(client):r.client_number!==client))throw Error('Source record belongs to another client');
