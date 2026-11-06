@@ -61,6 +61,20 @@ struct HistoricalLines {
     /// Every requested line is present as a key. Null means absent, never inferred zero.
     values_cents: BTreeMap<String, Option<String>>,
 }
+// The original import classification is immutable. This later review describes
+// field bindings only, never approval/recalculation of the stored amounts.
+fn year_mapping_review(v: &HistoricalLines) -> Option<Value> {
+    if v.vendor_module!="T1" || v.mapping_state!="pending_year_verification" { return None }
+    let artifact=match v.tax_year {
+        2013=>"9d7254fabd95f679025e3fc7e441304709f259fd7fbfc2425787a231fa3ed07e",
+        2014=>"412666ff325b72b66a7a60a50701bcde019357d9a6db991ac2bccaea85256b54",
+        _=>return None,
+    };
+    Some(json!({"state":"original_form_bindings_checked","tax_year":v.tax_year,"source_form":"E11",
+        "package_sha256":artifact,"profile":"dtmax-T1-E11-2013-2014/v1",
+        "field_ids":{"15000":150,"23600":236,"26000":260,"42000":420,"48400":484,"48500":485},
+        "amounts_recalculated":false,"tax_figures_approved":false}))
+}
 #[derive(Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct FieldTree { tag: String, attributes: BTreeMap<String, String>, text: Option<String>, children: Vec<FieldTree> }
@@ -155,8 +169,8 @@ impl SourceImport {
         let sort=page.sort.as_deref().unwrap_or("client_number");let direction=page.direction.as_deref().unwrap_or("asc");
         if page.limit==0 || page.limit>100 || page.search.chars().count()>100 || page.year.is_some_and(|y| !year(y)) || !["client_number","name","processing_status"].contains(&sort) || !["asc","desc"].contains(&direction) || page.status.as_ref().is_some_and(|s|s.len()>80) || page.province.as_ref().is_some_and(|s|s.len()>40) { return Err(bad("Invalid source client filter")) }
         let mut years: BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
-        let mut pending: BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
-        for (index,target) in [("historical_lines",&mut years),("historical_lines_pending",&mut pending)] {
+        let mut pending_at_import: BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
+        for (index,target) in [("historical_lines",&mut years),("historical_lines_pending",&mut pending_at_import)] {
             for identity in self.store.smembers(&k(company,index)).await.map_err(|e| storage(&e))? {
                 let mut parts=identity.split(':');
                 let client=parts.next().ok_or_else(|| storage("invalid historical index"))?;
@@ -164,6 +178,9 @@ impl SourceImport {
                 target.entry(client.into()).or_default().insert(tax_year);
             }
         }
+        let (_,unresolved)=self.review_pending_mapping_records(company).await?;
+        let mut pending:BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
+        for v in unresolved {pending.entry(v.client_number).or_default().insert(v.tax_year);}
         let available: BTreeSet<u16>=years.values().flat_map(|v|v.iter().copied()).collect();
         let mut numbers=self.store.smembers(&k(company,"clients")).await.map_err(|e| storage(&e))?;
         numbers.sort_by(|a,b|(a.len(),a).cmp(&(b.len(),b)));
@@ -182,7 +199,7 @@ impl SourceImport {
                 for field in ["processing_status","email","home_phone","work_phone","cell_phone","street","city","postal_code","province","country"] {
                     if let Some(value)=client.get(field).and_then(Value::as_str) { profile.insert(field.into(),json!(value)); }
                 }
-                clients.push(json!({"client_number":number,"name":name,"historical_years":historical,"pending_years":pending.get(number).cloned().unwrap_or_default(),"source_profile":profile}));
+                clients.push(json!({"client_number":number,"name":name,"historical_years":historical,"pending_years":pending.get(number).cloned().unwrap_or_default(),"pending_years_at_import":pending_at_import.get(number).cloned().unwrap_or_default(),"source_profile":profile}));
             }
         }
         clients.sort_by(|a,b|{
@@ -270,7 +287,23 @@ impl SourceImport {
         for name in ["family_files","family_member_links","historical_lines","historical_lines_pending","afr_occurrences","afr_contents","afr_missing_year"] {
             counts.insert(name,self.store.smembers(&k(company,name)).await.map_err(|e| storage(&e))?.len());
         }
-        Ok(json!({"test_copy":true,"counts":counts,"tax_cases_imported":0,"live_cutover_allowed":false}))
+        let (reviewed,unresolved)=self.review_pending_mapping_records(company).await?;
+        Ok(json!({"test_copy":true,"counts":counts,"historical_mapping_review":{"pending_at_import":reviewed+unresolved.len(),"original_form_bindings_checked":reviewed,"remaining_pending":unresolved.len(),"original_import_classifications_preserved":true,"amounts_changed":0,"tax_figures_approved":false},"tax_cases_imported":0,"live_cutover_allowed":false}))
+    }
+    async fn review_pending_mapping_records(&self, company: &str) -> Result<(usize,Vec<HistoricalLines>)> {
+        let identities=self.store.smembers(&k(company,"historical_lines_pending")).await.map_err(|e|storage(&e))?;
+        if identities.len()>100_000 {return Err(storage("Historical pending index exceeds review bound"))}
+        let mut reviewed=0;let mut unresolved=Vec::new();
+        for chunk in identities.chunks(500) {
+            let keys:Vec<_>=chunk.iter().map(|id|k(company,&format!("historical_lines:{id}"))).collect();
+            for (id,raw) in chunk.iter().zip(self.store.mget(&keys).await.map_err(|e|storage(&e))?) {
+                let v:HistoricalLines=serde_json::from_str(&raw.ok_or_else(||storage("Pending historical body missing"))?).map_err(|_|storage("Invalid pending historical body"))?;
+                check_lines(&v).map_err(storage)?;
+                if *id!=format!("{}:{}:{}",v.client_number,v.tax_year,v.archive_sha256) || v.mapping_state=="vendor_static_verified" {return Err(storage("Pending historical index mismatch"))}
+                if year_mapping_review(&v).is_some() {reviewed+=1;} else {unresolved.push(v);}
+            }
+        }
+        Ok((reviewed,unresolved))
     }
     /// Paginated source evidence for a stable individual client number. Pending mappings
     /// remain labelled in the returned record, and no return is recalculated or created.
@@ -289,7 +322,13 @@ impl SourceImport {
         let mut records=Vec::new();
         for raw in self.store.mget(&keys).await.map_err(|e| storage(&e))? {
             let raw=raw.ok_or_else(|| storage("source fact index points to missing record"))?;
-            records.push(serde_json::from_str::<Value>(&raw).map_err(|_| storage("stored source fact unreadable"))?);
+            let mut record=serde_json::from_str::<Value>(&raw).map_err(|_| storage("stored source fact unreadable"))?;
+            if page.kind=="historical-lines" {
+                let v:HistoricalLines=serde_json::from_value(record.clone()).map_err(|_|storage("Invalid stored historical record"))?;check_lines(&v).map_err(storage)?;
+                if v.client_number!=client {return Err(storage("Historical client mismatch"))}
+                if let Some(review)=year_mapping_review(&v) {record["year_mapping_review"]=review;}
+            }
+            records.push(record);
         }
         Ok(json!({"test_copy":true,"client_number":client,"kind":page.kind,"total":total,"offset":page.offset,"records":records,"tax_cases_imported":0,"live_cutover_allowed":false}))
     }

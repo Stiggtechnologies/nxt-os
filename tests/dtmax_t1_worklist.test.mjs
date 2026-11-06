@@ -94,6 +94,12 @@ test('source exceptions retain unreadable state and distinguish header reference
   const r=exception();api.validateException(r);const html=api.exceptionsHtml([r]);assert.ok(html.includes('Header client #'));assert.ok(html.includes('do not establish a person, ownership or tax figures'));assert.ok(html.includes('Identity information missing'));assert.ok(!html.includes('$0.00'));
   for(const change of [{immutable:false},{identity_metadata_readable:true},{normalized_amounts_created:true},{source_context_bytes:65537},{source_context_offset:999},{frame_tags:['EXC','EXC']},{client_number:'<img>'},{reason:'guessed'}])assert.throws(()=>api.validateException({...r,...change}));
 });
+test('year-specific binding review labels preserved totals and rejects scope or profile guesses',()=>{
+  const review={state:'original_form_bindings_checked',tax_year:2013,source_form:'E11',package_sha256:'9d7254fabd95f679025e3fc7e441304709f259fd7fbfc2425787a231fa3ed07e',profile:'dtmax-T1-E11-2013-2014/v1',field_ids:Object.fromEntries(['15000','23600','26000','42000','48400','48500'].map(c=>[c,Number(c)/100])),amounts_recalculated:false,tax_figures_approved:false};
+  const r={tax_year:2013,vendor_module:'T1',mapping_state:'pending_year_verification',values_cents:{15000:'123456',23600:'0',26000:null,42000:null,48400:null,48500:null},year_mapping_review:review};
+  const html=api.recordsHtml('historical-lines',[r]);assert.ok(html.includes('Year-specific form bindings checked'));assert.ok(html.includes('$1,234.56'));assert.ok(html.includes('$0.00'));assert.ok(html.includes('Absent'));assert.equal(r.mapping_state,'pending_year_verification');
+  for(const changed of [{...r,vendor_module:'T3',mapping_state:'pending_module_verification'},{...r,tax_year:2012},{...r,year_mapping_review:{...review,package_sha256:'0'.repeat(64)}},{...r,year_mapping_review:{...review,tax_figures_approved:true}},{...r,year_mapping_review:{...review,field_ids:{...review.field_ids,15000:20}}}])assert.throws(()=>api.recordsHtml('historical-lines',[changed]));
+});
 test('exception retrieval is lazy, scope checked and stops when another workspace is selected',async()=>{
   const h=harness();let resolve;const pending=new Promise(r=>resolve=r);let count=0;
   const c=api.mount(h.host,{request:async path=>{if(path.includes('/source-exceptions?')){count++;return pending;}return page();}});await c.ready;assert.equal(count,0);
