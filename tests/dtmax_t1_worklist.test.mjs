@@ -22,3 +22,24 @@ test('late source responses cannot replace another tax view',async()=>{
   let resolve,active=true;const pending=new Promise(r=>resolve=r),host={isConnected:true,innerHTML:'',querySelector:()=>null};
   const controller=api.mount(host,{request:()=>pending,isCurrent:()=>active});active=false;host.innerHTML='Different tax view';resolve(page());await controller.ready;assert.equal(host.innerHTML,'Different tax view');
 });
+function harness(recordClient='100') {
+  const nodes=new Map(),buttons=[{dataset:{importedClient:'100'}}],requests=[];
+  const node=key=>{if(!nodes.has(key))nodes.set(key,{innerHTML:'',value:'',querySelector:node,querySelectorAll:()=>[],scrollIntoView(){}});return nodes.get(key);};
+  const host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:key=>key==='[data-imported-client]'?buttons:[]};
+  const values=Object.fromEntries(['15000','23600','26000','42000','48400','48500'].map((x,i)=>[x,i===0?'12345':null]));
+  const request=async path=>{requests.push(path);return path.includes('/source-clients?')?page():{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:1,tax_cases_imported:0,records:[{client_number:recordClient,tax_year:2025,mapping_state:'vendor_static_verified',values_cents:values}]};};
+  return {host,node,buttons,requests,controller:api.mount(host,{request})};
+}
+test('T1 list opens the selected client source totals and encodes global source search',async()=>{
+  const h=harness();await h.controller.ready;
+  assert.ok(h.host.innerHTML.includes('1–1 of 1 clients'));assert.ok(h.host.innerHTML.includes('Synthetic &#60;img&#62;'));
+  await h.buttons[0].onclick();assert.ok(h.node('[data-dtmax-details]').innerHTML.includes('$123.45'));
+  assert.ok(h.requests.at(-1).includes('/clients/100/source-facts?kind=historical-lines'));
+  h.node('[name=search]').value='Name & client';h.node('[name=year]').value='2013';await h.node('[data-dtmax-search]').onsubmit({preventDefault(){}});
+  assert.ok(h.requests.at(-1).includes('search=Name%20%26%20client&year=2013'));
+  assert.ok(h.requests.every(p=>p.startsWith('/api/source-imports/dtmax/companies/dtmax-test-copy/test-copy/')));
+});
+test('another client record cannot display under the selected imported T1',async()=>{
+  const h=harness('200');await h.controller.ready;await h.buttons[0].onclick();const html=h.node('[data-dtmax-details]').innerHTML;
+  assert.ok(html.includes('role="alert"'));assert.ok(!html.includes('$123.45'));
+});
