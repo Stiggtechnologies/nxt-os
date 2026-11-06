@@ -102,10 +102,34 @@
   }
   const missing='<span class="dtmax-missing">Not imported</span>';
   function keywordRows(rows){return '<dl>'+rows.map(([label,value])=>'<dt data-dtmax-keyword="'+esc(label.toLowerCase())+'">'+esc(label)+'</dt><dd>'+(value===undefined||value===null||value===''?missing:esc(value))+'</dd>').join('')+'</dl>';}
+  function personalInfoHtml(client,record){
+    const p=record?.source_personal_info;
+    if(!p)return '<details><summary>7 personal fields not imported</summary>'+keywordRows([['Relation',null],['SIN',null],['BirthDate',null],['Status',null],['Sex',null],['Prov-Residence',null],['Language',null]])+'</details>';
+    const names=['Relation','SIN','BirthDate','Status','Sex','Prov-Residence','Language'];
+    if(p.schema!=='dtmax-personal-source-display/v1'||p.binding_profile_sha256!=='9b7fc393b7632f0baa4e74806883a199c12f7cd0f79ed2dc7c6706c322acc10e'||p.client_number!==client.client_number||p.client_number!==record.client_number||p.family_file_id!==record.family_file_id||p.source_year!==record.tax_year||p.archive_sha256!==record.archive_sha256||p.reader_module!==record.vendor_module||p.info_record_state!=='present_nonempty_crc_verified'||p.current_profile_updated!==false||p.identity_verified!==false||!p.fields||Object.keys(p.fields).length!==7||names.some(n=>!p.fields[n])||p.t1_display_eligible!==(p.reader_module==='T1')||p.display_state!==(p.t1_display_eligible?'eligible_t1_source_year':'held_module_origin'))throw Error('Historical personal information did not match its source context');
+    const supported=['present_exact_date_candidate','present_mapped_code','present_nine_digit_candidate_not_identity_verified'];
+    const rows=names.map(name=>{
+      const f=p.fields[name],eligible=p.t1_display_eligible&&f.candidate!==null&&supported.includes(f.state);
+      if(f.display_eligible!==eligible)throw Error('Personal source display state did not match');
+      if(name==='SIN'&&(f.raw_code!==null||f.raw_redacted!==true||f.candidate!==null&&!/^\*{3}-\*{3}-[0-9]{4}$/.test(f.candidate)))throw Error('Personal source SIN was not masked');
+      let value;
+      if(!p.t1_display_eligible)value='Source module needs review';
+      else if(!eligible)value=f.state==='present_blank'?'Blank in source':f.state==='source_placeholder_zero_sentinel'?'Placeholder in source':f.state==='present_invalid_calendar_date'?'Invalid date in source':'Unknown or unsupported source value';
+      else if(name==='Relation'){
+        if(!f.candidate||Object.keys(f.candidate).sort().join(',')!=='relationship,taxpayer_type'||!['Principal','Partner','Dependant'].includes(f.candidate.taxpayer_type)||typeof f.candidate.relationship!=='string')throw Error('Personal source relation is invalid');
+        value=f.candidate.taxpayer_type+(f.candidate.relationship==='None'?'':' · '+f.candidate.relationship);
+      }else{
+        if(typeof f.candidate!=='string'||f.candidate.length>100||name==='BirthDate'&&!/^\d{4}-\d{2}-\d{2}$/.test(f.candidate))throw Error('Personal source candidate is invalid');
+        value=f.candidate+(name==='Prov-Residence'&&f.residency?' · '+f.residency:'');
+      }
+      return [name==='Status'?'Status (marital)':name==='Prov-Residence'?'Prov-Residence (Dec 31)':name,value];
+    });
+    return '<h3>Historical personal information · '+p.source_year+'</h3>'+keywordRows(rows)+'<p>Source-year values. SIN is masked; current client profile is unchanged.</p>';
+  }
   function entryHtml(client,record,comparison){
     const profile=client.source_profile||{};
     const totals=historicalTotalsHtml;
-    return '<div class="dtmax-entry"><section class="dtmax-keyword-pane"><h3>Personal information</h3>'+keywordRows([['Client #',client.client_number],['Name',client.name]])+'<details><summary>7 personal fields not imported</summary>'+keywordRows([['Relation',null],['SIN',null],['BirthDate',null],['Status',null],['Sex',null],['Prov-Residence',null],['Language',null]])+'</details>'+totals(record)+'<h3>Mailing address · client-list snapshot</h3>'+keywordRows([['Street',profile.street],['City',profile.city],['Province',profile.province],['PostalCode',profile.postal_code],['Country',profile.country]])+'<h3>Contact · client-list snapshot</h3>'+keywordRows([['Email',profile.email],['Home phone',profile.home_phone],['Work phone',profile.work_phone],['Cell phone',profile.cell_phone]])+'<p>Address, contact and processing status come from the imported client list. They are not established as the historical return’s values.</p></section><section class="dtmax-keyword-pane"><label>Compare historical year <select data-dtmax-compare><option value="">&lt;none&gt;</option>'+(client.historical_years||[]).map(y=>'<option value="'+y+'"'+(String(y)===comparison?' selected':'')+'>'+y+'</option>').join('')+'</select></label><div data-dtmax-comparison></div><h3>Source records</h3><p>Browse the preserved slips and family links below. Source values are read-only.</p><div data-dtmax-details></div></section></div>';
+    return '<div class="dtmax-entry"><section class="dtmax-keyword-pane"><h3>Personal information</h3>'+keywordRows([['Client #',client.client_number],['Name',client.name]])+personalInfoHtml(client,record)+totals(record)+'<h3>Mailing address · client-list snapshot</h3>'+keywordRows([['Street',profile.street],['City',profile.city],['Province',profile.province],['PostalCode',profile.postal_code],['Country',profile.country]])+'<h3>Contact · client-list snapshot</h3>'+keywordRows([['Email',profile.email],['Home phone',profile.home_phone],['Work phone',profile.work_phone],['Cell phone',profile.cell_phone]])+'<p>Address, contact and processing status come from the imported client list. They are not established as the historical return’s values.</p></section><section class="dtmax-keyword-pane"><label>Compare historical year <select data-dtmax-compare><option value="">&lt;none&gt;</option>'+(client.historical_years||[]).map(y=>'<option value="'+y+'"'+(String(y)===comparison?' selected':'')+'>'+y+'</option>').join('')+'</select></label><div data-dtmax-comparison></div><h3>Source records</h3><p>Browse the preserved slips and family links below. Source values are read-only.</p><div data-dtmax-details></div></section></div>';
   }
   function validatePdf(r,client){
     if(!r||r.client_number!==client||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||! /^[a-f0-9]{64}$/.test(r.sha256)||r.original_print_output!==true||r.immutable!==true||!integer(r.bytes)||r.bytes===0||r.bytes>2097152||!Array.isArray(r.page_labels)||r.page_labels.length!==r.page_count||r.page_count<1||r.page_count>500||r.page_labels.some(x=>typeof x!=='string'||!x||x.length>120||/[\x00-\x1f]/.test(x)))throw Error('Original PDF identity or page index did not match');return r;

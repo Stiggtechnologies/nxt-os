@@ -67,6 +67,10 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/historical-lines", post(test_copy_historical_lines))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/afr-slips", post(test_copy_afr_slips))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-fact-summary", get(test_copy_source_fact_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-facts/read", post(test_copy_read_source_facts))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/personal-source-info", post(test_copy_personal_source_info))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/personal-source-info/read", post(test_copy_read_personal_source_info))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/personal-source-info/summary", get(test_copy_personal_source_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-clients", get(test_copy_source_clients))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/source-facts", get(test_copy_client_source_facts))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/return-pdfs", post(test_copy_preserve_return_pdf))
@@ -231,6 +235,12 @@ async fn test_copy_afr_slips(State(state): S, Path(company): Path<String>, Json(
 async fn test_copy_source_fact_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_source_fact_summary(&company).await?))
 }
+async fn test_copy_read_source_facts(State(state): S, Path(company): Path<String>, Json(body): Json<super::preserved_records::SourceFactLookup>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_read_source_facts(&company,body).await?))
+}
+async fn test_copy_personal_source_info(State(state):S,Path(company):Path<String>,Json(body):Json<super::personal_source_info::PersonalBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_personal_source_info(&company,body).await?))}
+async fn test_copy_read_personal_source_info(State(state):S,Path(company):Path<String>,Json(body):Json<super::personal_source_info::PersonalLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_personal_source_info(&company,body).await?))}
+async fn test_copy_personal_source_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_personal_source_summary(&company).await?))}
 async fn test_copy_source_clients(State(state): S, Path(company): Path<String>, Query(page): Query<super::preserved_records::SourceClientPage>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_source_clients(&company,page).await?))
 }

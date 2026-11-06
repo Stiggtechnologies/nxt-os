@@ -23,6 +23,12 @@ fn encode<T: Serialize>(v: &T) -> Result<String> { serde_json::to_string(v).map_
 #[serde(deny_unknown_fields)]
 pub struct SourceFactBatch { pub test_copy: bool, pub records: Vec<Value> }
 
+/// Exact, bounded readback of already imported source records. This avoids
+/// enumerating a large global set once per verification page.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceFactLookup {pub test_copy:bool,pub kind:String,pub record_ids:Vec<String>}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceFactPage {
@@ -340,6 +346,28 @@ impl SourceImport {
             }
             records.push(record);
         }
+        if page.kind=="historical-lines" {self.attach_personal_source_info(company,&mut records).await?;}
         Ok(json!({"test_copy":true,"client_number":client,"kind":page.kind,"total":total,"offset":page.offset,"records":records,"tax_cases_imported":0,"live_cutover_allowed":false}))
+    }
+    pub async fn test_copy_read_source_facts(&self,company:&str,lookup:SourceFactLookup)->Result<Value> {
+        self.test_copy_guard(company,lookup.test_copy)?;
+        if lookup.record_ids.is_empty() || lookup.record_ids.len()>250 || lookup.record_ids.iter().any(|id|id.is_empty() || id.len()>180 || !id.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b) || b==b':')) {return Err(bad("Invalid source lookup identities or bound"))}
+        let record=match lookup.kind.as_str(){"family-files"=>"family_file","historical-lines"=>"historical_lines","afr-slips"=>"afr_occurrence",_=>return Err(bad("Unsupported source lookup kind"))};
+        let keys:Vec<_>=lookup.record_ids.iter().map(|id|k(company,&format!("{record}:{id}"))).collect();let rows=self.store.mget(&keys).await.map_err(|e|storage(&e))?;
+        if rows.len()!=keys.len(){return Err(storage("Source lookup cardinality differs"))}
+        let mut records=Vec::new();let mut response_bytes=0usize;
+        for (id,raw) in lookup.record_ids.iter().zip(rows) {
+            let raw=raw.ok_or_else(||super::missing("Requested preserved source record is absent"))?;
+            response_bytes+=raw.len();if response_bytes>3*1024*1024{return Err(bad("Source lookup response exceeds bound; request fewer identities"))}
+            let value:Value=serde_json::from_str(&raw).map_err(|_|storage("Stored source record unreadable"))?;
+            let expected=match lookup.kind.as_str(){
+                "family-files"=>{let v:FamilyFile=serde_json::from_value(value.clone()).map_err(|_|storage("Invalid family source"))?;check_family(&v).map_err(storage)?;format!("{}:{}:{}",v.family_file_id,v.tax_year,v.source_file_sha256)},
+                "historical-lines"=>{let v:HistoricalLines=serde_json::from_value(value.clone()).map_err(|_|storage("Invalid historical source"))?;check_lines(&v).map_err(storage)?;format!("{}:{}:{}",v.client_number,v.tax_year,v.archive_sha256)},
+                _=>{let v:AfrSlip=serde_json::from_value(value.clone()).map_err(|_|storage("Invalid CRA source"))?;check_afr(&v).map_err(storage)?;format!("{}:{}",v.archive_sha256,v.source_occurrence)},
+            };
+            if id!=&expected{return Err(storage("Source lookup record identity differs"))}
+            records.push(value);
+        }
+        Ok(json!({"test_copy":true,"source_scope":company,"kind":lookup.kind,"record_ids":lookup.record_ids,"records":records,"source_records_modified":0,"tax_cases_imported":0}))
     }
 }
