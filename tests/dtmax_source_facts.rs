@@ -24,7 +24,7 @@ async fn t1_source_worklist_uses_individual_years_and_search_without_creating_ca
     request(&app,"POST","historical-lines",json!({"test_copy":true,"records":[lines(2025),lines(2013)]})).await;
     let (status,page)=request(&app,"GET","source-clients?limit=100&year=2013&search=person",Value::Null).await;
     assert_eq!(status,200);assert_eq!(page["source_scope"],"source-fact-test");assert_eq!(page["program"],"T1");assert_eq!(page["total"],1);assert_eq!(page["tax_cases_created"],0);
-    assert_eq!(page["clients"][0]["client_number"],"100");assert_eq!(page["clients"][0]["historical_years"],json!([2013,2025]));assert_eq!(page["clients"][0]["pending_years"],json!([2013]));
+    assert_eq!(page["clients"][0]["client_number"],"100");assert_eq!(page["clients"][0]["historical_years"],json!([2013,2025]));assert_eq!(page["clients"][0]["pending_years"],json!([]));assert_eq!(page["clients"][0]["pending_years_at_import"],json!([2013]));
     let (status,hosted)=request(&app,"GET","source-clients?limit=100&year=2013&search=person&path=%2Fapi%2Fignored-rewrite",Value::Null).await;assert_eq!(status,200);assert_eq!(hosted,page);
     let (status,hosted)=request(&app,"GET","clients/100/source-facts?kind=historical-lines&offset=0&limit=100&path=%2Fapi%2Fother-company",Value::Null).await;assert_eq!(status,200);assert_eq!(hosted["client_number"],"100");assert_eq!(hosted["records"].as_array().unwrap().len(),2);
     assert_eq!(request(&app,"GET","clients/100/source-facts?kind=historical-lines&unexpected=1",Value::Null).await.0,400);
@@ -120,6 +120,20 @@ async fn refuses_false_mapping_guesses_unknown_fields_bad_hashes_and_conflicting
     let (_,r)=request(&app,"POST","historical-lines",json!({"test_copy":true,"records":[changed]})).await;assert_eq!(r["rejected"]["conflicting_historical_lines"],1);
 }
 #[tokio::test]
+async fn original_year_form_review_never_changes_amounts_or_upgrades_other_modules_and_years() {
+    let app=app();let mut records=vec![lines(2012),lines(2013),lines(2014),lines(2026)];let mut trust=lines(2014);trust["vendor_module"]=json!("T3");trust["mapping_state"]=json!("pending_module_verification");trust["archive_sha256"]=json!("b".repeat(64));records.push(trust);
+    request(&app,"POST","clients",json!({"test_copy":true,"clients":[{"client_number":"100","name":"Synthetic Person"}]})).await;
+    request(&app,"POST","historical-lines",json!({"test_copy":true,"records":records})).await;
+    let (_,summary)=request(&app,"GET","source-fact-summary",Value::Null).await;assert_eq!(summary["counts"]["historical_lines_pending"],5);assert_eq!(summary["historical_mapping_review"]["original_form_bindings_checked"],2);assert_eq!(summary["historical_mapping_review"]["remaining_pending"],3);
+    let (_,page)=request(&app,"GET","source-clients?limit=100",Value::Null).await;assert_eq!(page["clients"][0]["pending_years"],json!([2012,2014,2026]));assert_eq!(page["clients"][0]["pending_years_at_import"],json!([2012,2013,2014,2026]));
+    let (_,page)=request(&app,"GET","clients/100/source-facts?kind=historical-lines",Value::Null).await;
+    for r in page["records"].as_array().unwrap() {
+        let original=records.iter().find(|v|v["tax_year"]==r["tax_year"]&&v["archive_sha256"]==r["archive_sha256"]).unwrap();assert_eq!(r["values_cents"],original["values_cents"]);assert_eq!(r["mapping_state"],original["mapping_state"]);
+        if r["vendor_module"]=="T1" && [json!(2013),json!(2014)].contains(&r["tax_year"]) {assert_eq!(r["year_mapping_review"]["state"],"original_form_bindings_checked");assert_eq!(r["year_mapping_review"]["field_ids"]["15000"],150);assert_eq!(r["year_mapping_review"]["tax_figures_approved"],false);} else {assert!(r.get("year_mapping_review").is_none());}
+    }
+    let (_,replay)=request(&app,"POST","historical-lines",json!({"test_copy":true,"records":records})).await;assert_eq!(replay["unchanged_replays"],5);
+}
+#[tokio::test]
 async fn optional_private_source_package_loads_and_replays_with_exact_controls() {
     let Ok(root)=std::env::var("NXT_DTMAX_SOURCE_FACT_STAGING") else { return };
     let root=std::path::Path::new(&root);let manifest:Value=serde_json::from_slice(&std::fs::read(root.join("staging-summary.json")).unwrap()).unwrap();
@@ -141,4 +155,16 @@ async fn optional_private_source_package_loads_and_replays_with_exact_controls()
     }
     assert_eq!(summary["tax_cases_imported"],0);
     println!("SOURCE_FACT_ROWS_ACCEPTED={accepted}; SOURCE_FACT_CONTROLS={summary}");
+}
+#[tokio::test]
+async fn optional_private_pending_rows_keep_every_stored_byte_during_binding_review() {
+    let Ok(path)=std::env::var("NXT_DTMAX_PENDING_MAPPING_INPUTS")else{return};
+    let rows:Vec<Value>=serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();assert_eq!(rows.len(),2663);
+    let store=Store::memory();let service=nxt_os::source_import::SourceImport::new(store.clone());let company="private-binding-review";
+    for chunk in rows.chunks(1000) {let response=service.test_copy_historical_lines(company,nxt_os::source_import::preserved_records::SourceFactBatch{test_copy:true,records:chunk.to_vec()}).await.unwrap();assert!(response["rejected"].as_object().unwrap().is_empty());}
+    let mut originals=Vec::new();
+    for r in &rows {let key=format!("dtmaxtc:{company}:historical_lines:{}:{}:{}",r["client_number"].as_str().unwrap(),r["tax_year"].as_u64().unwrap(),r["archive_sha256"].as_str().unwrap());let raw=store.get(&key).await.unwrap().unwrap();originals.push((key,raw));}
+    let summary=service.test_copy_source_fact_summary(company).await.unwrap();assert_eq!(summary["counts"]["historical_lines_pending"],2663);assert_eq!(summary["historical_mapping_review"]["original_form_bindings_checked"],2499);assert_eq!(summary["historical_mapping_review"]["remaining_pending"],164);assert_eq!(summary["tax_cases_imported"],0);
+    for (key,raw) in originals {assert_eq!(store.get(&key).await.unwrap().as_deref(),Some(raw.as_str()));}
+    println!("PRIVATE_PENDING_ROWS_REVIEWED=2663; ORIGINAL_FORM_BINDINGS_CHECKED=2499; OTHER_PENDING=164; STORED_BYTES_CHANGED=0");
 }

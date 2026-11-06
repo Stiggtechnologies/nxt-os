@@ -119,3 +119,32 @@ In particular, EXA is opaque family/year auxiliary content and must not inherit
 the preceding EXC client's identity or plan. Its bytes remain inside the
 original wrapper without any semantic reassignment. The original archive and
 separately CRC-verified expanded payloads remain in the migration handoff.
+
+## Original 2013/2014 T1 form binding review
+
+Later offline review of installed `DT1WFO13`/`DT1WFO14` establishes the six E11
+semantic rows through both numeric DTFORM objects and independent DTFIELD
+records, with matching IDs and coordinates. Their package SHA-256 values are
+`9d7254fabd95f679025e3fc7e441304709f259fd7fbfc2425787a231fa3ed07e`
+and `412666ff325b72b66a7a60a50701bcde019357d9a6db991ac2bccaea85256b54`.
+The fields are 150, 236, 260, 420, 484 and 485 respectively; comparison columns
+have separate IDs. Annual-form content and explicit companion XML years
+corroborate the package/year association. This was a format-aware byte parser;
+REA does not support the proprietary KJD container. No vendor forms or code
+are application assets. The reviewer report pins resource/record offsets and
+digests; it does not claim independent runtime-loader/selector verification.
+
+Historical reads add `year_mapping_review` only to T1 2013/2014 rows. Every
+stored amount, null, original mapping classification and source record remains
+unchanged. Other years and modules cannot inherit this review. The UI says
+**Year-specific form bindings checked; source totals**; this does not approve
+the figures or imply they were recalculated. Client `pending_years` excludes
+these reviewed bindings while `pending_years_at_import` retains the original
+classification. A mixed-module year stays pending if any context is unresolved.
+
+Summary `counts.historical_lines_pending` retains the original import-index
+count for compatibility. `historical_mapping_review` reports the separately
+reviewed binding count and remaining pending count. Both are evidence of field
+mapping scope, not tax approval or full historical-runtime validation. Reads
+verify the pending bodies and exact identities in bounded 500-key chunks and
+fail explicitly on corrupt indexes or records.
