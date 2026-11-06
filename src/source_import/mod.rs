@@ -11,6 +11,7 @@ pub mod return_pdfs;
 pub mod source_exceptions;
 pub mod native_slip_views;
 pub mod native_slip_supplements;
+pub mod personal_source_info;
 pub mod legacy_owner_links;
 
 use crate::store::Store;
