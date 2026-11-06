@@ -60,6 +60,9 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-fact-summary", get(test_copy_source_fact_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-clients", get(test_copy_source_clients))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/source-facts", get(test_copy_client_source_facts))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/return-pdfs", post(test_copy_preserve_return_pdf))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/return-pdfs", get(test_copy_return_pdfs))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/return-pdfs/{year}/{sha}", get(test_copy_return_pdf_content))
         .layer(axum::extract::DefaultBodyLimit::max(super::files::MAX_FILE_BYTES * 2 + 64 * 1024))
         .layer(middleware::from_fn(client_scope))
         .layer(middleware::from_fn(crate::referral::routes::require_admin))
@@ -194,4 +197,13 @@ async fn test_copy_source_clients(State(state): S, Path(company): Path<String>, 
 }
 async fn test_copy_client_source_facts(State(state): S, Path((company,client)): Path<(String,String)>, Query(page): Query<super::preserved_records::SourceFactPage>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_client_source_facts(&company,&client,page).await?))
+}
+async fn test_copy_preserve_return_pdf(State(state): S, Path(company): Path<String>, Json(body): Json<super::return_pdfs::ReturnPdfInput>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_preserve_return_pdf(&company,body).await?))
+}
+async fn test_copy_return_pdfs(State(state): S, Path((company,client)): Path<(String,String)>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_return_pdfs(&company,&client).await?))
+}
+async fn test_copy_return_pdf_content(State(state): S, Path((company,client,year,sha)): Path<(String,String,u16,String)>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_return_pdf_content(&company,&client,year,&sha).await?))
 }

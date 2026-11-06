@@ -7,6 +7,7 @@
   const main = $("#main"), API = "/api/tax";
   const state = { catalog: null, program: "", year: "", returns: [], record: null, draft: null, section: "", dirty: false, errors: {}, search: "", status: "", preview: null, audit: [], version: 0 };
   const request = (path, options) => api(API + path, options);
+  let sourceWorkspace=null;
   const list = value => Array.isArray(value) ? value : [];
   const clone = value => structuredClone(value);
   const pid = value => encodeURIComponent(value);
@@ -35,6 +36,7 @@
 
   function page(version, title, sub, actions, body) {
     if (version !== state.version) return;
+    sourceWorkspace?.dispose();sourceWorkspace=null;
     main.classList.remove("workspace-mode");
     main.innerHTML = `<div class="page-head"><div><div class="eyebrow">NXT Tax</div><h1>${esc(title)}</h1><p>${esc(sub)}</p></div><div class="row no-print">${actions || ""}</div></div>${body}`;
   }
@@ -92,7 +94,7 @@
   function renderWorkRows() {
     const host = $("#return-table"); if (!host) return;
     const sourceHost=$("#dtmax-t1-source");
-    if(sourceHost){const visible=!state.program||state.program.toLowerCase()==='t1';sourceHost.hidden=!visible;if(!visible){sourceHost.innerHTML='';delete sourceHost.dataset.importVersion;}else if(sourceHost.dataset.importVersion!==String(state.version)&&window.NXTDTMaxT1){sourceHost.dataset.importVersion=String(state.version);const version=state.version;NXTDTMaxT1.mount(sourceHost,{request:api,isCurrent:()=>version===state.version&&(!state.program||state.program.toLowerCase()==='t1')});}}
+    if(sourceHost){const visible=!state.program||state.program.toLowerCase()==='t1';sourceHost.hidden=!visible;if(!visible){sourceWorkspace?.dispose();sourceWorkspace=null;sourceHost.innerHTML='';delete sourceHost.dataset.importVersion;}else if(sourceHost.dataset.importVersion!==String(state.version)&&window.NXTDTMaxT1){sourceWorkspace?.dispose();sourceHost.dataset.importVersion=String(state.version);const version=state.version;sourceWorkspace=NXTDTMaxT1.mount(sourceHost,{request:api,isCurrent:()=>version===state.version&&(!state.program||state.program.toLowerCase()==='t1')});}}
     const records = state.returns.filter(r => (!window.NXTCompany || NXTCompany.inScope(r.client_ref)) && (!state.program || r.program.toLowerCase() === state.program.toLowerCase()) && (!state.year || String(r.tax_year) === String(state.year)) && (!state.status || r.status === state.status) && (!state.search || `${r.name} ${r.client_ref || ""}`.toLowerCase().includes(state.search.toLowerCase())));
     host.innerHTML = table(["Name / reference", "Program", "Year", "Jurisdiction", "Status", "Calculation", "Updated", ""], records, r => `<tr><td class="return-name"><strong>${esc(r.name)}</strong><div class="muted">${esc(r.client_ref || "No client reference")}</div></td><td>${esc(r.program.toUpperCase())}</td><td>${Number(r.tax_year)}</td><td>${esc(r.jurisdiction)}</td><td>${badge(r.status)}</td><td>${r.calculation ? badge(r.calculation.result?.supported ? "good" : "warning", r.calculation.input_revision === r.input_revision ? "Calculated" : "Needs recalculation") : '<span class="muted">Not calculated</span>'}</td><td>${esc(stamp(r.updated_at))}</td><td>${button("Open", "open-return", r.id, "sm")}</td></tr>`, state.returns.length ? "No matching workpapers" : "Create your first tax workpaper");
   }

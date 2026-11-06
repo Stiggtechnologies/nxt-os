@@ -7,6 +7,7 @@ mod lanes;
 mod routes;
 pub mod test_copy;
 pub mod preserved_records;
+pub mod return_pdfs;
 
 use crate::store::Store;
 use axum::http::StatusCode;

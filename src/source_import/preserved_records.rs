@@ -40,6 +40,10 @@ pub struct SourceClientPage {
     #[serde(default = "page_limit")] pub limit: usize,
     #[serde(default)] pub search: String,
     pub year: Option<u16>,
+    pub sort: Option<String>,
+    pub direction: Option<String>,
+    pub status: Option<String>,
+    pub province: Option<String>,
     #[serde(default,rename="path")] pub _routing_path: Option<String>,
 }
 
@@ -148,7 +152,8 @@ impl SourceImport {
     /// historical facts rather than legacy physical-file stems.
     pub async fn test_copy_source_clients(&self, company: &str, page: SourceClientPage) -> Result<Value> {
         self.test_copy_guard(company,true)?;
-        if page.limit==0 || page.limit>100 || page.search.chars().count()>100 || page.year.is_some_and(|y| !year(y)) { return Err(bad("Invalid source client filter")) }
+        let sort=page.sort.as_deref().unwrap_or("client_number");let direction=page.direction.as_deref().unwrap_or("asc");
+        if page.limit==0 || page.limit>100 || page.search.chars().count()>100 || page.year.is_some_and(|y| !year(y)) || !["client_number","name","processing_status"].contains(&sort) || !["asc","desc"].contains(&direction) || page.status.as_ref().is_some_and(|s|s.len()>80) || page.province.as_ref().is_some_and(|s|s.len()>40) { return Err(bad("Invalid source client filter")) }
         let mut years: BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
         let mut pending: BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
         for (index,target) in [("historical_lines",&mut years),("historical_lines_pending",&mut pending)] {
@@ -162,20 +167,31 @@ impl SourceImport {
         let available: BTreeSet<u16>=years.values().flat_map(|v|v.iter().copied()).collect();
         let mut numbers=self.store.smembers(&k(company,"clients")).await.map_err(|e| storage(&e))?;
         numbers.sort_by(|a,b|(a.len(),a).cmp(&(b.len(),b)));
-        let needle=page.search.trim().to_lowercase();let mut clients=Vec::new();
+        let needle=page.search.trim().to_lowercase();let mut clients=Vec::new();let mut statuses=BTreeSet::new();let mut provinces=BTreeSet::new();
         for chunk in numbers.chunks(500) {
             let keys:Vec<_>=chunk.iter().map(|n|k(company,&format!("client:{n}"))).collect();
             for (number,raw) in chunk.iter().zip(self.store.mget(&keys).await.map_err(|e| storage(&e))?) {
                 let raw=raw.ok_or_else(|| storage("client index points to missing record"))?;
                 let client:Value=serde_json::from_str(&raw).map_err(|_|storage("stored client unreadable"))?;
                 let name=client["name"].as_str().ok_or_else(||storage("stored client name missing"))?;
+                let status=client["processing_status"].as_str().unwrap_or("");let province=client["province"].as_str().unwrap_or("");
+                if !status.is_empty(){statuses.insert(status.to_string());}if !province.is_empty(){provinces.insert(province.to_string());}
                 let historical=years.get(number).cloned().unwrap_or_default();
-                if page.year.is_some_and(|y|!historical.contains(&y)) || !format!("{number} {name}").to_lowercase().contains(&needle) { continue }
-                clients.push(json!({"client_number":number,"name":name,"historical_years":historical,"pending_years":pending.get(number).cloned().unwrap_or_default()}));
+                if page.year.is_some_and(|y|!historical.contains(&y)) || !format!("{number} {name}").to_lowercase().contains(&needle) || page.status.as_ref().is_some_and(|s|s!=status) || page.province.as_ref().is_some_and(|s|s!=province) { continue }
+                let mut profile=serde_json::Map::new();
+                for field in ["processing_status","email","home_phone","work_phone","cell_phone","street","city","postal_code","province","country"] {
+                    if let Some(value)=client.get(field).and_then(Value::as_str) { profile.insert(field.into(),json!(value)); }
+                }
+                clients.push(json!({"client_number":number,"name":name,"historical_years":historical,"pending_years":pending.get(number).cloned().unwrap_or_default(),"source_profile":profile}));
             }
         }
+        clients.sort_by(|a,b|{
+            let id=|v:&Value|v["client_number"].as_str().unwrap_or("").to_string();let ai=id(a);let bi=id(b);let tie=(ai.len(),&ai).cmp(&(bi.len(),&bi));
+            let order=match sort {"name"=>a["name"].as_str().unwrap_or("").to_lowercase().cmp(&b["name"].as_str().unwrap_or("").to_lowercase()).then(tie),"processing_status"=>a["source_profile"]["processing_status"].as_str().unwrap_or("").cmp(b["source_profile"]["processing_status"].as_str().unwrap_or("")).then(tie),_=>tie};
+            if direction=="desc"{order.reverse()}else{order}
+        });
         let total=clients.len();let clients:Vec<_>=clients.into_iter().skip(page.offset).take(page.limit).collect();
-        Ok(json!({"source_scope":company,"program":"T1","imported_source_only":true,"total":total,"offset":page.offset,"limit":page.limit,"available_years":available,"clients":clients,"tax_cases_created":0}))
+        Ok(json!({"source_scope":company,"program":"T1","imported_source_only":true,"total":total,"offset":page.offset,"limit":page.limit,"available_years":available,"available_statuses":statuses,"available_provinces":provinces,"clients":clients,"tax_cases_created":0}))
     }
     // Claim immutable facts atomically. A matching retry must still repair every
     // derived index: an earlier request may have stopped after storing the body.

@@ -33,6 +33,21 @@ async fn t1_source_worklist_uses_individual_years_and_search_without_creating_ca
     assert_eq!(request(&app,"GET","source-clients?limit=101",Value::Null).await.0,400);
 }
 #[tokio::test]
+async fn source_client_filters_and_sort_apply_before_pagination() {
+    let app=app();
+    request(&app,"POST","clients",json!({"test_copy":true,"clients":[
+        {"client_number":"10","name":"Zulu Synthetic","province":"AB","processing_status":"Ready to print"},
+        {"client_number":"2","name":"Alpha Synthetic","province":"BC","processing_status":"In progress"},
+        {"client_number":"30","name":"Beta Synthetic","province":"AB","processing_status":"Ready to print"}]})).await;
+    let (status,p)=request(&app,"GET","source-clients?sort=name&limit=1&offset=1",Value::Null).await;
+    assert_eq!(status,200);assert_eq!(p["total"],3);assert_eq!(p["clients"][0]["client_number"],"30");
+    let (_,p)=request(&app,"GET","source-clients?sort=name&direction=desc&province=AB&status=Ready%20to%20print&limit=1",Value::Null).await;
+    assert_eq!(p["total"],2);assert_eq!(p["clients"][0]["client_number"],"10");assert_eq!(p["available_provinces"],json!(["AB","BC"]));
+    assert_eq!(p["clients"][0]["source_profile"]["processing_status"],"Ready to print");
+    assert_eq!(request(&app,"GET","source-clients?sort=sin",Value::Null).await.0,400);
+    assert_eq!(request(&app,"GET","source-clients?direction=random",Value::Null).await.0,400);
+}
+#[tokio::test]
 async fn conflicting_concurrent_source_facts_cannot_overwrite_the_winner() {
     let app=app();let original=lines(2025);let mut changed=original.clone();changed["values_cents"]["15000"]=json!("1");
     let (a,b)=tokio::join!(

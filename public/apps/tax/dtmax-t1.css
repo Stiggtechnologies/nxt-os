@@ -1,0 +1,131 @@
+/* NXT source workspace: familiar DT Max workspaces in the NXT visual language. */
+.dtmax-workspace {
+  --dtmax-ink: #202833;
+  --dtmax-muted: #586575;
+  --dtmax-line: #dce3eb;
+  --dtmax-surface: #f6f8fb;
+  --dtmax-active: #fff4d8;
+  --dtmax-accent: #fdaf17;
+  margin: 0 0 24px;
+  overflow: hidden;
+  border: 1px solid var(--dtmax-line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--dtmax-ink);
+  font: 13px/1.55 var(--ui, system-ui, -apple-system, "Segoe UI", sans-serif);
+  box-shadow: 0 3px 14px #20304706;
+}
+.dtmax-workspace *, .dtmax-workspace *::before, .dtmax-workspace *::after { box-sizing: border-box; }
+.dtmax-workspace button, .dtmax-workspace input, .dtmax-workspace select { font: inherit; }
+.dtmax-workspace button { transition: background-color .12s ease, border-color .12s ease; }
+.dtmax-workspace button:disabled { opacity: .48; cursor: default; }
+.dtmax-workspace :is(button, a, input, select, summary):focus-visible { outline: 3px solid #2165a8; outline-offset: 2px; }
+.dtmax-workspace a { color: #315e93; text-underline-offset: 3px; }
+.dtmax-caption { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px 13px; }
+.dtmax-caption h2 { margin: 0; color: #111923; font: 600 16px/1.4 var(--ui, system-ui, sans-serif); letter-spacing: -.25px; }
+.dtmax-caption span { padding: 4px 9px; border: 1px solid var(--dtmax-line); border-radius: 20px; background: var(--dtmax-surface); color: var(--dtmax-muted); font-size: 11px; white-space: nowrap; }
+.dtmax-tabs { display: flex; align-items: stretch; gap: 8px; padding: 0 20px; border-bottom: 1px solid var(--dtmax-line); background: #fff; }
+.dtmax-tabs button { min-height: 46px; border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: 9px 12px; background: transparent; color: var(--dtmax-muted); cursor: pointer; font-weight: 500; white-space: nowrap; }
+.dtmax-tabs button:hover:not(:disabled) { background: var(--dtmax-surface); color: #162333; }
+.dtmax-tabs button[aria-selected=true] { border-bottom-color: var(--dtmax-accent); color: #111923; font-weight: 600; }
+.dtmax-tabs kbd { margin-left: 9px; border: 1px solid #d9e0e7; border-radius: 4px; background: #f7f9fb; padding: 1px 5px; color: #5b6878; font: 10px/1.4 var(--ui, system-ui, sans-serif); }
+.dtmax-tabs .dtmax-module { align-self: center; margin-left: auto; padding: 3px 9px; border-radius: 5px; background: #17212e; color: #fff; font-size: 12px; font-weight: 600; letter-spacing: .4px; }
+.dtmax-notice { margin: 0; border-bottom: 1px solid var(--dtmax-line); padding: 9px 20px; background: #f8fafc; color: var(--dtmax-muted); font-size: 11px; line-height: 1.65; }
+.dtmax-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 15px 20px; border-bottom: 1px solid var(--dtmax-line); background: #fff; }
+.dtmax-toolbar label, .dtmax-keyword-pane label, .dtmax-page-index label { display: flex; flex-direction: column; gap: 5px; color: #465465; font-size: 11px; font-weight: 500; }
+.dtmax-workspace input, .dtmax-workspace select { min-height: 36px; border: 1px solid #bfcbd9; border-radius: 6px; padding: 7px 10px; background: #fff; color: var(--dtmax-ink); font-size: 12px; }
+.dtmax-toolbar input { width: 285px; max-width: 100%; }
+.dtmax-toolbar select { min-width: 145px; }
+.dtmax-toolbar button, .dtmax-footer button, .dtmax-action, .dtmax-error button { min-height: 36px; border: 1px solid #becada; border-radius: 6px; padding: 6px 13px; background: #fff; color: #24384f; cursor: pointer; font-size: 12px; font-weight: 500; }
+.dtmax-toolbar button[type=submit] { border-color: #efa10d; background: var(--dtmax-accent); color: #211800; }
+.dtmax-toolbar button:hover:not(:disabled), .dtmax-footer button:hover:not(:disabled), .dtmax-action:hover:not(:disabled), .dtmax-error button:hover:not(:disabled) { border-color: #7c94b0; background: #eef3f8; }
+.dtmax-toolbar button[type=submit]:hover { border-color: #dd9408; background: #f4a40e; }
+.dtmax-grid { max-height: 520px; min-height: 240px; overflow: auto; background: #fff; scrollbar-color: #bec9d5 #f4f6f9; }
+.dtmax-grid table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; line-height: 1.5; }
+.dtmax-grid th { position: sticky; top: 0; z-index: 2; padding: 10px 12px; border: 0; border-bottom: 1px solid #cfd9e4; background: #f2f5f9; color: #48576a; text-align: left; font-size: 10px; font-weight: 600; letter-spacing: .35px; text-transform: uppercase; white-space: nowrap; }
+.dtmax-grid td { padding: 8px 12px; border: 0; border-bottom: 1px solid #e8edf3; vertical-align: middle; font-variant-numeric: tabular-nums; }
+.dtmax-grid tbody tr:nth-child(even) { background: #fbfcfe; }
+.dtmax-grid tbody tr:hover { background: #f0f5fb; }
+.dtmax-grid tr[data-selected=true], .dtmax-grid tr[data-selected=true]:hover { background: #e9f1fc; box-shadow: inset 3px 0 #315f99; }
+.dtmax-grid td:first-child { color: #536276; white-space: nowrap; }
+.dtmax-grid .dtmax-name { min-height: 30px; border: 0; border-radius: 4px; padding: 2px 0; background: none; color: #223e61; text-align: left; font-weight: 600; cursor: pointer; }
+.dtmax-grid .dtmax-name:hover { color: #164c8d; text-decoration: underline; text-underline-offset: 3px; }
+.dtmax-grid .dtmax-years { min-width: 170px; max-width: 350px; font-size: 11px; line-height: 1.7; }
+.dtmax-grid td small { display: block; margin-top: 3px; color: #795400; font-size: 10px; }
+.dtmax-missing { color: #697484; font-size: 11px; font-weight: 400; }
+.dtmax-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 20px; border-top: 1px solid var(--dtmax-line); background: #fafbfd; color: var(--dtmax-muted); font-size: 12px; }
+.dtmax-footer p { margin: 0; font-variant-numeric: tabular-nums; }
+.dtmax-footer .dtmax-page-controls { display: flex; gap: 7px; }
+.dtmax-client-head { padding: 16px 20px 12px; border-bottom: 1px solid var(--dtmax-line); background: #fbfcfe; color: #172435; font-size: 14px; font-weight: 600; }
+.dtmax-client-head small { display: block; margin-top: 4px; color: var(--dtmax-muted); font-size: 11px; font-weight: 400; }
+.dtmax-entry { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 460px; background: #f5f7fa; }
+.dtmax-keyword-pane { min-width: 0; max-height: 690px; overflow: auto; padding: 18px; scrollbar-color: #bec9d5 #f4f6f9; }
+.dtmax-keyword-pane + .dtmax-keyword-pane { border-left: 1px solid #d6e0eb; }
+.dtmax-keyword-pane h3 { margin: 0; border: 1px solid #d9e2ec; border-radius: 7px 7px 0 0; padding: 10px 12px; background: #eef3f9; color: #2e425b; font-size: 12px; font-weight: 600; }
+.dtmax-keyword-pane dl { display: grid; grid-template-columns: minmax(120px, .8fr) minmax(140px, 1.2fr); gap: 0; margin: 0 0 18px; border: 1px solid #d9e2ec; border-top: 0; border-radius: 0 0 7px 7px; background: #fff; overflow: hidden; }
+.dtmax-keyword-pane dt, .dtmax-keyword-pane dd { min-width: 0; border-bottom: 1px solid #e8edf3; padding: 8px 12px; overflow-wrap: anywhere; }
+.dtmax-keyword-pane dt { margin: 0; color: #465569; font-size: 11px; font-weight: 500; }
+.dtmax-keyword-pane dd { min-height: 34px; margin: 0; background: #f5f9fe; color: #243c59; font-size: 12px; font-variant-numeric: tabular-nums; }
+.dtmax-keyword-pane dt:nth-last-child(2), .dtmax-keyword-pane dd:last-child { border-bottom: 0; }
+.dtmax-keyword-pane label { margin-bottom: 14px; }
+.dtmax-keyword-pane label select { width: 100%; max-width: 240px; }
+.dtmax-keyword-pane details { margin: 8px 0; border: 1px solid var(--dtmax-line); border-radius: 7px; padding: 10px 12px; background: #fff; }
+.dtmax-keyword-pane summary { color: #2d4d74; font-weight: 500; cursor: pointer; }
+.dtmax-keyword-pane details ul { padding-left: 20px; overflow-wrap: anywhere; }
+.dtmax-entry .dtmax-keyword-pane p { margin: 10px 0 16px; color: var(--dtmax-muted); font-size: 11px; line-height: 1.75; }
+.dtmax-workspace .table-wrap { max-width: 100%; margin: 0 0 14px; padding: 0; overflow: auto; border: 1px solid var(--dtmax-line); border-radius: 7px; background: #fff; }
+.dtmax-workspace .table-wrap table { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+.dtmax-workspace .table-wrap th { padding: 9px; background: #edf3f9; color: #475c76; font-size: 10px; text-align: left; }
+.dtmax-workspace .table-wrap td { padding: 9px; border-bottom: 1px solid #e6ecf3; white-space: nowrap; }
+.dtmax-fact-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.dtmax-fact-nav button { min-height: 34px; border: 1px solid #c8d3e0; border-radius: 6px; padding: 6px 10px; background: #fff; color: #486079; font-size: 11px; cursor: pointer; }
+.dtmax-fact-nav button:hover { border-color: #7f98b7; background: #eef4fb; }
+.dtmax-fact-nav button[aria-pressed=true] { border-color: #d3ae60; background: var(--dtmax-active); color: #654300; font-weight: 600; }
+.dtmax-return { display: grid; grid-template-columns: 250px minmax(0, 1fr); height: 720px; min-height: 430px; background: #e6ecf3; }
+.dtmax-page-index { overflow: auto; border-right: 1px solid #cfdae6; padding: 16px 12px; background: #f8fafc; scrollbar-color: #bec9d5 #f4f6f9; }
+.dtmax-page-index h3 { margin: 0 0 14px; padding: 0 4px; color: #26394f; font-size: 12px; font-weight: 600; }
+.dtmax-page-index button { display: block; width: 100%; min-height: 35px; margin: 3px 0; border: 1px solid transparent; border-radius: 5px; padding: 7px 9px; background: transparent; color: #4b5d73; text-align: left; line-height: 1.45; font-size: 11px; cursor: pointer; }
+.dtmax-page-index button:hover { background: #eaf0f8; }
+.dtmax-page-index button[aria-current=page] { border-color: #e9cf93; background: var(--dtmax-active); color: #604200; font-weight: 600; box-shadow: inset 3px 0 var(--dtmax-accent); }
+.dtmax-page-index label { margin: 0 0 16px; padding: 0 4px; }
+.dtmax-page-index select { width: 100%; min-width: 0; padding: 7px 5px; font-size: 11px; }
+.dtmax-pdf-canvas { display: flex; flex-direction: column; min-width: 0; overflow: auto; padding: 16px; }
+.dtmax-pdf-canvas iframe { width: 100%; flex: 1; min-height: 540px; border: 1px solid #cbd6e2; border-top: 0; border-radius: 0 0 7px 7px; background: #fff; box-shadow: 0 4px 15px #263a5010; }
+.dtmax-pdf-canvas .dtmax-pdf-message { width: 100%; max-width: 610px; margin: 28px auto; border: 1px solid #d2dce7; border-radius: 10px; padding: 27px; background: #fff; color: #546377; line-height: 1.75; box-shadow: 0 4px 15px #263a5008; }
+.dtmax-pdf-message h3 { margin: 0 0 10px; color: #27394f; font-size: 16px; font-weight: 600; }
+.dtmax-pdf-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #cbd6e2; border-radius: 7px 7px 0 0; padding: 10px 13px; background: #fff; }
+.dtmax-pdf-tools p { margin: 0; color: #526276; font-size: 11px; font-variant-numeric: tabular-nums; }
+.dtmax-pdf-tools a { color: #295889; font-size: 11px; font-weight: 500; }
+.dtmax-error { border: 1px solid #e9cfa1; border-radius: 8px; padding: 20px; background: #fffbf3; color: #694c24; }
+.dtmax-error p { line-height: 1.7; }
+.dtmax-hidden { display: none !important; }
+@media (max-width: 1000px) {
+  .dtmax-tabs { padding: 0 12px; }
+  .dtmax-grid .dtmax-years { max-width: 220px; }
+  .dtmax-return { grid-template-columns: 210px minmax(0, 1fr); }
+  .dtmax-keyword-pane { padding: 12px; }
+  .dtmax-keyword-pane dl { grid-template-columns: minmax(100px, .8fr) minmax(110px, 1.2fr); }
+}
+@media (max-width: 760px) {
+  .dtmax-caption { align-items: start; flex-direction: column; gap: 8px; padding: 15px; }
+  .dtmax-tabs { gap: 0; padding: 0 7px; }
+  .dtmax-tabs button { min-height: 44px; padding: 9px; font-size: 12px; }
+  .dtmax-tabs kbd { display: none; }
+  .dtmax-tabs .dtmax-module { padding: 2px 6px; font-size: 10px; }
+  .dtmax-notice { padding: 9px 15px; }
+  .dtmax-toolbar { gap: 10px; padding: 13px 15px; }
+  .dtmax-toolbar input { width: 235px; }
+  .dtmax-toolbar select { min-width: 120px; }
+  .dtmax-footer { flex-wrap: wrap; padding: 10px 15px; }
+  .dtmax-client-head { padding: 14px 15px; }
+  .dtmax-entry { grid-template-columns: 1fr; }
+  .dtmax-keyword-pane { max-height: none; padding: 15px; }
+  .dtmax-keyword-pane + .dtmax-keyword-pane { border-left: 0; border-top: 1px solid #d6e0eb; }
+  .dtmax-return { grid-template-columns: 165px minmax(0, 1fr); height: 650px; }
+  .dtmax-page-index { padding: 12px 6px; }
+  .dtmax-pdf-canvas { padding: 10px; }
+  .dtmax-pdf-tools { align-items: start; flex-direction: column; gap: 6px; }
+  .dtmax-pdf-canvas .dtmax-pdf-message { margin: 12px 0; padding: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .dtmax-workspace button { transition: none; } }
+@media print { .dtmax-workspace { display: none; } }

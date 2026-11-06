@@ -40,6 +40,37 @@ test('T1 list opens the selected client source totals and encodes global source 
   assert.ok(h.requests.every(p=>p.startsWith('/api/source-imports/dtmax/companies/dtmax-test-copy/test-copy/')));
 });
 test('another client record cannot display under the selected imported T1',async()=>{
-  const h=harness('200');await h.controller.ready;await h.buttons[0].onclick();const html=h.node('[data-dtmax-details]').innerHTML;
+  const h=harness('200');await h.controller.ready;await h.buttons[0].onclick();const html=h.host.innerHTML+h.node('[data-dtmax-details]').innerHTML;
   assert.ok(html.includes('role="alert"'));assert.ok(!html.includes('$123.45'));
+});
+
+test('source workspace has the three observed views, preserves missing identity and labels roster provenance',async()=>{
+  const h=harness();await h.controller.ready;
+  for(const label of ['Client list','Data entry','Tax return','F10','F2','F9'])assert.ok(h.host.innerHTML.includes(label));
+  await h.buttons[0].onclick();assert.ok(h.host.innerHTML.includes('dtmax-entry'));assert.ok(h.host.innerHTML.includes('Not imported'));assert.ok(h.host.innerHTML.includes('client-list snapshot'));
+  assert.ok(!h.host.innerHTML.includes('<input name="SIN"'));assert.ok(h.host.innerHTML.includes('$123.45'));
+  await h.controller.show('list');assert.ok(h.host.innerHTML.includes('dtmax-grid'));
+  h.host.onkeydown({key:'F2',target:{tagName:'INPUT'},preventDefault(){throw Error('Must not intercept typing');}});
+});
+test('PDF metadata refuses another client, mismatched page count and oversized content',()=>{
+  const pdf={client_number:'100',tax_year:2024,sha256:'a'.repeat(64),bytes:100,page_labels:['T1 Federal p1'],page_count:1,original_print_output:true,immutable:true};
+  api.validatePdf(pdf,'100');
+  for(const mutate of [p=>p.client_number='200',p=>p.page_count=2,p=>p.bytes=2097153,p=>p.page_labels=['<script>\n'],p=>p.immutable=false]){const p={...pdf};mutate(p);assert.throws(()=>api.validatePdf(p,'100'));}
+});
+test('disposal prevents pending source requests from painting the workspace',async()=>{
+  let resolve;const pending=new Promise(r=>resolve=r),host={isConnected:true,innerHTML:'',querySelector:()=>null};
+  const c=api.mount(host,{request:()=>pending});c.dispose();host.innerHTML='Different page';resolve(page());await c.ready;assert.equal(host.innerHTML,'Different page');assert.equal(host.onkeydown,null);
+});
+test('client sorting, status and province stay global request filters; keyword search keeps familiar shortcut',async()=>{
+  const h=harness();await h.controller.ready;
+  for(const [field,value] of [['sort','name'],['direction','desc'],['status','Ready & reviewed'],['province','AB']])h.node('[name='+field+']').value=value;
+  await h.node('[data-dtmax-search]').onsubmit({preventDefault(){}});
+  assert.ok(h.requests.at(-1).includes('sort=name&direction=desc&status=Ready%20%26%20reviewed&province=AB'));
+  await h.buttons[0].onclick();
+  let prevented=false;h.host.onkeydown({altKey:true,key:'F7',target:{tagName:'BUTTON'},preventDefault(){prevented=true;}});assert.equal(prevented,true);
+  assert.ok(h.host.innerHTML.includes('data-dtmax-keyword="15000'));
+});
+test('family navigation exposes only exact numeric client identities',()=>{
+  const h=api.recordsHtml('family-files',[{family_file_id:'999',tax_year:2024,member_client_numbers:['100','200']}]);assert.ok(h.includes('data-family-client="200"'));
+  assert.throws(()=>api.recordsHtml('family-files',[{family_file_id:'999',tax_year:2024,member_client_numbers:['<img>']}]));
 });
