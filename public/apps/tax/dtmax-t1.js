@@ -51,9 +51,23 @@
     const hash=v=>typeof v==='string'&&/^[0-9a-f]{64}$/.test(v),profile='4bb64f7185d758cc4a1ccacd3a62b6a00b9656d320ca7412b9fe2598d68d69fc';
     return '<p>Raw financial source fields. Source return year is not an inferred slip year. Allocations and duplicate removal have not been applied.</p>'+records.map(r=>{
       if(!r||!/^\d{1,12}$/.test(r.client_number)||!/^\d{1,12}$/.test(r.family_file_id)||!Number.isInteger(r.source_return_year)||r.source_return_year<1990||r.source_return_year>2100||!['T1','T3'].includes(r.vendor_module)||typeof r.vendor_slip_kind!=='string'||!integer(r.vendor_slip_ordinal)||!integer(r.source_view_number)||r.source_view_number===0||typeof r.from_data_segment!=='boolean'||![r.source_archive_sha256,r.source_view_file_sha256,r.source_view_line_sha256].every(hash)||r.financial_profile_sha256!==profile||!r.field_labels||!Array.isArray(r.financial_fields)||!integer(r.original_field_count)||r.financial_fields.length>512||r.financial_fields.length>r.original_field_count||r.economic_slip_uniqueness_verified!==false||r.normalized_tax_slip_created!==false||r.taxpayer_allocations_applied!==false||r.financial_values_approved!==false)throw Error('Native slip source profile did not match');
+      const extra=r.additional_financial_fields??[];
+      if(!Array.isArray(extra)||extra.length>512||extra.length&&(r.supplemental_profile_sha256!=='17b49048f15e6bac3b0feee2aad55b4b9879716eadb34805c4ad00e8ec06667d'||r.vendor_module!=='T1'||r.source_return_year<2015||r.source_return_year>2024))throw Error('Additional source profile did not match');
+      if(r.financial_fields.length+extra.length>r.original_field_count||r.financial_fields.some((f,i)=>!f||i>0&&r.financial_fields[i-1].source_field_index>=f.source_field_index))throw Error('Original source field order did not match');
+      let extraPrevious=-1;
+      for(const f of extra){if(!f||!integer(f.source_field_index)||f.source_field_index<=extraPrevious||r.financial_fields.some(core=>core.source_field_index===f.source_field_index||core.field_id===f.field_id)||f.source_type_tag!==4||f.value?.kind!=='text'||typeof f.value.text!=='string'||!f.value.text.trim())throw Error('Additional source fields overlap or have an inactive value');extraPrevious=f.source_field_index;}
+      function reviewedLabel(review,f){
+        if(review===undefined)return null;
+        if(review?.authority_matrix_sha256!=='e20addca37d6105dfa1fb45b12c136a436c40d40d7bd0b27a94101a9e298345d'||review.source_return_year!==r.source_return_year||review.box_assignment_approved!==false||review.normalization_approved!==false||!review.field_bindings)throw Error('Historical source review did not match');
+        if(Object.keys(review.field_bindings).length&&(r.vendor_module!=='T1'||r.source_return_year<2015||r.source_return_year>2024))throw Error('Historical source review is outside its verified years');
+        const b=review.field_bindings[f.field_id];if(b===undefined)return null;
+        if(!Array.isArray(b.possible_labels)||!b.possible_labels.length||b.possible_labels.some(s=>typeof s!=='string'||s.length>1000)||b.selector_review_required!==true||b.box_assignment_approved!==false||b.normalization_approved!==false)throw Error('Historical source label did not match');
+        return b.possible_labels.join(' / ')+' · Conversion selection needs review';
+      }
       let previous=-1;
-      const body=r.financial_fields.map(f=>{
-        if(!f||!integer(f.field_id)||!integer(f.source_field_index)||f.source_field_index<=previous||f.source_field_index>=r.original_field_count||!Number.isInteger(f.source_type_tag)||f.source_type_tag<0||f.source_type_tag>255||typeof r.field_labels[f.field_id]!=='string'||!f.value)throw Error('Native financial field order or profile did not match');
+      const body=[...r.financial_fields,...extra].sort((a,b)=>a.source_field_index-b.source_field_index).map(f=>{
+        const additional=extra.includes(f);
+        if(!f||!integer(f.field_id)||!integer(f.source_field_index)||f.source_field_index<=previous||f.source_field_index>=r.original_field_count||!Number.isInteger(f.source_type_tag)||f.source_type_tag<0||f.source_type_tag>255||!additional&&typeof r.field_labels[f.field_id]!=='string'||!f.value)throw Error('Native financial field order or profile did not match');
         previous=f.source_field_index;const v=f.value;let display;
         if(v.kind==='text'&&![2,6,8,11].includes(f.source_type_tag)&&(v.text===null||typeof v.text==='string'&&v.text.length<=4096))display=v.text===null||!v.text.trim()?'<span class="dtmax-missing">Present, blank</span>':'<span class="dtmax-source-value">'+esc(v.text)+'</span>';
         else if(v.kind==='integer'&&[8,11].includes(f.source_type_tag)&&Number.isInteger(v.value)&&v.value>=-2147483648&&v.value<=2147483647&&(f.source_type_tag!==8||v.value>=-32768&&v.value<=32767))display=esc(v.value);
@@ -61,8 +75,10 @@
         else if(v.kind==='float32'&&f.source_type_tag===2&&/^[0-9a-f]{8}$/.test(v.bits_hex))display='<span class="dtmax-missing">Numeric format review needed</span>';
         else if(v.kind==='held'&&hash(v.source_field_sha256))display='<span class="dtmax-missing">Unparsed; original source retained</span>';
         else throw Error('Native value does not match its active type');
-        const label=r.source_return_year===2025&&r.vendor_module==='T1'?r.field_labels[f.field_id]:'Historical box binding pending';
-        return '<tr><th scope="row">'+esc(label)+'<small>Source field '+f.field_id+'</small></th><td>'+display+'</td></tr>';
+        const yearLabel=reviewedLabel(additional?r.additional_field_review:r.historical_field_review,f);
+        if(additional&&!yearLabel)throw Error('Additional source field lacks its year-specific review');
+        const label=r.source_return_year===2025&&r.vendor_module==='T1'?r.field_labels[f.field_id]:yearLabel??'Historical box binding pending';
+        return '<tr><th scope="row">'+esc(label)+'<small>Source field '+f.field_id+(additional?' · Additional recovered field':'')+'</small></th><td>'+display+'</td></tr>';
       }).join('');
       const pending=(r.vendor_module!=='T1'?'Converter module label needs verification.':r.source_return_year!==2025?'Historical year bindings need review.':'Source-2025 financial field profile checked; box conversion remains pending.')+(r.source_return_year===2026?' May be preliminary or planning source data.':'');
       return '<details class="dtmax-native-slip"><summary>'+esc(r.vendor_slip_kind)+' · Source return year '+r.source_return_year+' · View '+(r.vendor_slip_ordinal+1)+' · '+(r.from_data_segment?'Data source':'Cached source')+'</summary><p>'+esc(pending)+'</p>'+(body?'<div class="table-wrap"><table><thead><tr><th>Source field</th><th>Active source value</th></tr></thead><tbody>'+body+'</tbody></table></div>':'<p>No fields from this financial profile are present in this view. Other original fields remain in the preserved extract.</p>')+'<details><summary>Source selection and provenance</summary><p>'+esc(r.selection_review)+'</p><p>Archive '+esc(r.source_archive_sha256)+'<br>View file '+esc(r.source_view_file_sha256)+'<br>Original view '+r.source_view_number+' · '+esc(r.source_view_line_sha256)+'</p></details></details>';
