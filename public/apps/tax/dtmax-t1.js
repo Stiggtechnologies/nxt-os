@@ -36,38 +36,118 @@
       if(!Number.isInteger(r.tax_year)||!r.values_cents||!['vendor_static_verified','pending_year_verification','pending_module_verification'].includes(r.mapping_state))throw Error('Invalid source figures');
       return '<tr><td>'+r.tax_year+'</td>'+lines.map(l=>'<td>'+esc(cents(r.values_cents[l]))+'</td>').join('')+'<td>'+esc(r.mapping_state==='vendor_static_verified'?'Vendor mapping checked; source totals':'Mapping needs verification')+'</td></tr>';
     }).join('')+'</tbody></table></div>';
-    if(kind==='family-files')return records.map(r=>'<p>Family file '+esc(r.family_file_id)+' · '+esc(r.tax_year)+' · Member client IDs: '+esc((r.member_client_numbers||[]).join(', ')||'Not established')+'</p>').join('');
+    if(kind==='family-files')return records.map(r=>'<p>Family file '+esc(r.family_file_id)+' · '+esc(r.tax_year)+'</p><div class="dtmax-family-members">'+(r.member_client_numbers||[]).map(id=>{if(!/^\d{1,12}$/.test(id))throw Error('Invalid family member');return '<button class="dtmax-action" type="button" data-family-client="'+id+'">Client #'+id+'</button>';}).join(' ')+'</div>').join('');
     return '<p>Source occurrences are preserved separately; they are not deduplicated economic slips.</p>'+records.map(r=>'<details><summary>'+esc(r.slip_kind)+' · '+esc(r.tax_year===null?'Missing tax year':r.tax_year)+'</summary><p>Source folder year: '+esc(r.source_folder_year)+' (not an inferred slip year)</p><ul>'+tree(r.vendor_field_tree)+'</ul></details>').join('');
+  }
+  const missing='<span class="dtmax-missing">Not imported</span>';
+  function keywordRows(rows){return '<dl>'+rows.map(([label,value])=>'<dt data-dtmax-keyword="'+esc(label.toLowerCase())+'">'+esc(label)+'</dt><dd>'+(value===undefined||value===null||value===''?missing:esc(value))+'</dd>').join('')+'</dl>';}
+  function entryHtml(client,record,comparison){
+    const profile=client.source_profile||{};
+    const totals=r=>r?'<h3>Historical totals · '+esc(r.tax_year)+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])]))+'<p>'+esc(r.mapping_state==='vendor_static_verified'?'Vendor mapping checked; preserved source totals.':'Mapping needs verification.')+'</p>':'<p>No imported totals for the selected year.</p>';
+    return '<div class="dtmax-entry"><section class="dtmax-keyword-pane"><h3>Personal information</h3>'+keywordRows([['Client #',client.client_number],['Name',client.name]])+'<details><summary>7 personal fields not imported</summary>'+keywordRows([['Relation',null],['SIN',null],['BirthDate',null],['Status',null],['Sex',null],['Prov-Residence',null],['Language',null]])+'</details>'+totals(record)+'<h3>Mailing address · client-list snapshot</h3>'+keywordRows([['Street',profile.street],['City',profile.city],['Province',profile.province],['PostalCode',profile.postal_code],['Country',profile.country]])+'<h3>Contact · client-list snapshot</h3>'+keywordRows([['Email',profile.email],['Home phone',profile.home_phone],['Work phone',profile.work_phone],['Cell phone',profile.cell_phone]])+'<p>Address, contact and processing status come from the imported client list. They are not established as the historical return’s values.</p></section><section class="dtmax-keyword-pane"><label>Compare historical year <select data-dtmax-compare><option value="">&lt;none&gt;</option>'+(client.historical_years||[]).map(y=>'<option value="'+y+'"'+(String(y)===comparison?' selected':'')+'>'+y+'</option>').join('')+'</select></label><div data-dtmax-comparison></div><h3>Source records</h3><p>Browse the preserved slips and family links below. Source values are read-only.</p><div data-dtmax-details></div></section></div>';
+  }
+  function validatePdf(r,client){
+    if(!r||r.client_number!==client||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||! /^[a-f0-9]{64}$/.test(r.sha256)||r.original_print_output!==true||r.immutable!==true||!integer(r.bytes)||r.bytes===0||r.bytes>2097152||!Array.isArray(r.page_labels)||r.page_labels.length!==r.page_count||r.page_count<1||r.page_count>500||r.page_labels.some(x=>typeof x!=='string'||!x||x.length>120||/[\x00-\x1f]/.test(x)))throw Error('Original PDF identity or page index did not match');return r;
   }
   function mount(host,{request,isCurrent=()=>true}) {
     let sequence=0,offset=0,search='',year='',activeClient='',kind='historical-lines',factOffset=0;
+    let page=null,view='list',selectedYear='',comparison='',history=[],pdfs=[],pdfUrl='',pdfRecord=null,pdfPage=1;
+    let sort='client_number',direction='asc',status='',province='';const clientCache=new Map();
     const current=n=>host.isConnected!==false&&isCurrent()&&n===sequence;
+    const q=s=>host.querySelector(s),all=s=>host.querySelectorAll(s);
+    const selected=()=>clientCache.get(activeClient);
+    const releasePdf=()=>{if(pdfUrl){URL.revokeObjectURL(pdfUrl);pdfUrl='';}pdfRecord=null;};
+    function tabs(){return '<div class="dtmax-tabs" role="tablist" aria-label="Imported T1 workspace">'+[['list','Client list','F10'],['entry','Data entry','F2'],['return','Tax return','F9']].map(([id,label,key])=>'<button role="tab" id="dtmax-tab-'+id+'" aria-controls="dtmax-panel" aria-selected="'+(id===view)+'" tabindex="'+(id===view?'0':'-1')+'" data-dtmax-view="'+id+'"'+(id!=='list'&&!activeClient?' disabled':'')+'>'+label+'<kbd>'+key+'</kbd></button>').join('')+'<span class="dtmax-module">T1</span></div>';}
+    function shell(body){
+      host.innerHTML='<section class="dtmax-workspace" aria-label="DT Max source workspace"><div class="dtmax-caption"><h2>T1 clients imported from DT Max</h2><span>Firm-wide source workspace</span></div>'+tabs()+'<p class="dtmax-notice">Preserved source records · Read-only. NXT preparation workpapers remain separate below.</p><div id="dtmax-panel" role="tabpanel" aria-labelledby="dtmax-tab-'+view+'">'+body+'</div></section>';
+      all('[data-dtmax-view]').forEach(b=>{b.onclick=()=>show(b.dataset.dtmaxView);b.onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const ids=activeClient?['list','entry','return']:['list'];const at=ids.indexOf(view);return show(ids[(at+(e.key==='ArrowRight'?1:ids.length-1))%ids.length],true);}};});
+      host.onkeydown=e=>{
+        if(e.ctrlKey&&!e.altKey&&!e.metaKey&&e.key.toLowerCase()==='f'&&view==='list'){e.preventDefault();q('[name=search]')?.focus?.();return;}
+        if(e.altKey&&e.key==='F7'&&view==='entry'){e.preventDefault();q('[data-dtmax-keyword-find]')?.focus?.();return;}
+        if(e.altKey||e.ctrlKey||e.metaKey||/INPUT|SELECT|TEXTAREA/.test(e.target?.tagName||''))return;const id={F10:'list',F2:'entry',F9:'return'}[e.key];if(id&&(activeClient||id==='list')){e.preventDefault();show(id,true);}
+      };
+    }
+    function clientHead(){const c=selected();return '<div class="dtmax-client-head">Client #'+esc(c.client_number)+' · '+esc(c.name)+'<small>Imported source · '+(selectedYear?'Tax year '+esc(selectedYear):'No historical year')+'</small></div><div class="dtmax-toolbar"><label>Tax year<select data-dtmax-year>'+c.historical_years.slice().sort((a,b)=>b-a).map(y=>'<option'+(String(y)===selectedYear?' selected':'')+'>'+y+'</option>').join('')+'</select></label><button type="button" data-dtmax-back>Back to client list</button></div>';}
+    function bindClient(){q('[data-dtmax-back]').onclick=()=>show('list');q('[data-dtmax-year]').onchange=e=>{selectedYear=e.target.value;show(view);};}
+    function renderList(){
+      const p=page;
+      shell('<form data-dtmax-search class="dtmax-toolbar"><label>Find client<input name="search" type="search" maxlength="100" value="'+esc(search)+'" placeholder="Name or DT Max client number"></label><label>Imported year<select name="year"><option value="">All years</option>'+p.available_years.slice().sort((a,b)=>b-a).map(y=>'<option'+(String(y)===year?' selected':'')+'>'+y+'</option>').join('')+'</select></label><label>Processing status<select name="status"><option value="">All statuses</option>'+(p.available_statuses||[]).map(v=>'<option value="'+esc(v)+'"'+(v===status?' selected':'')+'>'+esc(v)+'</option>').join('')+'</select></label><label>Province<select name="province"><option value="">All provinces</option>'+(p.available_provinces||[]).map(v=>'<option value="'+esc(v)+'"'+(v===province?' selected':'')+'>'+esc(v)+'</option>').join('')+'</select></label><label>Sort by<select name="sort">'+[['client_number','Client number'],['name','Name'],['processing_status','Processing status']].map(([v,label])=>'<option value="'+v+'"'+(v===sort?' selected':'')+'>'+label+'</option>').join('')+'</select></label><label>Order<select name="direction"><option value="asc"'+(direction==='asc'?' selected':'')+'>Ascending</option><option value="desc"'+(direction==='desc'?' selected':'')+'>Descending</option></select></label><button type="submit">Find client</button></form><div class="dtmax-grid"><table><thead><tr><th>Client #</th><th>Name</th><th>Processing status</th><th>Province</th><th>Imported historical years</th></tr></thead><tbody>'+p.clients.map(c=>'<tr data-selected="'+(activeClient===c.client_number)+'"><td>'+esc(c.client_number)+'</td><td><button type="button" class="dtmax-name" data-imported-client="'+esc(c.client_number)+'" aria-label="Open imported T1 for '+esc(c.name)+'">'+esc(c.name)+'</button></td><td>'+esc(c.source_profile?.processing_status||'Not imported')+'</td><td>'+esc(c.source_profile?.province||'Not imported')+'</td><td class="dtmax-years">'+esc(c.historical_years.join(', ')||'No decoded historical totals')+(c.pending_years.length?'<small>Needs verification: '+esc(c.pending_years.join(', '))+'</small>':'')+'</td></tr>').join('')+'</tbody></table>'+(!p.total?'<p>No imported clients match these filters.</p>':'')+'</div><div class="dtmax-footer"><p>'+(p.total?offset+1:0)+'–'+(offset+p.clients.length)+' of '+p.total+' clients</p><div class="dtmax-page-controls"><button type="button" data-dtmax-prev '+(!offset?'disabled':'')+'>Previous</button><button type="button" data-dtmax-next '+(offset+p.clients.length>=p.total?'disabled':'')+'>Next</button></div></div>');
+      q('[data-dtmax-search]').onsubmit=e=>{e.preventDefault();search=q('[name=search]').value;year=q('[name=year]').value;sort=q('[name=sort]').value||'client_number';direction=q('[name=direction]').value||'asc';status=q('[name=status]').value;province=q('[name=province]').value;return load(0);};
+      q('[data-dtmax-prev]').onclick=()=>load(Math.max(0,offset-100));q('[data-dtmax-next]').onclick=()=>load(offset+100);
+      all('[data-imported-client]').forEach(b=>b.onclick=()=>open(b.dataset.importedClient));
+    }
     async function load(next=0){
-      const n=++sequence;offset=next;activeClient='';
+      const n=++sequence;offset=next;activeClient='';view='list';releasePdf();
       host.innerHTML='<div class="card"><h2>T1 clients imported from DT Max</h2><p>Loading imported clients…</p></div>';
       try{
-        const p=validatePage(await request(BASE+'source-clients?offset='+offset+'&limit=100&search='+encodeURIComponent(search)+(year?'&year='+year:'')),offset);
-        if(!current(n))return;
-        host.innerHTML='<div class="card"><h2>T1 clients imported from DT Max</h2><p>Firm-wide personal T1 source list, independent of the company selector. These are preserved source records; NXT preparation workpapers are listed separately below.</p><form data-dtmax-search class="list-filters"><label>Find imported client<input name="search" type="search" maxlength="100" value="'+esc(search)+'" placeholder="Name or DT Max client number"></label><label>Imported year<select name="year"><option value="">All years</option>'+[...p.available_years].sort((a,b)=>b-a).map(y=>'<option'+(String(y)===year?' selected':'')+'>'+y+'</option>').join('')+'</select></label><button class="btn" type="submit">Search imported clients</button></form><p>'+ (p.total?offset+1:0)+'–'+(offset+p.clients.length)+' of '+p.total+' clients</p><div class="table-wrap"><table><thead><tr><th>DT Max client #</th><th>Name</th><th>Imported historical years</th><th></th></tr></thead><tbody>'+p.clients.map(c=>'<tr><td>'+esc(c.client_number)+'</td><td>'+esc(c.name)+'</td><td>'+esc(c.historical_years.join(', ')||'No decoded historical totals')+(c.pending_years.length?'<div class="muted">Needs verification: '+esc(c.pending_years.join(', '))+'</div>':'')+'</td><td><button class="btn sm" type="button" data-imported-client="'+esc(c.client_number)+'">Open imported T1</button></td></tr>').join('')+'</tbody></table></div>'+(!p.total?'<p>No imported clients match these filters.</p>':'')+'<button class="btn" type="button" data-dtmax-prev '+(!offset?'disabled':'')+'>Previous</button> <button class="btn" type="button" data-dtmax-next '+(offset+p.clients.length>=p.total?'disabled':'')+'>Next</button><div data-dtmax-details></div></div>';
-        host.querySelector('[data-dtmax-search]').onsubmit=e=>{e.preventDefault();search=host.querySelector('[name=search]').value;year=host.querySelector('[name=year]').value;return load(0);};
-        host.querySelector('[data-dtmax-prev]').onclick=()=>load(Math.max(0,offset-100));host.querySelector('[data-dtmax-next]').onclick=()=>load(offset+100);
-        host.querySelectorAll('[data-imported-client]').forEach(b=>b.onclick=()=>{activeClient=b.dataset.importedClient;kind='historical-lines';return facts(0);});
-      }catch(e){if(current(n))host.innerHTML='<div class="card"><h2>T1 imported clients unavailable</h2><p role="alert">'+esc(e.message)+'</p><p>Unavailable data is not an empty client list. Firm-wide source access is required.</p><button class="btn" data-dtmax-retry>Retry imported list</button></div>';if(current(n))host.querySelector('[data-dtmax-retry]').onclick=()=>load(offset);}
+        const p=validatePage(await request(BASE+'source-clients?offset='+offset+'&limit=100&search='+encodeURIComponent(search)+(year?'&year='+year:'')+'&sort='+sort+'&direction='+direction+(status?'&status='+encodeURIComponent(status):'')+(province?'&province='+encodeURIComponent(province):'')),offset);
+        if(!current(n))return;page=p;clientCache.clear();p.clients.forEach(c=>clientCache.set(c.client_number,c));renderList();
+      }catch(e){if(current(n)){host.innerHTML='<div class="dtmax-error"><h2>T1 imported clients unavailable</h2><p role="alert">'+esc(e.message)+'</p><p>Unavailable data is not an empty client list. Firm-wide source access is required.</p><button data-dtmax-retry>Retry imported list</button></div>';q('[data-dtmax-retry]').onclick=()=>load(offset);}}
     }
-    async function facts(next=0){
-      const n=++sequence,client=activeClient,requestedKind=kind;factOffset=next;const detail=host.querySelector('[data-dtmax-details]');
-      if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
+    async function historyFor(client,n){
+      const records=[];let at=0,total;
+      do{const p=await request(BASE+'clients/'+client+'/source-facts?kind=historical-lines&offset='+at+'&limit=100');if(!current(n))return null;
+        checkFacts(p,client,'historical-lines',at,100);if(total!==undefined&&p.total!==total)throw Error('Source history changed while loading');total=p.total;if(total>1000)throw Error('Source history exceeds view bound');records.push(...p.records);at+=p.records.length;if(at<total&&!p.records.length)throw Error('Incomplete source history page');
+      }while(at<total);recordsHtml('historical-lines',records);return records;
+    }
+    async function open(client){
+      if(!/^\d{1,12}$/.test(client))return;const lookup=++sequence;
+      if(!clientCache.has(client)){
+        try{const found=validatePage(await request(BASE+'source-clients?offset=0&limit=100&search='+encodeURIComponent(client)),0);if(!current(lookup))return;const exact=found.clients.find(c=>c.client_number===client);if(!exact)throw Error('Family member is not in the imported client roster');clientCache.set(client,exact);}
+        catch(e){if(current(lookup)){const d=q('[data-dtmax-details]');if(d)d.innerHTML='<p role="alert">'+esc(e.message)+'</p>';}return;}
+      }
+      activeClient=client;kind='historical-lines';comparison='';history=[];pdfs=[];releasePdf();
+      selectedYear=year||String(Math.max(...selected().historical_years)||'');if(selectedYear==='-Infinity')selectedYear='';
+      const n=++sequence;view='entry';shell(clientHead()+'<p class="dtmax-notice">Loading source history…</p>');bindClient();
+      try{const records=await historyFor(client,n);if(!records||!current(n))return;history=records;return show('entry');}catch(e){if(current(n))shell(clientHead()+'<p class="dtmax-error" role="alert">'+esc(e.message)+'</p>');}
+    }
+    function historicalRecord(y){const matches=history.filter(r=>String(r.tax_year)===y);return matches.length===1?matches[0]:null;}
+    async function show(next,focus=false){
+      if(next!=='list'&&!selected())return;const n=++sequence;view=next;
+      if(next==='list'){releasePdf();renderList();}
+      else if(next==='entry'){
+        releasePdf();shell(clientHead()+'<div class="dtmax-toolbar"><label>Find keyword <input type="search" data-dtmax-keyword-find placeholder="Keyword or line number · Alt+F7"></label><span class="dtmax-missing" data-dtmax-keyword-count></span></div>'+entryHtml(selected(),historicalRecord(selectedYear),comparison));bindClient();
+        q('[data-dtmax-keyword-find]').oninput=e=>{const needle=e.target.value.trim().toLowerCase();let count=0;all('[data-dtmax-keyword]').forEach(dt=>{const match=!needle||dt.dataset.dtmaxKeyword.includes(needle);dt.hidden=!match;if(dt.nextElementSibling)dt.nextElementSibling.hidden=!match;if(match)count++;});q('[data-dtmax-keyword-count]').textContent=needle?count+' matching fields':'';};
+        if(history.filter(r=>String(r.tax_year)===selectedYear).length>1)q('[data-dtmax-comparison]').innerHTML='<p role="alert">Multiple source versions exist for this year. Review Historical totals below; no version was selected automatically.</p>';
+        q('[data-dtmax-compare]').onchange=e=>{comparison=e.target.value;renderComparison();};renderComparison();await facts(0,n);
+      }else{
+        shell(clientHead()+'<div class="dtmax-return"><aside class="dtmax-page-index"><h3>Select a page</h3><div data-dtmax-pdf-index>Loading original PDFs…</div></aside><div class="dtmax-pdf-canvas" data-dtmax-pdf-canvas><div class="dtmax-pdf-message">Loading preserved print output…</div></div></div>');bindClient();
+        try{const p=await request(BASE+'clients/'+activeClient+'/return-pdfs');if(!current(n))return;if(p.source_scope!==SCOPE||p.client_number!==activeClient||p.test_copy!==true||p.tax_cases_imported!==0||!Array.isArray(p.records)||p.records.length>1000)throw Error('Original PDF list did not match');pdfs=p.records.map(r=>validatePdf(r,activeClient));renderPdfIndex();const versions=pdfs.filter(r=>String(r.tax_year)===selectedYear);const r=versions.length===1?versions[0]:null;if(r)await openPdf(r,n);else{releasePdf();pdfMissing();}}catch(e){if(current(n)){releasePdf();q('[data-dtmax-pdf-index]').innerHTML='Unavailable';q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-message" role="alert">Original PDF unavailable: '+esc(e.message)+'</div>';}}
+      }
+      if(focus&&current(sequence))q('[data-dtmax-view="'+view+'"]')?.focus?.();
+    }
+    function renderComparison(){const node=q('[data-dtmax-comparison]');if(!node)return;const r=historicalRecord(comparison);node.innerHTML=comparison?(r?'<h3>Historical totals · '+esc(comparison)+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])])):'<p>No single imported source version for this comparison year.</p>'):'<p class="dtmax-missing">Choose a year to compare the six preserved totals.</p>';}
+    function checkFacts(p,client,requestedKind,at,limit){
+      if(!p||p.client_number!==client||p.kind!==requestedKind||p.test_copy!==true||p.tax_cases_imported!==0||p.offset!==at||!integer(p.total)||!Array.isArray(p.records)||p.records.length>limit||at+p.records.length>p.total)throw Error('Source client response did not match');
+      if(p.records.some(r=>requestedKind==='family-files'?!Array.isArray(r.member_client_numbers)||!r.member_client_numbers.includes(client):r.client_number!==client))throw Error('Source record belongs to another client');
+    }
+    async function facts(next=0,existingSequence){
+      const n=existingSequence??++sequence,client=activeClient,requestedKind=kind;factOffset=next;const detail=q('[data-dtmax-details]');if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
       try{
-        const p=await request(BASE+'clients/'+encodeURIComponent(client)+'/source-facts?kind='+requestedKind+'&offset='+factOffset+'&limit=25');
-        if(!current(n))return;
-        if(p.client_number!==client||p.kind!==requestedKind||p.test_copy!==true||p.tax_cases_imported!==0||p.offset!==factOffset||!integer(p.total)||!Array.isArray(p.records)||p.records.length>25)throw Error('Source client response did not match');
-        if(p.records.some(r=>requestedKind==='family-files'?!Array.isArray(r.member_client_numbers)||!r.member_client_numbers.includes(client):r.client_number!==client))throw Error('Source record belongs to another client');
-        detail.innerHTML='<h3>Imported T1 · Client '+esc(client)+'</h3><div class="row">'+Object.entries(kinds).map(([k,label])=>'<button class="btn sm" type="button" data-source-kind="'+k+'"'+(k===kind?' aria-pressed="true"':'')+'>'+label+'</button>').join('')+'</div>'+recordsHtml(kind,p.records)+'<p>'+ (p.total?factOffset+1:0)+'–'+(factOffset+p.records.length)+' of '+p.total+' source records</p><button class="btn sm" data-fact-prev '+(!factOffset?'disabled':'')+'>Previous records</button> <button class="btn sm" data-fact-next '+(factOffset+p.records.length>=p.total?'disabled':'')+'>Next records</button>';
+        const p=await request(BASE+'clients/'+client+'/source-facts?kind='+requestedKind+'&offset='+next+'&limit=25');if(!current(n))return;checkFacts(p,client,requestedKind,next,25);
+        detail.innerHTML='<div class="dtmax-fact-nav">'+Object.entries(kinds).map(([k,label])=>'<button type="button" data-source-kind="'+k+'" aria-pressed="'+(k===kind)+'">'+label+'</button>').join('')+'</div>'+recordsHtml(kind,p.records)+'<p>'+(p.total?next+1:0)+'–'+(next+p.records.length)+' of '+p.total+' source records</p><button class="dtmax-action" data-fact-prev '+(!next?'disabled':'')+'>Previous records</button> <button class="dtmax-action" data-fact-next '+(next+p.records.length>=p.total?'disabled':'')+'>Next records</button>';
         detail.querySelectorAll('[data-source-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.sourceKind;return facts(0);});detail.querySelector('[data-fact-prev]').onclick=()=>facts(Math.max(0,factOffset-25));detail.querySelector('[data-fact-next]').onclick=()=>facts(factOffset+25);
-        detail.scrollIntoView?.({block:'nearest'});
+        detail.querySelectorAll('[data-family-client]').forEach(b=>b.onclick=()=>open(b.dataset.familyClient));
       }catch(e){if(current(n))detail.innerHTML='<p role="alert">Imported T1 records unavailable: '+esc(e.message)+'</p>';}
     }
-    return {ready:load(),load,facts};
+    function pdfMissing(){q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-message"><h3>Original printed return not imported for '+esc(selectedYear||'this year')+'</h3><p>The historical totals and slips are available in Data entry. A complete printed return needs the original DT Max PDF for this client and year.</p><p>No return pages have been reconstructed from incomplete figures.</p></div>';}
+    function renderPdfIndex(){
+      const node=q('[data-dtmax-pdf-index]');node.innerHTML='<label>Original PDF<select data-dtmax-pdf-version><option value="">Choose original PDF</option>'+pdfs.map((r,i)=>'<option value="'+i+'"'+(pdfRecord?.sha256===r.sha256&&pdfRecord?.tax_year===r.tax_year?' selected':'')+'>'+r.tax_year+' · '+r.page_count+' pages · Version '+(i+1)+'</option>').join('')+'</select></label>'+(pdfRecord?pdfRecord.page_labels.map((label,i)=>'<button type="button" data-dtmax-page="'+(i+1)+'" aria-current="'+(pdfPage===i+1?'page':'false')+'">'+(i+1)+'. '+esc(label)+'</button>').join(''):'<p class="dtmax-missing">'+(pdfs.length?'Choose an available original above.':'No original printed returns imported for this client.')+'</p>');
+      q('[data-dtmax-pdf-version]').onchange=e=>{const r=pdfs[Number(e.target.value)];if(e.target.value!==''&&r){selectedYear=String(r.tax_year);return openPdf(r,++sequence);}};
+      all('[data-dtmax-page]').forEach(b=>b.onclick=()=>{pdfPage=Number(b.dataset.dtmaxPage);renderPdfCanvas();renderPdfIndex();});
+    }
+    async function openPdf(record,n){
+      const client=activeClient;releasePdf();q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-message">Verifying original PDF bytes…</div>';
+      try{const p=await request(BASE+'clients/'+client+'/return-pdfs/'+record.tax_year+'/'+record.sha256);if(!current(n))return;const r=validatePdf(p.record,client);
+        if(p.source_scope!==SCOPE||p.test_copy!==true||p.tax_cases_imported!==0||r.sha256!==record.sha256||r.tax_year!==record.tax_year||JSON.stringify(r.page_labels)!==JSON.stringify(record.page_labels)||typeof p.content_hex!=='string'||p.content_hex.length!==r.bytes*2||!/^[0-9a-f]+$/.test(p.content_hex))throw Error('Original PDF content did not match');
+        const bytes=Uint8Array.from(p.content_hex.match(/../g),s=>parseInt(s,16));const actual=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');if(!current(n))return;if(actual!==r.sha256)throw Error('Original PDF failed browser hash verification');
+        pdfUrl=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));pdfRecord=r;pdfPage=1;renderPdfIndex();renderPdfCanvas();
+      }catch(e){if(current(n)){releasePdf();q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-message" role="alert">Original PDF unavailable: '+esc(e.message)+'</div>';}}
+    }
+    function renderPdfCanvas(){
+      if(!pdfUrl||!pdfRecord)return;const title=pdfRecord.page_labels[pdfPage-1];q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-tools"><p>'+esc(pdfRecord.tax_year)+' · Page '+pdfPage+' of '+pdfRecord.page_count+' · Original bytes verified</p><a href="'+esc(pdfUrl)+'" download="dtmax-t1-'+esc(activeClient)+'-'+pdfRecord.tax_year+'.pdf">Download original PDF</a></div><iframe title="Original DT Max printed return: '+esc(title)+'" referrerpolicy="no-referrer" src="'+esc(pdfUrl)+'#page='+pdfPage+'&view=FitH&navpanes=0"></iframe>';
+    }
+    return {ready:load(),load,facts,show,open,dispose:()=>{++sequence;releasePdf();host.onkeydown=null;}};
   }
-  globalThis.NXTDTMaxT1={mount,cents,validatePage,recordsHtml};
+  globalThis.NXTDTMaxT1={mount,cents,validatePage,recordsHtml,entryHtml,validatePdf};
 })();
