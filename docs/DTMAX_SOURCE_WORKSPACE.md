@@ -134,7 +134,7 @@ REA does not support the proprietary KJD container. No vendor forms or code
 are application assets. The reviewer report pins resource/record offsets and
 digests; it does not claim independent runtime-loader/selector verification.
 
-Historical reads add `year_mapping_review` only to T1 2013/2014 rows. Every
+Historical reads add `year_mapping_review` only to the explicitly reviewed T1 years. Every
 stored amount, null, original mapping classification and source record remains
 unchanged. Other years and modules cannot inherit this review. The UI says
 **Year-specific form bindings checked; source totals**; this does not approve
@@ -155,9 +155,23 @@ The same independent object/field-array checks now cover T1 2009, 2010, 2011,
 remain the legacy three-digit IDs even where the printed codes have five
 digits. Each year has its own artifact pin. This adds 74 binding-reviewed
 contexts to the 2,499 reviewed 2013/2014 contexts in the current source set.
-The two 2005 contexts use an older structure and remain unresolved; no layout
-assumptions apply. Source-2026 data may be preliminary or planning data, which
+Source-2026 data may be preliminary or planning data, which
 the UI explicitly labels. Binding checks do not approve those figures.
+
+The 2005 package uses a separately checked older structure: 16-byte numeric
+drawing records have no embedded field IDs. Exact unique coordinate pairs join
+all six semantic/printed-code rows in all five columns to separate 24-byte
+DTFIELD records. The package pin and offsets are in
+`docs/evidence/dtmax-t1-2005-e11-bindings.json`; the source-only verifier is
+`scripts/verify-dtmax-2005-e11-bindings.py`. An explicit 2005 income-tax-return
+reference in the same package corroborates the year. There is no companion
+XML file, and native year-loader/selector execution is not independently proven.
+The read-time profile is `dtmax-T1-E11-2005/v1`, distinct from newer layouts.
+Both original 2005 contexts have no calculated return and all twelve requested
+amount states are absent. The review supplies no missing amounts or zeros.
+Together, 2,575 of 2,663 originally pending contexts now have form-binding
+evidence; the 88 converter-module exceptions remain pending. Every stored
+amount, null and original import classification remains unchanged.
 
 The converter's T3 label is also an import-reader classification, not an
 authoritative native source-module enum. Independent Info1/CRC inspection and

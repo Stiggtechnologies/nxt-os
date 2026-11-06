@@ -66,6 +66,7 @@ struct HistoricalLines {
 fn year_mapping_review(v: &HistoricalLines) -> Option<Value> {
     if v.vendor_module!="T1" || v.mapping_state!="pending_year_verification" { return None }
     let artifact=match v.tax_year {
+        2005=>"90e36c34c9ad98691c872b6d0bc5482459ec5db84f9f32f86b926f234234f745",
         2009=>"78451f0ea751567f4c34ce308bbca508c9f8a6dc0f13697249e5e008b7a4229f",
         2010=>"d51d03f137a7b9c7a37e91bd8aeb5655e887fda56dfb800254829bb125092082",
         2011=>"fc934ed6c99be48e65729cc1f4187e49eb15a66f7010a64ddafab52e7007e6b0",
@@ -76,7 +77,7 @@ fn year_mapping_review(v: &HistoricalLines) -> Option<Value> {
         _=>return None,
     };
     Some(json!({"state":"original_form_bindings_checked","tax_year":v.tax_year,"source_form":"E11",
-        "package_sha256":artifact,"profile":if [2013,2014].contains(&v.tax_year){"dtmax-T1-E11-2013-2014/v1"}else{"dtmax-T1-E11-additional-years/v1"},
+        "package_sha256":artifact,"profile":if v.tax_year==2005{"dtmax-T1-E11-2005/v1"}else if [2013,2014].contains(&v.tax_year){"dtmax-T1-E11-2013-2014/v1"}else{"dtmax-T1-E11-additional-years/v1"},
         "field_ids":{"15000":150,"23600":236,"26000":260,"42000":420,"48400":484,"48500":485},
         "amounts_recalculated":false,"tax_figures_approved":false,"source_year_may_be_preliminary":v.tax_year==2026}))
 }

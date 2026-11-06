@@ -1,0 +1,671 @@
+{
+  "format": "dtmax-2005-installed-E11-bindings/v1",
+  "year": 2005,
+  "parser_sha256": "bc335a65e8c23be02fe98d0d60e8a62a61f7428d68478f90055a04f4c6be39ea",
+  "evidence_kind": "offline installed-artifact byte inspection",
+  "packages": [
+    {
+      "name": "DT1WFO05",
+      "sha256": "90e36c34c9ad98691c872b6d0bc5482459ec5db84f9f32f86b926f234234f745",
+      "bytes": 6911171
+    },
+    {
+      "name": "DT1WFR05",
+      "sha256": "129d59cd40c9d3964f2eb481a28573fd7324043a955bca979e9f21df60062e41",
+      "bytes": 56200
+    }
+  ],
+  "resources": [
+    {
+      "key": "E11E",
+      "directory_record_offset": 6876995,
+      "offset": 1915955,
+      "bytes": 13505,
+      "sha256": "5f2552bfa03094c251d0b2e909374f5b363274693e68d86547b1e405841dbd1d"
+    },
+    {
+      "key": "E11H",
+      "directory_record_offset": 6877019,
+      "offset": 1929460,
+      "bytes": 12726,
+      "sha256": "86e08aff37aa8067e3d97d0956358b7ac55f468e145ff682a25e053d637427d1"
+    },
+    {
+      "key": "E11",
+      "directory_record_offset": 52072,
+      "offset": 12236,
+      "bytes": 112,
+      "sha256": "d78bcd229dbb9cc47764c019a1036f6df936717493c162feab206e6b8f186924"
+    }
+  ],
+  "drawing_segments": [
+    {
+      "header_offset": 1981,
+      "kind": 1,
+      "record_bytes": 12,
+      "count": 1
+    },
+    {
+      "header_offset": 2009,
+      "kind": 3,
+      "record_bytes": 8,
+      "count": 1
+    },
+    {
+      "header_offset": 2033,
+      "kind": 7,
+      "record_bytes": 16,
+      "count": 716
+    }
+  ],
+  "field_record_count": 520,
+  "complete_segment_boundaries_verified": true,
+  "field_identifiers_unique": true,
+  "bindings": [
+    {
+      "requested_NXT_line": "15000",
+      "source_form": "E11",
+      "production_column_field_id": 150,
+      "label_offset": 1916563,
+      "label_bytes": 12,
+      "label_sha256": "28090e4e870c134b196f9ee0d65e3dc851370cdd2c41af98e4ac1c601a73a497",
+      "label_drawing_record_offset": 1920612,
+      "label_drawing_record_sha256": "eca4a4ec05952692f92c52782184823dbc3c31c4e369426f167d44d91c54e304",
+      "printed_legacy_line": 150,
+      "printed_line_offset": 1916575,
+      "printed_line_drawing_record_offset": 1920628,
+      "printed_line_drawing_record_sha256": "767b99e9c14690b049e4b5ba41b77bc2c6376d217c20533961766e89052798a0",
+      "columns": [
+        {
+          "column": 0,
+          "serialized_field_id": 150,
+          "coordinates": [
+            1800,
+            4886
+          ],
+          "numeric_drawing_record_offset": 1920644,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "19b5e60c031b029b9038edfee45036f3a529fbffa48e7c3de4005e435d69477b",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1932754,
+          "field_record_bytes": 24,
+          "field_record_sha256": "162d9278a6f32d66818d4de0714d060f393b70ede96753d0941714dec60177ef",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 1,
+          "serialized_field_id": 1150,
+          "coordinates": [
+            2350,
+            4886
+          ],
+          "numeric_drawing_record_offset": 1920660,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "9a96dbb413fa8e5e71525ec7a16c8ad083a0edfef682138144f93bcc375b2a40",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1932778,
+          "field_record_bytes": 24,
+          "field_record_sha256": "dd3cc08eb6cd4ff2cfbda179addf23eb4f9cfc697202a12c073bda7276c5e69c",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 2,
+          "serialized_field_id": 2150,
+          "coordinates": [
+            2900,
+            4886
+          ],
+          "numeric_drawing_record_offset": 1920676,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "7bb89c0da772024cfb4010ce6d81e6dbe38a3a99e8dc35004bd7bb2c39000b00",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1932802,
+          "field_record_bytes": 24,
+          "field_record_sha256": "d791df2475fbe1821e5eae1f46c8ea86bc09cda7e674c0dd16eaab5b9de980a9",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 3,
+          "serialized_field_id": 3150,
+          "coordinates": [
+            3450,
+            4886
+          ],
+          "numeric_drawing_record_offset": 1920692,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "de8e7b2146b99e7ec2d2d4aec574803c85c9c1bc65ef8099a1da1e29260c0fd3",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1932826,
+          "field_record_bytes": 24,
+          "field_record_sha256": "edace06099206a4a270d6f88009a59f0442af6bb896c36d6f0b4cdd2d4ee287f",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 4,
+          "serialized_field_id": 4150,
+          "coordinates": [
+            4000,
+            4886
+          ],
+          "numeric_drawing_record_offset": 1920708,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "5237d9cd8265f94b329ffd5bd078a667ca0dc7a28d8ffb4a38f1bd4f457e2dbb",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1932850,
+          "field_record_bytes": 24,
+          "field_record_sha256": "683631c2890a47be7228541f0d5f7fdf3629b4524968484384e11446d9862196",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        }
+      ]
+    },
+    {
+      "requested_NXT_line": "23600",
+      "source_form": "E11",
+      "production_column_field_id": 236,
+      "label_offset": 1916851,
+      "label_bytes": 10,
+      "label_sha256": "7561c934f60f784f1eb5368d7e0b6ae832112bbb66ebba739489ddf25a8de9c3",
+      "label_drawing_record_offset": 1922628,
+      "label_drawing_record_sha256": "e8dd550ffea2a8c3e9f8a00b2dbd5739096933fd88001070246a8431a72e75ce",
+      "printed_legacy_line": 236,
+      "printed_line_offset": 1916861,
+      "printed_line_drawing_record_offset": 1922644,
+      "printed_line_drawing_record_sha256": "e6b929fc19a0b1e3a8f9fd3bbbf4f665d3a2d73ccdab5b25ccef020d1bd132b7",
+      "columns": [
+        {
+          "column": 0,
+          "serialized_field_id": 236,
+          "coordinates": [
+            1800,
+            7938
+          ],
+          "numeric_drawing_record_offset": 1922660,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "9fd6918d14db9cd3154d671f15bad3a5da15be7185305f5aa2c2f61c094d5677",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1934914,
+          "field_record_bytes": 24,
+          "field_record_sha256": "46c9eaa6a4505dd904d6bb9b65cacdbdd0ba717daf1643756e46bdf89ec642cb",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 1,
+          "serialized_field_id": 1236,
+          "coordinates": [
+            2350,
+            7938
+          ],
+          "numeric_drawing_record_offset": 1922676,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "ef8af0ca4983c0d1f8e8af0cdd967f29316dee80e0570e96e2ea22a2160fe3cf",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1934938,
+          "field_record_bytes": 24,
+          "field_record_sha256": "7bea2f34d175c0ce486a1d41144fc227f9d5deeb70c6ec3f0057456f3776d495",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 2,
+          "serialized_field_id": 2236,
+          "coordinates": [
+            2900,
+            7938
+          ],
+          "numeric_drawing_record_offset": 1922692,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "4eae7c00c0d3d6873c1816e2dbc97a9b8924f8b09bc318037b15865a1c0ec04f",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1934962,
+          "field_record_bytes": 24,
+          "field_record_sha256": "ecd336843af39e640d4076cc03e8c2ba20cba1e40e825b1832623c58d1e23bfa",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 3,
+          "serialized_field_id": 3236,
+          "coordinates": [
+            3450,
+            7938
+          ],
+          "numeric_drawing_record_offset": 1922708,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "d211fe4ab1cf476c44c6389f1cbf689f090cb9f6e14cafb25533dff36762b956",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1934986,
+          "field_record_bytes": 24,
+          "field_record_sha256": "315b3eaaa3a5993024790cdd0319c4341b9b09e56001510d82fea637cecb9c01",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 4,
+          "serialized_field_id": 4236,
+          "coordinates": [
+            4000,
+            7938
+          ],
+          "numeric_drawing_record_offset": 1922724,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "fd1757a6977fd5435287f71dbd39d30c48d7b6ce50368697e578c9b9af29feb4",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1935010,
+          "field_record_bytes": 24,
+          "field_record_sha256": "059ed42ee8e578bbb3a2a1d0cc22f80a6eca8b372bc3d8ef78a8c7201d38e7f7",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        }
+      ]
+    },
+    {
+      "requested_NXT_line": "26000",
+      "source_form": "E11",
+      "production_column_field_id": 260,
+      "label_offset": 1917057,
+      "label_bytes": 14,
+      "label_sha256": "f81179a306efaea330cb1ecd1423dacf7813168efd40cd91a90ef07b31ccaae7",
+      "label_drawing_record_offset": 1923812,
+      "label_drawing_record_sha256": "cfd5b4d4022dd0d8ab19cf043f30b10359b0dad02ca566b52f3e414cfaaa65a1",
+      "printed_legacy_line": 260,
+      "printed_line_offset": 1917071,
+      "printed_line_drawing_record_offset": 1923828,
+      "printed_line_drawing_record_sha256": "ffc638f8799ca1934098508a78ae59f3dbacd3463b6f60a69fa7ae609d199b53",
+      "columns": [
+        {
+          "column": 0,
+          "serialized_field_id": 260,
+          "coordinates": [
+            1800,
+            9842
+          ],
+          "numeric_drawing_record_offset": 1923844,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "16eb33ae1b2cca660fb5f23740dbee4488675b7b26bae3b1cb134c954be4305b",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1936162,
+          "field_record_bytes": 24,
+          "field_record_sha256": "9d3f099146bcc07d1e1cb158241a8413a0ae25c836d784b04413026fbcdc0db0",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 1,
+          "serialized_field_id": 1260,
+          "coordinates": [
+            2350,
+            9842
+          ],
+          "numeric_drawing_record_offset": 1923860,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "d2d95518c81f51ed77256a855d703ed9bb7f8f1c50380c868c13681a537af1ff",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1936186,
+          "field_record_bytes": 24,
+          "field_record_sha256": "ffbfaeb76fbe663228a04dc587433f8730f02d2dd7f1c20864fe0f06186bd95e",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 2,
+          "serialized_field_id": 2260,
+          "coordinates": [
+            2900,
+            9842
+          ],
+          "numeric_drawing_record_offset": 1923876,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "bc5e087b0dc91e8584f004d8e1be2bb179c2fb00726b393ec422a4c30c0ef0fd",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1936210,
+          "field_record_bytes": 24,
+          "field_record_sha256": "34acab21f52f8ec43fef181ae197f7fe6cf7d349656b4a0f4f0d87d0e106e9d1",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 3,
+          "serialized_field_id": 3260,
+          "coordinates": [
+            3450,
+            9842
+          ],
+          "numeric_drawing_record_offset": 1923892,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "526dd9841a35a685a1687b5ad9688c4c060d2c214ae0fd3ca78e9a1f87c82020",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1936234,
+          "field_record_bytes": 24,
+          "field_record_sha256": "1704fa5d5571572e9028f29beb2fcd81960b64ff2e8a8df48a5d1f745c6e88f1",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 4,
+          "serialized_field_id": 4260,
+          "coordinates": [
+            4000,
+            9842
+          ],
+          "numeric_drawing_record_offset": 1923908,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "eff46cd0ccab20ce9350c146316cdb77e966dedb98ba7d5c69cb3592b7146c70",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1936258,
+          "field_record_bytes": 24,
+          "field_record_sha256": "261fbba929eb3642a8ecd0ca06c09de96d2da66654d1ca4e451ec40d206f2479",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        }
+      ]
+    },
+    {
+      "requested_NXT_line": "42000",
+      "source_form": "E11",
+      "production_column_field_id": 420,
+      "label_offset": 1917576,
+      "label_bytes": 15,
+      "label_sha256": "5fd87a8358d3a0dbd5ed55935e9bb3c58f0874ea73281a029c6902797b55cf0b",
+      "label_drawing_record_offset": 1927108,
+      "label_drawing_record_sha256": "fda9eb5c7fabd0f6870b53029b71cf726b20122c2ff62001e06f83c969522007",
+      "printed_legacy_line": 420,
+      "printed_line_offset": 1917591,
+      "printed_line_drawing_record_offset": 1927124,
+      "printed_line_drawing_record_sha256": "198be4bec81513662bd6918707d7b3b0560edbab1e8c9169364c02efa4952458",
+      "columns": [
+        {
+          "column": 0,
+          "serialized_field_id": 420,
+          "coordinates": [
+            5800,
+            6134
+          ],
+          "numeric_drawing_record_offset": 1927140,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "682b8b7f2b9a1e413376f963a3b3f85a99afb9d20851ffee6cf44394399f0e06",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1939666,
+          "field_record_bytes": 24,
+          "field_record_sha256": "01303f0e1476d1fe1199782f3ec397c29098ddf70eb8bfb1f3b4185d46089d68",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 1,
+          "serialized_field_id": 1420,
+          "coordinates": [
+            6350,
+            6134
+          ],
+          "numeric_drawing_record_offset": 1927156,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "9f2758e9d041b6c946098eaa6bf208109160b6e2ae347fc59a3f0361b5999290",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1939690,
+          "field_record_bytes": 24,
+          "field_record_sha256": "1e61d11c78bce9c8d692cf041aef0987941344cdd6883189da5b85a2038d3afd",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 2,
+          "serialized_field_id": 2420,
+          "coordinates": [
+            6900,
+            6134
+          ],
+          "numeric_drawing_record_offset": 1927172,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "fbfceeb4ece489baaa3a65c80a17fe1d750948eeacda9979e1ef8c19c972cadb",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1939714,
+          "field_record_bytes": 24,
+          "field_record_sha256": "4b2d4fd042b326906d0a6498568d4ab568850e348304cc87209c0724f34e6c4a",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 3,
+          "serialized_field_id": 3420,
+          "coordinates": [
+            7450,
+            6134
+          ],
+          "numeric_drawing_record_offset": 1927188,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "3d9d15d6fa1d7e07247ba1fd86b47aed0c2bbe95b6d8dab5876ae44d2aa06686",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1939738,
+          "field_record_bytes": 24,
+          "field_record_sha256": "311202240dcb593ec48d3c3793264150b139acc09bd059e2260df2f9ae3ec234",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 4,
+          "serialized_field_id": 4420,
+          "coordinates": [
+            8000,
+            6134
+          ],
+          "numeric_drawing_record_offset": 1927204,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "24525a5c9b0f8f930a6eb89e19bce006e855b3c81f4e577e776b1ed3cd252800",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1939762,
+          "field_record_bytes": 24,
+          "field_record_sha256": "c3d8645dfea27b438a3e201e4ebb8f3b33571f746d2de17894045d7570801e65",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        }
+      ]
+    },
+    {
+      "requested_NXT_line": "48400",
+      "source_form": "E11",
+      "production_column_field_id": 484,
+      "label_offset": 1917911,
+      "label_bytes": 6,
+      "label_sha256": "6b37bd35081fcbc6676dcfdfa7a7389f70be9ed70f7d50f5163708e2fafe65f8",
+      "label_drawing_record_offset": 1929236,
+      "label_drawing_record_sha256": "fa2b28ecda5aebd51e0458bb2660ea5d2e706f1e6a65d62527e7478f49812f08",
+      "printed_legacy_line": 484,
+      "printed_line_offset": 1917917,
+      "printed_line_drawing_record_offset": 1929252,
+      "printed_line_drawing_record_sha256": "199dc15398f245393dd36f4594d716a5e47f7643a61e29675d13b7d040614ea7",
+      "columns": [
+        {
+          "column": 0,
+          "serialized_field_id": 484,
+          "coordinates": [
+            5800,
+            9450
+          ],
+          "numeric_drawing_record_offset": 1929268,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "ad14cdb769669cb1c31262d0063adfbd7458cdb85f6a778a79e01d86b8baed2c",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1941946,
+          "field_record_bytes": 24,
+          "field_record_sha256": "4dde02a7f02beaed73a156bf88c6234b55881c1049a07802a4520ac06a9450e0",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 1,
+          "serialized_field_id": 1484,
+          "coordinates": [
+            6350,
+            9450
+          ],
+          "numeric_drawing_record_offset": 1929284,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "228d21dcfc664e482d76e182d14fc14ec3991a7163410482a83a20616d9beea9",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1941970,
+          "field_record_bytes": 24,
+          "field_record_sha256": "6dd07d068d3f67be927ffe5eeabaa0ac32b34c62ae1dd1bcbf6e9a4f281c8fdc",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 2,
+          "serialized_field_id": 2484,
+          "coordinates": [
+            6900,
+            9450
+          ],
+          "numeric_drawing_record_offset": 1929300,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "d5041d616cc3932d22d478c169ea4870b2eccea0a96860bb4a41f0a17a0f2dd3",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1941994,
+          "field_record_bytes": 24,
+          "field_record_sha256": "ed1e97f476fb1ea6969134b5ebb56df4c5ae6224fd428708468c06a84b6a194a",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 3,
+          "serialized_field_id": 3484,
+          "coordinates": [
+            7450,
+            9450
+          ],
+          "numeric_drawing_record_offset": 1929316,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "f310a7b723c17b217340312ede103c8fe22183327699ac88bd0fb0a2c41f2278",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1942018,
+          "field_record_bytes": 24,
+          "field_record_sha256": "39ca85764dd28fd8b44e09138e32be880e77a82edc02d52a3ceeeb9be72ea260",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 4,
+          "serialized_field_id": 4484,
+          "coordinates": [
+            8000,
+            9450
+          ],
+          "numeric_drawing_record_offset": 1929332,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "fe3445ee2d8360c00c0f455e175fb7ec1549ac7f9cf82cba871b04ed9c6f367a",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1942042,
+          "field_record_bytes": 24,
+          "field_record_sha256": "1ca563d0c34c900705912d27e37625397856c3ccf6bd71906067ca7545a3f738",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        }
+      ]
+    },
+    {
+      "requested_NXT_line": "48500",
+      "source_form": "E11",
+      "production_column_field_id": 485,
+      "label_offset": 1917920,
+      "label_bytes": 13,
+      "label_sha256": "19a154a4ba07c59640b936f34bcef8bac5782ad56b4d51a524dae79237001e32",
+      "label_drawing_record_offset": 1929348,
+      "label_drawing_record_sha256": "60a1ae891ad2d295881c93177fdba42cb5478e2ef7947927a2380f549a066733",
+      "printed_legacy_line": 485,
+      "printed_line_offset": 1917933,
+      "printed_line_drawing_record_offset": 1929364,
+      "printed_line_drawing_record_sha256": "6e1da10582ddbef96ab0975f533328aee56cd18ea7fe024f1285833008c0c2d3",
+      "columns": [
+        {
+          "column": 0,
+          "serialized_field_id": 485,
+          "coordinates": [
+            5800,
+            9614
+          ],
+          "numeric_drawing_record_offset": 1929380,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "840df9b712fec4bc3828ffc070159c7d660783aae18155f8291b2a638b97d18f",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1942066,
+          "field_record_bytes": 24,
+          "field_record_sha256": "3da465ae121325da9bf360560ad90560735c24442dabae156b0ab820ade38ba9",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 1,
+          "serialized_field_id": 1485,
+          "coordinates": [
+            6350,
+            9614
+          ],
+          "numeric_drawing_record_offset": 1929396,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "687f7a8bedf89578883224b245288b7b905eae0c0e76e550618429cdeb1d895a",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1942090,
+          "field_record_bytes": 24,
+          "field_record_sha256": "f8f9828eb1a0cdaac645af9fab0079c39f80b8480d97c6fab8e824d5506cfd22",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 2,
+          "serialized_field_id": 2485,
+          "coordinates": [
+            6900,
+            9614
+          ],
+          "numeric_drawing_record_offset": 1929412,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "f4e401fb0f91d8ab2526992845e8d17ea16d5c698087cccf5dfdae47d2a334b5",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1942114,
+          "field_record_bytes": 24,
+          "field_record_sha256": "5315ee60a8338caff375805e779612ad5749b08ad77a6ae1d139f7acf2fbe986",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 3,
+          "serialized_field_id": 3485,
+          "coordinates": [
+            7450,
+            9614
+          ],
+          "numeric_drawing_record_offset": 1929428,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "cbc7dea1187e1f51bdf153954c8031a0e36ef8f021984757ef9effa33fb69ab9",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1942138,
+          "field_record_bytes": 24,
+          "field_record_sha256": "7338ecfa8b0e841af26a9c9fc22a62f597ff83afa45c43eaa21d116f50b80806",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        },
+        {
+          "column": 4,
+          "serialized_field_id": 4485,
+          "coordinates": [
+            8000,
+            9614
+          ],
+          "numeric_drawing_record_offset": 1929444,
+          "numeric_drawing_record_bytes": 16,
+          "numeric_drawing_record_sha256": "cb359a49567e494b6e10849e050b5b0c229ca7d79cb610a82796a207b9a1f88c",
+          "numeric_drawing_embeds_field_id": false,
+          "field_record_offset": 1942162,
+          "field_record_bytes": 24,
+          "field_record_sha256": "1e842e819d89d4b9c704d9ae8f1015f8d74ee36d4b04d5b636342468ad88218b",
+          "join": "unique_exact_coordinates_to_separate_DTFIELD_identifier"
+        }
+      ]
+    }
+  ],
+  "year_association": {
+    "kind": "same_package_explicit_2005_income_tax_return_reference",
+    "resource": {
+      "key": "A89E",
+      "directory_record_offset": 6875795,
+      "offset": 1405998,
+      "bytes": 3734,
+      "sha256": "2c28cabd3f7b196d5e9e58b3affed28201f1e7c7600c2a1179f38132e47302ce"
+    },
+    "phrase_offset": 1406763,
+    "phrase_bytes": 26,
+    "phrase_sha256": "590a8b9623ee951f669b46a0def8b136c8726f893992844361b3c8d3fc5f859a",
+    "DT1WAD05_XML_present": false,
+    "XML_metadata_used": false,
+    "year_runtime_loader_binding_independently_proven": false
+  },
+  "source_client_data_read": false,
+  "vendor_code_executed": false,
+  "source_mutations": 0,
+  "hosted_mutations": 0,
+  "financial_values_approved": false,
+  "limitations": [
+    "Older 16-byte numeric drawings do not embed field IDs. Each is joined by an exact unique coordinate pair to a separate 24-byte DTFIELD identifier record.",
+    "These derived layouts are fully bounded for the selected resources; unrelated drawing/property semantics are not decoded.",
+    "No 2005 XML-year metadata is used. Year association comes from an explicit 2005 income-tax-return reference inside the same pinned package.",
+    "The native year-loader and E11 selector tuple implementation are not independently verified.",
+    "This script reads only installed form packages. It neither inspects client contexts nor establishes missing-versus-zero amount states.",
+    "Binding verification supplies no financial amounts and is not tax approval, calculation, filing, or successful vendor runtime observation."
+  ]
+}

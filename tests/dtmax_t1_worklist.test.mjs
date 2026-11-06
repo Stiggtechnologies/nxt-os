@@ -107,6 +107,14 @@ test('2026 binding evidence keeps preliminary source figures labelled and cannot
   assert.throws(()=>api.recordsHtml('historical-lines',[{...r,year_mapping_review:{...review,source_year_may_be_preliminary:false}}]));
   assert.throws(()=>api.recordsHtml('historical-lines',[{...r,tax_year:2005,year_mapping_review:{...review,tax_year:2005}}]));
 });
+test('2005 coordinate binding review keeps absent amounts absent and rejects another profile',()=>{
+  const review={state:'original_form_bindings_checked',tax_year:2005,source_form:'E11',package_sha256:'90e36c34c9ad98691c872b6d0bc5482459ec5db84f9f32f86b926f234234f745',profile:'dtmax-T1-E11-2005/v1',field_ids:Object.fromEntries(['15000','23600','26000','42000','48400','48500'].map(c=>[c,Number(c)/100])),amounts_recalculated:false,tax_figures_approved:false,source_year_may_be_preliminary:false};
+  const r={tax_year:2005,vendor_module:'T1',mapping_state:'pending_year_verification',values_cents:Object.fromEntries(Object.keys(review.field_ids).map(c=>[c,null])),year_mapping_review:review};
+  const original=JSON.stringify(r),html=api.recordsHtml('historical-lines',[r]);
+  assert.equal((html.match(/Absent/g)||[]).length,7);assert.ok(!html.includes('$0.00</td>'));assert.ok(html.includes('Year-specific form bindings checked'));assert.equal(JSON.stringify(r),original);
+  assert.throws(()=>api.recordsHtml('historical-lines',[{...r,year_mapping_review:{...review,profile:'dtmax-T1-E11-additional-years/v1'}}]));
+  assert.throws(()=>api.recordsHtml('historical-lines',[{...r,vendor_module:'T3',mapping_state:'pending_module_verification'}]));
+});
 test('exception retrieval is lazy, scope checked and stops when another workspace is selected',async()=>{
   const h=harness();let resolve;const pending=new Promise(r=>resolve=r);let count=0;
   const c=api.mount(h.host,{request:async path=>{if(path.includes('/source-exceptions?')){count++;return pending;}return page();}});await c.ready;assert.equal(count,0);
