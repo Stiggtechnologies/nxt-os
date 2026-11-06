@@ -6,6 +6,7 @@ pub mod files;
 mod lanes;
 mod routes;
 pub mod test_copy;
+pub mod preserved_records;
 
 use crate::store::Store;
 use axum::http::StatusCode;

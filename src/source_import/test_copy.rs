@@ -87,7 +87,7 @@ fn client_number_ok(v: &str) -> bool { !v.is_empty() && v.len() <= 12 && v.bytes
 fn reject(out: &mut BTreeMap<String, u64>, reason: &str) { *out.entry(reason.into()).or_default() += 1; }
 
 impl super::SourceImport {
-    fn test_copy_guard(&self, company: &str, flag: bool) -> Result<()> {
+    pub(super) fn test_copy_guard(&self, company: &str, flag: bool) -> Result<()> {
         if !valid_token(company) { return Err(bad("Invalid company id")); }
         if !flag { return Err(conflict("test_copy_flag_required: real DT Max data loads only with \"test_copy\": true")); }
         if !store_accepts_clients(self.store.backend_name(), std::env::var("NXT_DTMAX_HOSTED").ok().as_deref()) {
