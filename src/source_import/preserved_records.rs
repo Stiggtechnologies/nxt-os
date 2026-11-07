@@ -176,7 +176,8 @@ mod recovery_tests {
 impl SourceImport {
     /// Personal T1 source clients are a firm-wide import scope, not QBO companies
     /// or independently calculated NXT tax cases. Years come from individual
-    /// historical facts rather than legacy physical-file stems.
+    /// native historical facts plus separately qualified PDF observation years,
+    /// rather than legacy physical-file stems.
     pub async fn test_copy_source_clients(&self, company: &str, page: SourceClientPage) -> Result<Value> {
         self.test_copy_guard(company,true)?;
         let sort=page.sort.as_deref().unwrap_or("client_number");let direction=page.direction.as_deref().unwrap_or("asc");
@@ -194,7 +195,8 @@ impl SourceImport {
         let (_,unresolved)=self.review_pending_mapping_records(company).await?;
         let mut pending:BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
         for v in unresolved {pending.entry(v.client_number).or_default().insert(v.tax_year);}
-        let available: BTreeSet<u16>=years.values().flat_map(|v|v.iter().copied()).collect();
+        let paper_years=self.preserved_pdf_figure_years(company).await?;
+        let available: BTreeSet<u16>=years.values().chain(paper_years.values()).flat_map(|v|v.iter().copied()).collect();
         let mut numbers=self.store.smembers(&k(company,"clients")).await.map_err(|e| storage(&e))?;
         numbers.sort_by(|a,b|(a.len(),a).cmp(&(b.len(),b)));
         let needle=page.search.trim().to_lowercase();let mut clients=Vec::new();let mut statuses=BTreeSet::new();let mut provinces=BTreeSet::new();
@@ -206,13 +208,21 @@ impl SourceImport {
                 let name=client["name"].as_str().ok_or_else(||storage("stored client name missing"))?;
                 let status=client["processing_status"].as_str().unwrap_or("");let province=client["province"].as_str().unwrap_or("");
                 if !status.is_empty(){statuses.insert(status.to_string());}if !province.is_empty(){provinces.insert(province.to_string());}
-                let historical=years.get(number).cloned().unwrap_or_default();
+                let native_historical=years.get(number).cloned().unwrap_or_default();
+                let paper=paper_years.get(number).cloned().unwrap_or_default();
+                let historical:BTreeSet<u16>=native_historical.union(&paper).copied().collect();
                 if page.year.is_some_and(|y|!historical.contains(&y)) || !format!("{number} {name}").to_lowercase().contains(&needle) || page.status.as_ref().is_some_and(|s|s!=status) || page.province.as_ref().is_some_and(|s|s!=province) { continue }
                 let mut profile=serde_json::Map::new();
                 for field in ["processing_status","email","home_phone","work_phone","cell_phone","street","city","postal_code","province","country"] {
                     if let Some(value)=client.get(field).and_then(Value::as_str) { profile.insert(field.into(),json!(value)); }
                 }
-                clients.push(json!({"client_number":number,"name":name,"historical_years":historical,"pending_years":pending.get(number).cloned().unwrap_or_default(),"pending_years_at_import":pending_at_import.get(number).cloned().unwrap_or_default(),"source_profile":profile}));
+                let mut row=json!({"client_number":number,"name":name,"historical_years":historical,"pending_years":pending.get(number).cloned().unwrap_or_default(),"pending_years_at_import":pending_at_import.get(number).cloned().unwrap_or_default(),"source_profile":profile});
+                if !paper.is_empty() {
+                    row["native_historical_years"]=json!(native_historical);
+                    row["preserved_pdf_figure_years"]=json!(paper);
+                    row["pdf_only_years"]=json!(paper.difference(&native_historical).copied().collect::<BTreeSet<_>>());
+                }
+                clients.push(row);
             }
         }
         clients.sort_by(|a,b|{
@@ -321,6 +331,7 @@ impl SourceImport {
     /// Paginated source evidence for a stable individual client number. Pending mappings
     /// remain labelled in the returned record, and no return is recalculated or created.
     pub async fn test_copy_client_source_facts(&self, company: &str, client: &str, page: SourceFactPage) -> Result<Value> {
+        if page.kind=="preserved-pdf-figures" {return self.test_copy_client_preserved_pdf_figures(company,client,page).await}
         if page.kind=="printed-cached-figures" {return self.test_copy_client_printed_cached_figures(company,client,page).await}
         if page.kind=="linked-t5008" {return self.test_copy_client_legacy_slips(company,client,page).await}
         if page.kind=="native-slip-views" {return self.test_copy_client_native_slip_views(company,client,page).await}

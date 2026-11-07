@@ -5,3 +5,5 @@ src/source_import/printed_cached_figure_profile.json text eol=lf
 src/source_import/retained_office_T1_profile.json text eol=lf
 src/source_import/retained_office_T1_stable_identifier_profile.json text eol=lf
 src/source_import/retained_office_T1_scanned_profile.json text eol=lf
+src/source_import/preserved_pdf_figure_profile.json text eol=lf
+src/source_import/preserved_pdf_line_authority.json text eol=lf

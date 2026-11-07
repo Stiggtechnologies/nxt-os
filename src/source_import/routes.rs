@@ -87,6 +87,9 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/source-facts", get(test_copy_client_source_facts))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/return-pdfs", post(test_copy_preserve_return_pdf))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/printed-cached-figures", post(test_copy_printed_cached_figures))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/preserved-pdf-figures", post(test_copy_preserved_pdf_figures))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/preserved-pdf-figures/read", post(test_copy_read_preserved_pdf_figures))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/preserved-pdf-figures/summary", get(test_copy_preserved_pdf_figure_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/printed-cached-figures/read", post(test_copy_read_printed_cached_figures))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/printed-cached-figures/summary", get(test_copy_printed_cached_figure_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/return-pdfs", get(test_copy_return_pdfs))
@@ -292,3 +295,7 @@ async fn test_copy_return_pdfs(State(state): S, Path((company,client)): Path<(St
 async fn test_copy_return_pdf_content(State(state): S, Path((company,client,year,sha)): Path<(String,String,u16,String)>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_return_pdf_content(&company,&client,year,&sha).await?))
 }
+
+async fn test_copy_preserved_pdf_figures(State(state):S,Path(company):Path<String>,Json(body):Json<super::preserved_pdf_figures::PreservedPdfFigureBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_preserved_pdf_figures(&company,body).await?))}
+async fn test_copy_read_preserved_pdf_figures(State(state):S,Path(company):Path<String>,Json(body):Json<super::preserved_pdf_figures::PreservedPdfFigureLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_preserved_pdf_figures(&company,body).await?))}
+async fn test_copy_preserved_pdf_figure_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_preserved_pdf_figure_summary(&company).await?))}
