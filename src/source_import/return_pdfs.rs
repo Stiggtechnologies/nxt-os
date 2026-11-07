@@ -11,6 +11,10 @@ pub const MAX_PDF_BYTES: usize = 2 * 1024 * 1024;
 const OFFICE_JSON_LIMIT: usize = 4_400_000;
 pub const OFFICE_PROFILE: &str = "b51cc8aec7d930f6e5b4d05575538f87856a39c600f5893a0828aff96816812e";
 const OFFICE_CLOSED_SHA: &str = "cdf3d627d0a531653e57dff0e966e85a44b76da32a17e5634c2bd12afc6049ef";
+pub const STABLE_OFFICE_PROFILE: &str = "8b45d6655423ff1f2e0f8202a1009f25b1e472c73f7b7591b581a73264f42028";
+const STABLE_OFFICE_CLOSED_SHA: &str = "4440152771f22dab553674aad5628d90e42f19456805eace7a09d64f4ef3de04";
+pub const SCANNED_OFFICE_PROFILE: &str = "606e38ceaa60949c7d631761beb49bd6afc5c95fb56fe1b0a9290a78062c0480";
+const SCANNED_OFFICE_CLOSED_SHA: &str = "a8ea94063e20e441652079483b08d5ce6b2f127b2ad27b932db603656ad6621e";
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ReturnPdfInput {
@@ -67,22 +71,63 @@ fn office_profile() -> &'static OfficeClosedProfile {
         p
     })
 }
+fn stable_office_profile() -> &'static OfficeClosedProfile {
+    static P: OnceLock<OfficeClosedProfile> = OnceLock::new();
+    P.get_or_init(|| {
+        let raw = include_bytes!("retained_office_T1_stable_identifier_profile.json");
+        assert_eq!(hex::encode(Sha256::digest(raw)), STABLE_OFFICE_CLOSED_SHA);
+        let p: OfficeClosedProfile = serde_json::from_slice(raw).expect("closed stable-identifier office T1 profile");
+        assert_eq!(p.profile_sha256, STABLE_OFFICE_PROFILE);
+        assert_eq!(hex::encode(Sha256::digest(serde_json::to_vec(&p.contract).unwrap())), STABLE_OFFICE_PROFILE);
+        assert!(digest(&p.source_packet_sha256));
+        assert_eq!(p.record_count, 2);
+        assert_eq!(p.allowed_record_sha256.len(), 2);
+        assert_eq!(p.document_sha256.len(), 2);
+        assert!(p.allowed_record_sha256.iter().chain(&p.document_sha256).all(|s|digest(s)));
+        assert!(p.document_sha256.is_disjoint(&office_profile().document_sha256));
+        p
+    })
+}
+fn scanned_office_profile() -> &'static OfficeClosedProfile {
+    static P: OnceLock<OfficeClosedProfile> = OnceLock::new();
+    P.get_or_init(|| {
+        let raw = include_bytes!("retained_office_T1_scanned_profile.json");
+        assert_eq!(hex::encode(Sha256::digest(raw)), SCANNED_OFFICE_CLOSED_SHA);
+        let p: OfficeClosedProfile = serde_json::from_slice(raw).expect("closed scanned-office T1 profile");
+        assert_eq!(p.profile_sha256, SCANNED_OFFICE_PROFILE);
+        assert_eq!(hex::encode(Sha256::digest(serde_json::to_vec(&p.contract).unwrap())), SCANNED_OFFICE_PROFILE);
+        assert!(digest(&p.source_packet_sha256));
+        assert_eq!(p.record_count, 1);
+        assert_eq!(p.allowed_record_sha256.len(), 1);
+        assert_eq!(p.document_sha256.len(), 1);
+        assert!(p.allowed_record_sha256.iter().chain(&p.document_sha256).all(|s|digest(s)));
+        assert!(p.document_sha256.is_disjoint(&office_profile().document_sha256));
+        assert!(p.document_sha256.is_disjoint(&stable_office_profile().document_sha256));
+        p
+    })
+}
 fn office_descriptor(r: &Record) -> Value {
     json!({"client_number":r.client_number,"tax_year":r.tax_year,"sha256":r.sha256,"bytes":r.bytes,"page_labels":r.page_labels,"retained_office_provenance":r.retained_office_provenance})
 }
 fn validate_record_provenance(r: &Record) -> Result<()> {
     if let Some(p) = &r.retained_office_provenance {
-        if r.export_provenance.is_some() || p.kind != "retained_office_T1_document"
-            || p.profile_sha256 != OFFICE_PROFILE || p.native_generation_verified
+        if r.export_provenance.is_some() || p.native_generation_verified
             || p.as_filed_verified || p.financial_values_approved || p.source_bytes_modified
             || [&p.source_manifest_sha256,&p.source_occurrence_manifest_sha256,&p.owner_year_evidence_sha256,
                 &p.mixed_owner_year_review_sha256,&p.static_pdf_review_sha256,&p.source_metadata_sha256].iter().any(|s|!digest(s))
         { return Err(bad("Retained office T1 provenance differs")); }
+        let selected = if p.kind == "retained_office_T1_document" && p.profile_sha256 == OFFICE_PROFILE {
+            office_profile()
+        } else if p.kind == "retained_office_T1_stable_identifier_document" && p.profile_sha256 == STABLE_OFFICE_PROFILE {
+            stable_office_profile()
+        } else if p.kind == "retained_office_T1_scanned_document" && p.profile_sha256 == SCANNED_OFFICE_PROFILE {
+            scanned_office_profile()
+        } else { return Err(bad("Retained office T1 evidence method or contract differs")); };
         let raw = serde_json::to_vec(&office_descriptor(r)).map_err(|_|bad("Cannot encode office T1 descriptor"))?;
-        if !office_profile().document_sha256.contains(&r.sha256)
-            || !office_profile().allowed_record_sha256.contains(&hex::encode(Sha256::digest(raw)))
+        if !selected.document_sha256.contains(&r.sha256)
+            || !selected.allowed_record_sha256.contains(&hex::encode(Sha256::digest(raw)))
         { return Err(bad("Office T1 document is outside independently closed owner/year evidence")); }
-    } else if office_profile().document_sha256.contains(&r.sha256) {
+    } else if office_profile().document_sha256.contains(&r.sha256) || stable_office_profile().document_sha256.contains(&r.sha256) || scanned_office_profile().document_sha256.contains(&r.sha256) {
         return Err(bad("This retained office T1 document requires its explicit office provenance"));
     }
     if let Some(p)=&r.export_provenance {validate_export(p)?;}
@@ -126,6 +171,27 @@ mod tests {
         client_number:String,tax_year:u16,sha256:String,page_labels:Vec<String>,bytes:usize,
         #[serde(default,skip_serializing_if="Option::is_none")]
         export_provenance:Option<CachedNativeExport>,
+    }
+    #[test]
+    fn stable_identifier_method_is_separate_and_cannot_fall_back_to_native_mode() {
+        let stable=stable_office_profile();let original=office_profile();
+        assert_eq!(stable.record_count,2);assert_eq!(original.record_count,177);
+        assert_eq!(stable.source_packet_sha256,"102085c07e719cc72a5c070afd60c0976e1968f37ff0dc3641ac5a2a6a09bcbd");
+        assert_ne!(STABLE_OFFICE_PROFILE,OFFICE_PROFILE);
+        assert!(stable.document_sha256.is_disjoint(&original.document_sha256));
+        for hash in stable.document_sha256.iter().chain(&original.document_sha256) {
+            let record:Record=serde_json::from_value(json!({"client_number":"100","tax_year":2024,"sha256":hash,"page_labels":["Synthetic"],"bytes":123})).unwrap();
+            assert!(validate_record_provenance(&record).is_err());
+        }
+    }
+    #[test]
+    fn scanned_method_is_separately_closed_and_cannot_claim_another_method_or_native_origin() {
+        let p=scanned_office_profile();assert_eq!(p.record_count,1);
+        assert_ne!(SCANNED_OFFICE_PROFILE,STABLE_OFFICE_PROFILE);assert_ne!(SCANNED_OFFICE_PROFILE,OFFICE_PROFILE);
+        for hash in &p.document_sha256 {
+            let record:Record=serde_json::from_value(json!({"client_number":"100","tax_year":2018,"sha256":hash,"page_labels":["Synthetic"],"bytes":123})).unwrap();
+            assert!(validate_record_provenance(&record).is_err());
+        }
     }
     #[test]
     fn office_profile_is_closed_and_legacy_field_omission_is_exact() {
