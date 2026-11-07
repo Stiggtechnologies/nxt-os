@@ -11,8 +11,11 @@ pub mod return_pdfs;
 pub mod source_exceptions;
 pub mod native_slip_views;
 pub mod native_slip_supplements;
+pub mod native_merged_slip_fields;
 pub mod personal_source_info;
+pub mod native_module_reviews;
 pub mod legacy_owner_links;
+pub mod legacy_family_lineage;
 
 use crate::store::Store;
 use axum::http::StatusCode;

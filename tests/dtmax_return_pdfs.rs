@@ -33,6 +33,23 @@ async fn original_pdf_is_immutable_hash_checked_and_cannot_cross_client_or_scope
     }
 }
 #[tokio::test]
+async fn cached_native_export_provenance_is_explicit_pinned_and_immutable(){
+    let app=app();
+    req(&app,"POST","clients",json!({"test_copy":true,"clients":[{"client_number":"100","name":"Synthetic Person"}]}),true).await;
+    let mut v=input();
+    let p=json!({"kind":"cached_native_export","source_backup_sha256":"7b760c8406ac29f6942898818c28be03c823128fdb164b5b03885f9f37b0eed5","native_family_file_sha256":"a".repeat(64),"export_log_sha256":"b".repeat(64),"exported_at_utc":"2026-11-07T03:25:46Z","recalculated":false,"as_filed_verified":false,"figures_csv_sha256":"c16c0bdc3036932f54e09cdd698513344c945cc4e8ba006cca54cd2fe8f93a94","figure_comparisons":{"15000":"verified_equal_source","23600":"printed_source_difference","26000":"verified_equal_source","42000":"verified_equal_source","48400":"verified_equal_source","48500":"comparison_unavailable_source_absent"}});
+    v["export_provenance"]=p.clone();
+    for (field,value) in [("kind",json!("retained_native_print")),("source_backup_sha256",json!("0".repeat(64))),("native_family_file_sha256",json!("bad")),("export_log_sha256",json!("bad")),("exported_at_utc",json!("2026-02-31T12:00:00Z")),("recalculated",json!(true)),("as_filed_verified",json!(true))] {
+        let mut bad=v.clone();bad["export_provenance"][field]=value;assert_eq!(req(&app,"POST","return-pdfs",bad,true).await.0,400,"accepted invalid {field}");
+    }
+    let mut bad=v.clone();bad["export_provenance"]["figure_comparisons"]["23600"]=json!("approved");assert_eq!(req(&app,"POST","return-pdfs",bad,true).await.0,400);
+    let (status,r)=req(&app,"POST","return-pdfs",v.clone(),true).await;assert_eq!(status,200,"{r}");assert_eq!(r["record"]["export_provenance"],p);
+    assert_eq!(req(&app,"POST","return-pdfs",v.clone(),true).await.1["created"],false);
+    let (_,r)=req(&app,"GET","clients/100/return-pdfs",Value::Null,true).await;assert_eq!(r["records"][0]["export_provenance"],p);
+    let sha=v["sha256"].as_str().unwrap();let (_,r)=req(&app,"GET",&format!("clients/100/return-pdfs/2024/{sha}"),Value::Null,true).await;assert_eq!(r["record"]["export_provenance"],p);assert_eq!(r["content_hex"],v["content_hex"]);
+    v.as_object_mut().unwrap().remove("export_provenance");assert_eq!(req(&app,"POST","return-pdfs",v,true).await.0,409);
+}
+#[tokio::test]
 async fn optional_private_print_output_passes_the_same_parser_and_round_trip(){
     let Ok(path)=std::env::var("NXT_DTMAX_PRINT_OUTPUT")else{return};
     let client=std::env::var("NXT_DTMAX_PRINT_CLIENT").expect("explicit source client required");
