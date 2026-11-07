@@ -177,6 +177,7 @@ impl super::SourceImport {
             records.push(json!({"record_id":identity,"record_sha256":hex::encode(Sha256::digest(canonical)),
                 "raw_client_registered":linked(identity),"record":record,"exact_family_file_context":family_context}));
         }
+        if page.kind=="returns" {self.attach_legacy_family_lineage(company,&mut records).await?;}
         Ok(json!({"test_copy":true,"source_scope":company,"kind":page.kind,"linkage":page.linkage,
             "offset":page.offset,"limit":page.limit,"total":total,"source_total":source_total,
             "raw_unlinked_total":raw_unlinked,"records":records,"source_rows_modified":0,"tax_cases_imported":0}))

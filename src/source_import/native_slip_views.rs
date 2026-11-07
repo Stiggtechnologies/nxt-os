@@ -151,6 +151,7 @@ impl SourceImport {
             views.push(v);
         }
         self.attach_native_supplements(company,&views,&mut records).await?;
+        self.attach_native_merged_slip_fields(company,&views,&mut records).await?;
         Ok(json!({"test_copy":true,"source_scope":company,"client_number":client,"source_return_year":page.source_return_year,"kind":"native-slip-views","offset":page.offset,"total":total,"records":records,"normalized_slips_created":0,"tax_cases_imported":0,"live_cutover_allowed":false}))
     }
     pub async fn test_copy_native_slip_summary(&self, company: &str) -> Result<Value> {

@@ -57,11 +57,17 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-records", get(test_copy_legacy_page))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-owner-links", post(test_copy_legacy_owner_links))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-owner-links/summary", get(test_copy_legacy_owner_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-family-lineage", post(test_copy_legacy_family_lineage))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-family-lineage/read", post(test_copy_read_legacy_family_lineage))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-family-lineage/summary", get(test_copy_legacy_family_lineage_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-exceptions", post(test_copy_preserve_source_exception).get(test_copy_source_exceptions))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-exceptions/{archive}/{offset}", get(test_copy_source_exception_content))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-slip-views", post(test_copy_native_slip_views))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-slip-supplements", post(test_copy_native_slip_supplements))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-slip-supplements/summary", get(test_copy_native_supplement_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-merged-slip-fields", post(test_copy_native_merged_slip_fields))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-merged-slip-fields/summary", get(test_copy_native_merged_slip_field_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-merged-slip-fields/read", post(test_copy_read_native_merged_slip_fields))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-slip-views/summary", get(test_copy_native_slip_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/family-files", post(test_copy_family_files))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/historical-lines", post(test_copy_historical_lines))
@@ -71,6 +77,9 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/personal-source-info", post(test_copy_personal_source_info))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/personal-source-info/read", post(test_copy_read_personal_source_info))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/personal-source-info/summary", get(test_copy_personal_source_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-module-reviews", post(test_copy_native_module_reviews))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-module-reviews/read", post(test_copy_read_native_module_reviews))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-module-reviews/summary", get(test_copy_native_module_review_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-clients", get(test_copy_source_clients))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/source-facts", get(test_copy_client_source_facts))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/return-pdfs", post(test_copy_preserve_return_pdf))
@@ -112,6 +121,9 @@ async fn test_copy_legacy_owner_links(State(state): S, Path(company): Path<Strin
 async fn test_copy_legacy_owner_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_legacy_owner_summary(&company).await?))
 }
+async fn test_copy_legacy_family_lineage(State(state):S,Path(company):Path<String>,Json(body):Json<super::legacy_family_lineage::FamilyLineageBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_legacy_family_lineage(&company,body).await?))}
+async fn test_copy_read_legacy_family_lineage(State(state):S,Path(company):Path<String>,Json(body):Json<super::legacy_family_lineage::FamilyLineageLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_legacy_family_lineage(&company,body).await?))}
+async fn test_copy_legacy_family_lineage_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_legacy_family_lineage_summary(&company).await?))}
 
 async fn open(State(state): S, Path(lane): Path<String>, Json(batch): Json<OpenBatch>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.open(&lane, batch).await?))
@@ -219,6 +231,15 @@ async fn test_copy_native_slip_supplements(State(state): S, Path(company): Path<
 async fn test_copy_native_supplement_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_native_supplement_summary(&company).await?))
 }
+async fn test_copy_native_merged_slip_fields(State(state): S, Path(company): Path<String>, Json(body): Json<super::native_merged_slip_fields::MergedFieldBatch>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_native_merged_slip_fields(&company,body).await?))
+}
+async fn test_copy_native_merged_slip_field_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_native_merged_slip_field_summary(&company).await?))
+}
+async fn test_copy_read_native_merged_slip_fields(State(state): S, Path(company): Path<String>, Json(body): Json<super::native_merged_slip_fields::MergedFieldLookup>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_read_native_merged_slip_fields(&company,body).await?))
+}
 async fn test_copy_native_slip_summary(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_native_slip_summary(&company).await?))
 }
@@ -241,6 +262,9 @@ async fn test_copy_read_source_facts(State(state): S, Path(company): Path<String
 async fn test_copy_personal_source_info(State(state):S,Path(company):Path<String>,Json(body):Json<super::personal_source_info::PersonalBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_personal_source_info(&company,body).await?))}
 async fn test_copy_read_personal_source_info(State(state):S,Path(company):Path<String>,Json(body):Json<super::personal_source_info::PersonalLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_personal_source_info(&company,body).await?))}
 async fn test_copy_personal_source_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_personal_source_summary(&company).await?))}
+async fn test_copy_native_module_reviews(State(state):S,Path(company):Path<String>,Json(body):Json<super::native_module_reviews::NativeModuleReviewBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_native_module_reviews(&company,body).await?))}
+async fn test_copy_read_native_module_reviews(State(state):S,Path(company):Path<String>,Json(body):Json<super::native_module_reviews::NativeModuleReviewLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_native_module_reviews(&company,body).await?))}
+async fn test_copy_native_module_review_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_native_module_review_summary(&company).await?))}
 async fn test_copy_source_clients(State(state): S, Path(company): Path<String>, Query(page): Query<super::preserved_records::SourceClientPage>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_source_clients(&company,page).await?))
 }

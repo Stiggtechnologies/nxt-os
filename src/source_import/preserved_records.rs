@@ -323,6 +323,7 @@ impl SourceImport {
     pub async fn test_copy_client_source_facts(&self, company: &str, client: &str, page: SourceFactPage) -> Result<Value> {
         if page.kind=="linked-t5008" {return self.test_copy_client_legacy_slips(company,client,page).await}
         if page.kind=="native-slip-views" {return self.test_copy_client_native_slip_views(company,client,page).await}
+        if page.kind=="historical-family-lineage" {return self.test_copy_client_legacy_family_lineage(company,client,page).await}
         if page.source_return_year.is_some() {return Err(bad("Source return year filter applies only to native slip views"))}
         self.test_copy_guard(company,true)?;
         if !number(client) || page.limit == 0 || page.limit > 100 { return Err(bad("Invalid client or page limit")) }
@@ -346,7 +347,10 @@ impl SourceImport {
             }
             records.push(record);
         }
-        if page.kind=="historical-lines" {self.attach_personal_source_info(company,&mut records).await?;}
+        if page.kind=="historical-lines" {
+            self.attach_personal_source_info(company,&mut records).await?;
+            self.attach_native_module_reviews(company,&mut records).await?;
+        }
         Ok(json!({"test_copy":true,"client_number":client,"kind":page.kind,"total":total,"offset":page.offset,"records":records,"tax_cases_imported":0,"live_cutover_allowed":false}))
     }
     pub async fn test_copy_read_source_facts(&self,company:&str,lookup:SourceFactLookup)->Result<Value> {

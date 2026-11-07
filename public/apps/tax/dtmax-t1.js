@@ -5,7 +5,7 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
   const lines=['15000','23600','26000','42000','48400','48500'];
   const labels=['Total income','Net income','Taxable income','Net federal tax','Refund','Balance owing'];
-  const kinds={'historical-lines':'Historical totals','afr-slips':'CRA slips','native-slip-views':'Native slip fields','linked-t5008':'Linked T5008 CSV','family-files':'Family files'};
+  const kinds={'historical-lines':'Historical totals','afr-slips':'CRA slips','native-slip-views':'Native slip fields','linked-t5008':'Linked T5008 CSV','family-files':'Family files','historical-family-lineage':'Recovered family links'};
   const integer=v=>Number.isSafeInteger(v)&&v>=0;
   function cents(value) {
     if(value===null)return 'Absent';
@@ -38,13 +38,31 @@
       const profile=r.tax_year===2005?'dtmax-T1-E11-2005/v1':[2013,2014].includes(r.tax_year)?'dtmax-T1-E11-2013-2014/v1':'dtmax-T1-E11-additional-years/v1';
       if(!v||r.vendor_module!=='T1'||r.mapping_state!=='pending_year_verification'||v.tax_year!==r.tax_year||!pins[r.tax_year]||v.package_sha256!==pins[r.tax_year]||v.state!=='original_form_bindings_checked'||v.source_form!=='E11'||v.profile!==profile||v.amounts_recalculated!==false||v.tax_figures_approved!==false||(![2013,2014].includes(r.tax_year)&&v.source_year_may_be_preliminary!==(r.tax_year===2026))||!v.field_ids||Object.keys(v.field_ids).length!==6||lines.some(l=>v.field_ids[l]!==Number(l)/100))throw Error('Year-specific source mapping review did not match');
     }
-    lines.forEach(l=>cents(r.values_cents[l]));return r;
+    lines.forEach(l=>cents(r.values_cents[l]));nativeModuleReviewed(r);return r;
   }
-  function mappingLabel(r){return r.year_mapping_review?'Year-specific form bindings checked; source totals'+(r.tax_year===2026?' — may be preliminary or planning data':''):r.mapping_state==='vendor_static_verified'?'Vendor mapping checked; source totals':'Mapping needs verification';}
+  function nativeModuleReviewed(r){
+    const p=r.native_module_review;if(p===undefined)return false;
+    const hash=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
+    if(!p||p.schema!=='dtmax-native-source-module-review/v1'||p.binding_profile_sha256!=='d33fd86f7924d50e96f6ce4916ff14df8d4740a46863fb13cb1900842dd59604'||p.client_number!==r.client_number||p.family_file_id!==r.family_file_id||p.source_year!==r.tax_year||p.archive_sha256!==r.archive_sha256||r.vendor_module!=='T3'||r.mapping_state!=='pending_module_verification'||p.reader_module!=='T3'||p.native_source_module!=='T1'||p.review_state!=='native_source_module_origin_verified'||['original_history_updated','personal_sidecar_flags_updated','identity_verified','tax_figures_approved'].some(k=>p[k]!==false)||p.native_authority?.module_index!==1||p.native_authority.path_rule_exact!==true||p.native_authority.source_archive_magic!=='0xaeaeaebe'||p.native_file?.relative_path!=='T1\\'+r.tax_year+'\\'+r.family_file_id+'.P'+String(r.tax_year).slice(-2)||p.native_file.physical_raw_stream!==true||!hash(p.native_file.sha256)||p.info1?.crc_verified!==true||p.e11?.source_personal_prefix!==182||!p.e11.fields||Object.keys(p.e11.fields).length!==6)throw Error('Native T1 source-origin review did not match');
+    const personal=r.source_personal_info,frames=p.source_frames;
+    if(!personal||personal.binding_profile_sha256!=='9b7fc393b7632f0baa4e74806883a199c12f7cd0f79ed2dc7c6706c322acc10e'||personal.client_number!==r.client_number||personal.family_file_id!==r.family_file_id||personal.source_year!==r.tax_year||personal.archive_sha256!==r.archive_sha256||personal.reader_module!=='T3'||personal.t1_display_eligible!==false||personal.display_state!=='held_module_origin'||!personal.info1||!frames?.EXF||!frames.EXY||!frames.EXC||['frame_offset','frame_sha256','expanded_sha256','expanded_bytes','crc_verified'].some(k=>personal.info1[k]!==p.info1[k])||![p.info1.frame_sha256,p.info1.expanded_sha256,frames.EXC.frame_sha256].every(hash)||personal.source_EXF_file_id!==frames.EXF.selected_file_id||personal.source_year_frame_offset!==frames.EXY.frame_offset||personal.source_context_offset!==frames.EXC.frame_offset||personal.source_EXC_sha256!==frames.EXC.frame_sha256||frames.EXC.client_number!==r.client_number||frames.EXY.native_tax_year!==r.tax_year||frames.EXF.selected_file_id!==frames.EXC.member_file_id||String(frames.EXF.selected_file_id)!==r.family_file_id||frames.EXC.descriptor_terminal_byte!==0)throw Error('Native T1 source review and personal frame anchors differ');
+    if(typeof p.e11.reader_has_calculated_return!=='boolean'||p.e11.reader_has_calculated_return!==(p.e11.form!==null))throw Error('Native calculated-source presence did not match');
+    for(const line of lines){
+      const f=p.e11.fields[line];
+      if(!f||f.field_id!==Number(line)/100)throw Error('Native T1 source field did not match');
+      if(f.state==='absent'){if(r.values_cents[line]!==null||f.source_wire_integer!==null||f.source_decimal!==null||f.scale_divisor!==null)throw Error('Absent native source figure changed');}
+      else if(['explicit_zero','present_value'].includes(f.state)){
+        if(!Number.isInteger(f.source_wire_integer)||f.source_wire_integer< -2147483648||f.source_wire_integer>2147483647||f.scale_divisor!==100||typeof r.values_cents[line]!=='string'||!/^(-?[1-9]\d*|0)$/.test(r.values_cents[line])||BigInt(f.source_wire_integer)!==BigInt(r.values_cents[line])||(f.state==='explicit_zero')!==(f.source_wire_integer===0)||p.e11.form?.name!=='E11'||p.e11.form.record_type!==30||p.e11.form.outer_plan!==0||p.e11.form.crc_verified!==true||p.e11.form.marker_field1_present!==true)throw Error('Native T1 source figure differs from preserved cents');
+        const n=BigInt(f.source_wire_integer),a=n<0n?-n:n,fraction=a%100n,decimal=(n<0n?'-':'')+(a/100n)+(fraction?'.'+fraction.toString().padStart(2,'0').replace(/0$/,''):'');if(f.source_decimal!==decimal)throw Error('Native source decimal differs from its wire value');
+      }else throw Error('Unknown native source figure state');
+    }
+    return true;
+  }
+  function mappingLabel(r){return nativeModuleReviewed(r)?'Native T1 origin and original E11 fields verified; original converter label T3 retained':r.year_mapping_review?'Year-specific form bindings checked; source totals'+(r.tax_year===2026?' — may be preliminary or planning data':''):r.mapping_state==='vendor_static_verified'?'Vendor mapping checked; source totals':'Mapping needs verification';}
   function historicalTotalsHtml(record){
     if(!record)return '<p>No imported totals for the selected year.</p>';
     const r=checkHistorical(record);
-    if(r.vendor_module!=='T1')return '<h3>Converter label '+esc(r.vendor_module)+' · '+r.tax_year+'</h3><p class="dtmax-notice">The converter inferred this module label. Its candidate values are not shown as T1 totals while the original source module is verified. The original source is preserved.</p>';
+    if(r.vendor_module!=='T1'&&!nativeModuleReviewed(r))return '<h3>Converter label '+esc(r.vendor_module)+' · '+r.tax_year+'</h3><p class="dtmax-notice">The converter inferred this module label. Its candidate values are not shown as T1 totals while the original source module is verified. The original source is preserved.</p>';
     return '<h3>Historical totals · '+r.tax_year+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])]))+'<p>'+esc(mappingLabel(r))+'</p>';
   }
   function nativeSlipViewsHtml(records) {
@@ -81,12 +99,32 @@
         return '<tr><th scope="row">'+esc(label)+'<small>Source field '+f.field_id+(additional?' · Additional recovered field':'')+'</small></th><td>'+display+'</td></tr>';
       }).join('');
       const pending=(r.vendor_module!=='T1'?'Converter module label needs verification.':r.source_return_year!==2025?'Historical year bindings need review.':'Source-2025 financial field profile checked; box conversion remains pending.')+(r.source_return_year===2026?' May be preliminary or planning source data.':'');
-      return '<details class="dtmax-native-slip"><summary>'+esc(r.vendor_slip_kind)+' · Source return year '+r.source_return_year+' · View '+(r.vendor_slip_ordinal+1)+' · '+(r.from_data_segment?'Data source':'Cached source')+'</summary><p>'+esc(pending)+'</p>'+(body?'<div class="table-wrap"><table><thead><tr><th>Source field</th><th>Active source value</th></tr></thead><tbody>'+body+'</tbody></table></div>':'<p>No fields from this financial profile are present in this view. Other original fields remain in the preserved extract.</p>')+'<details><summary>Source selection and provenance</summary><p>'+esc(r.selection_review)+'</p><p>Archive '+esc(r.source_archive_sha256)+'<br>View file '+esc(r.source_view_file_sha256)+'<br>Original view '+r.source_view_number+' · '+esc(r.source_view_line_sha256)+'</p></details></details>';
+      return '<details class="dtmax-native-slip"><summary>'+esc(r.vendor_slip_kind)+' · Source return year '+r.source_return_year+' · View '+(r.vendor_slip_ordinal+1)+' · '+(r.from_data_segment?'Data source':'Cached source')+'</summary><p>'+esc(pending)+'</p>'+(body?'<div class="table-wrap"><table><thead><tr><th>Source field</th><th>Active source value</th></tr></thead><tbody>'+body+'</tbody></table></div>':'<p>No fields from this financial profile are present in this view. Other original fields remain in the preserved extract.</p>')+mergedSourceHtml(r)+'<details><summary>Source selection and provenance</summary><p>'+esc(r.selection_review)+'</p><p>Archive '+esc(r.source_archive_sha256)+'<br>View file '+esc(r.source_view_file_sha256)+'<br>Original view '+r.source_view_number+' · '+esc(r.source_view_line_sha256)+'</p></details></details>';
     }).join('');
+  }
+  function mergedSourceHtml(r){
+    const s=r.merged_component_financial_source,v=r.merged_component_field_review;
+    if(s===undefined&&v===undefined)return '';
+    const pin='bd98c9f6157e9cd3cb26befa00957c80a639575ba9bb987c45947fce8ae28358',hash=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
+    if(!s||!v||s.schema!=='dtmax-native-merged-component-financial-sidecar/v1'||s.merged_component_profile_sha256!==pin||v.profile_sha256!==pin||v.source_fields_only!==true||['box_assignment_approved','normalization_approved','aggregation_approved','allocation_approved','financial_values_approved'].some(k=>v[k]!==false)||['client_number','family_file_id','source_return_year','vendor_module','vendor_slip_kind','vendor_slip_ordinal','vendor_form','source_view_number','source_view_file_sha256','source_view_line_sha256','source_archive_sha256','original_field_count','from_data_segment'].some(k=>s[k]!==r[k])||r.vendor_module!=='T1'||r.vendor_slip_kind!=='T5008'||r.vendor_form!=='92'||r.source_return_year<2015||r.source_return_year>2018||r.from_data_segment!==true||s.primary_view!=='vendor_GetT1TaxSlip_preferred_view'||![s.raw_forms_file_sha256,s.raw_forms_line_sha256].every(hash)||!integer(s.raw_forms_line_number)||s.raw_forms_line_number<1||!Array.isArray(s.source_components)||s.source_components.length!==1||!Array.isArray(s.financial_fields)||!s.financial_fields.length||s.financial_fields.length>512)throw Error('Merged financial source context did not match');
+    const c=s.source_components[0];
+    if(!c||c.source_component_index!==1||c.form_name!=='171'||c.matching_form_occurrence!==r.vendor_slip_ordinal||![0,7].includes(c.q_plan)||typeof c.from_data_segment!=='boolean'||c.selector_keyword_id!==null||c.selector_option_number!==null||!integer(c.original_field_count)||!c.original_field_count||!hash(c.source_component_sha256))throw Error('Merged source component did not match');
+    let previous=-1;
+    const body=s.financial_fields.map(f=>{
+      if(!f||![14485,14486,14488].includes(f.field_id)||f.source_component_index!==1||!integer(f.source_form_field_index)||f.source_form_field_index<=previous||f.source_form_field_index>=c.original_field_count||f.merged_field_index!==r.original_field_count+f.source_form_field_index||f.source_type_tag!==4||f.value?.kind!=='text'||typeof f.value.text!=='string'||!f.value.text.trim()||f.value.text.length>4096||!hash(f.source_field_sha256)||!Array.isArray(f.selector_references)||!f.selector_references.length||f.selector_references.some(x=>!integer(x.binding_ordinal)||!hash(x.selector_binding_sha256)||x.source_call?.accessor!=='M'))throw Error('Merged financial field provenance did not match');
+      previous=f.source_form_field_index;
+      return '<tr><th scope="row">Source field '+f.field_id+'<small>Recovered component 171</small></th><td><span class="dtmax-source-value">'+esc(f.value.text)+'</span></td></tr>';
+    }).join('');
+    return '<h4>Additional T5008 source figures</h4><p>Recovered from the component selected by DT Max’s converter for this slip. Values remain separate source fields; tax-box assignment needs review.</p><div class="table-wrap"><table><thead><tr><th>Source field</th><th>Active source value</th></tr></thead><tbody>'+body+'</tbody></table></div>';
   }
   function recordsHtml(kind,records) {
     if(!records.length)return '<p>No records of this kind are imported for this client.</p>';
     if(kind==='native-slip-views')return nativeSlipViewsHtml(records);
+    if(kind==='historical-family-lineage')return '<p>Historical family-file associations recovered from preserved native indexes and corroborated source identities. Original file IDs are retained. These files have not been decoded into tax figures.</p>'+records.map(r=>{
+      const hash=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
+      if(!r||r.schema!=='dtmax-historical-native-family-lineage/v1'||r.lineage_profile_sha256!=='f05734d0cd42f21a347f3dbbdba428cb9b25e0d62ef3b18b5db9c287b855edb0'||r.source_ids_rewritten!==false||r.tax_payloads_decoded!==false||r.tax_values_approved!==false||!/^[0-9]{1,12}$/.test(r.source_family_file_id)||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||![r.source_file_sha256,r.legacy_record_sha256,r.authority_proof_sha256].every(hash)||r.legacy_record_id!==r.source_family_file_id+':'+r.tax_year||!Array.isArray(r.member_mappings)||!r.member_mappings.length||r.member_mappings.length>128)throw Error('Historical family lineage did not match');
+      return '<details><summary>Family file '+esc(r.source_family_file_id)+' · '+r.tax_year+'</summary><div class="dtmax-family-members">'+r.member_mappings.map(m=>{if(!m||!/^[0-9]{1,12}$/.test(m.old_native_client_number)||!/^[0-9]{1,12}$/.test(m.current_client_number)||!hash(m.native_name_equality_evidence_sha256)||!hash(m.native_DOB_equality_evidence_sha256))throw Error('Historical family member evidence did not match');return '<p>Historical client #'+esc(m.old_native_client_number)+' → <button class="dtmax-action" type="button" data-family-client="'+m.current_client_number+'">Client #'+m.current_client_number+'</button></p>';}).join('')+'</div><p>Original source file '+esc(r.source_file_sha256)+'</p></details>';
+    }).join('');
     if(kind==='linked-t5008')return '<p>Original CSV rows linked by recipient name and matching stored CRA records. The same CRA evidence is available under CRA slips. No additional tax slip has been created.</p>'+records.map(r=>{
       const s=r?.original_source_record,l=r?.owner_link;
       if(!s||!l||!/^\d{1,12}$/.test(r.client_number)||l.owner_client_number!==r.client_number||r.tax_year!==s.tax_year||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||l.legacy_record_id!==[s.client_number,s.tax_year,s.source_file_sha256,s.row].join(':')||! /^[a-f0-9]{64}$/.test(l.legacy_record_sha256)||!['recipient_name_and_all_boxes','same_recipient_file_and_all_boxes'].includes(l.evidence_mode)||!Array.isArray(l.matching_cra_records)||!l.matching_cra_records.length||r.source_owner_id_changed!==false||r.normalized_tax_slip_created!==false||r.economic_slip_uniqueness_verified!==false||r.financial_values_approved!==false||!s.boxes||Object.entries(s.boxes).some(([b,v])=>!['11','13','15','16','17','18','19','20','21','22','23','24'].includes(b)||typeof v!=='string'||v.length>4096))throw Error('Linked CSV source or owner did not match');
@@ -94,7 +132,7 @@
     }).join('');
     if(kind==='historical-lines')return '<p>Absent means no source value; $0.00 is an explicit zero. Imported totals have not been recalculated.</p><div class="table-wrap"><table><thead><tr><th>Year</th>'+lines.map((l,i)=>'<th>'+labels[i]+' ('+l+')</th>').join('')+'<th>Verification</th></tr></thead><tbody>'+records.map(r=>{
       checkHistorical(r);
-      if(r.vendor_module!=='T1')return '<tr><td>'+r.tax_year+'</td><td colspan="6">Converter label '+esc(r.vendor_module)+'; T1 totals are unavailable.</td><td>Source module verification required</td></tr>';
+      if(r.vendor_module!=='T1'&&!nativeModuleReviewed(r))return '<tr><td>'+r.tax_year+'</td><td colspan="6">Converter label '+esc(r.vendor_module)+'; T1 totals are unavailable.</td><td>Source module verification required</td></tr>';
       return '<tr><td>'+r.tax_year+'</td>'+lines.map(l=>'<td>'+esc(cents(r.values_cents[l]))+'</td>').join('')+'<td>'+esc(mappingLabel(r))+'</td></tr>';
     }).join('')+'</tbody></table></div>';
     if(kind==='family-files')return records.map(r=>'<p>Family file '+esc(r.family_file_id)+' · '+esc(r.tax_year)+'</p><div class="dtmax-family-members">'+(r.member_client_numbers||[]).map(id=>{if(!/^\d{1,12}$/.test(id))throw Error('Invalid family member');return '<button class="dtmax-action" type="button" data-family-client="'+id+'">Client #'+id+'</button>';}).join(' ')+'</div>').join('');
@@ -108,13 +146,14 @@
     const names=['Relation','SIN','BirthDate','Status','Sex','Prov-Residence','Language'];
     if(p.schema!=='dtmax-personal-source-display/v1'||p.binding_profile_sha256!=='9b7fc393b7632f0baa4e74806883a199c12f7cd0f79ed2dc7c6706c322acc10e'||p.client_number!==client.client_number||p.client_number!==record.client_number||p.family_file_id!==record.family_file_id||p.source_year!==record.tax_year||p.archive_sha256!==record.archive_sha256||p.reader_module!==record.vendor_module||p.info_record_state!=='present_nonempty_crc_verified'||p.current_profile_updated!==false||p.identity_verified!==false||!p.fields||Object.keys(p.fields).length!==7||names.some(n=>!p.fields[n])||p.t1_display_eligible!==(p.reader_module==='T1')||p.display_state!==(p.t1_display_eligible?'eligible_t1_source_year':'held_module_origin'))throw Error('Historical personal information did not match its source context');
     const supported=['present_exact_date_candidate','present_mapped_code','present_nine_digit_candidate_not_identity_verified'];
+    const reviewedOrigin=nativeModuleReviewed(record);
     const rows=names.map(name=>{
       const f=p.fields[name],eligible=p.t1_display_eligible&&f.candidate!==null&&supported.includes(f.state);
       if(f.display_eligible!==eligible)throw Error('Personal source display state did not match');
       if(name==='SIN'&&(f.raw_code!==null||f.raw_redacted!==true||f.candidate!==null&&!/^\*{3}-\*{3}-[0-9]{4}$/.test(f.candidate)))throw Error('Personal source SIN was not masked');
       let value;
-      if(!p.t1_display_eligible)value='Source module needs review';
-      else if(!eligible)value=f.state==='present_blank'?'Blank in source':f.state==='source_placeholder_zero_sentinel'?'Placeholder in source':f.state==='present_invalid_calendar_date'?'Invalid date in source':'Unknown or unsupported source value';
+      if(!p.t1_display_eligible&&!reviewedOrigin)value='Source module needs review';
+      else if(!(eligible||reviewedOrigin&&f.candidate!==null&&supported.includes(f.state)))value=f.state==='present_blank'?'Blank in source':f.state==='source_placeholder_zero_sentinel'?'Placeholder in source':f.state==='present_invalid_calendar_date'?'Invalid date in source':'Unknown or unsupported source value';
       else if(name==='Relation'){
         if(!f.candidate||Object.keys(f.candidate).sort().join(',')!=='relationship,taxpayer_type'||!['Principal','Partner','Dependant'].includes(f.candidate.taxpayer_type)||typeof f.candidate.relationship!=='string')throw Error('Personal source relation is invalid');
         value=f.candidate.taxpayer_type+(f.candidate.relationship==='None'?'':' · '+f.candidate.relationship);
@@ -124,7 +163,7 @@
       }
       return [name==='Status'?'Status (marital)':name==='Prov-Residence'?'Prov-Residence (Dec 31)':name,value];
     });
-    return '<h3>Historical personal information · '+p.source_year+'</h3>'+keywordRows(rows)+'<p>Source-year values. SIN is masked; current client profile is unchanged.</p>';
+    return '<h3>Historical personal information · '+p.source_year+'</h3>'+keywordRows(rows)+'<p>Source-year values. SIN is masked; current client profile is unchanged.'+(reviewedOrigin?' Native T1 origin is independently verified; the original converter label and stored flags are retained.':'')+'</p>';
   }
   function entryHtml(client,record,comparison){
     const profile=client.source_profile||{};
@@ -132,11 +171,20 @@
     return '<div class="dtmax-entry"><section class="dtmax-keyword-pane"><h3>Personal information</h3>'+keywordRows([['Client #',client.client_number],['Name',client.name]])+personalInfoHtml(client,record)+totals(record)+'<h3>Mailing address · client-list snapshot</h3>'+keywordRows([['Street',profile.street],['City',profile.city],['Province',profile.province],['PostalCode',profile.postal_code],['Country',profile.country]])+'<h3>Contact · client-list snapshot</h3>'+keywordRows([['Email',profile.email],['Home phone',profile.home_phone],['Work phone',profile.work_phone],['Cell phone',profile.cell_phone]])+'<p>Address, contact and processing status come from the imported client list. They are not established as the historical return’s values.</p></section><section class="dtmax-keyword-pane"><label>Compare historical year <select data-dtmax-compare><option value="">&lt;none&gt;</option>'+(client.historical_years||[]).map(y=>'<option value="'+y+'"'+(String(y)===comparison?' selected':'')+'>'+y+'</option>').join('')+'</select></label><div data-dtmax-comparison></div><h3>Source records</h3><p>Browse the preserved slips and family links below. Source values are read-only.</p><div data-dtmax-details></div></section></div>';
   }
   function validatePdf(r,client){
-    if(!r||r.client_number!==client||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||! /^[a-f0-9]{64}$/.test(r.sha256)||r.original_print_output!==true||r.immutable!==true||!integer(r.bytes)||r.bytes===0||r.bytes>2097152||!Array.isArray(r.page_labels)||r.page_labels.length!==r.page_count||r.page_count<1||r.page_count>500||r.page_labels.some(x=>typeof x!=='string'||!x||x.length>120||/[\x00-\x1f]/.test(x)))throw Error('Original PDF identity or page index did not match');return r;
+    if(!r||r.client_number!==client||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||! /^[a-f0-9]{64}$/.test(r.sha256)||r.original_print_output!==true||r.immutable!==true||!integer(r.bytes)||r.bytes===0||r.bytes>2097152||!Array.isArray(r.page_labels)||r.page_labels.length!==r.page_count||r.page_count<1||r.page_count>500||r.page_labels.some(x=>typeof x!=='string'||!x||x.length>120||/[\x00-\x1f]/.test(x)))throw Error('Original PDF identity or page index did not match');
+    const p=r.export_provenance;
+    if(p!==undefined&&(!p||p.kind!=='cached_native_export'||p.source_backup_sha256!=='7b760c8406ac29f6942898818c28be03c823128fdb164b5b03885f9f37b0eed5'||![p.native_family_file_sha256,p.export_log_sha256].every(s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s))||p.recalculated!==false||p.as_filed_verified!==false||typeof p.exported_at_utc!=='string'||!/^\d{4}-\d{2}-\d{2}T.*Z$/.test(p.exported_at_utc)||!Number.isFinite(Date.parse(p.exported_at_utc))))throw Error('Cached PDF export provenance did not match');
+    if(p!==undefined&&(p.figures_csv_sha256!=='c16c0bdc3036932f54e09cdd698513344c945cc4e8ba006cca54cd2fe8f93a94'||!p.figure_comparisons||Object.keys(p.figure_comparisons).length!==6||lines.some(l=>!['verified_equal_source','printed_source_difference','comparison_unavailable_source_absent','comparison_unavailable_printed_blank','comparison_unavailable_printed_line_not_located','held_ambiguous_or_unverified_source_figures','held_source_numeric_representation','held_ambiguous_printed_amount'].includes(p.figure_comparisons[l]))))throw Error('Cached PDF figure comparison did not match');
+    return r;
   }
   function validateException(r){
     const digest=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
     if(!r||!digest(r.source_archive_sha256)||!digest(r.source_context_sha256)||!digest(r.source_year_frame_sha256)||!integer(r.source_context_offset)||!integer(r.source_year_frame_offset)||r.source_year_frame_offset<56||r.source_year_frame_offset+12>r.source_context_offset||!integer(r.source_archive_bytes)||!integer(r.source_context_bytes)||r.source_context_bytes<70||r.source_context_bytes>65536||r.source_context_offset+r.source_context_bytes>r.source_archive_bytes||!/^\d{1,10}$/.test(r.client_number)||!/^\d{1,10}$/.test(r.family_file_id)||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||!['missing_identity_information','empty_information_payload'].includes(r.reason)||r.immutable!==true||r.identity_metadata_readable!==false||r.normalized_amounts_created!==false||r.header_ids_are_source_references_only!==true||!Array.isArray(r.frame_tags)||r.frame_tags.length<2||r.frame_tags.length>256||r.frame_tags[0]!=='EXC'||r.frame_tags[1]!=='EXP'||r.frame_tags.slice(2).some(t=>!['EXR','EXA'].includes(t)))throw Error('Unreadable source context metadata did not match');return r;
+  }
+  function cachedFigureNotice(p){
+    const states=p.figure_comparisons,different=lines.filter(l=>states[l]==='printed_source_difference'),unavailable=lines.filter(l=>!['verified_equal_source','comparison_unavailable_source_absent','printed_source_difference'].includes(states[l]));
+    const message=different.length?'This cached PDF differs from the imported source totals on line(s) '+different.join(', ')+'. Compare the source versions before using these figures.'+(unavailable.length?' Other printed figures could not be compared.':''):unavailable.length?'Some printed figures could not be compared with the imported totals. Review the source versions before using these figures.':'Every available source figure matched its printed amount. Missing source values remain unavailable.';
+    return '<p class="dtmax-notice"'+(different.length?' role="alert"':'')+'>'+esc(message)+'</p>';
   }
   function exceptionsHtml(records){
     records.forEach(validateException);
@@ -245,7 +293,7 @@
     function renderComparison(){const node=q('[data-dtmax-comparison]');if(!node)return;const r=historicalRecord(comparison);node.innerHTML=comparison?(r?historicalTotalsHtml(r):'<p>No single imported source version for this comparison year.</p>'):'<p class="dtmax-missing">Choose a year to compare the six preserved totals.</p>';}
     function checkFacts(p,client,requestedKind,at,limit,requestedYear){
       if(!p||p.client_number!==client||p.kind!==requestedKind||p.test_copy!==true||p.tax_cases_imported!==0||p.offset!==at||!integer(p.total)||!Array.isArray(p.records)||p.records.length>limit||at+p.records.length>p.total)throw Error('Source client response did not match');
-      if(p.records.some(r=>requestedKind==='family-files'?!Array.isArray(r.member_client_numbers)||!r.member_client_numbers.includes(client):r.client_number!==client))throw Error('Source record belongs to another client');
+      if(p.records.some(r=>requestedKind==='family-files'?!Array.isArray(r.member_client_numbers)||!r.member_client_numbers.includes(client):requestedKind==='historical-family-lineage'?!Array.isArray(r.member_mappings)||!r.member_mappings.some(m=>m.current_client_number===client):r.client_number!==client))throw Error('Source record belongs to another client');
       if(['native-slip-views','linked-t5008'].includes(requestedKind)&&requestedYear&&(p.source_return_year!==Number(requestedYear)||p.records.some(r=>(requestedKind==='native-slip-views'?r.source_return_year:r.tax_year)!==Number(requestedYear))))throw Error('Selected source return year did not match');
     }
     async function facts(next=0,existingSequence){
@@ -259,22 +307,22 @@
     }
     function pdfMissing(){q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-message"><h3>Original printed return not imported for '+esc(selectedYear||'this year')+'</h3><p>The historical totals and slips are available in Data entry. A complete printed return needs the original DT Max PDF for this client and year.</p><p>No return pages have been reconstructed from incomplete figures.</p></div>';}
     function renderPdfIndex(){
-      const node=q('[data-dtmax-pdf-index]');node.innerHTML='<label>Original PDF<select data-dtmax-pdf-version><option value="">Choose original PDF</option>'+pdfs.map((r,i)=>'<option value="'+i+'"'+(pdfRecord?.sha256===r.sha256&&pdfRecord?.tax_year===r.tax_year?' selected':'')+'>'+r.tax_year+' · '+r.page_count+' pages · Version '+(i+1)+'</option>').join('')+'</select></label>'+(pdfRecord?pdfRecord.page_labels.map((label,i)=>'<button type="button" data-dtmax-page="'+(i+1)+'" aria-current="'+(pdfPage===i+1?'page':'false')+'">'+(i+1)+'. '+esc(label)+'</button>').join(''):'<p class="dtmax-missing">'+(pdfs.length?'Choose an available original above.':'No original printed returns imported for this client.')+'</p>');
+      const node=q('[data-dtmax-pdf-index]');node.innerHTML='<label>DT Max PDF<select data-dtmax-pdf-version><option value="">Choose return PDF</option>'+pdfs.map((r,i)=>'<option value="'+i+'"'+(pdfRecord?.sha256===r.sha256&&pdfRecord?.tax_year===r.tax_year?' selected':'')+'>'+r.tax_year+' · '+r.page_count+' pages · '+(r.export_provenance?'Cached native export':'Retained print output')+' · Version '+(i+1)+'</option>').join('')+'</select></label>'+(pdfRecord?pdfRecord.page_labels.map((label,i)=>'<button type="button" data-dtmax-page="'+(i+1)+'" aria-current="'+(pdfPage===i+1?'page':'false')+'">'+(i+1)+'. '+esc(label)+'</button>').join(''):'<p class="dtmax-missing">'+(pdfs.length?'Choose an available PDF above.':'No printed returns imported for this client.')+'</p>');
       q('[data-dtmax-pdf-version]').onchange=e=>{const r=pdfs[Number(e.target.value)];if(e.target.value!==''&&r){selectedYear=String(r.tax_year);return openPdf(r,++sequence);}};
       all('[data-dtmax-page]').forEach(b=>b.onclick=()=>{pdfPage=Number(b.dataset.dtmaxPage);renderPdfCanvas();renderPdfIndex();});
     }
     async function openPdf(record,n){
       const client=activeClient;releasePdf();q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-message">Verifying original PDF bytes…</div>';
       try{const p=await request(BASE+'clients/'+client+'/return-pdfs/'+record.tax_year+'/'+record.sha256);if(!current(n))return;const r=validatePdf(p.record,client);
-        if(p.source_scope!==SCOPE||p.test_copy!==true||p.tax_cases_imported!==0||r.sha256!==record.sha256||r.tax_year!==record.tax_year||JSON.stringify(r.page_labels)!==JSON.stringify(record.page_labels)||typeof p.content_hex!=='string'||p.content_hex.length!==r.bytes*2||!/^[0-9a-f]+$/.test(p.content_hex))throw Error('Original PDF content did not match');
+        if(p.source_scope!==SCOPE||p.test_copy!==true||p.tax_cases_imported!==0||r.sha256!==record.sha256||r.tax_year!==record.tax_year||JSON.stringify(r.page_labels)!==JSON.stringify(record.page_labels)||JSON.stringify(r.export_provenance)!==JSON.stringify(record.export_provenance)||typeof p.content_hex!=='string'||p.content_hex.length!==r.bytes*2||!/^[0-9a-f]+$/.test(p.content_hex))throw Error('Original PDF content did not match');
         const bytes=Uint8Array.from(p.content_hex.match(/../g),s=>parseInt(s,16));const actual=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');if(!current(n))return;if(actual!==r.sha256)throw Error('Original PDF failed browser hash verification');
         pdfUrl=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));pdfRecord=r;pdfPage=1;renderPdfIndex();renderPdfCanvas();
       }catch(e){if(current(n)){releasePdf();q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-message" role="alert">Original PDF unavailable: '+esc(e.message)+'</div>';}}
     }
     function renderPdfCanvas(){
-      if(!pdfUrl||!pdfRecord)return;const title=pdfRecord.page_labels[pdfPage-1];q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-tools"><p>'+esc(pdfRecord.tax_year)+' · Page '+pdfPage+' of '+pdfRecord.page_count+' · Original bytes verified</p><a href="'+esc(pdfUrl)+'" download="dtmax-t1-'+esc(activeClient)+'-'+pdfRecord.tax_year+'.pdf">Download original PDF</a></div><iframe title="Original DT Max printed return: '+esc(title)+'" referrerpolicy="no-referrer" src="'+esc(pdfUrl)+'#page='+pdfPage+'&view=FitH&navpanes=0"></iframe>';
+      if(!pdfUrl||!pdfRecord)return;const title=pdfRecord.page_labels[pdfPage-1],p=pdfRecord.export_provenance;q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-tools"><p>'+esc(pdfRecord.tax_year)+' · Page '+pdfPage+' of '+pdfRecord.page_count+' · Original bytes verified</p>'+(p?'<p>Exported from DT Max’s stored print queue on '+esc(p.exported_at_utc)+'. No recalculation. Filed-copy status is unverified.</p>'+cachedFigureNotice(p):'')+'<a href="'+esc(pdfUrl)+'" download="dtmax-t1-'+esc(activeClient)+'-'+pdfRecord.tax_year+'.pdf">Download DT Max PDF</a></div><iframe title="Original DT Max printed return: '+esc(title)+'" referrerpolicy="no-referrer" src="'+esc(pdfUrl)+'#page='+pdfPage+'&view=FitH&navpanes=0"></iframe>';
     }
     return {ready:load(),load,facts,show,open,dispose:()=>{++sequence;releasePdf();releaseExceptions();host.onkeydown=null;}};
   }
-  globalThis.NXTDTMaxT1={mount,cents,validatePage,recordsHtml,entryHtml,validatePdf,validateException,exceptionsHtml};
+  globalThis.NXTDTMaxT1={mount,cents,validatePage,recordsHtml,entryHtml,validatePdf,validateException,exceptionsHtml,cachedFigureNotice};
 })();

@@ -4,6 +4,7 @@ use super::{bad, conflict, missing, storage, SourceImport};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 type Result<T> = std::result::Result<T, super::ImportError>;
 pub const MAX_PDF_BYTES: usize = 2 * 1024 * 1024;
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -15,6 +16,37 @@ pub struct ReturnPdfInput {
     pub sha256: String,
     pub page_labels: Vec<String>,
     pub content_hex: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export_provenance: Option<CachedNativeExport>,
+}
+
+/// A new export of the original application's stored print queue. This does
+/// not establish that the PDF itself was retained historically or filed.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CachedNativeExport {
+    pub kind: String,
+    pub source_backup_sha256: String,
+    pub native_family_file_sha256: String,
+    pub export_log_sha256: String,
+    pub exported_at_utc: String,
+    pub recalculated: bool,
+    pub as_filed_verified: bool,
+    pub figures_csv_sha256: String,
+    pub figure_comparisons: BTreeMap<String,String>,
+}
+fn validate_export(p: &CachedNativeExport) -> Result<()> {
+    if p.kind != "cached_native_export"
+        || p.source_backup_sha256 != "7b760c8406ac29f6942898818c28be03c823128fdb164b5b03885f9f37b0eed5"
+        || !digest(&p.native_family_file_sha256) || !digest(&p.export_log_sha256)
+        || p.recalculated || p.as_filed_verified
+        || p.figures_csv_sha256 != "c16c0bdc3036932f54e09cdd698513344c945cc4e8ba006cca54cd2fe8f93a94"
+        || p.figure_comparisons.len()!=6
+        || ["15000","23600","26000","42000","48400","48500"].iter().any(|line|p.figure_comparisons.get(*line).is_none_or(|state|!matches!(state.as_str(),"verified_equal_source"|"printed_source_difference"|"comparison_unavailable_source_absent"|"comparison_unavailable_printed_blank"|"comparison_unavailable_printed_line_not_located"|"held_ambiguous_or_unverified_source_figures"|"held_source_numeric_representation"|"held_ambiguous_printed_amount")))
+        || !p.exported_at_utc.ends_with('Z')
+        || chrono::DateTime::parse_from_rfc3339(&p.exported_at_utc).is_err()
+    { return Err(bad("Cached PDF export provenance did not match")); }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -33,11 +65,17 @@ mod tests {
 struct Record {
     client_number: String, tax_year: u16, sha256: String,
     page_labels: Vec<String>, bytes: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    export_provenance: Option<CachedNativeExport>,
 }
 fn number(s: &str) -> bool { !s.is_empty() && s.len() <= 12 && s.bytes().all(|b|b.is_ascii_digit()) }
 fn digest(s: &str) -> bool { s.len()==64 && s.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) }
 fn k(company: &str, rest: &str) -> String { format!("dtmaxtc:{company}:return_pdf:{rest}") }
-fn describe(r: &Record) -> Value { json!({"client_number":r.client_number,"tax_year":r.tax_year,"sha256":r.sha256,"page_labels":r.page_labels,"page_count":r.page_labels.len(),"bytes":r.bytes,"original_print_output":true,"immutable":true}) }
+fn describe(r: &Record) -> Value {
+    let mut value=json!({"client_number":r.client_number,"tax_year":r.tax_year,"sha256":r.sha256,"page_labels":r.page_labels,"page_count":r.page_labels.len(),"bytes":r.bytes,"original_print_output":true,"immutable":true});
+    if let Some(p)=&r.export_provenance { value["export_provenance"]=json!(p); }
+    value
+}
 fn static_object(o: &lopdf::Object, depth: usize, nodes: &mut usize) -> bool {
     *nodes+=1;if depth>32 || *nodes>200_000{return false}
     match o {
@@ -54,6 +92,7 @@ fn static_dictionary(d: &lopdf::Dictionary, depth: usize, nodes: &mut usize) -> 
 impl SourceImport {
     pub async fn test_copy_preserve_return_pdf(&self, company: &str, v: ReturnPdfInput) -> Result<Value> {
         self.test_copy_guard(company,v.test_copy)?;
+        if let Some(p)=&v.export_provenance { validate_export(p)?; }
         if !number(&v.client_number) || !(1990..=2100).contains(&v.tax_year) || !digest(&v.sha256) { return Err(bad("Invalid PDF client, year or digest")); }
         if v.content_hex.len()>MAX_PDF_BYTES*2 { return Err(bad("Return PDF exceeds 2 MiB bound")); }
         if v.page_labels.is_empty() || v.page_labels.len()>500 || v.page_labels.iter().any(|s|s.is_empty() || s.len()>120 || s.chars().any(char::is_control)) { return Err(bad("Invalid PDF page index")); }
@@ -68,7 +107,7 @@ impl SourceImport {
         // accepted into the preview lane. The bytes are never rewritten.
         let mut nodes=0;
         if !doc.objects.values().all(|o|static_object(o,0,&mut nodes)) {return Err(bad("Active or overly nested PDF content is not supported by the source preview"))}
-        let record=Record{client_number:v.client_number.clone(),tax_year:v.tax_year,sha256:v.sha256.clone(),page_labels:v.page_labels,bytes:bytes.len()};
+        let record=Record{client_number:v.client_number.clone(),tax_year:v.tax_year,sha256:v.sha256.clone(),page_labels:v.page_labels,bytes:bytes.len(),export_provenance:v.export_provenance};
         let identity=format!("{}:{}:{}",record.client_number,record.tax_year,record.sha256);
         let raw=serde_json::to_string(&record).map_err(|_|storage("encode PDF record"))?;
         self.store.set_nx(&k(company,&format!("blob:{}",record.sha256)),&v.content_hex).await.map_err(|e|storage(&e))?;
@@ -85,7 +124,9 @@ impl SourceImport {
         let keys:Vec<_>=ids.iter().map(|id|k(company,&format!("record:{id}"))).collect();let mut records=Vec::new();
         for raw in self.store.mget(&keys).await.map_err(|e|storage(&e))? {
             let r:Record=serde_json::from_str(&raw.ok_or_else(||storage("PDF index record missing"))?).map_err(|_|storage("Invalid PDF record"))?;
-            if r.client_number!=client { return Err(storage("PDF client mismatch")); } records.push(describe(&r));
+            if r.client_number!=client { return Err(storage("PDF client mismatch")); }
+            if let Some(p)=&r.export_provenance { validate_export(p).map_err(|_|storage("Stored PDF provenance differs"))?; }
+            records.push(describe(&r));
         }
         Ok(json!({"test_copy":true,"source_scope":company,"client_number":client,"records":records,"tax_cases_imported":0}))
     }
@@ -94,6 +135,7 @@ impl SourceImport {
         let raw=self.store.get(&k(company,&format!("record:{client}:{year}:{sha}"))).await.map_err(|e|storage(&e))?.ok_or_else(||missing("No original return PDF for this client and year"))?;
         let r:Record=serde_json::from_str(&raw).map_err(|_|storage("Invalid PDF record"))?;
         if r.client_number!=client || r.tax_year!=year || r.sha256!=sha { return Err(storage("PDF ownership mismatch")); }
+        if let Some(p)=&r.export_provenance { validate_export(p).map_err(|_|storage("Stored PDF provenance differs"))?; }
         let content=self.store.get(&k(company,&format!("blob:{sha}"))).await.map_err(|e|storage(&e))?.ok_or_else(||storage("PDF bytes missing"))?;
         if content.len()>MAX_PDF_BYTES*2 { return Err(storage("PDF blob exceeds bound")); }
         let bytes=hex::decode(&content).map_err(|_|storage("Invalid stored PDF bytes"))?;
