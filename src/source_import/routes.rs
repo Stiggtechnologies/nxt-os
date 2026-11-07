@@ -86,6 +86,9 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-clients", get(test_copy_source_clients))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/source-facts", get(test_copy_client_source_facts))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/return-pdfs", post(test_copy_preserve_return_pdf))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/printed-cached-figures", post(test_copy_printed_cached_figures))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/printed-cached-figures/read", post(test_copy_read_printed_cached_figures))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/printed-cached-figures/summary", get(test_copy_printed_cached_figure_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/return-pdfs", get(test_copy_return_pdfs))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/return-pdfs/{year}/{sha}", get(test_copy_return_pdf_content))
         .layer(axum::extract::DefaultBodyLimit::max(super::files::MAX_FILE_BYTES * 2 + 64 * 1024))
@@ -280,6 +283,9 @@ async fn test_copy_client_source_facts(State(state): S, Path((company,client)): 
 async fn test_copy_preserve_return_pdf(State(state): S, Path(company): Path<String>, Json(body): Json<super::return_pdfs::ReturnPdfInput>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_preserve_return_pdf(&company,body).await?))
 }
+async fn test_copy_printed_cached_figures(State(state):S,Path(company):Path<String>,Json(body):Json<super::printed_cached_figures::PrintedFigureBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_printed_cached_figures(&company,body).await?))}
+async fn test_copy_read_printed_cached_figures(State(state):S,Path(company):Path<String>,Json(body):Json<super::printed_cached_figures::PrintedFigureLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_printed_cached_figures(&company,body).await?))}
+async fn test_copy_printed_cached_figure_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_printed_cached_figure_summary(&company).await?))}
 async fn test_copy_return_pdfs(State(state): S, Path((company,client)): Path<(String,String)>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_return_pdfs(&company,&client).await?))
 }

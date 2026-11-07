@@ -1,3 +1,4 @@
 src/source_import/personal_source_profile.json text eol=lf
 src/source_import/native_module_review_profile.json text eol=lf
 src/source_import/native_historical_variant_profile.json text eol=lf
+src/source_import/printed_cached_figure_profile.json text eol=lf

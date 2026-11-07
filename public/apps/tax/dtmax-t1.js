@@ -5,7 +5,8 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
   const lines=['15000','23600','26000','42000','48400','48500'];
   const labels=['Total income','Net income','Taxable income','Net federal tax','Refund','Balance owing'];
-  const kinds={'historical-lines':'Historical totals','historical-variants':'Source versions','afr-slips':'CRA slips','native-slip-views':'Native slip fields','linked-t5008':'Linked T5008 CSV','family-files':'Family files','historical-family-lineage':'Recovered family links'};
+  const kinds={'historical-lines':'Historical totals','historical-variants':'Source versions','printed-cached-figures':'Printed cached figures','afr-slips':'CRA slips','native-slip-views':'Native slip fields','linked-t5008':'Linked T5008 CSV','family-files':'Family files','historical-family-lineage':'Recovered family links'};
+  const printedFigureProfile='502e76e71cc132a5f74154c364ed398e0eae5cbb8c595a2caceff934b2ae0bf6';
   const integer=v=>Number.isSafeInteger(v)&&v>=0;
   function cents(value) {
     if(value===null)return 'Absent';
@@ -121,6 +122,7 @@
     if(!records.length)return '<p>No records of this kind are imported for this client.</p>';
     if(kind==='native-slip-views')return nativeSlipViewsHtml(records);
     if(kind==='historical-variants')return historicalVariantsHtml(records);
+    if(kind==='printed-cached-figures')return printedCachedFiguresHtml(records);
     if(kind==='historical-family-lineage')return '<p>Historical family-file associations recovered from preserved native indexes and corroborated source identities. Original file IDs are retained. These files have not been decoded into tax figures.</p>'+records.map(r=>{
       const hash=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
       if(!r||r.schema!=='dtmax-historical-native-family-lineage/v1'||r.lineage_profile_sha256!=='f05734d0cd42f21a347f3dbbdba428cb9b25e0d62ef3b18b5db9c287b855edb0'||r.source_ids_rewritten!==false||r.tax_payloads_decoded!==false||r.tax_values_approved!==false||!/^[0-9]{1,12}$/.test(r.source_family_file_id)||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||![r.source_file_sha256,r.legacy_record_sha256,r.authority_proof_sha256].every(hash)||r.legacy_record_id!==r.source_family_file_id+':'+r.tax_year||!Array.isArray(r.member_mappings)||!r.member_mappings.length||r.member_mappings.length>128)throw Error('Historical family lineage did not match');
@@ -166,6 +168,46 @@
         return '<details class="dtmax-native-slip"><summary>'+(q===0?'Production':'Federal snapshot')+' · '+r.source_return_year+(v.outer_plan?' · Source plan '+v.outer_plan:'')+(v.variant_occurrence?' · Version occurrence '+(v.variant_occurrence+1):'')+'</summary>'+(forms||'<p>This stored version has no E11 totals form. No amounts have been inferred.</p>')+'<details><summary>Source provenance</summary><p>Native reader version '+esc(v.variant_name)+' · '+v.source_records.length+' CRC-verified record(s). Original archive '+esc(r.source_archive_sha256)+'.</p></details></details>';
       }).join('');
       return '<section><h3>Stored source versions · '+r.source_return_year+'</h3>'+(versions||'<p>No calculated source version was retained for this context. Missing amounts remain unavailable.</p>')+'</section>';
+    }).join('');
+  }
+  function validatePrintedFigures(r){
+    const hash=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
+    const byteLength=s=>encodeURIComponent(s).replace(/%[0-9A-F]{2}/g,'x').length;
+    const keys=(v,names)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join('|')===names.slice().sort().join('|');
+    if(!keys(r,['schema','printed_figure_profile_sha256','client_number','family_file_id','source_return_year','pdf','anchors','geometry_evidence_json','observations','source_fields_only','recalculated','as_filed_verified','preferred_version_selected','financial_values_approved'])||!keys(r.pdf,['client_number','tax_year','sha256','bytes','page_count','page_labels','export_provenance'])||!keys(r.anchors,['source_backup_sha256','source_archive_sha256','source_figures_csv_sha256','native_family_file_sha256','native_family_file_relative_path','pristine_manifest_sha256','source_context_row_sha256','source_qa_file_sha256','source_qa_record_sha256','source_geometry_sha256','geometry_verifier_sha256','official_cra_form_sha256','supplemental_identity_proof_sha256']))throw Error('Printed observation contract keys did not match');
+    const p=r?.pdf,a=r?.anchors;
+    if(!r||r.schema!=='dtmax-printed-source-figure-observation/v1'||r.printed_figure_profile_sha256!==printedFigureProfile||!/^\d{1,12}$/.test(r.client_number)||!/^\d{1,12}$/.test(r.family_file_id)||![2023,2024].includes(r.source_return_year)||r.source_fields_only!==true||['recalculated','as_filed_verified','preferred_version_selected','financial_values_approved'].some(k=>r[k]!==false)||!p||p.client_number!==r.client_number||p.tax_year!==r.source_return_year||!hash(p.sha256)||!integer(p.bytes)||!p.bytes||p.bytes>2097152||!integer(p.page_count)||p.page_count<1||p.page_count>500||!Array.isArray(p.page_labels)||p.page_labels.length!==p.page_count||p.page_labels.some(s=>typeof s!=='string'||!s||byteLength(s)>120||/[\u0000-\u001f\u007f]/.test(s)))throw Error('Printed PDF observation context did not match');
+    if(!a||['source_backup_sha256','source_archive_sha256','source_figures_csv_sha256','native_family_file_sha256','pristine_manifest_sha256','source_context_row_sha256','source_qa_file_sha256','source_qa_record_sha256','source_geometry_sha256','geometry_verifier_sha256'].some(k=>!hash(a[k]))||['official_cra_form_sha256','supplemental_identity_proof_sha256'].some(k=>a[k]!==null&&!hash(a[k]))||typeof a.native_family_file_relative_path!=='string'||!a.native_family_file_relative_path||a.native_family_file_relative_path.length>200||/:/.test(a.native_family_file_relative_path)||a.native_family_file_relative_path.split(/[\\/]/).some(x=>!x||x==='.'||x==='..')||a.source_backup_sha256!=='7b760c8406ac29f6942898818c28be03c823128fdb164b5b03885f9f37b0eed5'||a.source_archive_sha256!=='499bb5f906222614ef4abc60b84ff4c2d5149f529baeb43f0e18eb14c101037c'||a.source_figures_csv_sha256!=='c16c0bdc3036932f54e09cdd698513344c945cc4e8ba006cca54cd2fe8f93a94')throw Error('Printed figure source proof did not match');
+    const v=p.export_provenance;
+    validatePdf({...p,original_print_output:true,immutable:true},r.client_number);
+    if(!v||v.kind!=='cached_native_export'||v.source_backup_sha256!==a.source_backup_sha256||v.native_family_file_sha256!==a.native_family_file_sha256||v.figures_csv_sha256!==a.source_figures_csv_sha256||v.recalculated!==false||v.as_filed_verified!==false||!hash(v.export_log_sha256)||!v.figure_comparisons||Object.keys(v.figure_comparisons).length!==6||typeof r.geometry_evidence_json!=='string'||r.geometry_evidence_json.length>131072||!JSON.parse(r.geometry_evidence_json)||!Array.isArray(r.observations)||r.observations.length!==6)throw Error('Printed PDF export provenance did not match');
+    const geometry=JSON.parse(r.geometry_evidence_json);if(!geometry||typeof geometry!=='object'||Array.isArray(geometry))throw Error('Printed geometry evidence did not match');
+    for(const [i,o] of r.observations.entries()){
+      if(!keys(o,['line_code','state','printed_decimal','printed_cents','printed_candidates_json','printed_candidates_sha256','source_comparison_state','source_presence_state']))throw Error('Printed line contract keys did not match');
+      if(!o||o.line_code!==lines[i]||o.source_comparison_state!==v.figure_comparisons[lines[i]]||!['present','absent'].includes(o.source_presence_state)||!hash(o.printed_candidates_sha256)||typeof o.printed_candidates_json!=='string'||o.printed_candidates_json.length>65536)throw Error('Printed line observation did not match');
+      const candidates=JSON.parse(o.printed_candidates_json);
+      if(!Array.isArray(candidates)||candidates.length>100||candidates.some(c=>{const b=c?.line_code_bbox??c?.code_bbox;return !c||!integer(c.page_index)||c.page_index>=p.page_count||c.printed_code!==o.line_code||!Array.isArray(b)||b.length!==4||b.some(x=>typeof x!=='number'||!Number.isFinite(x)||x<0||x>20000)||b[0]>=b[2]||b[1]>=b[3]||!['printed_amount_present','identified_printed_amount_blank','held_ambiguous_money_tokens','held_invalid_money_tokens','held_money_token_crosses_box_boundary'].includes(c.state);}))throw Error('Printed page or geometry evidence did not match');
+      if(o.state==='single_distinct_printed_amount'){
+        cents(o.printed_cents);const n=BigInt(o.printed_cents),abs=n<0n?-n:n,decimal=(n<0n?'-':'')+(abs/100n)+'.'+(abs%100n).toString().padStart(2,'0');
+        if(o.printed_decimal!==decimal||!candidates.length||candidates.some(c=>c.state!=='printed_amount_present'))throw Error('Printed amount or decimal did not match');
+      }else{
+        if(o.printed_cents!==null||o.printed_decimal!==null)throw Error('Held or absent printed amount must remain null');
+        if(o.state==='identified_printed_blank'){if(!candidates.length||candidates.some(c=>c.state!=='identified_printed_amount_blank'))throw Error('Printed blank evidence did not match');}
+        else if(o.state==='printed_line_not_located'){if(candidates.length)throw Error('Unlocated line carries candidates');}
+        else if(!['held_ambiguous_printed_amount','held_invalid_printed_money_token'].includes(o.state)||!candidates.length)throw Error('Unsupported printed observation state');
+      }
+    }return r;
+  }
+  function printedCachedFiguresHtml(records){
+    const comparisons={verified_equal_source:'Matches extract figure',printed_source_difference:'Differs from extract figure',comparison_unavailable_source_absent:'Extract figure absent',comparison_unavailable_printed_blank:'Printed line blank',comparison_unavailable_printed_line_not_located:'Printed line not located',held_ambiguous_or_unverified_source_figures:'Extract figure needs review',held_source_numeric_representation:'Extract number needs review',held_ambiguous_printed_amount:'Printed amount needs review'};
+    return '<p>Amounts observed on DT Max’s cached printed pages. These remain separate from historical totals and stored calculation versions. The PDF was exported without recalculation; filed-copy status and financial approval are unverified.</p>'+records.map(input=>{
+      const r=validatePrintedFigures(input),p=r.pdf;
+      const body=r.observations.map((o,i)=>{
+        const candidates=JSON.parse(o.printed_candidates_json),pages=[...new Set(candidates.map(c=>c.page_index+1))];
+        const label=o.state==='single_distinct_printed_amount'?cents(o.printed_cents):o.state==='identified_printed_blank'?'Blank on printed page':o.state==='printed_line_not_located'?'Printed line not located':'Printed amount needs review';
+        return '<tr><th scope="row">'+labels[i]+' · '+o.line_code+'</th><td>'+esc(label)+'</td><td>'+pages.map(page=>'<button class="dtmax-action" type="button" data-printed-pdf-sha="'+p.sha256+'" data-printed-pdf-year="'+p.tax_year+'" data-printed-pdf-page="'+page+'">View printed page '+page+'</button>').join(' ')+'<small>'+esc(comparisons[o.source_comparison_state])+'</small></td></tr>';
+      }).join('');
+      return '<details class="dtmax-native-slip"><summary>Printed cached figures · '+r.source_return_year+' · '+p.page_count+' pages</summary><div class="table-wrap"><table><thead><tr><th>Printed line</th><th>Observed amount</th><th>Source page and comparison</th></tr></thead><tbody>'+body+'</tbody></table></div><details><summary>PDF and observation provenance</summary><p>PDF SHA256 '+esc(p.sha256)+'</p><p>Geometry proof '+esc(r.anchors.source_geometry_sha256)+'<br>Source QA '+esc(r.anchors.source_qa_record_sha256)+'</p><p>Missing or held amounts remain unavailable. No amount was inferred from a blank and no source version was selected.</p></details></details>';
     }).join('');
   }
   const missing='<span class="dtmax-missing">Not imported</span>';
@@ -306,7 +348,7 @@
       try{const records=await historyFor(client,n);if(!records||!current(n))return;history=records;return show('entry');}catch(e){if(current(n))shell(clientHead()+'<p class="dtmax-error" role="alert">'+esc(e.message)+'</p>');}
     }
     function historicalRecord(y){const matches=history.filter(r=>String(r.tax_year)===y);return matches.length===1?matches[0]:null;}
-    async function show(next,focus=false){
+    async function show(next,focus=false,requestedPdf=null){
       if(next!=='list'&&!selected())return;const n=++sequence;view=next;
       if(next==='list'){releasePdf();renderList();}
       else if(next==='entry'){
@@ -316,7 +358,7 @@
         q('[data-dtmax-compare]').onchange=e=>{comparison=e.target.value;renderComparison();};renderComparison();await facts(0,n);
       }else{
         shell(clientHead()+'<div class="dtmax-return"><aside class="dtmax-page-index"><h3>Select a page</h3><div data-dtmax-pdf-index>Loading original PDFs…</div></aside><div class="dtmax-pdf-canvas" data-dtmax-pdf-canvas><div class="dtmax-pdf-message">Loading preserved print output…</div></div></div>');bindClient();
-        try{const p=await request(BASE+'clients/'+activeClient+'/return-pdfs');if(!current(n))return;if(p.source_scope!==SCOPE||p.client_number!==activeClient||p.test_copy!==true||p.tax_cases_imported!==0||!Array.isArray(p.records)||p.records.length>1000)throw Error('Original PDF list did not match');pdfs=p.records.map(r=>validatePdf(r,activeClient));renderPdfIndex();const versions=pdfs.filter(r=>String(r.tax_year)===selectedYear);const r=versions.length===1?versions[0]:null;if(r)await openPdf(r,n);else{releasePdf();pdfMissing();}}catch(e){if(current(n)){releasePdf();q('[data-dtmax-pdf-index]').innerHTML='Unavailable';q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-message" role="alert">Original PDF unavailable: '+esc(e.message)+'</div>';}}
+        try{const p=await request(BASE+'clients/'+activeClient+'/return-pdfs');if(!current(n))return;if(p.source_scope!==SCOPE||p.client_number!==activeClient||p.test_copy!==true||p.tax_cases_imported!==0||!Array.isArray(p.records)||p.records.length>1000)throw Error('Original PDF list did not match');pdfs=p.records.map(r=>validatePdf(r,activeClient));renderPdfIndex();const versions=pdfs.filter(r=>String(r.tax_year)===selectedYear);const r=requestedPdf?versions.find(r=>r.sha256===requestedPdf.sha):versions.length===1?versions[0]:null;if(requestedPdf&&(!r||!integer(requestedPdf.page)||requestedPdf.page<1||requestedPdf.page>r.page_count))throw Error('Observed PDF page is unavailable');if(r){await openPdf(r,n);if(requestedPdf&&current(n)){pdfPage=requestedPdf.page;renderPdfIndex();renderPdfCanvas();}}else{releasePdf();pdfMissing();}}catch(e){if(current(n)){releasePdf();q('[data-dtmax-pdf-index]').innerHTML='Unavailable';q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-message" role="alert">Original PDF unavailable: '+esc(e.message)+'</div>';}}
       }
       if(focus&&current(sequence))q('[data-dtmax-view="'+view+'"]')?.focus?.();
     }
@@ -324,16 +366,18 @@
     function checkFacts(p,client,requestedKind,at,limit,requestedYear){
       if(!p||p.client_number!==client||p.kind!==requestedKind||p.test_copy!==true||p.tax_cases_imported!==0||p.offset!==at||!integer(p.total)||!Array.isArray(p.records)||p.records.length>limit||at+p.records.length>p.total)throw Error('Source client response did not match');
       if(p.records.some(r=>requestedKind==='family-files'?!Array.isArray(r.member_client_numbers)||!r.member_client_numbers.includes(client):requestedKind==='historical-family-lineage'?!Array.isArray(r.member_mappings)||!r.member_mappings.some(m=>m.current_client_number===client):r.client_number!==client))throw Error('Source record belongs to another client');
-      if(['native-slip-views','linked-t5008','historical-variants'].includes(requestedKind)&&requestedYear&&(p.source_return_year!==Number(requestedYear)||p.records.some(r=>(requestedKind==='linked-t5008'?r.tax_year:r.source_return_year)!==Number(requestedYear))))throw Error('Selected source return year did not match');
+      if(['native-slip-views','linked-t5008','historical-variants','printed-cached-figures'].includes(requestedKind)&&requestedYear&&(p.source_return_year!==Number(requestedYear)||p.records.some(r=>(requestedKind==='linked-t5008'?r.tax_year:r.source_return_year)!==Number(requestedYear))))throw Error('Selected source return year did not match');
+      if(requestedKind==='printed-cached-figures'&&(p.source_scope!==SCOPE||p.printed_figure_profile_sha256!==printedFigureProfile||p.original_history_modified!==0||p.original_PDFs_modified!==0||p.current_profiles_modified!==0||p.financial_values_approved!==false||p.preferred_version_selected!==false||p.as_filed_verified!==false))throw Error('Printed figure response did not match');
       if(requestedKind==='historical-variants'&&(p.source_variant_profile_sha256!=='641c2b5f56617882829d5049813e06789a3a661580fe6f6d3adf6f8dde5e03ba'||p.original_history_modified!==0||p.personal_source_flags_modified!==0||p.financial_values_approved!==false||p.preferred_version_selected!==false))throw Error('Historical source-version response did not match');
     }
     async function facts(next=0,existingSequence){
-      const n=existingSequence??++sequence,client=activeClient,requestedKind=kind,requestedYear=['native-slip-views','linked-t5008','historical-variants'].includes(kind)?selectedYear:'';factOffset=next;const detail=q('[data-dtmax-details]');if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
+      const n=existingSequence??++sequence,client=activeClient,requestedKind=kind,requestedYear=['native-slip-views','linked-t5008','historical-variants','printed-cached-figures'].includes(kind)?selectedYear:'';factOffset=next;const detail=q('[data-dtmax-details]');if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
       try{
         const p=await request(BASE+'clients/'+client+'/source-facts?kind='+requestedKind+'&offset='+next+'&limit=25'+(requestedYear?'&source_return_year='+encodeURIComponent(requestedYear):''));if(!current(n))return;checkFacts(p,client,requestedKind,next,25,requestedYear);
         detail.innerHTML='<div class="dtmax-fact-nav">'+Object.entries(kinds).map(([k,label])=>'<button type="button" data-source-kind="'+k+'" aria-pressed="'+(k===kind)+'">'+label+'</button>').join('')+'</div>'+recordsHtml(kind,p.records)+'<p>'+(p.total?next+1:0)+'–'+(next+p.records.length)+' of '+p.total+' source records</p><button class="dtmax-action" data-fact-prev '+(!next?'disabled':'')+'>Previous records</button> <button class="dtmax-action" data-fact-next '+(next+p.records.length>=p.total?'disabled':'')+'>Next records</button>';
         detail.querySelectorAll('[data-source-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.sourceKind;return facts(0);});detail.querySelector('[data-fact-prev]').onclick=()=>facts(Math.max(0,factOffset-25));detail.querySelector('[data-fact-next]').onclick=()=>facts(factOffset+25);
         detail.querySelectorAll('[data-family-client]').forEach(b=>b.onclick=()=>open(b.dataset.familyClient));
+        detail.querySelectorAll('[data-printed-pdf-sha]').forEach(b=>b.onclick=()=>{selectedYear=b.dataset.printedPdfYear;return show('return',false,{sha:b.dataset.printedPdfSha,page:Number(b.dataset.printedPdfPage)});});
       }catch(e){if(current(n))detail.innerHTML='<p role="alert">Imported T1 records unavailable: '+esc(e.message)+'</p>';}
     }
     function pdfMissing(){q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-message"><h3>Original printed return not imported for '+esc(selectedYear||'this year')+'</h3><p>The historical totals and slips are available in Data entry. A complete printed return needs the original DT Max PDF for this client and year.</p><p>No return pages have been reconstructed from incomplete figures.</p></div>';}
@@ -355,5 +399,5 @@
     }
     return {ready:load(),load,facts,show,open,dispose:()=>{++sequence;releasePdf();releaseExceptions();host.onkeydown=null;}};
   }
-  globalThis.NXTDTMaxT1={mount,cents,validatePage,recordsHtml,entryHtml,validatePdf,validateException,exceptionsHtml,cachedFigureNotice};
+  globalThis.NXTDTMaxT1={mount,cents,validatePage,recordsHtml,entryHtml,validatePdf,validateException,exceptionsHtml,cachedFigureNotice,validatePrintedFigures};
 })();

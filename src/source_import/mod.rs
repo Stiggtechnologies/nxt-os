@@ -8,6 +8,7 @@ mod routes;
 pub mod test_copy;
 pub mod preserved_records;
 pub mod return_pdfs;
+pub mod printed_cached_figures;
 pub mod source_exceptions;
 pub mod native_slip_views;
 pub mod native_slip_supplements;

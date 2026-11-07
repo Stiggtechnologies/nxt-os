@@ -2,10 +2,60 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {createHash,webcrypto} from 'node:crypto';
 const source=fs.readFileSync(new URL('../public/apps/tax/dtmax-t1.js',import.meta.url),'utf8');
 const sandbox={};vm.runInNewContext(source,sandbox);const api=sandbox.NXTDTMaxT1;
 const page=()=>({source_scope:'dtmax-test-copy',program:'T1',imported_source_only:true,tax_cases_created:0,total:1,offset:0,available_years:[2013,2025],clients:[{client_number:'100',name:'Synthetic <img>',historical_years:[2013,2025],pending_years:[2013]}]});
 const nativeView=()=>({client_number:'100',family_file_id:'999',source_return_year:2025,vendor_module:'T1',vendor_slip_kind:'T4',vendor_slip_ordinal:0,source_view_number:1,from_data_segment:false,source_archive_sha256:'a'.repeat(64),source_view_file_sha256:'b'.repeat(64),source_view_line_sha256:'c'.repeat(64),financial_profile_sha256:'4bb64f7185d758cc4a1ccacd3a62b6a00b9656d320ca7412b9fe2598d68d69fc',original_field_count:5,field_labels:{13908:'Box 16 · CPP contributions'},financial_fields:[{source_field_index:1,field_id:13908,source_type_tag:4,value:{kind:'text',text:'123.45'}}],economic_slip_uniqueness_verified:false,normalized_tax_slip_created:false,taxpayer_allocations_applied:false,financial_values_approved:false,selection_review:'Source order and cached origin retained.'});
+
+// Entirely synthetic printed observations; no private source values or identities.
+function printedObservation(){
+  const codes=['15000','23600','26000','42000','48400','48500'],comparison=Object.fromEntries(codes.map(c=>[c,'comparison_unavailable_source_absent']));
+  const backup='7b760c8406ac29f6942898818c28be03c823128fdb164b5b03885f9f37b0eed5',archive='499bb5f906222614ef4abc60b84ff4c2d5149f529baeb43f0e18eb14c101037c',csv='c16c0bdc3036932f54e09cdd698513344c945cc4e8ba006cca54cd2fe8f93a94';
+  const observations=codes.map((line,i)=>{
+    const present=i<3,blank=i===3,held=i===4,state=present?'single_distinct_printed_amount':blank?'identified_printed_blank':held?'held_ambiguous_printed_amount':'printed_line_not_located';
+    return {line_code:line,state,printed_cents:present?['0','-1','12345'][i]:null,printed_decimal:present?['0.00','-0.01','123.45'][i]:null,
+      printed_candidates_json:JSON.stringify(i===5?[]:[{page_index:0,printed_code:line,line_code_bbox:[10,10,20,20],state:present?'printed_amount_present':blank?'identified_printed_amount_blank':'held_ambiguous_money_tokens',raw_money_tokens:present?['0','00']:[],amount:present?'0.00':null}]),
+      printed_candidates_sha256:'a'.repeat(64),source_comparison_state:comparison[line],source_presence_state:'absent'};
+  });
+  return {schema:'dtmax-printed-source-figure-observation/v1',printed_figure_profile_sha256:'502e76e71cc132a5f74154c364ed398e0eae5cbb8c595a2caceff934b2ae0bf6',client_number:'100',family_file_id:'999',source_return_year:2024,
+    pdf:{client_number:'100',tax_year:2024,sha256:'b'.repeat(64),bytes:100,page_count:1,page_labels:['Synthetic printed page'],export_provenance:{kind:'cached_native_export',source_backup_sha256:backup,native_family_file_sha256:'c'.repeat(64),export_log_sha256:'d'.repeat(64),exported_at_utc:'2026-11-07T00:00:00Z',recalculated:false,as_filed_verified:false,figures_csv_sha256:csv,figure_comparisons:comparison}},
+    anchors:{source_backup_sha256:backup,source_archive_sha256:archive,source_figures_csv_sha256:csv,native_family_file_sha256:'c'.repeat(64),native_family_file_relative_path:'T1/2024/synthetic.P24',pristine_manifest_sha256:'e'.repeat(64),source_context_row_sha256:'f'.repeat(64),source_qa_file_sha256:'a'.repeat(64),source_qa_record_sha256:'b'.repeat(64),source_geometry_sha256:'c'.repeat(64),geometry_verifier_sha256:'d'.repeat(64),official_cra_form_sha256:null,supplemental_identity_proof_sha256:null},geometry_evidence_json:'{}',observations,
+    source_fields_only:true,recalculated:false,as_filed_verified:false,preferred_version_selected:false,financial_values_approved:false};
+}
+test('printed cached figures preserve actual observations independently of absent extract figures',()=>{
+  const r=printedObservation(),before=JSON.stringify(r),html=api.recordsHtml('printed-cached-figures',[r]);
+  assert.ok(html.includes('$0.00'));assert.ok(html.includes('-$0.01'));assert.ok(html.includes('$123.45'));
+  assert.ok(html.includes('Blank on printed page'));assert.ok(html.includes('Printed amount needs review'));assert.ok(html.includes('Printed line not located'));
+  assert.ok(html.includes('filed-copy status and financial approval are unverified'));assert.ok(html.includes('View printed page 1'));assert.ok(html.includes('data-printed-pdf-sha="'+'b'.repeat(64)+'"'));
+  assert.equal(JSON.stringify(r),before);
+});
+test('printed observation validator rejects owner, year, approval, geometry and null-as-zero changes',()=>{
+  for(const mutate of [r=>r.pdf.client_number='200',r=>r.source_return_year=2022,r=>r.financial_values_approved=true,r=>r.preferred_version_selected=true,r=>r.pdf.export_provenance.as_filed_verified=true,r=>r.pdf.export_provenance.figure_comparisons['15000']='approved',r=>r.observations[0].printed_cents='-0',r=>r.observations[0].printed_decimal='1.00',r=>r.observations[3].printed_cents='0',r=>r.observations.reverse(),r=>r.geometry_evidence_json='[]',r=>r.printed_figure_profile_sha256='a'.repeat(64),r=>r.unreviewed='extra',r=>{const c=JSON.parse(r.observations[0].printed_candidates_json);c[0].page_index=1;r.observations[0].printed_candidates_json=JSON.stringify(c);},r=>{const c=JSON.parse(r.observations[0].printed_candidates_json);c[0].line_code_bbox[0]=20001;r.observations[0].printed_candidates_json=JSON.stringify(c);}]){
+    const r=printedObservation();mutate(r);assert.throws(()=>api.validatePrintedFigures(r));
+  }
+});
+test('printed page action selects the exact same-year PDF and return tab, suppressing stale PDF responses',async()=>{
+  let urls=0;const local={crypto:webcrypto,Blob,URL:{createObjectURL:()=>`blob:synthetic-${++urls}`,revokeObjectURL(){}}};vm.runInNewContext(source,local);const ui=local.NXTDTMaxT1;
+  const roster={source_scope:'dtmax-test-copy',program:'T1',imported_source_only:true,tax_cases_created:0,total:2,offset:0,available_years:[2024],clients:['100','200'].map(client_number=>({client_number,name:'Synthetic',historical_years:[2024],pending_years:[]}))};
+  const buffers=['%PDF-synthetic-one','%PDF-synthetic-two'].map(s=>Buffer.from(s)),records=buffers.map(b=>({client_number:'100',tax_year:2024,sha256:createHash('sha256').update(b).digest('hex'),bytes:b.length,page_count:2,page_labels:['Synthetic first','Synthetic second'],original_print_output:true,immutable:true,export_provenance:printedObservation().pdf.export_provenance}));
+  const observation=printedObservation();observation.pdf=Object.fromEntries(['client_number','tax_year','sha256','bytes','page_count','page_labels','export_provenance'].map(k=>[k,records[1][k]]));
+  const candidates=JSON.parse(observation.observations[0].printed_candidates_json);candidates[0].page_index=1;observation.observations[0].printed_candidates_json=JSON.stringify(candidates);
+  const kindButton={dataset:{sourceKind:'printed-cached-figures'}},pageButton={dataset:{printedPdfYear:'2024',printedPdfSha:records[1].sha256,printedPdfPage:'2'}};
+  const nodes=new Map(),all=k=>k==='[data-source-kind]'?[kindButton]:k==='[data-printed-pdf-sha]'?[pageButton]:[],node=k=>{if(!nodes.has(k))nodes.set(k,{innerHTML:'',value:'',querySelector:node,querySelectorAll:all,scrollIntoView(){}});return nodes.get(k);},host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:()=>[]};
+  let delaySha='',resolvePending,started;const requests=[];
+  const content=r=>({source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,record:r,content_hex:buffers[records.indexOf(r)].toString('hex')});
+  const request=async path=>{requests.push(path);if(path.includes('/source-clients?'))return roster;const client=path.match(/\/clients\/(\d+)\//)?.[1];
+    if(path.includes('source-facts?')){const printed=path.includes('kind=printed-cached-figures');return{test_copy:true,source_scope:'dtmax-test-copy',client_number:client,kind:printed?'printed-cached-figures':'historical-lines',offset:0,total:printed?1:0,tax_cases_imported:0,records:printed?[observation]:[],source_return_year:2024,printed_figure_profile_sha256:observation.printed_figure_profile_sha256,original_history_modified:0,original_PDFs_modified:0,current_profiles_modified:0,financial_values_approved:false,preferred_version_selected:false,as_filed_verified:false};}
+    if(path.endsWith('/return-pdfs'))return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,client_number:client,records:client==='100'?records:[]};
+    const r=records.find(r=>path.endsWith('/'+r.sha256));assert.ok(r);if(r.sha256===delaySha){started?.();return new Promise(resolve=>{resolvePending=()=>resolve(content(r));});}return content(r);
+  };
+  const c=ui.mount(host,{request});await c.ready;await c.open('100');await kindButton.onclick();
+  assert.ok(node('[data-dtmax-details]').innerHTML.includes('Printed cached figures'));await pageButton.onclick();
+  assert.ok(requests.at(-1).endsWith('/2024/'+records[1].sha256));assert.match(node('[data-dtmax-pdf-canvas]').innerHTML,/#page=2/);assert.match(host.innerHTML,/id="dtmax-tab-return"[^>]+aria-selected="true"/);
+  let signal=new Promise(resolve=>{started=resolve;});delaySha=records[0].sha256;const stale=c.show('return',false,{sha:records[0].sha256,page:1});await signal;await c.show('return',false,{sha:records[1].sha256,page:2});const currentCanvas=node('[data-dtmax-pdf-canvas]').innerHTML;resolvePending();await stale;assert.equal(node('[data-dtmax-pdf-canvas]').innerHTML,currentCanvas);
+  signal=new Promise(resolve=>{started=resolve;});const other=c.show('return',false,{sha:records[0].sha256,page:1});await signal;await c.open('200');host.innerHTML='Synthetic different client';node('[data-dtmax-pdf-canvas]').innerHTML='Synthetic different client';resolvePending();await other;assert.equal(host.innerHTML,'Synthetic different client');assert.equal(node('[data-dtmax-pdf-canvas]').innerHTML,'Synthetic different client');c.dispose();
+});
 test('source cents retain absent and exact signed i64 cents without floating-point rounding',()=>{
   assert.equal(api.cents(null),'Absent');assert.equal(api.cents('0'),'$0.00');assert.equal(api.cents('-1'),'-$0.01');assert.equal(api.cents('9223372036854775807'),'$92,233,720,368,547,758.07');
   for(const value of [undefined,'1.00','-0','01','9223372036854775808'])assert.throws(()=>api.cents(value));
