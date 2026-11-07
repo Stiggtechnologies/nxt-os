@@ -10,7 +10,7 @@ async fn request(app:&Router,method:&str,path:&str,body:Value,auth:bool)->(u16,V
 #[tokio::test]
 async fn every_recovery_route_is_wired_admin_gated_and_read_only_when_empty(){
     unsafe{std::env::set_var("ADMIN_API_KEY","native-recovery-test");}let app=app_with(Store::memory);
-    for path in ["native-merged-slip-fields","native-module-reviews","legacy-family-lineage","historical-variants"] {
+    for path in ["native-merged-slip-fields","native-module-reviews","legacy-family-lineage","historical-variants","printed-cached-figures"] {
         for (method,suffix) in [("POST",""),("POST","/read"),("GET","/summary")] {
             assert_eq!(request(&app,method,&format!("{path}{suffix}"),json!({}),false).await.0,401,"unguarded {path}{suffix}");
         }
