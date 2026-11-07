@@ -80,6 +80,9 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-module-reviews", post(test_copy_native_module_reviews))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-module-reviews/read", post(test_copy_read_native_module_reviews))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-module-reviews/summary", get(test_copy_native_module_review_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/historical-variants", post(test_copy_native_historical_variants))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/historical-variants/read", post(test_copy_read_native_historical_variants))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/historical-variants/summary", get(test_copy_native_historical_variant_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-clients", get(test_copy_source_clients))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/source-facts", get(test_copy_client_source_facts))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/return-pdfs", post(test_copy_preserve_return_pdf))
@@ -265,6 +268,9 @@ async fn test_copy_personal_source_summary(State(state):S,Path(company):Path<Str
 async fn test_copy_native_module_reviews(State(state):S,Path(company):Path<String>,Json(body):Json<super::native_module_reviews::NativeModuleReviewBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_native_module_reviews(&company,body).await?))}
 async fn test_copy_read_native_module_reviews(State(state):S,Path(company):Path<String>,Json(body):Json<super::native_module_reviews::NativeModuleReviewLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_native_module_reviews(&company,body).await?))}
 async fn test_copy_native_module_review_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_native_module_review_summary(&company).await?))}
+async fn test_copy_native_historical_variants(State(state):S,Path(company):Path<String>,Json(body):Json<super::native_historical_variants::HistoricalVariantBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_native_historical_variants(&company,body).await?))}
+async fn test_copy_read_native_historical_variants(State(state):S,Path(company):Path<String>,Json(body):Json<super::native_historical_variants::HistoricalVariantLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_native_historical_variants(&company,body).await?))}
+async fn test_copy_native_historical_variant_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_native_historical_variant_summary(&company).await?))}
 async fn test_copy_source_clients(State(state): S, Path(company): Path<String>, Query(page): Query<super::preserved_records::SourceClientPage>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_source_clients(&company,page).await?))
 }

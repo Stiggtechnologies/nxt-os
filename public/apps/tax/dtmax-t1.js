@@ -5,7 +5,7 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
   const lines=['15000','23600','26000','42000','48400','48500'];
   const labels=['Total income','Net income','Taxable income','Net federal tax','Refund','Balance owing'];
-  const kinds={'historical-lines':'Historical totals','afr-slips':'CRA slips','native-slip-views':'Native slip fields','linked-t5008':'Linked T5008 CSV','family-files':'Family files','historical-family-lineage':'Recovered family links'};
+  const kinds={'historical-lines':'Historical totals','historical-variants':'Source versions','afr-slips':'CRA slips','native-slip-views':'Native slip fields','linked-t5008':'Linked T5008 CSV','family-files':'Family files','historical-family-lineage':'Recovered family links'};
   const integer=v=>Number.isSafeInteger(v)&&v>=0;
   function cents(value) {
     if(value===null)return 'Absent';
@@ -63,7 +63,7 @@
     if(!record)return '<p>No imported totals for the selected year.</p>';
     const r=checkHistorical(record);
     if(r.vendor_module!=='T1'&&!nativeModuleReviewed(r))return '<h3>Converter label '+esc(r.vendor_module)+' · '+r.tax_year+'</h3><p class="dtmax-notice">The converter inferred this module label. Its candidate values are not shown as T1 totals while the original source module is verified. The original source is preserved.</p>';
-    return '<h3>Historical totals · '+r.tax_year+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])]))+'<p>'+esc(mappingLabel(r))+'</p>';
+    return '<h3>Historical totals · '+r.tax_year+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])]))+'<p>'+esc(mappingLabel(r))+'</p><p>Reader-selected figures. Compare retained Production and federal snapshot figures under Source versions.</p>';
   }
   function nativeSlipViewsHtml(records) {
     const hash=v=>typeof v==='string'&&/^[0-9a-f]{64}$/.test(v),profile='4bb64f7185d758cc4a1ccacd3a62b6a00b9656d320ca7412b9fe2598d68d69fc';
@@ -120,6 +120,7 @@
   function recordsHtml(kind,records) {
     if(!records.length)return '<p>No records of this kind are imported for this client.</p>';
     if(kind==='native-slip-views')return nativeSlipViewsHtml(records);
+    if(kind==='historical-variants')return historicalVariantsHtml(records);
     if(kind==='historical-family-lineage')return '<p>Historical family-file associations recovered from preserved native indexes and corroborated source identities. Original file IDs are retained. These files have not been decoded into tax figures.</p>'+records.map(r=>{
       const hash=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
       if(!r||r.schema!=='dtmax-historical-native-family-lineage/v1'||r.lineage_profile_sha256!=='f05734d0cd42f21a347f3dbbdba428cb9b25e0d62ef3b18b5db9c287b855edb0'||r.source_ids_rewritten!==false||r.tax_payloads_decoded!==false||r.tax_values_approved!==false||!/^[0-9]{1,12}$/.test(r.source_family_file_id)||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||![r.source_file_sha256,r.legacy_record_sha256,r.authority_proof_sha256].every(hash)||r.legacy_record_id!==r.source_family_file_id+':'+r.tax_year||!Array.isArray(r.member_mappings)||!r.member_mappings.length||r.member_mappings.length>128)throw Error('Historical family lineage did not match');
@@ -137,6 +138,35 @@
     }).join('')+'</tbody></table></div>';
     if(kind==='family-files')return records.map(r=>'<p>Family file '+esc(r.family_file_id)+' · '+esc(r.tax_year)+'</p><div class="dtmax-family-members">'+(r.member_client_numbers||[]).map(id=>{if(!/^\d{1,12}$/.test(id))throw Error('Invalid family member');return '<button class="dtmax-action" type="button" data-family-client="'+id+'">Client #'+id+'</button>';}).join(' ')+'</div>').join('');
     return '<p>Source occurrences are preserved separately; they are not deduplicated economic slips.</p>'+records.map(r=>'<details><summary>'+esc(r.slip_kind)+' · '+esc(r.tax_year===null?'Missing tax year':r.tax_year)+'</summary><p>Source folder year: '+esc(r.source_folder_year)+' (not an inferred slip year)</p><ul>'+tree(r.vendor_field_tree)+'</ul></details>').join('');
+  }
+  function historicalVariantsHtml(records){
+    const pin='641c2b5f56617882829d5049813e06789a3a661580fe6f6d3adf6f8dde5e03ba',hash=x=>typeof x==='string'&&/^[0-9a-f]{64}$/.test(x);
+    return '<p>Stored calculation versions may differ. Every retained E11 form and repeated field is shown separately. No version has been selected as authoritative or recalculated.</p>'+records.map(r=>{
+      if(!r||r.schema!=='dtmax-native-E11-source-variants/v1'||r.source_variant_profile_sha256!==pin||r.source_archive_sha256!=='499bb5f906222614ef4abc60b84ff4c2d5149f529baeb43f0e18eb14c101037c'||!/^\d{1,12}$/.test(r.client_number)||!/^\d{1,12}$/.test(r.family_file_id)||!Number.isInteger(r.source_return_year)||r.source_return_year<1990||r.source_return_year>2100||!['T1','T3'].includes(r.reader_module)||r.reader_module==='T3'&&r.native_T1_origin_guard_verified!==true||r.legacy_form_mapping?.original_reader_module!==r.reader_module||r.legacy_form_mapping.original_history_or_CSV_modified!==false||!integer(r.source_context_offset)||!hash(r.source_EXC_sha256)||!Array.isArray(r.source_variants)||r.source_variants.length>100)throw Error('Historical source-version context did not match');
+      const seen=new Set();
+      const versions=r.source_variants.map(v=>{
+        const q=v?.variant_name==='Production'?0:v?.variant_name==='SnapshotFederal'?7:null,id=[q,v?.outer_plan,v?.variant_occurrence].join(':');
+        if(q===null||v.reader_q_plan!==q||!integer(v.outer_plan)||!integer(v.variant_occurrence)||typeof v.primary_record_present!=='boolean'||seen.has(id)||!Array.isArray(v.source_records)||!v.source_records.length||!Array.isArray(v.E11_forms)||v.E11_forms.length>1000)throw Error('Historical source version did not match');seen.add(id);
+        const primary=q===0?30:40;
+        for(const source of v.source_records)if(![primary,primary+1].includes(source.record_type)||source.outer_plan!==v.outer_plan||source.personal_prefix_bytes!==182||source.CRC_verified!==true||!integer(source.frame_offset)||![source.frame_sha256,source.expanded_sha256].every(hash))throw Error('Historical version CRC provenance did not match');
+        if(v.primary_record_present!==v.source_records.some(s=>s.record_type===primary))throw Error('Historical primary record presence did not match');
+        const forms=v.E11_forms.map((f,ordinal)=>{
+          if(!f||f.form_name!=='E11'||f.E11_form_ordinal!==ordinal||f.reader_marker_field1_selector_eligible!==true||!integer(f.original_field_count)||!Array.isArray(f.marker_field1_occurrences)||!f.marker_field1_occurrences.length||f.marker_field1_occurrences.some(m=>m.field_id!==1)||!hash(f.source_form_header_sha256)||!f.lines||Object.keys(f.lines).length!==6)throw Error('Historical version E11 form did not match');
+          const body=lines.map((line,i)=>{
+            const values=f.lines[line];if(values===null)return '<tr><th scope="row">'+labels[i]+' · '+line+'</th><td class="dtmax-missing">Absent</td></tr>';
+            if(!Array.isArray(values)||!values.length||values.length>1000)throw Error('Historical field occurrence list did not match');let previous=-1;
+            const cells=values.map((field,occurrence)=>{
+              if(!field||field.field_id!==Number(line)/100||field.field_id_occurrence!==occurrence||field.type_tag!==2||!Number.isInteger(field.wire_cents)||field.wire_cents< -2147483648||field.wire_cents>2147483647||field.wire_integer!==field.wire_cents||!integer(field.source_field_index)||field.source_field_index<=previous||field.source_field_index>=f.original_field_count||!hash(field.source_field_sha256)||field.source_text!==null||!['explicit_zero','present_wire_cents'].includes(field.state)||(field.state==='explicit_zero')!==(field.wire_cents===0)||!v.source_records.some(s=>s.frame_offset===field.source_EXR_frame_offset&&s.frame_sha256===field.source_EXR_frame_sha256&&s.expanded_sha256===field.source_expanded_record_sha256))throw Error('Historical financial occurrence or frame anchor did not match');
+              previous=field.source_field_index;const n=BigInt(field.wire_cents),a=n<0n?-n:n,decimal=(n<0n?'-':'')+(a/100n)+'.'+(a%100n).toString().padStart(2,'0');if(field.source_decimal!==decimal)throw Error('Historical decimal does not match exact wire cents');
+              return '<div>'+esc(cents(String(field.wire_cents)))+(values.length>1?'<small>Source occurrence '+(occurrence+1)+'</small>':'')+'</div>';
+            }).join('');return '<tr><th scope="row">'+labels[i]+' · '+line+'</th><td>'+cells+'</td></tr>';
+          }).join('');
+          return '<h4>E11 totals form '+(ordinal+1)+'</h4><div class="table-wrap"><table><thead><tr><th>Line</th><th>Stored amount</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+        }).join('');
+        return '<details class="dtmax-native-slip"><summary>'+(q===0?'Production':'Federal snapshot')+' · '+r.source_return_year+(v.outer_plan?' · Source plan '+v.outer_plan:'')+(v.variant_occurrence?' · Version occurrence '+(v.variant_occurrence+1):'')+'</summary>'+(forms||'<p>This stored version has no E11 totals form. No amounts have been inferred.</p>')+'<details><summary>Source provenance</summary><p>Native reader version '+esc(v.variant_name)+' · '+v.source_records.length+' CRC-verified record(s). Original archive '+esc(r.source_archive_sha256)+'.</p></details></details>';
+      }).join('');
+      return '<section><h3>Stored source versions · '+r.source_return_year+'</h3>'+(versions||'<p>No calculated source version was retained for this context. Missing amounts remain unavailable.</p>')+'</section>';
+    }).join('');
   }
   const missing='<span class="dtmax-missing">Not imported</span>';
   function keywordRows(rows){return '<dl>'+rows.map(([label,value])=>'<dt data-dtmax-keyword="'+esc(label.toLowerCase())+'">'+esc(label)+'</dt><dd>'+(value===undefined||value===null||value===''?missing:esc(value))+'</dd>').join('')+'</dl>';}
@@ -294,10 +324,11 @@
     function checkFacts(p,client,requestedKind,at,limit,requestedYear){
       if(!p||p.client_number!==client||p.kind!==requestedKind||p.test_copy!==true||p.tax_cases_imported!==0||p.offset!==at||!integer(p.total)||!Array.isArray(p.records)||p.records.length>limit||at+p.records.length>p.total)throw Error('Source client response did not match');
       if(p.records.some(r=>requestedKind==='family-files'?!Array.isArray(r.member_client_numbers)||!r.member_client_numbers.includes(client):requestedKind==='historical-family-lineage'?!Array.isArray(r.member_mappings)||!r.member_mappings.some(m=>m.current_client_number===client):r.client_number!==client))throw Error('Source record belongs to another client');
-      if(['native-slip-views','linked-t5008'].includes(requestedKind)&&requestedYear&&(p.source_return_year!==Number(requestedYear)||p.records.some(r=>(requestedKind==='native-slip-views'?r.source_return_year:r.tax_year)!==Number(requestedYear))))throw Error('Selected source return year did not match');
+      if(['native-slip-views','linked-t5008','historical-variants'].includes(requestedKind)&&requestedYear&&(p.source_return_year!==Number(requestedYear)||p.records.some(r=>(requestedKind==='linked-t5008'?r.tax_year:r.source_return_year)!==Number(requestedYear))))throw Error('Selected source return year did not match');
+      if(requestedKind==='historical-variants'&&(p.source_variant_profile_sha256!=='641c2b5f56617882829d5049813e06789a3a661580fe6f6d3adf6f8dde5e03ba'||p.original_history_modified!==0||p.personal_source_flags_modified!==0||p.financial_values_approved!==false||p.preferred_version_selected!==false))throw Error('Historical source-version response did not match');
     }
     async function facts(next=0,existingSequence){
-      const n=existingSequence??++sequence,client=activeClient,requestedKind=kind,requestedYear=['native-slip-views','linked-t5008'].includes(kind)?selectedYear:'';factOffset=next;const detail=q('[data-dtmax-details]');if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
+      const n=existingSequence??++sequence,client=activeClient,requestedKind=kind,requestedYear=['native-slip-views','linked-t5008','historical-variants'].includes(kind)?selectedYear:'';factOffset=next;const detail=q('[data-dtmax-details]');if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
       try{
         const p=await request(BASE+'clients/'+client+'/source-facts?kind='+requestedKind+'&offset='+next+'&limit=25'+(requestedYear?'&source_return_year='+encodeURIComponent(requestedYear):''));if(!current(n))return;checkFacts(p,client,requestedKind,next,25,requestedYear);
         detail.innerHTML='<div class="dtmax-fact-nav">'+Object.entries(kinds).map(([k,label])=>'<button type="button" data-source-kind="'+k+'" aria-pressed="'+(k===kind)+'">'+label+'</button>').join('')+'</div>'+recordsHtml(kind,p.records)+'<p>'+(p.total?next+1:0)+'–'+(next+p.records.length)+' of '+p.total+' source records</p><button class="dtmax-action" data-fact-prev '+(!next?'disabled':'')+'>Previous records</button> <button class="dtmax-action" data-fact-next '+(next+p.records.length>=p.total?'disabled':'')+'>Next records</button>';

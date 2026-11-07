@@ -324,6 +324,7 @@ impl SourceImport {
         if page.kind=="linked-t5008" {return self.test_copy_client_legacy_slips(company,client,page).await}
         if page.kind=="native-slip-views" {return self.test_copy_client_native_slip_views(company,client,page).await}
         if page.kind=="historical-family-lineage" {return self.test_copy_client_legacy_family_lineage(company,client,page).await}
+        if page.kind=="historical-variants" {return self.test_copy_client_native_historical_variants(company,client,page).await}
         if page.source_return_year.is_some() {return Err(bad("Source return year filter applies only to native slip views"))}
         self.test_copy_guard(company,true)?;
         if !number(client) || page.limit == 0 || page.limit > 100 { return Err(bad("Invalid client or page limit")) }
