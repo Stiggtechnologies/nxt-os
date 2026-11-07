@@ -14,6 +14,7 @@ pub mod native_slip_supplements;
 pub mod native_merged_slip_fields;
 pub mod personal_source_info;
 pub mod native_module_reviews;
+pub mod native_historical_variants;
 pub mod legacy_owner_links;
 pub mod legacy_family_lineage;
 
