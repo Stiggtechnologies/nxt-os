@@ -21,12 +21,48 @@ async fn controls(s:&SourceImport,c:&str)->Vec<Value>{vec![s.test_copy_summary(c
 async fn packet_routes_require_admin_and_reject_unclosed_chunks_without_exposing_owner_data(){
     unsafe{std::env::set_var("ADMIN_API_KEY","packet-local-test");}
     let app=app_with(Store::memory);let base="/api/source-imports/dtmax/companies/packet-router-test/test-copy/";
-    for (method,path)in [("POST","identification-source-archives/chunks"),("POST","identification-source-archives/commit"),("GET","identification-source-archives/profile"),("GET","clients/100/return-pdfs/2022/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/archive-chunks/0")]{
+    for (method,path)in [("POST","identification-source-archives/chunks"),("POST","identification-source-archives/commit"),("GET","identification-source-archives/profile"),("GET","identification-source-archives/additional-profile"),("GET","clients/100/return-pdfs/2022/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/archive-chunks/0")]{
         let response=app.clone().oneshot(Request::builder().method(method).uri(format!("{base}{path}")).header("content-type","application/json").body(Body::from("{}")).unwrap()).await.unwrap();assert_eq!(response.status(),401);
     }
     let response=app.clone().oneshot(Request::builder().uri(format!("{base}identification-source-archives/profile")).header("authorization","Bearer packet-local-test").body(Body::empty()).unwrap()).await.unwrap();assert_eq!(response.status(),200);let b=axum::body::to_bytes(response.into_body(),4096).await.unwrap();let p:Value=serde_json::from_slice(&b).unwrap();assert_eq!(p["unique_original_documents"],69);assert_eq!(p["owner_year_associations"],131);assert_eq!(p["closed_profile_sha256"],"4e0e607dedb8d6c8cb7bd322b4dbecff2e92f962b74684e705faec1d0a9cb233");assert!(p.get("documents").is_none());
     let value=json!({"test_copy":true,"sha256":"a".repeat(64),"chunk_index":0,"chunk_sha256":sha(b"unclosed"),"content_hex":hex::encode(b"unclosed")});
     let response=app.oneshot(Request::builder().method("POST").uri(format!("{base}identification-source-archives/chunks")).header("authorization","Bearer packet-local-test").header("content-type","application/json").body(Body::from(value.to_string())).unwrap()).await.unwrap();assert_eq!(response.status(),400);
+}
+
+#[tokio::test]
+async fn optional_additional_archives_reuse_old_originals_and_preserve_all_prior_records(){
+    let Ok(path)=std::env::var("NXT_DTMAX_ADDITIONAL_SOURCE_ARCHIVE_MANIFEST")else{return};let path=Path::new(&path);
+    let raw=std::fs::read(path).unwrap();assert_eq!(sha(&raw),"730c9208edcc545fdefa410d73c81aa2b0460175526b96944a45af9728c360c5");let m:Value=serde_json::from_slice(&raw).unwrap();let rows=m["records"].as_array().unwrap();assert_eq!(rows.len(),22);
+    let old:Value=serde_json::from_slice(&std::fs::read(std::env::var("NXT_DTMAX_SOURCE_ARCHIVE_MANIFEST").unwrap()).unwrap()).unwrap();let oldrows=old["records"].as_array().unwrap();assert_eq!(oldrows.len(),131);let oldsha:BTreeSet<_>=oldrows.iter().map(|r|r["sha256"].as_str().unwrap().to_string()).collect();
+    let profiles:Value=serde_json::from_slice(&std::fs::read(std::env::var("NXT_DTMAX_OFFICE_PROFILES").unwrap()).unwrap()).unwrap();let profiles=profiles["clients"].as_array().unwrap();assert_eq!(profiles.len(),5856);assert_eq!(sha(&serde_json::to_vec(profiles).unwrap()),"f3e8ecfb623139f87314965377aeff624ec9b32392c96aaf3c7c714c17dfd8d2");
+    let prior:Value=serde_json::from_slice(&std::fs::read(std::env::var("NXT_DTMAX_PREPACKET_METADATA").unwrap()).unwrap()).unwrap();let four:Value=serde_json::from_slice(&std::fs::read(std::env::var("NXT_DTMAX_REVIEWED_PACKET_MANIFEST").unwrap()).unwrap()).unwrap();let company="additional-archive-private-qa";let store=Store::memory();let s=SourceImport::new(store.clone());let mut snapshots=Vec::new();
+    for p in profiles {let cid=p["client_number"].as_str().unwrap();let key=format!("dtmaxtc:{company}:client:{cid}");let raw=serde_json::to_string(p).unwrap();store.set(&key,&raw).await.unwrap();store.sadd(&format!("dtmaxtc:{company}:clients"),cid).await.unwrap();snapshots.push((key,raw));}
+    let mut prior_count=0;
+    for (collection,is_archive)in [(prior["records"].as_array().unwrap(),false),(four["records"].as_array().unwrap(),false),(oldrows,true)]{
+        for row in collection {let mut r=row.clone();r.as_object_mut().unwrap().remove("file");let key=record_key(company,&r);let raw=serde_json::to_string(&r).unwrap();store.set(&key,&raw).await.unwrap();store.sadd(&format!("dtmaxtc:{company}:return_pdf:client:{}",r["client_number"].as_str().unwrap()),&identity(&r)).await.unwrap();if is_archive{store.sadd(&format!("dtmaxtc:{company}:return_pdf:identification_archive_associations"),&identity(&r)).await.unwrap();}snapshots.push((key,raw));prior_count+=1;}
+    }
+    assert_eq!(prior_count,14212);let before=controls(&s,company).await;let mut seen=BTreeSet::new();let mut shared=0;let mut chunks=0;
+    for row in rows {
+        let cid=row["client_number"].as_str().unwrap();let year=row["tax_year"].as_u64().unwrap()as u16;let digest=row["sha256"].as_str().unwrap();let bytes=std::fs::read(path.parent().unwrap().join(row["file"].as_str().unwrap())).unwrap();assert_eq!(sha(&bytes),digest);
+        if seen.insert(digest.to_string()) {
+            if oldsha.contains(digest){
+                // Seed already preserved immutable chunks under the same source digest.
+                for(i,part)in bytes.chunks(CHUNK_BYTES).enumerate(){assert_eq!(s.test_copy_preserve_source_archive_chunk(company,chunk_input(row,part,i)).await.unwrap()["created"],true);}shared+=1;
+            } else {assert!(s.test_copy_commit_source_archive(company,commit(row)).await.is_err());}
+            for(i,part)in bytes.chunks(CHUNK_BYTES).enumerate(){let result=s.test_copy_preserve_source_archive_chunk(company,chunk_input(row,part,i)).await.unwrap();assert_eq!(result["created"],!oldsha.contains(digest));assert_eq!(s.test_copy_preserve_source_archive_chunk(company,chunk_input(row,part,i)).await.unwrap()["created"],false);chunks+=1;}
+        }
+        for wrong in ["owner","year","profile","approval","scope"]{
+            let mut b=row.clone();b.as_object_mut().unwrap().remove("file");b["test_copy"]=json!(true);match wrong{"owner"=>b["client_number"]=json!("999999999"),"year"=>b["tax_year"]=json!(1990),"profile"=>b["retained_office_provenance"]["profile_sha256"]=oldrows[0]["retained_office_provenance"]["profile_sha256"].clone(),"approval"=>b["retained_office_provenance"]["financial_values_approved"]=json!(true),_=>b["source_archive_scope"]["remaining_packet_pages_unverified"]=json!(false)};assert!(s.test_copy_commit_source_archive(company,serde_json::from_value(b).unwrap()).await.is_err());
+        }
+        assert_eq!(s.test_copy_commit_source_archive(company,commit(row)).await.unwrap()["record"],metadata(row));assert_eq!(s.test_copy_commit_source_archive(company,commit(row)).await.unwrap()["created"],false);
+        let content=s.test_copy_return_pdf_content(company,cid,year,digest).await.unwrap();assert!(content.get("content_hex").is_none());assert_eq!(content["record"],metadata(row));let mut fresh=Vec::new();for i in 0..bytes.len().div_ceil(CHUNK_BYTES){let c=s.test_copy_source_archive_chunk(company,cid,year,digest,i).await.unwrap();fresh.extend(hex::decode(c["content_hex"].as_str().unwrap()).unwrap());}assert_eq!(fresh,bytes);
+        let list=s.test_copy_return_pdfs(company,cid).await.unwrap();assert!(list["records"].as_array().unwrap().contains(&metadata(row)));assert!(s.test_copy_source_archive_chunk(company,"999999999",year,digest,0).await.is_err());assert!(s.test_copy_source_archive_chunk("other-namespace",cid,year,digest,0).await.is_err());
+        let overlay=s.test_copy_source_clients(company,serde_json::from_value(json!({"offset":0,"limit":100,"search":cid,"year":year})).unwrap()).await.unwrap();assert!(overlay["clients"].as_array().unwrap().iter().any(|r|r["client_number"]==cid&&r["source_archive_years"].as_array().is_some_and(|a|a.contains(&json!(year)))));
+    }
+    assert_eq!((seen.len(),shared,chunks),(19,3,222));assert_eq!(store.smembers(&format!("dtmaxtc:{company}:return_pdf:identification_archive_associations")).await.unwrap().len(),153);
+    for(key,raw)in snapshots{assert_eq!(store.get(&key).await.unwrap().as_deref(),Some(raw.as_str()),"Earlier source profile or immutable PDF descriptor changed");}assert_eq!(controls(&s,company).await,before);
+    let old_profile=s.test_copy_source_archive_profile(company).await.unwrap();assert_eq!(old_profile["unique_original_documents"],69);assert_eq!(old_profile["owner_year_associations"],131);let new=s.test_copy_additional_source_archive_profile(company).await.unwrap();assert_eq!(new["new_unique_original_documents"],16);assert_eq!(new["owner_year_associations"],22);
+    println!("ADDITIONAL_ARCHIVES_ROUNDTRIP: originals=19; reused=3; chunks=222; links=22; prior_metadata=14212; profiles=5856; source_controls=8; exact_immutable_replay=true");
 }
 
 #[tokio::test]

@@ -42,6 +42,17 @@ test('archive role is separately bounded and rejects forged scope and provenance
  for(const mutate of [r=>r.bytes=67108865,r=>r.retained_office_provenance.profile_sha256='0'.repeat(64),r=>r.retained_office_provenance.financial_values_approved=true,r=>r.source_archive_scope.full_return_completeness_verified=true,r=>r.source_archive_scope.verified_source_pages[0].page=0,r=>r.source_archive_scope.remaining_packet_pages_unverified=false,r=>r.source_archive_scope.source_role='complete_T1',r=>r.content_transport.chunk_count=2,r=>{delete r.retained_office_provenance;r.original_print_output=true;},r=>r.reviewed_packet_scope={}]){const r=record();mutate(r);assert.throws(()=>h.api.validatePdf(r,'100'));}
  h.controller.dispose();
 });
+
+test('additional closed profile accepts an unclassified original layout without widening earlier profile',()=>{
+ const r=record(),h=harness([r]);r.retained_office_provenance.profile_sha256='3985c4e4c02638f4abdceb6723fc8b37fea46db25c54306b4da799a5c53a7de4';r.source_archive_scope.verified_source_pages[0].layout='unclassified';h.api.validatePdf(r,'100');
+ const old=structuredClone(r);old.retained_office_provenance.profile_sha256=profile;assert.throws(()=>h.api.validatePdf(old,'100'));
+ for(const mutate of [r=>r.retained_office_provenance.profile_sha256='0'.repeat(64),r=>r.source_archive_scope.verified_source_pages[0].layout='guessed',r=>r.source_archive_scope.remaining_packet_pages_unverified=false,r=>r.retained_office_provenance.as_filed_verified=true,r=>r.retained_office_provenance.financial_values_approved=true]){const b=structuredClone(r);mutate(b);assert.throws(()=>h.api.validatePdf(b,'100'));}h.controller.dispose();
+});
+
+test('additional original uses unchanged source-only viewer and opens its verified physical page',async()=>{
+ const r=record(2017,true);r.retained_office_provenance.profile_sha256='3985c4e4c02638f4abdceb6723fc8b37fea46db25c54306b4da799a5c53a7de4';r.source_archive_scope.verified_source_pages[0].layout='unclassified';const h=harness([r]);await h.controller.ready;await h.controller.open('100');
+ const html=h.node('[data-dtmax-pdf-canvas]').innerHTML;assert.match(html,/#page=5/);assert.match(html,/Only the listed identification pages/);assert.match(html,/different clients or years/);assert.match(html,/no native return or figures have been created/);assert.match(html,/Financial values and filed-copy status remain unverified/);assert.deepEqual(Buffer.from(await [...h.blobs.values()][0].arrayBuffer()),bytes);h.controller.dispose();
+});
 test('source archive year overlay rejects null, duplicate and fabricated year membership',()=>{
  const h=harness([record()]),p={source_scope:'dtmax-test-copy',program:'T1',imported_source_only:true,tax_cases_created:0,total:1,offset:0,available_years:[2022],clients:[{client_number:'100',name:'Synthetic',historical_years:[2022],pending_years:[],native_historical_years:[],preserved_pdf_figure_years:[],source_archive_years:[2022],pdf_only_years:[2022]}]};
  h.api.validatePage(p,0);for(const value of [null,[2022,2022],[2005]]){const bad=structuredClone(p);bad.clients[0].source_archive_years=value;assert.throws(()=>h.api.validatePage(bad,0));}h.controller.dispose();
