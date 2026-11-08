@@ -309,10 +309,10 @@ impl SourceImport {
     }
     pub async fn test_copy_source_fact_summary(&self, company: &str) -> Result<Value> {
         self.test_copy_guard(company,true)?;
-        let mut counts=BTreeMap::new();
-        for name in ["family_files","family_member_links","historical_lines","historical_lines_pending","afr_occurrences","afr_contents","afr_missing_year"] {
-            counts.insert(name,self.store.smembers(&k(company,name)).await.map_err(|e| storage(&e))?.len());
-        }
+        let names=["family_files","family_member_links","historical_lines","historical_lines_pending","afr_occurrences","afr_contents","afr_missing_year"];
+        let keys:Vec<_>=names.iter().map(|name|k(company,name)).collect();
+        let values=self.store.source_set_counts(&keys).await.map_err(|e|storage(&e))?;
+        let counts:BTreeMap<_,_>=names.into_iter().zip(values).collect();
         let (reviewed,unresolved)=self.review_pending_mapping_records(company).await?;
         Ok(json!({"test_copy":true,"counts":counts,"historical_mapping_review":{"pending_at_import":reviewed+unresolved.len(),"original_form_bindings_checked":reviewed,"remaining_pending":unresolved.len(),"original_import_classifications_preserved":true,"amounts_changed":0,"tax_figures_approved":false},"tax_cases_imported":0,"live_cutover_allowed":false}))
     }

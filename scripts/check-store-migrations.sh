@@ -30,6 +30,7 @@ expected=(
   "20261029140000_company_access.sql"
   "20261101120000_company_ledger_audit.sql"
   "20261104120000_filing_log.sql"
+  "20261108080000_source_set_counts.sql"
 )
 if [[ "${#migrations[@]}" -ne "${#expected[@]}" ]]; then
   echo "expected exactly ${#expected[@]} store migrations, found ${#migrations[@]}" >&2
@@ -64,4 +65,5 @@ done
 psql "$url" -v ON_ERROR_STOP=1 -f "$root/supabase/tests/store_contract.sql"
 psql "$url" -v ON_ERROR_STOP=1 -f "$root/supabase/tests/company_access_contract.sql"
 psql "$url" -v ON_ERROR_STOP=1 -f "$root/supabase/tests/filing_log_contract.sql"
+psql "$url" -v ON_ERROR_STOP=1 -f "$root/supabase/tests/source_set_counts_contract.sql"
 echo "local store migration contract passed; no production database was used"
