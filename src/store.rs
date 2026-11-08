@@ -390,6 +390,41 @@ impl Store {
         }
     }
 
+    /// Bounded counters for immutable DT Max source indexes. Do not transfer all
+    /// member references merely to count them, or change general MGET snapshots.
+    pub async fn source_set_counts(&self, keys: &[String]) -> StoreResult<Vec<usize>> {
+        if keys.is_empty() { return Ok(Vec::new()); }
+        if keys.len() > 16 { return Err("source counter key count exceeds bound".into()); }
+        for key in keys {
+            let valid=key.strip_prefix("dtmaxtc:").and_then(|rest|rest.rsplit_once(':'))
+                .is_some_and(|(company,kind)| !company.is_empty() && company.len()<=80
+                    && company.as_bytes()[0].is_ascii_alphanumeric()
+                    && company.bytes().all(|c|c.is_ascii_alphanumeric()||b"_.:-".contains(&c))
+                    && ["family_files","family_member_links","historical_lines","historical_lines_pending","afr_occurrences","afr_contents","afr_missing_year"].contains(&kind));
+            if !valid {return Err("counter key is outside preserved source indexes".into());}
+        }
+        let keys:Vec<_>=keys.iter().map(|key|format!("{PREFIX}{key}")).collect();
+        let values=match self {
+            Store::Memory(m)=>{
+                let m=m.lock().unwrap();
+                if keys.iter().any(|key|m.strings.contains_key(key)||m.lists.contains_key(key)) {
+                    return Err("WRONGTYPE source counter key is not a set".into());
+                }
+                return Ok(keys.iter().map(|key|m.sets.get(key).map_or(0,HashSet::len)).collect());
+            }
+            Store::Supabase{url,token,namespace,http}=>supabase_rpc(http,url,token,"nxt_source_set_counts",json!({"p_namespace":namespace,"p_keys":keys})).await?,
+            Store::Redis{..}=>{
+                let mut values=Vec::new();
+                for key in &keys {values.push(self.remote(vec![json!("SCARD"),json!(key)]).await?);}
+                Value::Array(values)
+            }
+            Store::Unavailable{reason}=>return Err(reason.clone()),
+        };
+        let values=values.as_array().ok_or_else(||"source counter response is not an array".to_string())?;
+        if values.len()!=keys.len(){return Err("source counter response length differs".into());}
+        values.iter().map(|v|v.as_u64().filter(|n|*n<=i64::MAX as u64).and_then(|n|usize::try_from(n).ok()).ok_or_else(||"source counter response is not an unsigned cardinality".into())).collect()
+    }
+
     /// Prepends to a list (newest first), keeping at most `cap` entries.
     pub async fn lpush_capped(&self, key: &str, value: &str, cap: usize) -> StoreResult<()> {
         let key = format!("{PREFIX}{key}");
