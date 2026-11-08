@@ -12,6 +12,7 @@ pub mod printed_cached_figures;
 pub mod preserved_pdf_figures;
 pub mod source_summary_figures;
 pub mod source_paper_documents;
+pub mod parsed_native_forms;
 pub mod source_exceptions;
 pub mod native_slip_views;
 pub mod native_slip_supplements;
