@@ -334,6 +334,7 @@ impl SourceImport {
     /// Paginated source evidence for a stable individual client number. Pending mappings
     /// remain labelled in the returned record, and no return is recalculated or created.
     pub async fn test_copy_client_source_facts(&self, company: &str, client: &str, page: SourceFactPage) -> Result<Value> {
+        if page.kind=="parsed-native-forms" {return self.test_copy_client_parsed_native_forms(company,client,page).await}
         if page.kind=="source-paper-documents" {return self.test_copy_client_source_paper_documents(company,client,page).await}
         if page.kind=="source-summary-figures" {return self.test_copy_client_source_summary_figures(company,client,page).await}
         if page.kind=="preserved-pdf-figures" {return self.test_copy_client_preserved_pdf_figures(company,client,page).await}
