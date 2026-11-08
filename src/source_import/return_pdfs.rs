@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 #[path = "reviewed_packet_pdfs.rs"]
 pub mod reviewed_packets;
+#[path = "identification_source_archives.rs"]
+pub mod source_archives;
 type Result<T> = std::result::Result<T, super::ImportError>;
 pub const MAX_PDF_BYTES: usize = 2 * 1024 * 1024;
 const OFFICE_JSON_LIMIT: usize = 4_400_000;
@@ -112,6 +114,8 @@ fn office_descriptor(r: &Record) -> Value {
     json!({"client_number":r.client_number,"tax_year":r.tax_year,"sha256":r.sha256,"bytes":r.bytes,"page_labels":r.page_labels,"retained_office_provenance":r.retained_office_provenance})
 }
 fn validate_record_provenance(r: &Record) -> Result<()> {
+    if source_archives::is_archive(r) { return source_archives::validate_record(r); }
+    if r.source_archive_scope.is_some() { return Err(bad("Source archive pages require their explicit closed contract")); }
     if reviewed_packets::is_packet(r) { return reviewed_packets::validate_record(r); }
     if r.reviewed_packet_scope.is_some() { return Err(bad("A reviewed packet section requires its explicit source contract")); }
     if let Some(p) = &r.retained_office_provenance {
@@ -131,7 +135,7 @@ fn validate_record_provenance(r: &Record) -> Result<()> {
         if !selected.document_sha256.contains(&r.sha256)
             || !selected.allowed_record_sha256.contains(&hex::encode(Sha256::digest(raw)))
         { return Err(bad("Office T1 document is outside independently closed owner/year evidence")); }
-    } else if office_profile().document_sha256.contains(&r.sha256) || stable_office_profile().document_sha256.contains(&r.sha256) || scanned_office_profile().document_sha256.contains(&r.sha256) || reviewed_packets::document_allowed(&r.sha256) {
+    } else if office_profile().document_sha256.contains(&r.sha256) || stable_office_profile().document_sha256.contains(&r.sha256) || scanned_office_profile().document_sha256.contains(&r.sha256) || reviewed_packets::document_allowed(&r.sha256) || source_archives::document_allowed(&r.sha256) {
         return Err(bad("This retained office T1 document requires its explicit office provenance"));
     }
     if let Some(p)=&r.export_provenance {validate_export(p)?;}
@@ -260,6 +264,8 @@ struct Record {
     retained_office_provenance: Option<RetainedOfficeProvenance>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reviewed_packet_scope: Option<reviewed_packets::ReviewedPacketScope>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_archive_scope: Option<source_archives::SourceArchiveScope>,
 }
 fn number(s: &str) -> bool { !s.is_empty() && s.len() <= 12 && s.bytes().all(|b|b.is_ascii_digit()) }
 fn digest(s: &str) -> bool { s.len()==64 && s.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) }
@@ -271,6 +277,10 @@ fn describe(r: &Record) -> Value {
     if let Some(scope)=&r.reviewed_packet_scope {
         value["reviewed_packet_scope"]=json!(scope);
         value["content_transport"]=reviewed_packets::transport(r);
+    }
+    if let Some(scope)=&r.source_archive_scope {
+        value["source_archive_scope"]=json!(scope);
+        value["content_transport"]=source_archives::transport(r);
     }
     value
 }
@@ -307,7 +317,7 @@ impl SourceImport {
         if self.store.get(&client_key).await.map_err(|e|storage(&e))?.is_none() { return Err(missing("PDF client is not in this source scope")); }
         let bytes=hex::decode(&v.content_hex).map_err(|_|bad("Invalid PDF hex"))?;
         if hex::encode(&bytes)!=v.content_hex || hex::encode(Sha256::digest(&bytes))!=v.sha256 { return Err(bad("PDF bytes do not match declared digest")); }
-        let record=Record{client_number:v.client_number.clone(),tax_year:v.tax_year,sha256:v.sha256.clone(),page_labels:v.page_labels,bytes:bytes.len(),export_provenance:v.export_provenance,retained_office_provenance:v.retained_office_provenance,reviewed_packet_scope:None};
+        let record=Record{client_number:v.client_number.clone(),tax_year:v.tax_year,sha256:v.sha256.clone(),page_labels:v.page_labels,bytes:bytes.len(),export_provenance:v.export_provenance,retained_office_provenance:v.retained_office_provenance,reviewed_packet_scope:None,source_archive_scope:None};
         validate_record_provenance(&record)?;
         validate_static_pdf(&bytes,record.page_labels.len())?;
         let identity=format!("{}:{}:{}",record.client_number,record.tax_year,record.sha256);
@@ -338,6 +348,9 @@ impl SourceImport {
         let r:Record=serde_json::from_str(&raw).map_err(|_|storage("Invalid PDF record"))?;
         if r.client_number!=client || r.tax_year!=year || r.sha256!=sha { return Err(storage("PDF ownership mismatch")); }
         validate_record_provenance(&r).map_err(|_|storage("Stored PDF provenance differs"))?;
+        if source_archives::is_archive(&r) {
+            return Ok(json!({"test_copy":true,"source_scope":company,"record":describe(&r),"content_transport":source_archives::transport(&r),"tax_cases_imported":0}));
+        }
         if reviewed_packets::is_packet(&r) {
             return Ok(json!({"test_copy":true,"source_scope":company,"record":describe(&r),"content_transport":reviewed_packets::transport(&r),"tax_cases_imported":0}));
         }

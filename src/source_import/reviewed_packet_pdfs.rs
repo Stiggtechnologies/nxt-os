@@ -90,7 +90,7 @@ pub(super) fn validate_record(r: &Record) -> Result<()> {
             &provenance.owner_year_evidence_sha256, &provenance.mixed_owner_year_review_sha256,
             &provenance.static_pdf_review_sha256, &provenance.source_metadata_sha256].iter().any(|s| !digest(s))
         || r.page_labels.iter().any(|s| s.is_empty() || s.len() > 120 || s.chars().any(char::is_control))
-        || scope.full_return_completeness_verified || scope.year_first_page == 0
+        || r.source_archive_scope.is_some() || scope.full_return_completeness_verified || scope.year_first_page == 0
         || scope.year_first_page > scope.year_last_page || scope.year_last_page > d.pages
         || scope.source_tax_years.is_empty() || scope.source_tax_years.len() > 8
         || scope.source_tax_years.windows(2).any(|pair| pair[0] >= pair[1])
@@ -172,7 +172,7 @@ impl SourceImport {
         self.test_copy_guard(company, v.test_copy)?;
         let r = Record {client_number:v.client_number, tax_year:v.tax_year, sha256:v.sha256,
             bytes:v.bytes, page_labels:v.page_labels, export_provenance:None,
-            retained_office_provenance:Some(v.retained_office_provenance), reviewed_packet_scope:Some(v.reviewed_packet_scope)};
+            retained_office_provenance:Some(v.retained_office_provenance), reviewed_packet_scope:Some(v.reviewed_packet_scope), source_archive_scope:None};
         validate_record(&r)?;
         if self.store.get(&format!("dtmaxtc:{company}:client:{}", r.client_number)).await.map_err(|e| storage(&e))?.is_none() {
             return Err(missing("Packet owner is not in this source scope"));
