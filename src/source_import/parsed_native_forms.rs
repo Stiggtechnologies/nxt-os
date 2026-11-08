@@ -530,43 +530,73 @@ impl SourceImport {
                 return Err(conflict("Parsed native source is immutable"));
             }
         }
+        let submitted = batch.records.len();
+        let mut remaining = batch.records.into_iter().zip(validated);
         let mut created = 0;
-        for (record, (id, raw)) in batch.records.iter().zip(validated) {
-            let added = self
-                .store
-                .set_nx(&record_key(company, &id), &raw)
-                .await
-                .map_err(|e| storage(&e))?;
-            if self
-                .store
-                .get(&record_key(company, &id))
-                .await
-                .map_err(|e| storage(&e))?
-                .as_deref()
-                != Some(&raw)
-            {
-                return Err(conflict("Parsed native source is immutable"));
+        loop {
+            let group: Vec<_> = remaining.by_ref().take(4).collect();
+            if group.is_empty() {
+                break;
             }
-            let m = &record.metadata;
-            let client = m["client_number"].as_str().unwrap();
-            let year = m["source_return_year"].as_u64().unwrap();
-            for suffix in [
-                "all".to_owned(),
-                format!("client:{client}"),
-                format!("client_year:{client}:{year}"),
-            ] {
-                self.store
-                    .sadd(&key(company, &suffix), &id)
-                    .await
-                    .map_err(|e| storage(&e))?;
+            let mut tasks = tokio::task::JoinSet::new();
+            for (record, (id, raw)) in group {
+                let store = self.store.clone();
+                let company = company.to_owned();
+                tasks.spawn(async move {
+                    let added = store
+                        .set_nx(&record_key(&company, &id), &raw)
+                        .await
+                        .map_err(|e| storage(&e))?;
+                    if store
+                        .get(&record_key(&company, &id))
+                        .await
+                        .map_err(|e| storage(&e))?
+                        .as_deref()
+                        != Some(&raw)
+                    {
+                        return Err(conflict("Parsed native source is immutable"));
+                    }
+                    let m = &record.metadata;
+                    let client = m["client_number"].as_str().unwrap();
+                    let year = m["source_return_year"].as_u64().unwrap();
+                    for suffix in [
+                        "all".to_owned(),
+                        format!("client:{client}"),
+                        format!("client_year:{client}:{year}"),
+                    ] {
+                        store
+                            .sadd(&key(&company, &suffix), &id)
+                            .await
+                            .map_err(|e| storage(&e))?;
+                    }
+                    Ok::<bool, ImportError>(added)
+                });
             }
-            if added {
-                created += 1;
+            // Finish the bounded wave before reporting an error. No detached
+            // writes continue after the response, and replay repairs any indexes.
+            let mut failure = None;
+            while let Some(result) = tasks.join_next().await {
+                match result {
+                    Ok(Ok(added)) => created += usize::from(added),
+                    Ok(Err(error)) => {
+                        if failure.is_none() {
+                            failure = Some(error);
+                        }
+                    }
+                    Err(_) => {
+                        if failure.is_none() {
+                            failure = Some(storage("Parsed source write task failed"));
+                        }
+                    }
+                }
+            }
+            if let Some(error) = failure {
+                return Err(error);
             }
         }
         let mut response = envelope(company);
         response["created"] = json!(created);
-        response["unchanged_replays"] = json!(batch.records.len() - created);
+        response["unchanged_replays"] = json!(submitted - created);
         Ok(response)
     }
 
