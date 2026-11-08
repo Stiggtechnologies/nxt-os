@@ -6,6 +6,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
+#[path = "reviewed_packet_pdfs.rs"]
+pub mod reviewed_packets;
 type Result<T> = std::result::Result<T, super::ImportError>;
 pub const MAX_PDF_BYTES: usize = 2 * 1024 * 1024;
 const OFFICE_JSON_LIMIT: usize = 4_400_000;
@@ -110,6 +112,8 @@ fn office_descriptor(r: &Record) -> Value {
     json!({"client_number":r.client_number,"tax_year":r.tax_year,"sha256":r.sha256,"bytes":r.bytes,"page_labels":r.page_labels,"retained_office_provenance":r.retained_office_provenance})
 }
 fn validate_record_provenance(r: &Record) -> Result<()> {
+    if reviewed_packets::is_packet(r) { return reviewed_packets::validate_record(r); }
+    if r.reviewed_packet_scope.is_some() { return Err(bad("A reviewed packet section requires its explicit source contract")); }
     if let Some(p) = &r.retained_office_provenance {
         if r.export_provenance.is_some() || p.native_generation_verified
             || p.as_filed_verified || p.financial_values_approved || p.source_bytes_modified
@@ -127,7 +131,7 @@ fn validate_record_provenance(r: &Record) -> Result<()> {
         if !selected.document_sha256.contains(&r.sha256)
             || !selected.allowed_record_sha256.contains(&hex::encode(Sha256::digest(raw)))
         { return Err(bad("Office T1 document is outside independently closed owner/year evidence")); }
-    } else if office_profile().document_sha256.contains(&r.sha256) || stable_office_profile().document_sha256.contains(&r.sha256) || scanned_office_profile().document_sha256.contains(&r.sha256) {
+    } else if office_profile().document_sha256.contains(&r.sha256) || stable_office_profile().document_sha256.contains(&r.sha256) || scanned_office_profile().document_sha256.contains(&r.sha256) || reviewed_packets::document_allowed(&r.sha256) {
         return Err(bad("This retained office T1 document requires its explicit office provenance"));
     }
     if let Some(p)=&r.export_provenance {validate_export(p)?;}
@@ -220,6 +224,31 @@ mod tests {
         assert!(!static_object(&page,0,&mut 0));
         assert!(static_object(&lopdf::Object::Dictionary(lopdf::dictionary!{"Type"=>"Page"}),0,&mut 0));
     }
+    #[test]
+    fn optional_all_prepacket_records_keep_exact_legacy_wire_and_public_metadata() {
+        let Ok(path)=std::env::var("NXT_DTMAX_PREPACKET_METADATA")else{return};
+        #[derive(Serialize,Deserialize)]
+        struct PriorRecord {
+            client_number:String,tax_year:u16,sha256:String,page_labels:Vec<String>,bytes:usize,
+            #[serde(default,skip_serializing_if="Option::is_none")]
+            export_provenance:Option<CachedNativeExport>,
+            #[serde(default,skip_serializing_if="Option::is_none")]
+            retained_office_provenance:Option<RetainedOfficeProvenance>,
+        }
+        let fixture:Value=serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(fixture["native_cached_package_documents"],13827);
+        let rows=fixture["records"].as_array().unwrap();assert!(rows.len()>=13827);
+        for value in rows {
+            let old:PriorRecord=serde_json::from_value(value.clone()).unwrap();
+            let raw=serde_json::to_string(&old).unwrap();let new:Record=serde_json::from_str(&raw).unwrap();
+            assert!(serde_json::to_string(&new).unwrap()==raw,"Prepacket stored metadata wire changed");
+            validate_record_provenance(&new).unwrap();
+            let mut expected=value.clone();expected["original_print_output"]=json!(old.retained_office_provenance.is_none());
+            expected["immutable"]=json!(true);expected["page_count"]=json!(old.page_labels.len());
+            assert!(describe(&new)==expected,"Prepacket public descriptor changed");
+        }
+        println!("PREPACKET_METADATA_EXACT: records={}; native_package_documents=13827; earlier_office_documents=180",rows.len());
+    }
 }
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct Record {
@@ -229,6 +258,8 @@ struct Record {
     export_provenance: Option<CachedNativeExport>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     retained_office_provenance: Option<RetainedOfficeProvenance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reviewed_packet_scope: Option<reviewed_packets::ReviewedPacketScope>,
 }
 fn number(s: &str) -> bool { !s.is_empty() && s.len() <= 12 && s.bytes().all(|b|b.is_ascii_digit()) }
 fn digest(s: &str) -> bool { s.len()==64 && s.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) }
@@ -237,6 +268,10 @@ fn describe(r: &Record) -> Value {
     let mut value=json!({"client_number":r.client_number,"tax_year":r.tax_year,"sha256":r.sha256,"page_labels":r.page_labels,"page_count":r.page_labels.len(),"bytes":r.bytes,"original_print_output":r.retained_office_provenance.is_none(),"immutable":true});
     if let Some(p)=&r.export_provenance { value["export_provenance"]=json!(p); }
     if let Some(p)=&r.retained_office_provenance { value["retained_office_provenance"]=json!(p); }
+    if let Some(scope)=&r.reviewed_packet_scope {
+        value["reviewed_packet_scope"]=json!(scope);
+        value["content_transport"]=reviewed_packets::transport(r);
+    }
     value
 }
 fn static_object(o: &lopdf::Object, depth: usize, nodes: &mut usize) -> bool {
@@ -252,6 +287,14 @@ fn static_dictionary(d: &lopdf::Dictionary, depth: usize, nodes: &mut usize) -> 
     if [b"JS".as_slice(),b"JavaScript",b"EmbeddedFiles",b"XFA",b"AA",b"OpenAction",b"RichMediaContent",b"AcroForm"].iter().any(|key|d.has(key)) || d.get(b"S").ok().and_then(|s|s.as_name().ok()).is_some_and(|s|[b"JavaScript".as_slice(),b"Launch",b"SubmitForm",b"ImportData",b"GoToR"].contains(&s)) || d.get(b"Type").ok().and_then(|s|s.as_name().ok())==Some(b"EmbeddedFile".as_slice()) {return false}
     d.iter().all(|(_,v)|static_object(v,depth+1,nodes))
 }
+fn validate_static_pdf(bytes: &[u8], pages: usize) -> Result<()> {
+    let doc=lopdf::Document::load_mem(bytes).map_err(|_|bad("Return PDF could not be parsed"))?;
+    if doc.is_encrypted() { return Err(bad("Encrypted PDF requires an authorized readable export; original remains preserved separately")); }
+    if doc.get_pages().len()!=pages { return Err(bad("Page index does not match parsed PDF page count")); }
+    let mut nodes=0;
+    if !doc.objects.values().all(|o|static_object(o,0,&mut nodes)) { return Err(bad("Active or overly nested PDF content is not supported by the source preview")); }
+    Ok(())
+}
 impl SourceImport {
     pub async fn test_copy_preserve_return_pdf(&self, company: &str, v: ReturnPdfInput) -> Result<Value> {
         self.test_copy_guard(company,v.test_copy)?;
@@ -264,15 +307,9 @@ impl SourceImport {
         if self.store.get(&client_key).await.map_err(|e|storage(&e))?.is_none() { return Err(missing("PDF client is not in this source scope")); }
         let bytes=hex::decode(&v.content_hex).map_err(|_|bad("Invalid PDF hex"))?;
         if hex::encode(&bytes)!=v.content_hex || hex::encode(Sha256::digest(&bytes))!=v.sha256 { return Err(bad("PDF bytes do not match declared digest")); }
-        let record=Record{client_number:v.client_number.clone(),tax_year:v.tax_year,sha256:v.sha256.clone(),page_labels:v.page_labels,bytes:bytes.len(),export_provenance:v.export_provenance,retained_office_provenance:v.retained_office_provenance};
+        let record=Record{client_number:v.client_number.clone(),tax_year:v.tax_year,sha256:v.sha256.clone(),page_labels:v.page_labels,bytes:bytes.len(),export_provenance:v.export_provenance,retained_office_provenance:v.retained_office_provenance,reviewed_packet_scope:None};
         validate_record_provenance(&record)?;
-        let doc=lopdf::Document::load_mem(&bytes).map_err(|_|bad("Return PDF could not be parsed"))?;
-        if doc.is_encrypted() { return Err(bad("Encrypted PDF requires an authorized readable export; original remains preserved separately")); }
-        if doc.get_pages().len()!=record.page_labels.len() { return Err(bad("Page index does not match parsed PDF page count")); }
-        // Original print output is static; active content and attachments are not
-        // accepted into the preview lane. The bytes are never rewritten.
-        let mut nodes=0;
-        if !doc.objects.values().all(|o|static_object(o,0,&mut nodes)) {return Err(bad("Active or overly nested PDF content is not supported by the source preview"))}
+        validate_static_pdf(&bytes,record.page_labels.len())?;
         let identity=format!("{}:{}:{}",record.client_number,record.tax_year,record.sha256);
         let raw=serde_json::to_string(&record).map_err(|_|storage("encode PDF record"))?;
         self.store.set_nx(&k(company,&format!("blob:{}",record.sha256)),&v.content_hex).await.map_err(|e|storage(&e))?;
@@ -301,6 +338,9 @@ impl SourceImport {
         let r:Record=serde_json::from_str(&raw).map_err(|_|storage("Invalid PDF record"))?;
         if r.client_number!=client || r.tax_year!=year || r.sha256!=sha { return Err(storage("PDF ownership mismatch")); }
         validate_record_provenance(&r).map_err(|_|storage("Stored PDF provenance differs"))?;
+        if reviewed_packets::is_packet(&r) {
+            return Ok(json!({"test_copy":true,"source_scope":company,"record":describe(&r),"content_transport":reviewed_packets::transport(&r),"tax_cases_imported":0}));
+        }
         let content=self.store.get(&k(company,&format!("blob:{sha}"))).await.map_err(|e|storage(&e))?.ok_or_else(||storage("PDF bytes missing"))?;
         if content.len()>MAX_PDF_BYTES*2 { return Err(storage("PDF blob exceeds bound")); }
         let bytes=hex::decode(&content).map_err(|_|storage("Invalid stored PDF bytes"))?;
