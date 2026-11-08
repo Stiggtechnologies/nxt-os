@@ -8,3 +8,4 @@ src/source_import/retained_office_T1_scanned_profile.json text eol=lf
 src/source_import/preserved_pdf_figure_profile.json text eol=lf
 src/source_import/preserved_pdf_line_authority.json text eol=lf
 src/source_import/parsed_native_form_profile.json text eol=lf
+public/apps/tax/dtmax-keywords/*.json text eol=lf
