@@ -1,0 +1,275 @@
+//! Closed original source archives. Only the listed identification or summary pages
+//! establish owner/year links. Unreviewed body pages are never promoted to returns.
+use super::*;
+
+pub const PROFILE: &str = "07747dec1e7e0e03365da5252bff44b12299291dad250cc49cb7ea9cb1389d97";
+const CLOSED_SHA: &str = "4e0e607dedb8d6c8cb7bd322b4dbecff2e92f962b74684e705faec1d0a9cb233";
+pub const CHUNK_BYTES: usize = 1024 * 1024;
+const MAX_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
+const KIND: &str = "retained_office_identification_source_archive";
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SourceArchiveScope {
+    pub source_role: String,
+    pub verified_source_pages: Vec<VerifiedSourcePage>,
+    pub same_year_native_context_present_at_source_audit: bool,
+    pub remaining_packet_pages_unverified: bool,
+    pub full_return_completeness_verified: bool,
+}
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct VerifiedSourcePage {
+    pub page: usize,
+    pub layout: String,
+    pub marked_amended: bool,
+    pub annotations_visible: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Document {
+    bytes: usize,
+    pages: usize,
+    chunk_sha256: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Profile {
+    contract: Value,
+    profile_sha256: String,
+    source_packet_sha256: String,
+    record_count: usize,
+    document_count: usize,
+    allowed_record_sha256: BTreeSet<String>,
+    document_sha256: BTreeSet<String>,
+    documents: BTreeMap<String, Document>,
+}
+fn profile() -> &'static Profile {
+    static P: OnceLock<Profile> = OnceLock::new();
+    P.get_or_init(|| {
+        let raw = include_bytes!("identification_source_archive_profile.json");
+        assert_eq!(hex::encode(Sha256::digest(raw)), CLOSED_SHA);
+        let p: Profile = serde_json::from_slice(raw).expect("closed identification source archive profile");
+        assert_eq!(p.profile_sha256, PROFILE);
+        assert_eq!(hex::encode(Sha256::digest(serde_json::to_vec(&p.contract).unwrap())), PROFILE);
+        assert_eq!((p.record_count, p.document_count), (131, 69));
+        assert_eq!(p.allowed_record_sha256.len(), 131);
+        assert_eq!(p.document_sha256.len(), 69);
+        assert_eq!(p.documents.keys().cloned().collect::<BTreeSet<_>>(), p.document_sha256);
+        assert!(digest(&p.source_packet_sha256));
+        assert!(p.allowed_record_sha256.iter().chain(&p.document_sha256).all(|s| digest(s)));
+        for d in p.documents.values() {
+            assert!(d.bytes > 0 && d.bytes <= MAX_DOCUMENT_BYTES && d.pages > 0 && d.pages <= 500);
+            assert_eq!(d.chunk_sha256.len(), d.bytes.div_ceil(CHUNK_BYTES));
+            assert!(d.chunk_sha256.iter().all(|s| digest(s)));
+        }
+        assert!(p.document_sha256.is_disjoint(&office_profile().document_sha256));
+        assert!(p.document_sha256.is_disjoint(&stable_office_profile().document_sha256));
+        assert!(p.document_sha256.is_disjoint(&scanned_office_profile().document_sha256));
+        assert!(p.document_sha256.iter().all(|s| !reviewed_packets::document_allowed(s)));
+        p
+    })
+}
+pub(super) fn document_allowed(sha: &str) -> bool { profile().document_sha256.contains(sha) }
+pub(super) fn is_archive(r: &Record) -> bool {
+    r.retained_office_provenance.as_ref().is_some_and(|p| p.kind == KIND)
+}
+fn descriptor(r: &Record) -> Value {
+    let mut value = office_descriptor(r);
+    value["source_archive_scope"] = json!(r.source_archive_scope);
+    value
+}
+pub(super) fn validate_record(r: &Record) -> Result<()> {
+    let p = profile();
+    let provenance = r.retained_office_provenance.as_ref().ok_or_else(|| bad("Packet provenance missing"))?;
+    let scope = r.source_archive_scope.as_ref().ok_or_else(|| bad("Source archive year section missing"))?;
+    let d = p.documents.get(&r.sha256).ok_or_else(|| bad("Packet source digest is not admitted"))?;
+    if provenance.kind != KIND || provenance.profile_sha256 != PROFILE
+        || provenance.source_manifest_sha256 != p.source_packet_sha256
+        || r.export_provenance.is_some() || r.bytes != d.bytes || r.page_labels.len() != d.pages
+        || !number(&r.client_number) || !(1990..=2100).contains(&r.tax_year)
+        || provenance.native_generation_verified || provenance.as_filed_verified
+        || provenance.financial_values_approved || provenance.source_bytes_modified
+        || [&provenance.source_manifest_sha256, &provenance.source_occurrence_manifest_sha256,
+            &provenance.owner_year_evidence_sha256, &provenance.mixed_owner_year_review_sha256,
+            &provenance.static_pdf_review_sha256, &provenance.source_metadata_sha256].iter().any(|s| !digest(s))
+        || r.page_labels.iter().any(|s| s.is_empty() || s.len() > 120 || s.chars().any(char::is_control))
+        || scope.full_return_completeness_verified
+        || !["T1_identification_archive", "tax_summary_and_supporting_slips"].contains(&scope.source_role.as_str())
+        || scope.verified_source_pages.is_empty() || scope.verified_source_pages.len() > 20
+        || scope.verified_source_pages.iter().any(|a| a.page == 0 || a.page > d.pages
+            || !["regular", "condensed", "summary"].contains(&a.layout.as_str()))
+        || scope.verified_source_pages.windows(2).any(|a| a[0].page >= a[1].page)
+        || (scope.source_role == "T1_identification_archive" && (!scope.remaining_packet_pages_unverified || scope.verified_source_pages.iter().any(|a| a.layout == "summary")))
+        || (scope.source_role == "tax_summary_and_supporting_slips" && (scope.remaining_packet_pages_unverified || scope.verified_source_pages.len() != 1 || scope.verified_source_pages[0].layout != "summary"))
+        || r.reviewed_packet_scope.is_some()
+    { return Err(bad("Source archive scope or provenance differs")); }
+    let raw = serde_json::to_vec(&descriptor(r)).map_err(|_| bad("Cannot encode packet descriptor"))?;
+    if !p.allowed_record_sha256.contains(&hex::encode(Sha256::digest(raw))) {
+        return Err(bad("Packet association is outside reviewed source owner/year evidence"));
+    }
+    Ok(())
+}
+pub(super) fn transport(r: &Record) -> Value {
+    json!({"kind":"identification_source_archive_chunks_v1","chunk_bytes":CHUNK_BYTES,"chunk_count":profile().documents[&r.sha256].chunk_sha256.len()})
+}
+fn chunk_key(company: &str, sha: &str, index: usize) -> String {
+    k(company, &format!("identification_archive_blob:{sha}:chunk:{index}"))
+}
+fn checked_chunk(sha: &str, index: usize, content: &str) -> Result<Vec<u8>> {
+    let d = profile().documents.get(sha).ok_or_else(|| bad("Packet source digest is not admitted"))?;
+    let expected_hash = d.chunk_sha256.get(index).ok_or_else(|| bad("Packet chunk index is outside source"))?;
+    let expected_bytes = (d.bytes - index * CHUNK_BYTES).min(CHUNK_BYTES);
+    if content.len() != expected_bytes * 2 { return Err(bad("Packet chunk byte length differs")); }
+    let bytes = hex::decode(content).map_err(|_| bad("Invalid packet chunk encoding"))?;
+    if hex::encode(&bytes) != content || hex::encode(Sha256::digest(&bytes)) != *expected_hash {
+        return Err(bad("Packet chunk failed source hash verification"));
+    }
+    Ok(bytes)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveChunkInput {
+    pub test_copy: bool,
+    pub sha256: String,
+    pub chunk_index: usize,
+    pub chunk_sha256: String,
+    pub content_hex: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveCommitInput {
+    pub test_copy: bool,
+    pub client_number: String,
+    pub tax_year: u16,
+    pub sha256: String,
+    pub bytes: usize,
+    pub page_labels: Vec<String>,
+    pub retained_office_provenance: RetainedOfficeProvenance,
+    pub source_archive_scope: SourceArchiveScope,
+}
+
+impl SourceImport {
+    pub(in crate::source_import) async fn identification_source_archive_years(&self, company: &str) -> Result<BTreeMap<String, BTreeSet<u16>>> {
+        let mut ids=self.store.smembers(&k(company, "identification_archive_associations")).await.map_err(|e| storage(&e))?;
+        ids.sort();
+        if ids.len()>profile().record_count { return Err(storage("Source archive year index exceeds closed bound")); }
+        let keys:Vec<_>=ids.iter().map(|id|k(company,&format!("record:{id}"))).collect();
+        let mut years:BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
+        for (id,raw) in ids.iter().zip(self.store.mget(&keys).await.map_err(|e|storage(&e))?) {
+            let r:Record=serde_json::from_str(&raw.ok_or_else(||storage("Source archive year index is incomplete"))?).map_err(|_|storage("Invalid source archive association"))?;
+            if *id!=format!("{}:{}:{}",r.client_number,r.tax_year,r.sha256) {return Err(storage("Source archive year identity differs"));}
+            validate_record(&r).map_err(|_|storage("Source archive year evidence differs"))?;
+            years.entry(r.client_number).or_default().insert(r.tax_year);
+        }
+        Ok(years)
+    }
+    pub async fn test_copy_source_archive_profile(&self, company: &str) -> Result<Value> {
+        self.test_copy_guard(company, true)?;
+        let p=profile();
+        Ok(json!({"test_copy":true,"source_scope":company,"profile_sha256":p.profile_sha256,"closed_profile_sha256":CLOSED_SHA,"source_packet_sha256":p.source_packet_sha256,"unique_original_documents":p.document_count,"owner_year_associations":p.record_count,"chunk_bytes":CHUNK_BYTES,"maximum_document_bytes":MAX_DOCUMENT_BYTES,"original_source_bytes_changed":false,"tax_cases_imported":0}))
+    }
+    pub async fn test_copy_preserve_source_archive_chunk(&self, company: &str, v: ArchiveChunkInput) -> Result<Value> {
+        self.test_copy_guard(company, v.test_copy)?;
+        if !digest(&v.sha256) || !digest(&v.chunk_sha256) || v.content_hex.len() > CHUNK_BYTES * 2 {
+            return Err(bad("Invalid source archive chunk"));
+        }
+        let bytes = checked_chunk(&v.sha256, v.chunk_index, &v.content_hex)?;
+        if hex::encode(Sha256::digest(&bytes)) != v.chunk_sha256 { return Err(bad("Declared packet chunk digest differs")); }
+        let key = chunk_key(company, &v.sha256, v.chunk_index);
+        let created = self.store.set_nx(&key, &v.content_hex).await.map_err(|e| storage(&e))?;
+        if self.store.get(&key).await.map_err(|e| storage(&e))?.as_deref() != Some(&v.content_hex) {
+            return Err(conflict("Original packet chunk is immutable"));
+        }
+        Ok(json!({"test_copy":true,"source_scope":company,"sha256":v.sha256,"chunk_index":v.chunk_index,"chunk_sha256":v.chunk_sha256,"bytes":bytes.len(),"created":created,"owner_association_committed":false,"tax_cases_imported":0}))
+    }
+    pub async fn test_copy_commit_source_archive(&self, company: &str, v: ArchiveCommitInput) -> Result<Value> {
+        self.test_copy_guard(company, v.test_copy)?;
+        let r = Record {client_number:v.client_number, tax_year:v.tax_year, sha256:v.sha256,
+            bytes:v.bytes, page_labels:v.page_labels, export_provenance:None,
+            retained_office_provenance:Some(v.retained_office_provenance), source_archive_scope:Some(v.source_archive_scope), reviewed_packet_scope:None};
+        validate_record(&r)?;
+        if self.store.get(&format!("dtmaxtc:{company}:client:{}", r.client_number)).await.map_err(|e| storage(&e))?.is_none() {
+            return Err(missing("Packet owner is not in this source scope"));
+        }
+        let d = &profile().documents[&r.sha256];
+        let mut bytes = Vec::with_capacity(d.bytes);
+        for index in 0..d.chunk_sha256.len() {
+            let content = self.store.get(&chunk_key(company, &r.sha256, index)).await.map_err(|e| storage(&e))?
+                .ok_or_else(|| missing("Original packet is incomplete; a source chunk is missing"))?;
+            bytes.extend(checked_chunk(&r.sha256, index, &content).map_err(|_| storage("Stored packet chunk failed verification"))?);
+        }
+        if bytes.len() != r.bytes || hex::encode(Sha256::digest(&bytes)) != r.sha256 {
+            return Err(storage("Complete original packet failed hash verification"));
+        }
+        validate_static_pdf(&bytes, r.page_labels.len())?;
+        let identity = format!("{}:{}:{}", r.client_number, r.tax_year, r.sha256);
+        let raw = serde_json::to_string(&r).map_err(|_| storage("encode packet association"))?;
+        let key = k(company, &format!("record:{identity}"));
+        let created = self.store.set_nx(&key, &raw).await.map_err(|e| storage(&e))?;
+        if self.store.get(&key).await.map_err(|e| storage(&e))?.as_deref() != Some(&raw) {
+            return Err(conflict("Original packet association is immutable"));
+        }
+        self.store.sadd(&k(company, &format!("client:{}", r.client_number)), &identity).await.map_err(|e| storage(&e))?;
+        self.store.sadd(&k(company, "identification_archive_associations"), &identity).await.map_err(|e| storage(&e))?;
+        Ok(json!({"test_copy":true,"source_scope":company,"created":created,"record":describe(&r),"tax_cases_imported":0}))
+    }
+    pub async fn test_copy_source_archive_chunk(&self, company: &str, client: &str, year: u16, sha: &str, index: usize) -> Result<Value> {
+        self.test_copy_guard(company, true)?;
+        if !number(client) || !digest(sha) || !(1990..=2100).contains(&year) { return Err(bad("Invalid packet identity")); }
+        let raw = self.store.get(&k(company, &format!("record:{client}:{year}:{sha}"))).await.map_err(|e| storage(&e))?
+            .ok_or_else(|| missing("No source archive association for this owner and year"))?;
+        let r: Record = serde_json::from_str(&raw).map_err(|_| storage("Invalid packet association"))?;
+        if r.client_number != client || r.tax_year != year || r.sha256 != sha { return Err(storage("Packet ownership mismatch")); }
+        validate_record(&r).map_err(|_| storage("Stored packet source evidence differs"))?;
+        let content = self.store.get(&chunk_key(company, sha, index)).await.map_err(|e| storage(&e))?
+            .ok_or_else(|| storage("Original packet chunk missing"))?;
+        let bytes = checked_chunk(sha, index, &content).map_err(|_| storage("Stored packet chunk failed verification"))?;
+        Ok(json!({"test_copy":true,"source_scope":company,"client_number":client,"tax_year":year,"sha256":sha,"chunk_index":index,"chunk_sha256":hex::encode(Sha256::digest(&bytes)),"bytes":bytes.len(),"content_hex":content,"tax_cases_imported":0}))
+    }
+}
+
+#[cfg(test)]
+mod source_archive_tests {
+    use super::*;
+    #[test]
+    fn closed_archive_profile_is_distinct_and_bounds_are_explicit() {
+        let p=profile();assert_eq!((p.document_count,p.record_count),(69,131));
+        assert_eq!(MAX_DOCUMENT_BYTES,64*1024*1024);assert_eq!(CHUNK_BYTES,1048576);
+        assert_ne!(PROFILE,reviewed_packets::PROFILE);
+        assert_eq!(p.documents.values().map(|d|d.bytes).sum::<usize>(),887704026);
+        assert_eq!(p.documents.values().map(|d|d.pages).sum::<usize>(),2076);
+        assert_eq!(p.documents.values().map(|d|d.chunk_sha256.len()).sum::<usize>(),882);
+    }
+    #[test]
+    fn optional_all_actual_original_archives_and_page_links_match_closed_evidence() {
+        let Ok(path)=std::env::var("NXT_DTMAX_SOURCE_ARCHIVE_MANIFEST")else{return};let path=std::path::Path::new(&path);
+        let raw=std::fs::read(path).unwrap();assert_eq!(hex::encode(Sha256::digest(&raw)),"5e8ecd20055f0fcbdcbb0a549ae094e21640e141ecbb8232962a952cc5814640");
+        let m:Value=serde_json::from_slice(&raw).unwrap();let rows=m["records"].as_array().unwrap();assert_eq!(rows.len(),131);let mut seen=BTreeSet::new();let mut anchors=0;
+        for row in rows {
+            let mut v=row.clone();v.as_object_mut().unwrap().remove("file");let r:Record=serde_json::from_value(v).unwrap();validate_record(&r).unwrap();
+            let scope=r.source_archive_scope.as_ref().unwrap();anchors+=scope.verified_source_pages.len();
+            for field in ["owner","year","evidence","full_return","scope","native_context","role","page","label"] {
+                let mut bad=r.clone();match field {
+                    "owner"=>bad.client_number="999999999".into(),"year"=>bad.tax_year=1990,
+                    "evidence"=>bad.retained_office_provenance.as_mut().unwrap().owner_year_evidence_sha256="0".repeat(64),
+                    "full_return"=>bad.source_archive_scope.as_mut().unwrap().full_return_completeness_verified=true,
+                    "scope"=>bad.source_archive_scope.as_mut().unwrap().remaining_packet_pages_unverified=!scope.remaining_packet_pages_unverified,
+                    "native_context"=>bad.source_archive_scope.as_mut().unwrap().same_year_native_context_present_at_source_audit=!scope.same_year_native_context_present_at_source_audit,
+                    "role"=>bad.source_archive_scope.as_mut().unwrap().source_role="complete_T1".into(),
+                    "page"=>bad.source_archive_scope.as_mut().unwrap().verified_source_pages[0].page=0,
+                    _=>bad.page_labels[0]="Changed".into(),
+                };assert!(validate_record(&bad).is_err(),"Unreviewed source archive change accepted");
+            }
+            if seen.insert(r.sha256.clone()) {
+                let bytes=std::fs::read(path.parent().unwrap().join(row["file"].as_str().unwrap())).unwrap();assert_eq!(bytes.len(),r.bytes);assert_eq!(hex::encode(Sha256::digest(&bytes)),r.sha256);validate_static_pdf(&bytes,r.page_labels.len()).unwrap();
+                for (i,part)in bytes.chunks(CHUNK_BYTES).enumerate(){assert_eq!(checked_chunk(&r.sha256,i,&hex::encode(part)).unwrap(),part);}
+                assert!(checked_chunk(&r.sha256,0,"00").is_err());
+            }
+        }
+        assert_eq!((seen.len(),anchors),(69,140));
+        println!("SOURCE_ARCHIVES_ALL_EXACT: documents=69; physical_pages=2076; bytes=887704026; owner_year_links=131; verified_identification_panels=139; summary_anchor=1; chunks=882; descriptor_negative_checks=1179");
+    }
+}

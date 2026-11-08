@@ -196,7 +196,8 @@ impl SourceImport {
         let mut pending:BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
         for v in unresolved {pending.entry(v.client_number).or_default().insert(v.tax_year);}
         let paper_years=self.preserved_pdf_figure_years(company).await?;
-        let available: BTreeSet<u16>=years.values().chain(paper_years.values()).flat_map(|v|v.iter().copied()).collect();
+        let archive_years=self.identification_source_archive_years(company).await?;
+        let available: BTreeSet<u16>=years.values().chain(paper_years.values()).chain(archive_years.values()).flat_map(|v|v.iter().copied()).collect();
         let mut numbers=self.store.smembers(&k(company,"clients")).await.map_err(|e| storage(&e))?;
         numbers.sort_by(|a,b|(a.len(),a).cmp(&(b.len(),b)));
         let needle=page.search.trim().to_lowercase();let mut clients=Vec::new();let mut statuses=BTreeSet::new();let mut provinces=BTreeSet::new();
@@ -210,17 +211,19 @@ impl SourceImport {
                 if !status.is_empty(){statuses.insert(status.to_string());}if !province.is_empty(){provinces.insert(province.to_string());}
                 let native_historical=years.get(number).cloned().unwrap_or_default();
                 let paper=paper_years.get(number).cloned().unwrap_or_default();
-                let historical:BTreeSet<u16>=native_historical.union(&paper).copied().collect();
+                let archives=archive_years.get(number).cloned().unwrap_or_default();
+                let historical:BTreeSet<u16>=native_historical.iter().chain(paper.iter()).chain(archives.iter()).copied().collect();
                 if page.year.is_some_and(|y|!historical.contains(&y)) || !format!("{number} {name}").to_lowercase().contains(&needle) || page.status.as_ref().is_some_and(|s|s!=status) || page.province.as_ref().is_some_and(|s|s!=province) { continue }
                 let mut profile=serde_json::Map::new();
                 for field in ["processing_status","email","home_phone","work_phone","cell_phone","street","city","postal_code","province","country"] {
                     if let Some(value)=client.get(field).and_then(Value::as_str) { profile.insert(field.into(),json!(value)); }
                 }
                 let mut row=json!({"client_number":number,"name":name,"historical_years":historical,"pending_years":pending.get(number).cloned().unwrap_or_default(),"pending_years_at_import":pending_at_import.get(number).cloned().unwrap_or_default(),"source_profile":profile});
-                if !paper.is_empty() {
+                if !paper.is_empty() || !archives.is_empty() {
                     row["native_historical_years"]=json!(native_historical);
                     row["preserved_pdf_figure_years"]=json!(paper);
-                    row["pdf_only_years"]=json!(paper.difference(&native_historical).copied().collect::<BTreeSet<_>>());
+                    if !archives.is_empty(){row["source_archive_years"]=json!(archives);}
+                    row["pdf_only_years"]=json!(paper.union(&archives).copied().filter(|y|!native_historical.contains(y)).collect::<BTreeSet<_>>());
                 }
                 clients.push(row);
             }

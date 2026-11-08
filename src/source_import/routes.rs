@@ -87,6 +87,10 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/source-facts", get(test_copy_client_source_facts))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/return-pdfs", post(test_copy_preserve_return_pdf))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/reviewed-return-packets/chunks", post(test_copy_preserve_reviewed_packet_chunk))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/identification-source-archives/chunks", post(test_copy_preserve_source_archive_chunk))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/identification-source-archives/profile", get(test_copy_source_archive_profile))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/identification-source-archives/commit", post(test_copy_commit_source_archive))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/return-pdfs/{year}/{sha}/archive-chunks/{index}", get(test_copy_source_archive_chunk))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/reviewed-return-packets/profile", get(test_copy_reviewed_packet_profile))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/reviewed-return-packets/commit", post(test_copy_commit_reviewed_packet))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/printed-cached-figures", post(test_copy_printed_cached_figures))
@@ -289,6 +293,18 @@ async fn test_copy_client_source_facts(State(state): S, Path((company,client)): 
 }
 async fn test_copy_preserve_return_pdf(State(state): S, Path(company): Path<String>, Json(body): Json<super::return_pdfs::ReturnPdfInput>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_preserve_return_pdf(&company,body).await?))
+}
+async fn test_copy_preserve_source_archive_chunk(State(state): S, Path(company): Path<String>, Json(body): Json<super::return_pdfs::source_archives::ArchiveChunkInput>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_preserve_source_archive_chunk(&company,body).await?))
+}
+async fn test_copy_source_archive_profile(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_source_archive_profile(&company).await?))
+}
+async fn test_copy_commit_source_archive(State(state): S, Path(company): Path<String>, Json(body): Json<super::return_pdfs::source_archives::ArchiveCommitInput>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_commit_source_archive(&company,body).await?))
+}
+async fn test_copy_source_archive_chunk(State(state): S, Path((company,client,year,sha,index)): Path<(String,String,u16,String,usize)>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_source_archive_chunk(&company,&client,year,&sha,index).await?))
 }
 async fn test_copy_preserve_reviewed_packet_chunk(State(state): S, Path(company): Path<String>, Json(body): Json<super::return_pdfs::reviewed_packets::PacketChunkInput>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_preserve_reviewed_packet_chunk(&company,body).await?))
