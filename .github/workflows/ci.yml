@@ -32,6 +32,7 @@ jobs:
           node --test tests/dtmax_t1_worklist.test.mjs
           node --test tests/dtmax_reviewed_packet_ui.test.mjs
           node --test tests/dtmax_source_archives.test.mjs
+          node --test tests/dtmax_source_summary_figures.test.mjs
           node --check public/apps/firm/firm.js
           node --check public/apps/engagements/engagements.js
           node --check public/apps/migrations/migrations.js
