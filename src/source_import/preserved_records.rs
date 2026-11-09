@@ -186,6 +186,12 @@ impl SourceImport {
     /// native historical facts plus separately qualified PDF observation years,
     /// rather than legacy physical-file stems.
     pub async fn test_copy_source_clients(&self, company: &str, page: SourceClientPage) -> Result<Value> {
+        self.source_clients_projection(company,page,false).await
+    }
+    pub async fn test_copy_effective_source_clients(&self, company: &str, page: SourceClientPage) -> Result<Value> {
+        self.source_clients_projection(company,page,true).await
+    }
+    async fn source_clients_projection(&self, company: &str, page: SourceClientPage, effective:bool) -> Result<Value> {
         self.test_copy_guard(company,true)?;
         let sort=page.sort.as_deref().unwrap_or("client_number");let direction=page.direction.as_deref().unwrap_or("asc");
         if page.limit==0 || page.limit>100 || page.search.chars().count()>100 || page.year.is_some_and(|y| !year(y)) || !["client_number","name","processing_status"].contains(&sort) || !["asc","desc"].contains(&direction) || page.status.as_ref().is_some_and(|s|s.len()>80) || page.province.as_ref().is_some_and(|s|s.len()>40) { return Err(bad("Invalid source client filter")) }
@@ -204,16 +210,21 @@ impl SourceImport {
         for v in unresolved {pending.entry(v.client_number).or_default().insert(v.tax_year);}
         let paper_years=self.preserved_pdf_figure_years(company).await?;
         let archive_years=self.identification_source_archive_years(company).await?;
-        let recovered_years=self.recovered_native_source_years(company).await?;
+        let (recovered_years,effective_numbers,effective_profiles)=if effective {
+            let (years,numbers,profiles)=self.effective_recovered_client_inputs(company).await?;(years,Some(numbers),profiles)
+        }else{(self.recovered_native_source_years(company).await?,None,BTreeMap::new())};
         let available: BTreeSet<u16>=years.values().chain(paper_years.values()).chain(archive_years.values()).chain(recovered_years.values()).flat_map(|v|v.iter().copied()).collect();
-        let mut numbers=self.store.smembers(&k(company,"clients")).await.map_err(|e| storage(&e))?;
+        let mut numbers=if let Some(numbers)=effective_numbers{numbers}else{self.store.smembers(&k(company,"clients")).await.map_err(|e| storage(&e))?};
         numbers.sort_by(|a,b|(a.len(),a).cmp(&(b.len(),b)));
         let needle=page.search.trim().to_lowercase();let mut clients=Vec::new();let mut statuses=BTreeSet::new();let mut provinces=BTreeSet::new();
         for chunk in numbers.chunks(500) {
-            let keys:Vec<_>=chunk.iter().map(|n|k(company,&format!("client:{n}"))).collect();
-            for (number,raw) in chunk.iter().zip(self.store.mget(&keys).await.map_err(|e| storage(&e))?) {
-                let raw=raw.ok_or_else(|| storage("client index points to missing record"))?;
-                let client:Value=serde_json::from_str(&raw).map_err(|_|storage("stored client unreadable"))?;
+            let uncached:Vec<_>=chunk.iter().filter(|n|!effective_profiles.contains_key(*n)).cloned().collect();
+            let keys:Vec<_>=uncached.iter().map(|n|k(company,&format!("client:{n}"))).collect();
+            let fetched=self.store.mget(&keys).await.map_err(|e|storage(&e))?;
+            if fetched.len()!=uncached.len(){return Err(storage("Client profile read cardinality differs"));}
+            let fetched:BTreeMap<_,_>=uncached.into_iter().zip(fetched).collect();
+            for number in chunk {
+                let client:Value=if let Some(v)=effective_profiles.get(number){v.clone()}else{let raw=fetched.get(number).and_then(|v|v.as_ref()).ok_or_else(||storage("client index points to missing record"))?;serde_json::from_str(raw).map_err(|_|storage("stored client unreadable"))?};
                 let name=client["name"].as_str().ok_or_else(||storage("stored client name missing"))?;
                 let status=client["processing_status"].as_str().unwrap_or("");let province=client["province"].as_str().unwrap_or("");
                 if !status.is_empty(){statuses.insert(status.to_string());}if !province.is_empty(){provinces.insert(province.to_string());}
@@ -350,6 +361,7 @@ impl SourceImport {
     pub async fn test_copy_client_source_facts(&self, company: &str, client: &str, page: SourceFactPage) -> Result<Value> {
         if page.kind=="wire-exact-historical-lines" {return self.test_copy_client_wire_exact_historical_lines(company,client,page).await}
         if page.kind=="recovered-native-sources" {return self.test_copy_client_recovered_native_sources(company,client,page).await}
+        if page.kind=="recovered-native-effective-sources" {return self.test_copy_effective_recovered_page(company,Some(client),super::recovered_native_sources::RecoveredNativePage{offset:page.offset,limit:page.limit,source_return_year:page.source_return_year,_routing_path:None}).await}
         if page.kind=="parsed-native-forms" {return self.test_copy_client_parsed_native_forms(company,client,page).await}
         if page.kind=="source-paper-documents" {return self.test_copy_client_source_paper_documents(company,client,page).await}
         if page.kind=="source-summary-figures" {return self.test_copy_client_source_summary_figures(company,client,page).await}

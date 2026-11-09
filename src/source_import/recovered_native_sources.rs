@@ -352,6 +352,20 @@ impl SourceImport {
         let mut out=envelope(company,p);let c=self.recovered_context_read(company,&lookup.context_ids[0],p).await?;
         out["context_ids"]=json!(lookup.context_ids);out["records"]=json!([c]);Ok(out)
     }
+    /// Internal bounded batch for the optional identity overlay. Every original
+    /// packet is fully checked here; its live target anchor is checked against
+    /// the overlay request's single shared roster/profile/year snapshot.
+    pub(super) async fn recovered_identity_originals(&self,company:&str,ids:&BTreeSet<String>)->Result<BTreeMap<String,Value>>{
+        let p=profile();self.recovered_guard(company,true,p)?;
+        if ids.len()>p.context_sha256.len()||ids.iter().any(|id|!sha(id)){return Err(bad("Invalid identity original-context batch"));}
+        let keys:Vec<_>=ids.iter().map(|id|key(company,p,&format!("context:{id}"))).collect();
+        let rows=self.store.mget(&keys).await.map_err(|e|storage(&e))?;
+        if rows.len()!=ids.len(){return Err(storage("Identity original read cardinality differs"));}
+        let mut out=BTreeMap::new();for(id,raw)in ids.iter().zip(rows){
+            let c:Value=serde_json::from_str(&raw.ok_or_else(||conflict("Original recovered context must be received first"))?).map_err(|_|storage("Original recovered context corrupt"))?;
+            validate_context(&c,p)?;if c["context_id"]!=id.as_str(){return Err(storage("Identity original context ID differs"));}out.insert(id.clone(),c);
+        }Ok(out)
+    }
     async fn recovered_page(&self,company: &str,index: &str,client: Option<&str>,page: RecoveredNativePage,p: &ClosedProfile) -> Result<Value> {
         self.recovered_guard(company,true,p)?;
         if page.limit!=1 || page.source_return_year.is_some_and(|y|!(1990..=2100).contains(&y)) {return Err(bad("Recovered source pages require limit=1 and an explicit valid source year when filtered"));}

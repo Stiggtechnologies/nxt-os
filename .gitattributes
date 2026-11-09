@@ -15,5 +15,7 @@ src/source_import/recovered_native_source_profile.json -text
 public/apps/tax/dtmax-wire-exact-profile.json -text
 src/source_import/wire_exact_historical_profile.json -text
 src/source_import/wire_exact_historical_inventory.sha256s -text
+public/apps/tax/dtmax-recovered-native-identity-profile.json -text
+src/source_import/recovered_native_identity_link_profile.json -text
 
 src/source_import/mixed_identification_source_archive_profile.json text eol=lf
