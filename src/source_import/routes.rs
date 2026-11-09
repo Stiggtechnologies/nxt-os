@@ -63,6 +63,10 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources", post(test_copy_recovered_native_sources).layer(axum::extract::DefaultBodyLimit::max(3 * 1024 * 1024)))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/read", post(test_copy_read_recovered_native_sources))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/summary", get(test_copy_recovered_native_source_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/archived-extract-sources", post(test_copy_archived_extract_sources).layer(axum::extract::DefaultBodyLimit::max(1024*1024)))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/archived-extract-sources/read", post(test_copy_read_archived_extract_sources))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/archived-extract-sources/summary", get(test_copy_archived_extract_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/archived-extract-sources/unassigned", get(test_copy_archived_extract_unassigned))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/identity-links", post(test_copy_recovered_identity_links).layer(axum::extract::DefaultBodyLimit::max(1024 * 1024)))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/identity-links/read", post(test_copy_read_recovered_identity_links))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/effective/summary", get(test_copy_effective_recovered_summary))
@@ -310,6 +314,10 @@ async fn test_copy_native_historical_variants(State(state):S,Path(company):Path<
 async fn test_copy_read_native_historical_variants(State(state):S,Path(company):Path<String>,Json(body):Json<super::native_historical_variants::HistoricalVariantLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_native_historical_variants(&company,body).await?))}
 async fn test_copy_native_historical_variant_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_native_historical_variant_summary(&company).await?))}
 async fn test_copy_recovered_native_sources(State(state):S,Path(company):Path<String>,Json(body):Json<super::recovered_native_sources::RecoveredNativeBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_recovered_native_sources(&company,body).await?))}
+async fn test_copy_archived_extract_sources(State(state):S,Path(company):Path<String>,Json(body):Json<super::archived_extract_sources::ArchivedBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_archived_extract_sources(&company,body).await?))}
+async fn test_copy_read_archived_extract_sources(State(state):S,Path(company):Path<String>,Json(body):Json<super::archived_extract_sources::ArchivedLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_archived_extract_sources(&company,body).await?))}
+async fn test_copy_archived_extract_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_archived_extract_summary(&company).await?))}
+async fn test_copy_archived_extract_unassigned(State(state):S,Path(company):Path<String>,Query(p):Query<super::archived_extract_sources::ArchivedPage>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_archived_extract_page(&company,None,p).await?))}
 async fn test_copy_recovered_identity_links(State(state):S,Path(company):Path<String>,Json(body):Json<super::recovered_native_identity_links::IdentityLinkBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_recovered_identity_links(&company,body).await?))}
 async fn test_copy_read_recovered_identity_links(State(state):S,Path(company):Path<String>,Json(body):Json<super::recovered_native_sources::RecoveredNativeLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_recovered_identity_links(&company,body).await?))}
 async fn test_copy_effective_recovered_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_effective_recovered_summary(&company).await?))}

@@ -24,6 +24,7 @@ pub mod legacy_owner_links;
 pub mod legacy_family_lineage;
 pub mod recovered_native_sources;
 pub mod recovered_native_identity_links;
+pub mod archived_extract_sources;
 pub mod wire_exact_historical_lines;
 
 use crate::store::Store;

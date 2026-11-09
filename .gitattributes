@@ -19,3 +19,6 @@ public/apps/tax/dtmax-recovered-native-identity-profile.json -text
 src/source_import/recovered_native_identity_link_profile.json -text
 
 src/source_import/mixed_identification_source_archive_profile.json text eol=lf
+src/source_import/archived_extract_profile.json -text
+src/source_import/archived_extract_source_bound_profile.json -text
+public/apps/tax/dtmax-archived-extract-profile.json -text
