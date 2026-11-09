@@ -58,7 +58,7 @@ test('PDF-only year defaults to all paper copies, restores native years, targets
   const local={crypto:webcrypto,Blob,URL:{createObjectURL:()=> 'blob:synthetic-old-source',revokeObjectURL(){}}};vm.runInNewContext(source,local);let delay=false,resolvePending,started;const calls=[];
   const paper=()=>({source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,client_number:'100',kind:'preserved-pdf-figures',source_return_year:2010,offset:0,total:2,records:rows,preserved_figure_profile_sha256:rows[0].preserved_figure_profile_sha256,original_history_modified:0,original_PDFs_modified:0,current_profiles_modified:0,cached_printed_observations_modified:0,native_contexts_created:0,financial_values_approved:false,preferred_version_selected:false,as_filed_verified:false});
   const request=async path=>{calls.push(path);if(path.includes('/source-clients?'))return roster;if(path.includes('source-facts?')){if(path.includes('kind=preserved-pdf-figures')){assert.ok(path.includes('source_return_year=2010'));if(delay){started?.();return new Promise(resolve=>{resolvePending=()=>resolve(paper());});}return paper();}return{test_copy:true,tax_cases_imported:0,client_number:'100',kind:'historical-lines',offset:0,total:1,records:[native]};}if(path.endsWith('/return-pdfs'))return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,client_number:'100',records:rows.map(r=>r.pdf)};const i=rows.findIndex(r=>path.endsWith('/2010/'+r.pdf.sha256));assert.ok(i>=0);return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,record:rows[i].pdf,content_hex:buffers[i].toString('hex')};};
-  const c=local.NXTDTMaxT1.mount(host,{request});await c.ready;await c.open('100');assert.ok(host.innerHTML.includes('$9.99'));
+  const c=local.NXTDTMaxT1.mount(host,{historicalKind:'historical-lines',request});await c.ready;await c.open('100');assert.ok(host.innerHTML.includes('$9.99'));
   await node('[data-dtmax-year]').onchange({target:{value:'2010'}});assert.ok(host.innerHTML.includes('No native extract totals'));assert.ok(host.innerHTML.includes('2010 · Preserved PDF'));const detail=node('[data-dtmax-details]').innerHTML;assert.ok(detail.includes(rows[0].pdf.sha256)&&detail.includes(rows[1].pdf.sha256));assert.ok(detail.includes('$1.00')&&detail.includes('$2.00'));assert.ok(!host.innerHTML.match(/<select data-dtmax-compare>[\s\S]*?<\/select>/)?.[0].includes('2010'));
   await pageButton.onclick();assert.ok(calls.at(-1).endsWith('/2010/'+rows[1].pdf.sha256));assert.match(node('[data-dtmax-pdf-canvas]').innerHTML,/#page=2/);assert.match(host.innerHTML,/id="dtmax-tab-return"[^>]+aria-selected="true"/);
   await c.show('entry');await node('[data-dtmax-year]').onchange({target:{value:'2024'}});assert.ok(host.innerHTML.includes('$9.99'));assert.ok(calls.at(-1).includes('kind=historical-lines'));
@@ -94,7 +94,7 @@ test('stable identifier document visibly qualifies the original name match and s
   const nodes=new Map(),node=k=>{if(!nodes.has(k))nodes.set(k,{innerHTML:'',value:'',querySelector:node,querySelectorAll:()=>[],scrollIntoView(){}});return nodes.get(k);},host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:()=>[]};
   const roster={...page(),available_years:[2024],clients:[{client_number:'100',name:'Synthetic',historical_years:[2024],pending_years:[]}]};
   const request=async path=>{if(path.includes('/source-clients?'))return roster;if(path.includes('source-facts?'))return{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:0,tax_cases_imported:0,records:[]};if(path.endsWith('/return-pdfs'))return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,client_number:'100',records:[r]};assert.ok(path.endsWith('/2024/'+r.sha256));return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,record:r,content_hex:bytes.toString('hex')};};
-  const c=local.NXTDTMaxT1.mount(host,{request});await c.ready;await c.open('100');await c.show('return');
+  const c=local.NXTDTMaxT1.mount(host,{historicalKind:'historical-lines',request});await c.ready;await c.open('100');await c.show('return');
   const html=node('[data-dtmax-pdf-canvas]').innerHTML,index=node('[data-dtmax-pdf-index]').innerHTML;assert.ok(html.includes('Original name match remains unverified; taxpayer identifier continuity matched'));assert.ok(html.includes('continuity with the archived source, not government identity verification or a legal name change'));assert.ok(html.includes('native generation, completeness of the original return and filed-copy status are unverified'));assert.ok(index.includes('Taxpayer identifier continuity; original name match unverified'));assert.ok(index.includes('Native generation, return completeness and filed-copy status unverified'));assert.ok(html.includes('Download retained office T1'));assert.ok(!html.includes('Original DT Max printed return'));c.dispose();
 });
 test('scan evidence has a third closed kind and cannot claim either earlier office method',()=>{
@@ -107,7 +107,7 @@ test('scan labels qualify visual source continuity in selector, notice, download
   const nodes=new Map(),node=k=>{if(!nodes.has(k))nodes.set(k,{innerHTML:'',value:'',querySelector:node,querySelectorAll:()=>[],scrollIntoView(){}});return nodes.get(k);},host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:()=>[]};
   const roster={...page(),available_years:[2018],clients:[{client_number:'100',name:'Synthetic',historical_years:[2018],pending_years:[]}]};
   const request=async path=>{if(path.includes('/source-clients?'))return roster;if(path.includes('source-facts?'))return{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:0,tax_cases_imported:0,records:[]};if(path.endsWith('/return-pdfs'))return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,client_number:'100',records:[r]};assert.ok(path.endsWith('/2018/'+r.sha256));return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,record:r,content_hex:bytes.toString('hex')};};
-  const c=local.NXTDTMaxT1.mount(host,{request});await c.ready;await c.open('100');await c.show('return');const html=node('[data-dtmax-pdf-canvas]').innerHTML;
+  const c=local.NXTDTMaxT1.mount(host,{historicalKind:'historical-lines',request});await c.ready;await c.open('100');await c.show('return');const html=node('[data-dtmax-pdf-canvas]').innerHTML;
   assert.ok(node('[data-dtmax-pdf-index]').innerHTML.includes('Retained office T1 scan'));assert.ok(html.includes('Visual review linked these pages to the archived tax source'));assert.ok(html.includes('This establishes source continuity; government identity, filed-copy status and financial values are unverified'));assert.ok(html.includes('Download retained office T1 scan'));assert.ok(html.includes('retained-office-t1-scan-100-2018.pdf'));assert.ok(html.includes('title="Retained office T1 scan:'));assert.ok(!html.includes('Original DT Max printed return'));assert.ok(!html.includes('No recalculation'));c.dispose();
 });
 test('default same-year native and office copies show a chooser without a preferred document',async()=>{
@@ -117,7 +117,7 @@ test('default same-year native and office copies show a chooser without a prefer
   const nodes=new Map(),node=k=>{if(!nodes.has(k))nodes.set(k,{innerHTML:'',value:'',querySelector:node,querySelectorAll:()=>[],scrollIntoView(){}});return nodes.get(k);},host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:()=>[]};let downloads=0;
   const roster={...page(),available_years:[2024],clients:[{client_number:'100',name:'Synthetic',historical_years:[2024],pending_years:[]}]};
   const request=async path=>{if(path.includes('/source-clients?'))return roster;if(path.includes('source-facts?'))return{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:0,tax_cases_imported:0,records:[]};if(path.endsWith('/return-pdfs'))return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,client_number:'100',records};const i=records.findIndex(r=>path.endsWith('/'+r.sha256));assert.ok(i>=0);downloads++;return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,record:records[i],content_hex:buffers[i].toString('hex')};};
-  const c=ui.mount(host,{request});await c.ready;await c.open('100');await c.show('return');
+  const c=ui.mount(host,{historicalKind:'historical-lines',request});await c.ready;await c.open('100');await c.show('return');
   assert.equal(downloads,0);const choose=node('[data-dtmax-pdf-canvas]').innerHTML;assert.ok(choose.includes('Choose a preserved document'));assert.ok(choose.includes('Cached native export'));assert.ok(choose.includes('Retained office T1'));assert.ok(!choose.includes('not imported'));
   await c.show('return',false,{sha:records[1].sha256,page:2});assert.equal(downloads,1);const html=node('[data-dtmax-pdf-canvas]').innerHTML;
   assert.match(html,/#page=2/);assert.ok(html.includes('Preserved as supplied; native generation, completeness of the original return and filed-copy status are unverified'));assert.ok(html.includes('Download retained office T1'));assert.ok(html.includes('retained-office-t1-100-2024.pdf'));assert.ok(html.includes('title="Retained office T1 document:'));
@@ -130,7 +130,7 @@ test('switching from an open PDF to another year with multiple copies clears the
   const nodes=new Map(),node=k=>{if(!nodes.has(k))nodes.set(k,{innerHTML:'',value:'',querySelector:node,querySelectorAll:()=>[],scrollIntoView(){}});return nodes.get(k);},host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:()=>[]};
   const roster={...page(),available_years:[2023,2024],clients:[{client_number:'100',name:'Synthetic',historical_years:[2023,2024],pending_years:[]}]};
   const request=async path=>{if(path.includes('/source-clients?'))return roster;if(path.includes('source-facts?'))return{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:0,tax_cases_imported:0,records:[]};if(path.endsWith('/return-pdfs'))return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,client_number:'100',records};const i=records.findIndex(r=>path.endsWith('/'+r.sha256));assert.ok(i>=0);downloads++;return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,record:records[i],content_hex:buffers[i].toString('hex')};};
-  const c=local.NXTDTMaxT1.mount(host,{request});await c.ready;await c.open('100');await c.show('return');assert.equal(downloads,1);assert.match(node('[data-dtmax-pdf-index]').innerHTML,/ selected/);assert.match(node('[data-dtmax-pdf-index]').innerHTML,/data-dtmax-page/);
+  const c=local.NXTDTMaxT1.mount(host,{historicalKind:'historical-lines',request});await c.ready;await c.open('100');await c.show('return');assert.equal(downloads,1);assert.match(node('[data-dtmax-pdf-index]').innerHTML,/ selected/);assert.match(node('[data-dtmax-pdf-index]').innerHTML,/data-dtmax-page/);
   node('[data-dtmax-year]').onchange({target:{value:'2023'}});await new Promise(setImmediate);
   assert.equal(downloads,1);assert.equal(revoked,1);const index=node('[data-dtmax-pdf-index]').innerHTML;assert.doesNotMatch(index,/ selected/);assert.doesNotMatch(index,/data-dtmax-page/);assert.match(node('[data-dtmax-pdf-canvas]').innerHTML,/Choose a preserved document/);assert.match(node('[data-dtmax-pdf-canvas]').innerHTML,/available for 2023/);c.dispose();
 });
@@ -140,7 +140,7 @@ test('choosing another year directly in the document selector updates the worksp
   const nodes=new Map(),node=k=>{if(!nodes.has(k))nodes.set(k,{innerHTML:'',value:'',querySelector:node,querySelectorAll:()=>[],scrollIntoView(){}});return nodes.get(k);},host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:()=>[]};
   const roster={...page(),available_years:[2023,2024],clients:[{client_number:'100',name:'Synthetic',historical_years:[2023,2024],pending_years:[]}]};const requested=[];
   const request=async path=>{requested.push(path);if(path.includes('/source-clients?'))return roster;if(path.includes('source-facts?'))return{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:0,tax_cases_imported:0,records:[]};if(path.endsWith('/return-pdfs'))return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,client_number:'100',records};const i=records.findIndex(r=>path.endsWith('/'+r.sha256));assert.ok(i>=0);return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,record:records[i],content_hex:buffers[i].toString('hex')};};
-  const c=local.NXTDTMaxT1.mount(host,{request});await c.ready;await c.open('100');await c.show('return');assert.match(host.innerHTML,/Tax year 2024/);
+  const c=local.NXTDTMaxT1.mount(host,{historicalKind:'historical-lines',request});await c.ready;await c.open('100');await c.show('return');assert.match(host.innerHTML,/Tax year 2024/);
   await node('[data-dtmax-pdf-version]').onchange({target:{value:'1'}});
   assert.match(host.innerHTML,/Tax year 2023/);assert.match(host.innerHTML,/<option value="2023" selected>2023<\/option>/);assert.ok(requested.at(-1).endsWith('/2023/'+records[1].sha256));assert.match(node('[data-dtmax-pdf-canvas]').innerHTML,/#page=1/);assert.match(node('[data-dtmax-pdf-canvas]').innerHTML,/Retained office T1 document/);assert.match(node('[data-dtmax-pdf-index]').innerHTML,/<option value="1" selected>/);c.dispose();
 });
@@ -159,7 +159,7 @@ test('printed page action selects the exact same-year PDF and return tab, suppre
     if(path.endsWith('/return-pdfs'))return{source_scope:'dtmax-test-copy',test_copy:true,tax_cases_imported:0,client_number:client,records:client==='100'?records:[]};
     const r=records.find(r=>path.endsWith('/'+r.sha256));assert.ok(r);if(r.sha256===delaySha){started?.();return new Promise(resolve=>{resolvePending=()=>resolve(content(r));});}return content(r);
   };
-  const c=ui.mount(host,{request});await c.ready;await c.open('100');await kindButton.onclick();
+  const c=ui.mount(host,{historicalKind:'historical-lines',request});await c.ready;await c.open('100');await kindButton.onclick();
   assert.ok(node('[data-dtmax-details]').innerHTML.includes('Printed cached figures'));await pageButton.onclick();
   assert.ok(requests.at(-1).endsWith('/2024/'+records[1].sha256));assert.match(node('[data-dtmax-pdf-canvas]').innerHTML,/#page=2/);assert.match(host.innerHTML,/id="dtmax-tab-return"[^>]+aria-selected="true"/);
   let signal=new Promise(resolve=>{started=resolve;});delaySha=records[0].sha256;const stale=c.show('return',false,{sha:records[0].sha256,page:1});await signal;await c.show('return',false,{sha:records[1].sha256,page:2});const currentCanvas=node('[data-dtmax-pdf-canvas]').innerHTML;resolvePending();await stale;assert.equal(node('[data-dtmax-pdf-canvas]').innerHTML,currentCanvas);
@@ -233,7 +233,7 @@ test('linked T5008 source retains the raw owner reference and rejects reassignme
 });
 test('late source responses cannot replace another tax view',async()=>{
   let resolve,active=true;const pending=new Promise(r=>resolve=r),host={isConnected:true,innerHTML:'',querySelector:()=>null};
-  const controller=api.mount(host,{request:()=>pending,isCurrent:()=>active});active=false;host.innerHTML='Different tax view';resolve(page());await controller.ready;assert.equal(host.innerHTML,'Different tax view');
+  const controller=api.mount(host,{historicalKind:'historical-lines',request:()=>pending,isCurrent:()=>active});active=false;host.innerHTML='Different tax view';resolve(page());await controller.ready;assert.equal(host.innerHTML,'Different tax view');
 });
 function harness(recordClient='100',extra) {
   const nodes=new Map(),buttons=[{dataset:{importedClient:'100'}}],requests=[];
@@ -241,7 +241,7 @@ function harness(recordClient='100',extra) {
   const host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:key=>key==='[data-imported-client]'?buttons:[]};
   const values=Object.fromEntries(['15000','23600','26000','42000','48400','48500'].map((x,i)=>[x,i===0?'12345':null]));
   const request=async path=>{requests.push(path);const supplied=extra?.(path);if(supplied!==undefined)return supplied;return path.includes('/source-clients?')?page():{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:1,tax_cases_imported:0,records:[{client_number:recordClient,tax_year:2025,vendor_module:'T1',mapping_state:'vendor_static_verified',values_cents:values}]};};
-  return {host,node,buttons,requests,controller:api.mount(host,{request})};
+  return {host,node,buttons,requests,controller:api.mount(host,{historicalKind:'historical-lines',request})};
 }
 test('T1 list opens the selected client source totals and encodes global source search',async()=>{
   const h=harness();await h.controller.ready;
@@ -286,7 +286,7 @@ test('cached native PDF provenance is distinct and refuses recalculation or file
 });
 test('disposal prevents pending source requests from painting the workspace',async()=>{
   let resolve;const pending=new Promise(r=>resolve=r),host={isConnected:true,innerHTML:'',querySelector:()=>null};
-  const c=api.mount(host,{request:()=>pending});c.dispose();host.innerHTML='Different page';resolve(page());await c.ready;assert.equal(host.innerHTML,'Different page');assert.equal(host.onkeydown,null);
+  const c=api.mount(host,{historicalKind:'historical-lines',request:()=>pending});c.dispose();host.innerHTML='Different page';resolve(page());await c.ready;assert.equal(host.innerHTML,'Different page');assert.equal(host.onkeydown,null);
 });
 test('client sorting, status and province stay global request filters; keyword search keeps familiar shortcut',async()=>{
   const h=harness();await h.controller.ready;
@@ -313,7 +313,7 @@ test('T3 source candidates cannot appear as T1 totals in entry, comparison or hi
   const recordHtml=api.recordsHtml('historical-lines',[trust]);assert.ok(recordHtml.includes('Converter label T3'));assert.ok(!recordHtml.includes('$9,876.54'));
   const entry=api.entryHtml(page().clients[0],trust,'');assert.ok(entry.includes('not shown as T1 totals'));assert.ok(!entry.includes('$9,876.54'));
   const h=harness();await h.controller.ready;
-  const controller=api.mount(h.host,{request:async path=>path.includes('/source-clients?')?page():{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:1,tax_cases_imported:0,records:[trust]}});
+  const controller=api.mount(h.host,{historicalKind:'historical-lines',request:async path=>path.includes('/source-clients?')?page():{test_copy:true,client_number:'100',kind:'historical-lines',offset:0,total:1,tax_cases_imported:0,records:[trust]}});
   await controller.ready;await controller.open('100');
   h.node('[data-dtmax-compare]').onchange({target:{value:'2025'}});
   assert.ok(h.node('[data-dtmax-comparison]').innerHTML.includes('Converter label T3'));
@@ -360,8 +360,8 @@ test('2005 coordinate binding review keeps absent amounts absent and rejects ano
 });
 test('exception retrieval is lazy, scope checked and stops when another workspace is selected',async()=>{
   const h=harness();let resolve;const pending=new Promise(r=>resolve=r);let count=0;
-  const c=api.mount(h.host,{request:async path=>{if(path.includes('/source-exceptions?')){count++;return pending;}return page();}});await c.ready;assert.equal(count,0);
+  const c=api.mount(h.host,{historicalKind:'historical-lines',request:async path=>{if(path.includes('/source-exceptions?')){count++;return pending;}return page();}});await c.ready;assert.equal(count,0);
   const work=h.node('[data-dtmax-exceptions]').ontoggle({target:{open:true}});assert.equal(count,1);
   c.dispose();h.node('[data-dtmax-exception-content]').innerHTML='Different view';resolve({test_copy:true,source_scope:'dtmax-test-copy',source_rows_modified:0,tax_cases_imported:0,offset:0,limit:25,total:1,records:[exception()]});await work;assert.equal(h.node('[data-dtmax-exception-content]').innerHTML,'Different view');
-  const d=api.mount(h.host,{request:async path=>path.includes('/source-exceptions?')?{source_scope:'another-company'}:page()});await d.ready;await h.node('[data-dtmax-exceptions]').ontoggle({target:{open:true}});assert.ok(h.node('[data-dtmax-exception-content]').innerHTML.includes('role="alert"'));
+  const d=api.mount(h.host,{historicalKind:'historical-lines',request:async path=>path.includes('/source-exceptions?')?{source_scope:'another-company'}:page()});await d.ready;await h.node('[data-dtmax-exceptions]').ontoggle({target:{open:true}});assert.ok(h.node('[data-dtmax-exception-content]').innerHTML.includes('role="alert"'));
 });

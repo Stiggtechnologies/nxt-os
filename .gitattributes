@@ -12,3 +12,6 @@ public/apps/tax/dtmax-keywords/*.json text eol=lf
 docs/dtmax-empty-export-classifications.json -text
 public/apps/tax/dtmax-recovered-native-profile.json -text
 src/source_import/recovered_native_source_profile.json -text
+public/apps/tax/dtmax-wire-exact-profile.json -text
+src/source_import/wire_exact_historical_profile.json -text
+src/source_import/wire_exact_historical_inventory.sha256s -text

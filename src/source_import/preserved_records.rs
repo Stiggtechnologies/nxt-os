@@ -121,6 +121,13 @@ fn check_lines(v: &HistoricalLines) -> std::result::Result<(), &'static str> {
     if ["48400", "48500"].iter().any(|c| v.values_cents[*c].as_deref().is_some_and(|s| s.starts_with('-'))) { return Err("negative_refund_or_balance") }
     Ok(())
 }
+// Shared read-only validation for the additive precision view. The original
+// historical-lines serialization, storage and response stay unchanged.
+pub(super) fn historical_source_identity_and_review(row:&Value)->Result<(String,Option<Value>)> {
+    let v:HistoricalLines=serde_json::from_value(row.clone()).map_err(|_|storage("Invalid stored historical record"))?;
+    check_lines(&v).map_err(storage)?;
+    Ok((format!("{}:{}:{}",v.client_number,v.tax_year,v.archive_sha256),year_mapping_review(&v)))
+}
 fn check_tree(t: &FieldTree, depth: usize, nodes: &mut usize) -> std::result::Result<(), &'static str> {
     *nodes += 1;
     if depth > 12 || *nodes > 1024 || t.text.as_ref().is_some_and(|s| s.len() > 8192) { return Err("slip_tree_limit") }
@@ -341,6 +348,7 @@ impl SourceImport {
     /// Paginated source evidence for a stable individual client number. Pending mappings
     /// remain labelled in the returned record, and no return is recalculated or created.
     pub async fn test_copy_client_source_facts(&self, company: &str, client: &str, page: SourceFactPage) -> Result<Value> {
+        if page.kind=="wire-exact-historical-lines" {return self.test_copy_client_wire_exact_historical_lines(company,client,page).await}
         if page.kind=="recovered-native-sources" {return self.test_copy_client_recovered_native_sources(company,client,page).await}
         if page.kind=="parsed-native-forms" {return self.test_copy_client_parsed_native_forms(company,client,page).await}
         if page.kind=="source-paper-documents" {return self.test_copy_client_source_paper_documents(company,client,page).await}

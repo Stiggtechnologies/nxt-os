@@ -5,7 +5,7 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
   const lines=['15000','23600','26000','42000','48400','48500'];
   const labels=['Total income','Net income','Taxable income','Net federal tax','Refund','Balance owing'];
-  const kinds={'historical-lines':'Historical totals','historical-variants':'Source versions','printed-cached-figures':'Printed cached figures','preserved-pdf-figures':'Preserved PDF figures','source-summary-figures':'Printed summary figures','source-paper-documents':'Supporting documents','parsed-native-forms':'Saved data-entry fields','afr-slips':'CRA slips','native-slip-views':'Native slip fields','linked-t5008':'Linked T5008 CSV','family-files':'Family files','historical-family-lineage':'Recovered family links'};
+  const kinds={'wire-exact-historical-lines':'Historical totals','historical-lines':'Original reader figures','historical-variants':'Source versions','printed-cached-figures':'Printed cached figures','preserved-pdf-figures':'Preserved PDF figures','source-summary-figures':'Printed summary figures','source-paper-documents':'Supporting documents','parsed-native-forms':'Saved data-entry fields','afr-slips':'CRA slips','native-slip-views':'Native slip fields','linked-t5008':'Linked T5008 CSV','family-files':'Family files','historical-family-lineage':'Recovered family links'};
   const printedFigureProfile='502e76e71cc132a5f74154c364ed398e0eae5cbb8c595a2caceff934b2ae0bf6';
   const preservedFigureProfile='4a22f166c06c7f22be26b4aba232a86260f5b22ad82fc5c1c59463c80e3a1d51',preservedLineAuthority='cf22e772a77a90221062da1068ff348857c583137fee4a38de377b40b5be956c',preservedAbsenceAudit='fab25b99c5755b88d6767a4068a636c888cd19c35e070dfb2fb12fac6af4cd2b';
   const preservedPrintedCodes={'15000':'150','23600':'236','26000':'260','42000':'420','48400':'484','48500':'485'};
@@ -70,11 +70,13 @@
     return true;
   }
   function mappingLabel(r){return nativeModuleReviewed(r)?'Native T1 origin and original E11 fields verified; original converter label T3 retained':r.year_mapping_review?'Year-specific form bindings checked; source totals'+(r.tax_year===2026?' — may be preliminary or planning data':''):r.mapping_state==='vendor_static_verified'?'Vendor mapping checked; source totals':'Mapping needs verification';}
-  function historicalTotalsHtml(record){
+  function historicalTotalsHtml(record,sourceCount=0){
+    if(!record&&sourceCount>1)return '<h3>Historical totals</h3><p class="dtmax-notice" role="status">Multiple saved source contexts; review Historical totals below. No source context was selected automatically.</p>';
     if(!record)return '<p>No native extract totals are available for the selected year.</p>';
+    const exact=wireRow(record);if(exact){checkVerifiedWireRow(record);if(record.precision_state!=='verified_exact_wire'){const originalView=wireQualificationRow(record),qualification=originalView.vendor_module!=='T1'&&!nativeModuleReviewed(originalView)?'Converter module label needs verification.':mappingLabel(originalView);return '<h3>Historical totals · '+record.tax_year+'</h3><p class="dtmax-notice" role="status">'+esc(wirePrecisionNotice(record))+'</p><p>'+esc(qualification)+'</p>'+wireDownloadHtml(record);}}
     const r=checkHistorical(record);
     if(r.vendor_module!=='T1'&&!nativeModuleReviewed(r))return '<h3>Converter label '+esc(r.vendor_module)+' · '+r.tax_year+'</h3><p class="dtmax-notice">The converter inferred this module label. Its candidate values are not shown as T1 totals while the original source module is verified. The original source is preserved.</p>';
-    return '<h3>Historical totals · '+r.tax_year+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])]))+'<p>'+esc(mappingLabel(r))+'</p><p>Reader-selected figures. Compare retained Production and federal snapshot figures under Source versions.</p>';
+    return '<h3>Historical totals · '+r.tax_year+'</h3>'+keywordRows(lines.map((l,i)=>[l+' · '+labels[i],cents(r.values_cents[l])]))+'<p>'+esc(mappingLabel(r))+'</p>'+(exact?'<p>'+esc(wirePrecisionNotice(r))+'</p>'+wireDownloadHtml(r):'<p>Reader-selected figures. Compare retained Production and federal snapshot figures under Source versions.</p>');
   }
   function nativeSlipViewsHtml(records) {
     const hash=v=>typeof v==='string'&&/^[0-9a-f]{64}$/.test(v),profile='4bb64f7185d758cc4a1ccacd3a62b6a00b9656d320ca7412b9fe2598d68d69fc';
@@ -130,6 +132,7 @@
   }
   function recordsHtml(kind,records) {
     if(!records.length)return '<p>No records of this kind are imported for this client.</p>';
+    if(kind===wireKind){records.forEach(checkVerifiedWireRow);return '<p>Exact original source cents. An absent verified field is distinct from zero; pending precision is unavailable.</p>'+records.map(r=>'<article data-wire-context="'+r.original_historical_row_sha256+'"><p>Family source #'+esc(r.family_file_id)+' - Archive '+esc(r.archive_sha256.slice(0,12))+' - Original row '+esc(r.original_historical_row_sha256.slice(0,12))+'</p>'+historicalTotalsHtml(r)+'</article>').join('');}
     if(kind==='native-slip-views')return nativeSlipViewsHtml(records);
     if(kind==='historical-variants')return historicalVariantsHtml(records);
     if(kind==='printed-cached-figures')return printedCachedFiguresHtml(records);
@@ -146,7 +149,7 @@
       if(!s||!l||!/^\d{1,12}$/.test(r.client_number)||l.owner_client_number!==r.client_number||r.tax_year!==s.tax_year||!Number.isInteger(r.tax_year)||r.tax_year<1990||r.tax_year>2100||l.legacy_record_id!==[s.client_number,s.tax_year,s.source_file_sha256,s.row].join(':')||! /^[a-f0-9]{64}$/.test(l.legacy_record_sha256)||!['recipient_name_and_all_boxes','same_recipient_file_and_all_boxes'].includes(l.evidence_mode)||!Array.isArray(l.matching_cra_records)||!l.matching_cra_records.length||r.source_owner_id_changed!==false||r.normalized_tax_slip_created!==false||r.economic_slip_uniqueness_verified!==false||r.financial_values_approved!==false||!s.boxes||Object.entries(s.boxes).some(([b,v])=>!['11','13','15','16','17','18','19','20','21','22','23','24'].includes(b)||typeof v!=='string'||v.length>4096))throw Error('Linked CSV source or owner did not match');
       return '<details><summary>T5008 CSV · '+r.tax_year+' · Source row '+esc(s.row)+'</summary><dl>'+Object.entries(s.boxes).map(([b,v])=>'<dt>Box '+b+'</dt><dd>'+esc(v||'Blank in source')+'</dd>').join('')+'</dl><p>Original source client reference: '+esc(s.client_number)+' · '+l.matching_cra_records.length+' matching CRA source occurrence(s). '+(l.evidence_mode==='same_recipient_file_and_all_boxes'?'Other verified rows in the same recipient file also corroborate this link.':'Recipient name and every populated source box are corroborated.')+'</p></details>';
     }).join('');
-    if(kind==='historical-lines')return '<p>Absent means no source value; $0.00 is an explicit zero. Imported totals have not been recalculated.</p><div class="table-wrap"><table><thead><tr><th>Year</th>'+lines.map((l,i)=>'<th>'+labels[i]+' ('+l+')</th>').join('')+'<th>Verification</th></tr></thead><tbody>'+records.map(r=>{
+    if(kind==='historical-lines')return '<p>Original reader figures are retained unchanged. Numeric formatting can differ from exact original cents.</p><p>Absent means no source value; $0.00 is an explicit zero. Imported totals have not been recalculated.</p><div class="table-wrap"><table><thead><tr><th>Year</th>'+lines.map((l,i)=>'<th>'+labels[i]+' ('+l+')</th>').join('')+'<th>Verification</th></tr></thead><tbody>'+records.map(r=>{
       checkHistorical(r);
       if(r.vendor_module!=='T1'&&!nativeModuleReviewed(r))return '<tr><td>'+r.tax_year+'</td><td colspan="6">Converter label '+esc(r.vendor_module)+'; T1 totals are unavailable.</td><td>Source module verification required</td></tr>';
       return '<tr><td>'+r.tax_year+'</td>'+lines.map(l=>'<td>'+esc(cents(r.values_cents[l]))+'</td>').join('')+'<td>'+esc(mappingLabel(r))+'</td></tr>';
@@ -333,6 +336,68 @@
     if(v!==null&&typeof v==='object')return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonicalRecoveredSource(v[k])).join(',')+'}';
     return JSON.stringify(v);
   }
+  const wireExactProfileSHA='b5f3cef97f3dbdfcd452349b8118702f6e7445b1ac2129d3d40d2e763bf3a09b',wireExactProfileID='d4387718dc4b74b955ac27d114b695dcaf0f05931fcd3c82a7c062040889a065',wireExactInventorySHA='3f2e2fe9c28db5070486ceed7f92f2c7983eb17eed231c1a905bea36cccdb8ad';
+  const wireVerifiedProfiles=new WeakSet(),wireVerifiedRows=new WeakMap();let wireExactProfilePromise;
+  const wireKind='wire-exact-historical-lines';
+  function sameWireValue(a,b){return canonicalRecoveredSource(a)===canonicalRecoveredSource(b);}
+  function freezeWireValue(v){if(v&&typeof v==='object'&&!Object.isFrozen(v)){Object.values(v).forEach(freezeWireValue);Object.freeze(v);}return v;}
+  async function verifyWireProfile(p){
+    if(p&&wireVerifiedProfiles.has(p))return p;
+    if(!p||p.schema!=='wire-exact-historical-lines-closed-profile/v1'||p.profile_sha256!==wireExactProfileID||await sourceDigest(new TextEncoder().encode(canonicalRecoveredSource(p.contract)))!==wireExactProfileID||p.contract.source_scope!==SCOPE||p.contract.original_row_inventory_file_sha256!==wireExactInventorySHA||!sameWireValue(p.expected_counts,p.contract.expected_counts))throw Error('Exact source precision profile differs');
+    for(const [key,pin]of [['context_sha256','context_sha256_inventory_sha256'],['required_overlay_original_row_sha256','required_overlay_row_sha256_inventory_sha256']]){
+      const a=p[key];if(!Array.isArray(a)||a.length!==993||new Set(a).size!==993||a.some(s=>typeof s!=='string'||!/^[a-f0-9]{64}$/.test(s))||!sameWireValue(a,[...a].sort())||await sourceDigest(new TextEncoder().encode(canonicalRecoveredSource(a)))!==p.contract[pin])throw Error('Exact source closed inventory differs');
+    }
+    freezeWireValue(p);wireVerifiedProfiles.add(p);return p;
+  }
+  async function loadWireExactProfile(){
+    if(!wireExactProfilePromise)wireExactProfilePromise=(async()=>{
+      const response=await fetch('/apps/tax/dtmax-wire-exact-profile.json',{credentials:'omit',redirect:'error',cache:'no-store'});if(!response.ok)throw Error('Exact source precision verification unavailable');
+      const bytes=new Uint8Array(await response.arrayBuffer());if(bytes.length!==135256||await sourceDigest(bytes)!==wireExactProfileSHA)throw Error('Exact source public profile bytes differ');
+      return verifyWireProfile(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)));
+    })().catch(e=>{wireExactProfilePromise=null;throw e;});return wireExactProfilePromise;
+  }
+  function checkWireEnvelope(p){
+    if(!p||p.kind!==wireKind||p.test_copy!==true||p.source_scope!==SCOPE||p.wire_exact_profile_sha256!==wireExactProfileID||p.wire_exact_inventory_sha256!==wireExactInventorySHA||p.source_only!==true||p.vendor_activation_required!==false||p.financial_values_approved!==false||p.recalculated!==false||p.source_versions_reselected!==false||['original_historical_records_modified','current_profiles_modified','earlier_figures_or_slips_modified','native_contexts_created','tax_cases_imported'].some(k=>p[k]!==0))throw Error('Exact source precision response differs');
+  }
+  function wireRow(r){return !!r&&(r.precision_state!==undefined||r.wire_exact_profile_sha256!==undefined||r.reader_values_cents!==undefined);}
+  function checkVerifiedWireRow(r){if(!r||!wireVerifiedRows.has(r)||wireVerifiedRows.get(r)!==canonicalRecoveredSource(r))throw Error('Exact source row must be verified before display');return r;}
+  function wireQualificationRow(r){if(!wireRow(r))return r;checkVerifiedWireRow(r);return {...r,values_cents:r.reader_values_cents};}
+  async function verifyWireExactHistoricalRecord(r,profile){
+    profile=await verifyWireProfile(profile||await loadWireExactProfile());
+    if(!r||r.wire_exact_profile_sha256!==wireExactProfileID||r.wire_exact_inventory_sha256!==wireExactInventorySHA||r.source_only!==true||r.financial_values_approved!==false||r.recalculated!==false)throw Error('Exact source precision flags differ');
+    const original=r.original_historical_row,keys=['archive_sha256','client_number','family_file_id','mapping_state','tax_year','values_cents','vendor_module'];
+    if(!original||Object.keys(original).sort().join('|')!==keys.join('|')||!/^[0-9]{1,12}$/.test(original.client_number)||!/^[0-9]{1,12}$/.test(original.family_file_id)||!/^[a-f0-9]{64}$/.test(original.archive_sha256)||keys.filter(k=>k!=='values_cents').some(k=>r[k]!==original[k]))throw Error('Exact source identity or original flags differ');
+    checkHistorical(original);
+    for(const values of [original.values_cents,r.reader_values_cents,r.values_cents]){if(!values||Object.keys(values).sort().join('|')!==[...lines].sort().join('|'))throw Error('Six exact source line states required');lines.forEach(k=>cents(values[k]));}
+    if(!sameWireValue(original.values_cents,r.reader_values_cents)||await sourceDigest(new TextEncoder().encode(canonicalRecoveredSource(original)))!==r.original_historical_row_sha256)throw Error('Original reader row hash or values differ');
+    const required=profile.required_overlay_original_row_sha256.includes(r.original_historical_row_sha256),overlay=r.wire_exact_overlay;
+    if(r.precision_state==='verified_exact_wire'){
+      if(required){
+        if(r.precision_basis!=='closed_original_wire_overlay'||!overlay||overlay.schema!=='historical-exact-wire-overlay-context/v1'||overlay.source_scope!==SCOPE||overlay.source_only!==true||overlay.original_historical_row_modified!==false||overlay.financial_values_approved!==false||overlay.recalculated!==false||overlay.tax_case_owner_assigned!==false||!sameWireValue(overlay.original_historical_row,original)||overlay.original_historical_row_sha256!==r.original_historical_row_sha256||!sameWireValue(overlay.exact_wire_values_cents,r.values_cents))throw Error('Exact source overlay identity differs');
+        const h=await sourceDigest(new TextEncoder().encode(canonicalRecoveredSource(overlay)));if(h!==r.wire_exact_overlay_sha256||!profile.context_sha256.includes(h))throw Error('Exact source whole overlay hash differs');
+        const selection=overlay.source_selection;if(!selection||![0,7].includes(selection.reader_q_plan)||selection.outer_plan!==0||selection.marker1_present!==true||selection.selected_saved_preferred_context_verified!==true||selection.original_reader_module!==original.vendor_module||selection.original_mapping_state!==original.mapping_state)throw Error('Original source snapshot selection differs');
+        const exact={...r.reader_values_cents},seen=new Set();if(!Array.isArray(overlay.field_observations)||!overlay.field_observations.length||overlay.field_observations.length>6)throw Error('Exact source observations missing');
+        for(const f of overlay.field_observations){
+          if(!lines.includes(f.line_code)||seen.has(f.line_code)||f.original_historical_row_sha256!==r.original_historical_row_sha256||f.original_values_cents!==r.reader_values_cents[f.line_code]||f.exact_wire_cents===f.original_values_cents||!/^[a-f0-9]{14}$/.test(f.raw_field_hex)||f.strict_expanded_CRC32_verified!==true||f.reader_q_plan!==selection.reader_q_plan||f.source_outer_plan!==0||f.financial_values_approved!==false)throw Error('Exact source field binding differs');
+          const bytes=Uint8Array.from(f.raw_field_hex.match(/../g),b=>parseInt(b,16)),view=new DataView(bytes.buffer);if(bytes[0]!==2||view.getUint16(1,true)!==Number(f.line_code)/100||String(view.getInt32(3,true))!==f.exact_wire_cents||await sourceDigest(bytes)!==f.raw_field_sha256)throw Error('Exact source signed wire cents differ');
+          exact[f.line_code]=f.exact_wire_cents;seen.add(f.line_code);
+        }
+        if(!sameWireValue(exact,r.values_cents))throw Error('Unobserved source value or absence changed');
+      }else if(r.precision_basis!=='inventory_exact_unchanged'||overlay!==null||r.wire_exact_overlay_sha256!==null||!sameWireValue(r.values_cents,r.reader_values_cents))throw Error('Unchanged audited source values differ');
+    }else{
+      if(!['pending_required_wire_overlay','unverified_original_row'].includes(r.precision_state)||required!==(r.precision_state==='pending_required_wire_overlay')||r.precision_basis!==null||overlay!==null||r.wire_exact_overlay_sha256!==null||lines.some(k=>r.values_cents[k]!==null))throw Error('Unverified source amounts cannot appear as exact');
+    }
+    checkHistorical({...r,values_cents:r.reader_values_cents});wireVerifiedRows.set(r,canonicalRecoveredSource(r));return r;
+  }
+  function wirePrecisionNotice(r){return r.precision_state==='pending_required_wire_overlay'?'Exact source cents are pending verification. Original reader figures remain available separately.':r.precision_state==='unverified_original_row'?'Exact source cents are unavailable: this original row is outside the frozen precision inventory. Original reader figures remain available separately.':'Exact original source cents · '+(r.precision_basis==='closed_original_wire_overlay'?'Reader precision difference verified against original field bytes.':'Unchanged amounts verified against the audited source inventory.')+' Original selected snapshot retained; no recalculation or tax approval.';}
+  function wireDownloadHtml(r){return '<p><button class="dtmax-action" type="button" data-wire-download="reader" data-wire-original-sha="'+r.original_historical_row_sha256+'">Download unchanged reader figures</button>'+(r.precision_state==='verified_exact_wire'?' <button class="dtmax-action" type="button" data-wire-download="exact" data-wire-original-sha="'+r.original_historical_row_sha256+'">Download exact source proof</button>':'')+'</p>';}
+  function bindWireDownloads(root,records){
+    root.querySelectorAll('[data-wire-download]').forEach(button=>button.onclick=()=>{
+      const r=records.find(r=>r.original_historical_row_sha256===button.dataset.wireOriginalSha);checkVerifiedWireRow(r);
+      const original=button.dataset.wireDownload==='reader',value=original?r.original_historical_row:r.wire_exact_overlay||{schema:'audited-unchanged-wire-source/v1',original_historical_row:r.original_historical_row,original_historical_row_sha256:r.original_historical_row_sha256,exact_wire_values_cents:r.values_cents,precision_state:r.precision_state,precision_basis:r.precision_basis,wire_exact_profile_sha256:wireExactProfileID,wire_exact_inventory_sha256:wireExactInventorySHA,financial_values_approved:false};
+      const bytes=new TextEncoder().encode(canonicalRecoveredSource(value)),url=URL.createObjectURL(new Blob([bytes],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=(original?'original-reader-figures-':'exact-source-proof-')+r.tax_year+'-'+r.original_historical_row_sha256+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    });
+  }
   function checkRecoveredEnvelope(p,profile){
     if(!p||p.source_scope!==SCOPE||p.test_copy!==true||p.recovered_native_source_profile_sha256!==(profile?.profile_sha256||recoveredNativeProfileID)||p.vendor_activation_required!==false||p.financial_values_approved!==false||['native_contexts_created','current_profiles_modified','earlier_figures_or_slips_modified','tax_cases_imported'].some(k=>p[k]!==0))throw Error('Recovered source response did not match');
   }
@@ -456,10 +521,10 @@
     }
     return {html:'<p>Preserved source text, including repeated fields and markers. Form codes and field IDs are shown where original keyword labels have not been verified. No values are recalculated, normalized or approved for filing. Cached numeric fields and all original properties remain in the unchanged parsed-source download.</p><label>Find saved form or field <input type="search" data-raw-native-find placeholder="Keyword, form code, field ID or source text"></label><p class="dtmax-missing" data-raw-native-count></p>'+body.join(''),downloads};
   }
-  function entryHtml(client,record,comparison,sourceYear){
+  function entryHtml(client,record,comparison,sourceYear,sourceContextCount=0){
     const profile=client.source_profile||{};
-    const totals=historicalTotalsHtml;
-    return '<div class="dtmax-entry"><section class="dtmax-keyword-pane"><h3>Personal information</h3>'+keywordRows([['Client #',client.client_number],['Name',client.name]])+(!record&&client.recovered_native_source_years?.includes(Number(sourceYear))?'<p>Historical personal fields are included with the recovered source records below.</p>':personalInfoHtml(client,record))+totals(record)+'<h3>Mailing address · client-list snapshot</h3>'+keywordRows([['Street',profile.street],['City',profile.city],['Province',profile.province],['PostalCode',profile.postal_code],['Country',profile.country]])+'<h3>Contact · client-list snapshot</h3>'+keywordRows([['Email',profile.email],['Home phone',profile.home_phone],['Work phone',profile.work_phone],['Cell phone',profile.cell_phone]])+'<p>Address, contact and processing status come from the imported client list. They are not established as the historical return’s values.</p></section><section class="dtmax-keyword-pane"><label>Compare native extract year <select data-dtmax-compare><option value="">&lt;none&gt;</option>'+(client.native_historical_years||client.historical_years||[]).map(y=>'<option value="'+y+'"'+(String(y)===comparison?' selected':'')+'>'+y+'</option>').join('')+'</select></label><div data-dtmax-comparison></div><h3>Source records</h3><p>Browse the preserved slips and family links below. Source values are read-only.</p><div data-dtmax-details></div></section></div>';
+    const totals=r=>historicalTotalsHtml(r,sourceContextCount);
+    return '<div class="dtmax-entry"><section class="dtmax-keyword-pane"><h3>Personal information</h3>'+keywordRows([['Client #',client.client_number],['Name',client.name]])+(!record&&client.recovered_native_source_years?.includes(Number(sourceYear))?'<p>Historical personal fields are included with the recovered source records below.</p>':personalInfoHtml(client,record?wireQualificationRow(record):record))+totals(record)+'<h3>Mailing address · client-list snapshot</h3>'+keywordRows([['Street',profile.street],['City',profile.city],['Province',profile.province],['PostalCode',profile.postal_code],['Country',profile.country]])+'<h3>Contact · client-list snapshot</h3>'+keywordRows([['Email',profile.email],['Home phone',profile.home_phone],['Work phone',profile.work_phone],['Cell phone',profile.cell_phone]])+'<p>Address, contact and processing status come from the imported client list. They are not established as the historical return’s values.</p></section><section class="dtmax-keyword-pane"><label>Compare native extract year <select data-dtmax-compare><option value="">&lt;none&gt;</option>'+(client.native_historical_years||client.historical_years||[]).map(y=>'<option value="'+y+'"'+(String(y)===comparison?' selected':'')+'>'+y+'</option>').join('')+'</select></label><div data-dtmax-comparison></div><h3>Source records</h3><p>Browse the preserved slips and family links below. Source values are read-only.</p><div data-dtmax-details></div></section></div>';
   }
   function validateReviewedPacket(r){
     const s=r.reviewed_packet_scope,t=r.content_transport;
@@ -532,8 +597,9 @@
     if(input)input.oninput=e=>{const needle=e.target.value.trim().toLowerCase();let count=0;detail.querySelectorAll('[data-recovered-form]').forEach(form=>{let found=0;form.querySelectorAll('[data-recovered-search]').forEach(row=>{row.hidden=!!needle&&!row.dataset.recoveredSearch.includes(needle);if(!row.hidden){found++;count++;}});form.hidden=!!needle&&!found;if(needle&&found)form.open=true;});detail.querySelector('[data-recovered-count]').textContent=needle?count+' matching source fields':'';};
     detail.querySelectorAll('[data-recovered-download]').forEach(button=>button.onclick=()=>{const r=recovered.downloads[Number(button.dataset.recoveredDownload)],url=URL.createObjectURL(new Blob([r.bytes],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='recovered-native-source-'+r.packet.source_year+'-'+r.packet.context_id+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
   }
-  function mount(host,{request,isCurrent=()=>true}) {
-    let sequence=0,offset=0,search='',year='',activeClient='',kind='historical-lines',factOffset=0;
+  function mount(host,{request,isCurrent=()=>true,historicalKind=wireKind}) {
+    if(![wireKind,'historical-lines'].includes(historicalKind))throw Error('Unsupported historical source view');
+    let sequence=0,offset=0,search='',year='',activeClient='',kind=historicalKind,factOffset=0;
     let page=null,view='list',selectedYear='',comparison='',history=[],pdfs=[],pdfUrl='',pdfRecord=null,pdfPage=1,sourceKindExplicit=false;
     let sort='client_number',direction='asc',status='',province='',exceptionSequence=0,ownerSequence=0,recoveredSequence=0;const clientCache=new Map(),exceptionUrls=[];
     const releaseExceptions=()=>{exceptionUrls.splice(0).forEach(url=>URL.revokeObjectURL(url));};
@@ -607,7 +673,7 @@
     function clientHead(){const c=selected();return '<div class="dtmax-client-head">Client #'+esc(c.client_number)+' · '+esc(c.name)+'<small>Imported source · '+(selectedYear?'Tax year '+esc(selectedYear):'No historical year')+'</small></div><div class="dtmax-toolbar"><label>Tax year<select data-dtmax-year>'+c.historical_years.slice().sort((a,b)=>b-a).map(y=>'<option value="'+y+'"'+(String(y)===selectedYear?' selected':'')+'>'+y+(c.recovered_native_source_years?.includes(y)&&!c.native_historical_years?.includes(y)?' · Recovered native source':c.pdf_only_years?.includes(y)?(c.source_archive_years?.includes(y)?' · Source archive':' · Preserved PDF'):'')+'</option>').join('')+'</select></label><button type="button" data-dtmax-back>Back to client list</button></div>';}
     function recoveredOnlyYear(){const c=selected(),y=Number(selectedYear);return c?.recovered_native_source_years?.includes(y)&&!c.native_historical_years?.includes(y);}
     function sourceArchiveOnlyYear(){const c=selected(),y=Number(selectedYear);return !recoveredOnlyYear()&&c?.source_archive_years?.includes(y)&&c.pdf_only_years?.includes(y)&&!c.preserved_pdf_figure_years?.includes(y);}
-    function defaultSourceKind(){if(recoveredOnlyYear())return 'recovered-native-sources';if(sourceArchiveOnlyYear())return 'source-summary-figures';return !sourceArchiveOnlyYear()&&selected()?.pdf_only_years?.includes(Number(selectedYear))?'preserved-pdf-figures':'historical-lines';}
+    function defaultSourceKind(){if(recoveredOnlyYear())return 'recovered-native-sources';if(sourceArchiveOnlyYear())return 'source-summary-figures';return !sourceArchiveOnlyYear()&&selected()?.pdf_only_years?.includes(Number(selectedYear))?'preserved-pdf-figures':historicalKind;}
     function bindClient(){q('[data-dtmax-back]').onclick=()=>show('list');q('[data-dtmax-year]').onchange=e=>{selectedYear=e.target.value;if(!sourceKindExplicit)kind=defaultSourceKind();return show(sourceArchiveOnlyYear()?'return':view);};}
     function renderList(){
       const p=page;
@@ -626,9 +692,9 @@
     }
     async function historyFor(client,n){
       const records=[];let at=0,total;
-      do{const p=await request(BASE+'clients/'+client+'/source-facts?kind=historical-lines&offset='+at+'&limit=100');if(!current(n))return null;
-        checkFacts(p,client,'historical-lines',at,100);if(total!==undefined&&p.total!==total)throw Error('Source history changed while loading');total=p.total;if(total>1000)throw Error('Source history exceeds view bound');records.push(...p.records);at+=p.records.length;if(at<total&&!p.records.length)throw Error('Incomplete source history page');
-      }while(at<total);recordsHtml('historical-lines',records);return records;
+      do{const p=await request(BASE+'clients/'+client+'/source-facts?kind='+historicalKind+'&offset='+at+'&limit=100');if(!current(n))return null;
+        checkFacts(p,client,historicalKind,at,100);if(historicalKind===wireKind){for(const row of p.records)await verifyWireExactHistoricalRecord(row);if(!current(n))return null;}if(total!==undefined&&p.total!==total)throw Error('Source history changed while loading');total=p.total;if(total>1000)throw Error('Source history exceeds view bound');records.push(...p.records);at+=p.records.length;if(at<total&&!p.records.length)throw Error('Incomplete source history page');
+      }while(at<total);recordsHtml(historicalKind,records);return records;
     }
     async function open(client){
       if(!/^\d{1,12}$/.test(client))return;const lookup=++sequence;
@@ -636,7 +702,7 @@
         try{const found=validatePage(await request(BASE+'source-clients?offset=0&limit=100&search='+encodeURIComponent(client)),0);if(!current(lookup))return;const exact=found.clients.find(c=>c.client_number===client);if(!exact)throw Error('Family member is not in the imported client roster');clientCache.set(client,exact);}
         catch(e){if(current(lookup)){const d=q('[data-dtmax-details]');if(d)d.innerHTML='<p role="alert">'+esc(e.message)+'</p>';}return;}
       }
-      activeClient=client;kind='historical-lines';comparison='';history=[];pdfs=[];releasePdf();
+      activeClient=client;kind=historicalKind;comparison='';history=[];pdfs=[];releasePdf();
       selectedYear=year||String(Math.max(...selected().historical_years)||'');if(selectedYear==='-Infinity')selectedYear='';sourceKindExplicit=false;kind=defaultSourceKind();
       const n=++sequence;view='entry';shell(clientHead()+'<p class="dtmax-notice">Loading source history…</p>');bindClient();
       try{const records=await historyFor(client,n);if(!records||!current(n))return;history=records;return show(sourceArchiveOnlyYear()?'return':'entry',true);}catch(e){if(current(n))shell(clientHead()+'<p class="dtmax-error" role="alert">'+esc(e.message)+'</p>');}
@@ -646,21 +712,22 @@
       if(next!=='list'&&!selected())return;const n=++sequence;view=next;
       if(next==='list'){releasePdf();renderList();}
       else if(next==='entry'){
-        releasePdf();shell(clientHead()+'<div class="dtmax-toolbar"><label>Find keyword <input type="search" data-dtmax-keyword-find placeholder="Keyword or line number · Alt+F7"></label><span class="dtmax-missing" data-dtmax-keyword-count></span></div>'+(recoveredOnlyYear()?'<p>Recovered source fields for this year are available below. Choose Recovered native fields to review the original entries and cached versions.</p>':'')+entryHtml(selected(),historicalRecord(selectedYear),comparison,selectedYear));bindClient();
+        releasePdf();shell(clientHead()+'<div class="dtmax-toolbar"><label>Find keyword <input type="search" data-dtmax-keyword-find placeholder="Keyword or line number · Alt+F7"></label><span class="dtmax-missing" data-dtmax-keyword-count></span></div>'+(recoveredOnlyYear()?'<p>Recovered source fields for this year are available below. Choose Recovered native fields to review the original entries and cached versions.</p>':'')+entryHtml(selected(),historicalRecord(selectedYear),comparison,selectedYear,history.filter(r=>String(r.tax_year)===selectedYear).length));bindClient();
         q('[data-dtmax-keyword-find]').oninput=e=>{const needle=e.target.value.trim().toLowerCase();let count=0;all('[data-dtmax-keyword]').forEach(dt=>{const match=!needle||dt.dataset.dtmaxKeyword.includes(needle);dt.hidden=!match;if(dt.nextElementSibling)dt.nextElementSibling.hidden=!match;if(match)count++;});q('[data-dtmax-keyword-count]').textContent=needle?count+' matching fields':'';};
         if(history.filter(r=>String(r.tax_year)===selectedYear).length>1)q('[data-dtmax-comparison]').innerHTML='<p role="alert">Multiple source versions exist for this year. Review Historical totals below; no version was selected automatically.</p>';
-        q('[data-dtmax-compare]').onchange=e=>{comparison=e.target.value;renderComparison();};renderComparison();await facts(0,n);
+        bindWireDownloads(host,history.filter(wireRow));q('[data-dtmax-compare]').onchange=e=>{comparison=e.target.value;renderComparison();};renderComparison();await facts(0,n);
       }else{
         shell(clientHead()+'<div class="dtmax-return"><aside class="dtmax-page-index"><h3>Select a page</h3><div data-dtmax-pdf-index>Loading original PDFs…</div></aside><div class="dtmax-pdf-canvas" data-dtmax-pdf-canvas><div class="dtmax-pdf-message">Loading preserved print output…</div></div></div>');bindClient();
         try{const p=await request(BASE+'clients/'+activeClient+'/return-pdfs');if(!current(n))return;if(p.source_scope!==SCOPE||p.client_number!==activeClient||p.test_copy!==true||p.tax_cases_imported!==0||!Array.isArray(p.records)||p.records.length>1000)throw Error('Original PDF list did not match');pdfs=p.records.map(r=>validatePdf(r,activeClient));releasePdf();renderPdfIndex();const versions=pdfs.filter(r=>String(r.tax_year)===selectedYear);const r=requestedPdf?versions.find(r=>r.sha256===requestedPdf.sha):versions.length===1?versions[0]:null;if(requestedPdf&&(!r||!integer(requestedPdf.page)||requestedPdf.page<1||requestedPdf.page>r.page_count))throw Error('Observed PDF page is unavailable');if(r){await openPdf(r,n);if(requestedPdf&&current(n)){pdfPage=requestedPdf.page;renderPdfIndex();renderPdfCanvas();}}else{releasePdf();if(versions.length>1)pdfChoose(versions);else pdfMissing();}}catch(e){if(current(n)){releasePdf();q('[data-dtmax-pdf-index]').innerHTML='Unavailable';q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-message" role="alert">Original PDF unavailable: '+esc(e.message)+'</div>';}}
       }
       if(focus&&current(sequence))q('[data-dtmax-view="'+view+'"]')?.focus?.();
     }
-    function renderComparison(){const node=q('[data-dtmax-comparison]');if(!node)return;const r=historicalRecord(comparison);node.innerHTML=comparison?(r?historicalTotalsHtml(r):'<p>No single native source version for this comparison year.</p>'):'<p class="dtmax-missing">Choose a year to compare the six preserved totals.</p>';}
+    function renderComparison(){const node=q('[data-dtmax-comparison]');if(!node)return;const r=historicalRecord(comparison);node.innerHTML=comparison?(r?historicalTotalsHtml(r):historicalTotalsHtml(null,history.filter(r=>String(r.tax_year)===comparison).length)):'<p class="dtmax-missing">Choose a year to compare the six preserved totals.</p>';bindWireDownloads(node,history.filter(wireRow));}
     function checkFacts(p,client,requestedKind,at,limit,requestedYear){
       if(!p||p.client_number!==client||p.kind!==requestedKind||p.test_copy!==true||p.tax_cases_imported!==0||p.offset!==at||!integer(p.total)||!Array.isArray(p.records)||p.records.length>limit||at+p.records.length>p.total)throw Error('Source client response did not match');
       if(p.records.some(r=>requestedKind==='family-files'?!Array.isArray(r.member_client_numbers)||!r.member_client_numbers.includes(client):requestedKind==='historical-family-lineage'?!Array.isArray(r.member_mappings)||!r.member_mappings.some(m=>m.current_client_number===client):(requestedKind==='parsed-native-forms'?r.metadata?.client_number:r.client_number)!==client))throw Error('Source record belongs to another client');
-      if(['native-slip-views','linked-t5008','historical-variants','printed-cached-figures','preserved-pdf-figures','source-summary-figures','source-paper-documents','parsed-native-forms','recovered-native-sources'].includes(requestedKind)&&requestedYear&&(p.source_return_year!==Number(requestedYear)||p.records.some(r=>(requestedKind==='linked-t5008'?r.tax_year:requestedKind==='source-paper-documents'?r.source_archive_year:requestedKind==='parsed-native-forms'?r.metadata?.source_return_year:requestedKind==='recovered-native-sources'?r.source_year:r.source_return_year)!==Number(requestedYear))))throw Error('Selected source return year did not match');
+      if(['native-slip-views','linked-t5008','historical-variants','printed-cached-figures','preserved-pdf-figures','source-summary-figures','source-paper-documents','parsed-native-forms','recovered-native-sources',wireKind].includes(requestedKind)&&requestedYear&&(p.source_return_year!==Number(requestedYear)||p.records.some(r=>(requestedKind==='linked-t5008'?r.tax_year:requestedKind==='source-paper-documents'?r.source_archive_year:requestedKind==='parsed-native-forms'?r.metadata?.source_return_year:requestedKind==='recovered-native-sources'?r.source_year:requestedKind===wireKind?r.tax_year:r.source_return_year)!==Number(requestedYear))))throw Error('Selected source return year did not match');
+      if(requestedKind===wireKind)checkWireEnvelope(p);
       if(requestedKind==='recovered-native-sources')checkRecoveredEnvelope(p);
       if(requestedKind==='parsed-native-forms'&&(p.source_scope!==SCOPE||p.parsed_source_profile_sha256!==parsedSourceProfile||p.vendor_activation_required!==false||p.financial_values_approved!==false||p.full_all_plan_native_decode_claimed!==false||['native_contexts_created','current_profiles_modified','earlier_figures_or_slips_modified','tax_cases_imported'].some(k=>p[k]!==0)))throw Error('Parsed native source response did not match');
       if(requestedKind==='source-paper-documents'&&(p.source_scope!==SCOPE||p.test_copy!==true||p.paper_document_profile_sha256!=='efa1b7bb15c311ce9755863c165a25ce8954e6ced2f143d9f466b7877afb7a06'||['native_contexts_created','native_slips_created','economic_slips_created','current_profiles_modified','original_PDFs_modified','earlier_figure_records_modified','tax_cases_imported'].some(k=>p[k]!==0)||['financial_values_approved','as_filed_verified','full_T1_recovered'].some(k=>p[k]!==false)))throw Error('Supporting-document source response did not match');
@@ -670,12 +737,14 @@
       if(requestedKind==='historical-variants'&&(p.source_variant_profile_sha256!=='641c2b5f56617882829d5049813e06789a3a661580fe6f6d3adf6f8dde5e03ba'||p.original_history_modified!==0||p.personal_source_flags_modified!==0||p.financial_values_approved!==false||p.preferred_version_selected!==false))throw Error('Historical source-version response did not match');
     }
     async function facts(next=0,existingSequence){
-      const n=existingSequence??++sequence,client=activeClient,requestedKind=kind,requestedYear=['native-slip-views','linked-t5008','historical-variants','printed-cached-figures','preserved-pdf-figures','source-summary-figures','source-paper-documents','parsed-native-forms','recovered-native-sources'].includes(kind)?selectedYear:'',pageLimit=requestedKind==='recovered-native-sources'?1:25;factOffset=next;const detail=q('[data-dtmax-details]');if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
+      const n=existingSequence??++sequence,client=activeClient,requestedKind=kind,requestedYear=['native-slip-views','linked-t5008','historical-variants','printed-cached-figures','preserved-pdf-figures','source-summary-figures','source-paper-documents','parsed-native-forms','recovered-native-sources',wireKind].includes(kind)?selectedYear:'',pageLimit=requestedKind==='recovered-native-sources'?1:25;factOffset=next;const detail=q('[data-dtmax-details]');if(!detail)return;detail.innerHTML='<p>Loading imported T1 records…</p>';
       try{
         const p=await request(BASE+'clients/'+client+'/source-facts?kind='+requestedKind+'&offset='+next+'&limit='+pageLimit+(requestedYear?'&source_return_year='+encodeURIComponent(requestedYear):''));if(!current(n))return;checkFacts(p,client,requestedKind,next,pageLimit,requestedYear);
+        if(requestedKind===wireKind){for(const row of p.records)await verifyWireExactHistoricalRecord(row);if(!current(n))return;}
         const parsed=requestedKind==='parsed-native-forms'?await parsedNativeFormsHtml(p.records):null,recovered=requestedKind==='recovered-native-sources'?await recoveredNativeSourcesHtml(p.records):null;if(!current(n))return;
         detail.innerHTML='<div class="dtmax-fact-nav">'+Object.entries(kinds).map(([k,label])=>'<button type="button" data-source-kind="'+k+'" aria-pressed="'+(k===kind)+'">'+label+'</button>').join('')+'</div>'+(parsed?parsed.html:recovered?recovered.html:recordsHtml(kind,p.records))+'<p>'+(p.total?next+1:0)+'–'+(next+p.records.length)+' of '+p.total+' source records</p><button class="dtmax-action" data-fact-prev '+(!next?'disabled':'')+'>Previous records</button> <button class="dtmax-action" data-fact-next '+(next+p.records.length>=p.total?'disabled':'')+'>Next records</button>';
         detail.querySelectorAll('[data-source-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.sourceKind;sourceKindExplicit=true;return facts(0);});detail.querySelector('[data-fact-prev]').onclick=()=>facts(Math.max(0,factOffset-pageLimit));detail.querySelector('[data-fact-next]').onclick=()=>facts(factOffset+pageLimit);
+        if(requestedKind===wireKind)bindWireDownloads(detail,p.records);
         if(recovered)bindRecoveredSource(detail,recovered);
         if(parsed){
           detail.querySelector('[data-raw-native-find]').oninput=e=>{const needle=e.target.value.trim().toLowerCase();let count=0;detail.querySelectorAll('[data-raw-native-form]').forEach(form=>{let found=0;form.querySelectorAll('[data-raw-native-search]').forEach(row=>{row.hidden=!!needle&&!row.dataset.rawNativeSearch.includes(needle);if(!row.hidden){found++;count++;}});form.hidden=!!needle&&!found;if(needle&&found)form.open=true;});detail.querySelector('[data-raw-native-count]').textContent=needle?count+' matching source fields':'';};
@@ -728,5 +797,5 @@
     }
     return {ready:load(),load,facts,show,open,dispose:()=>{++sequence;releasePdf();releaseExceptions();host.onkeydown=null;}};
   }
-  globalThis.NXTDTMaxT1={mount,verifyRecoveredNativeContext,recoveredNativeSourcesHtml,recoveredSourceValue,loadRecoveredNativeProfile,cents,validatePage,recordsHtml,entryHtml,validatePdf,validateException,exceptionsHtml,cachedFigureNotice,validatePrintedFigures,validatePreservedPdfFigures,validateSourceSummaryFigures,validateSourcePaperDocuments,decodeParsedNativeSource,parsedNativeFormsHtml,verifySourceKeywordTable,loadSourceKeywords,keywordName,sourceContextDiagnostic,exceptionsWithDiagnosticsHtml};
+  globalThis.NXTDTMaxT1={mount,loadWireExactProfile,verifyWireExactHistoricalRecord,checkWireEnvelope,historicalTotalsHtml,canonicalRecoveredSource,verifyRecoveredNativeContext,recoveredNativeSourcesHtml,recoveredSourceValue,loadRecoveredNativeProfile,cents,validatePage,recordsHtml,entryHtml,validatePdf,validateException,exceptionsHtml,cachedFigureNotice,validatePrintedFigures,validatePreservedPdfFigures,validateSourceSummaryFigures,validateSourcePaperDocuments,decodeParsedNativeSource,parsedNativeFormsHtml,verifySourceKeywordTable,loadSourceKeywords,keywordName,sourceContextDiagnostic,exceptionsWithDiagnosticsHtml};
 })();
