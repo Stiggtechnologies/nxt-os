@@ -1,0 +1,63 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {createHash,webcrypto} from 'node:crypto';
+const source=fs.readFileSync(new URL('../public/apps/tax/dtmax-t1.js',import.meta.url),'utf8');
+const files={
+ '/apps/tax/dtmax-recovered-native-profile.json':fs.readFileSync(new URL('../public/apps/tax/dtmax-recovered-native-profile.json',import.meta.url)),
+ '/apps/tax/dtmax-recovered-native-identity-profile.json':fs.readFileSync(new URL('../public/apps/tax/dtmax-recovered-native-identity-profile.json',import.meta.url))
+};
+const identityProfile=JSON.parse(files['/apps/tax/dtmax-recovered-native-identity-profile.json']),profile=JSON.parse(files['/apps/tax/dtmax-recovered-native-profile.json']);
+function environment(overrides={}){const sandbox={crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,DataView,atob,Blob,URL:{createObjectURL:()=> 'blob:local-fixture',revokeObjectURL(){}},fetch:async(url,options)=>{assert.equal(options.credentials,'omit');assert.equal(options.redirect,'error');const b=overrides[url]||files[url];assert.ok(b);return {ok:true,arrayBuffer:async()=>b};}};vm.runInNewContext(source,sandbox);return sandbox.NXTDTMaxT1;}
+const api=environment(),canonical=api.canonicalRecoveredSource,sha=v=>createHash('sha256').update(canonical(v)).digest('hex');
+const original=process.env.NXT_RECOVERED_NATIVE_BATCH?JSON.parse(fs.readFileSync(process.env.NXT_RECOVERED_NATIVE_BATCH)):null;
+const links=process.env.NXT_IDENTITY_LINK_BATCH?JSON.parse(fs.readFileSync(process.env.NXT_IDENTITY_LINK_BATCH)).records:null;
+const envelope=()=>({test_copy:true,source_scope:'dtmax-test-copy',kind:'recovered-native-effective-sources',identity_link_profile_sha256:identityProfile.profile_sha256,recovered_native_source_profile_sha256:profile.profile_sha256,original_packets_modified:0,original_queue_modified:0,current_profiles_modified:0,tax_cases_imported:0,native_contexts_created:0,earlier_figures_or_slips_modified:0,vendor_activation_required:false,financial_values_approved:false});
+const wrapper=(c,l=null)=>({original_context:c,effective_source_client_number:l?.target_client_number??c.client_number,source_identity_link:l,original_packet_modified:false,current_profiles_modified:0,tax_cases_imported:0,financial_values_approved:false});
+function summary(received){const byID=new Map(received.map(l=>[l.context_id,l])),years={};let assigned=0,rawAssigned=0;const index=original.contexts.map(c=>{const l=byID.get(c.context_id),target=l?.target_client_number??c.client_number;if(c.client_number!==null)rawAssigned++;if(target!==null){assigned++;(years[target]??=[]).push(c.source_year);}return {context_id:c.context_id,client_number:c.client_number,source_year:c.source_year,source_identity:c.source_identity,counts:c.counts,context_sha256:sha(c),target_source_profile_sha256:c.target_source_profile_sha256,effective_source_client_number:target,source_identity_link_id:l?.link_id??null};});for(const n of Object.keys(years))years[n]=[...new Set(years[n])].sort((a,b)=>a-b);return {...envelope(),context_index:index,identity_links:received,source_contexts:index.length,assigned_contexts:assigned,unassigned_contexts:index.length-assigned,original_assigned_contexts:rawAssigned,original_unassigned_contexts:index.length-rawAssigned,identity_links_received:received.length,identity_links_complete:received.length===16,client_source_years:years};}
+
+test('public identity profile bytes, scope and canonical integer-key writer are pinned',async()=>{
+ const loaded=await api.loadRecoveredIdentityProfile();assert.equal(loaded.profile_sha256,identityProfile.profile_sha256);assert.equal(loaded.link_record_sha256.length,16);
+ assert.equal(canonical({'12':1,'2':2}),'{"12":1,"2":2}');
+ for(const b of [Buffer.from('{}'),Buffer.concat([files['/apps/tax/dtmax-recovered-native-identity-profile.json'],Buffer.from(' ')])])await assert.rejects(()=>environment({'/apps/tax/dtmax-recovered-native-identity-profile.json':b}).loadRecoveredIdentityProfile());
+ for(const mutate of [p=>p.original_packets_modified=1,p=>p.original_queue_modified=1,p=>p.source_scope='other',p=>p.financial_values_approved=true]){const p=envelope();mutate(p);assert.throws(()=>api.checkEffectiveRecoveredEnvelope(p));}
+});
+test('all80 original contexts remain byteexact and all16 optional links remain separate',{skip:!original||!links},async()=>{
+ const byID=new Map(links.map(l=>[l.context_id,l]));let linked=0;
+ for(const c of original.contexts){const l=byID.get(c.context_id)||null,w=wrapper(c,l),verified=await api.verifyEffectiveRecoveredContext(w,{profile,identityProfile});assert.equal(Buffer.from(verified.bytes).toString(),canonical(c));if(l){linked++;assert.equal(c.client_number,null);const rendered=await api.effectiveRecoveredSourcesHtml([w],{profile,identityProfile,loadKeywords:async()=>null});assert.ok(rendered.html.includes('Verified SOURCE identity from another original source year'));assert.ok(rendered.html.includes('original packet remains unassigned'));assert.equal(Buffer.from(rendered.downloads[0].bytes).toString(),canonical(c));}}
+ assert.equal(linked,16);
+ for(const received of [[],links.slice(0,1),links])await api.verifyEffectiveRecoveredSummary(summary(received));
+ assert.equal(summary([]).assigned_contexts,38);assert.equal(summary(links.slice(0,1)).assigned_contexts,39);assert.equal(summary(links).assigned_contexts,54);assert.equal(summary(links).unassigned_contexts,26);assert.equal(original.contexts.filter(c=>c.client_number===null).length,42);
+});
+test('target, own context, year, proof, totals and late closed metadata mutations fail',{skip:!original||!links},async()=>{
+ const l=links[0],c=original.contexts.find(c=>c.context_id===l.context_id),w=wrapper(c,l);
+ for(const mutate of [r=>r.original_context.client_number=l.target_client_number,r=>r.effective_source_client_number='0',r=>r.source_identity_link.target_client_number='0',r=>r.source_identity_link.source_year++,r=>r.source_identity_link.own_Info1.SIN_sha256='a'.repeat(64),r=>r.source_identity_link=null,r=>r.original_packet_modified=true]){const bad=structuredClone(w);mutate(bad);await assert.rejects(()=>api.verifyEffectiveRecoveredContext(bad,{profile,identityProfile}));}
+ for(const mutate of [p=>p.assigned_contexts=54,p=>p.identity_links_complete=true,p=>p.context_index[0].source_year++,p=>p.client_source_years={},p=>p.identity_links.push(p.identity_links[0])]){const bad=summary(links.slice(0,1));mutate(bad);await assert.rejects(()=>api.verifyEffectiveRecoveredSummary(bad));}
+ for(const key of ['link_record_sha256','original_null_context_sha256','expected_counts']){const bad=structuredClone(identityProfile);bad[key]=null;await assert.rejects(()=>api.verifyRecoveredIdentityLink(l,bad));}
+});
+test('effective source view opens all54 assigned contexts and keeps raw navigation available',{skip:!original||!links},async()=>{
+ const received=summary(links),byID=new Map(links.map(l=>[l.context_id,l]));let viewed=0;
+ for(const c of original.contexts){const l=byID.get(c.context_id)||null,w=wrapper(c,l),number=w.effective_source_client_number;if(number===null)continue;
+  const nodes=new Map(),buttons=[{dataset:{sourceKind:'recovered-native-sources'}}],all=k=>k==='[data-source-kind]'?buttons:[],node=k=>{if(!nodes.has(k))nodes.set(k,{innerHTML:'',value:'',querySelector:node,querySelectorAll:all,focus(){}});return nodes.get(k);},host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:()=>[]},requests=[];
+  const request=async path=>{requests.push(path);if(path.includes('/source-clients?'))return{source_scope:'dtmax-test-copy',program:'T1',imported_source_only:true,tax_cases_created:0,total:1,offset:0,available_years:[c.source_year],clients:[{client_number:number,name:'Synthetic source display',historical_years:[c.source_year],native_historical_years:[],recovered_native_source_years:[c.source_year],pending_years:[]}]};
+   const u=new URL(path,'https://local.invalid'),kind=u.searchParams.get('kind');if(kind==='historical-lines')return {test_copy:true,tax_cases_imported:0,kind,client_number:number,offset:0,total:0,records:[]};
+   assert.equal(kind,'recovered-native-effective-sources');return {...envelope(),client_number:number,offset:0,limit:1,total:1,source_return_year:c.source_year,records:[w]};};
+  const controller=environment().mount(host,{request,historicalKind:'historical-lines'});await controller.ready;await controller.open(number);const html=node('[data-dtmax-details]').innerHTML;assert.ok(html.includes('Recovered native source · '+c.source_year));assert.ok(html.includes('Original recovered source assignments'));if(l){assert.ok(html.includes('Verified SOURCE identity from another original source year'));assert.ok(html.includes('Verified SOURCE match; original assignment unchanged'));assert.ok(!html.includes('Client match unresolved'));}assert.ok(requests[0].includes('/effective/source-clients?'));controller.dispose();viewed++;
+ }assert.equal(viewed,54);assert.equal(received.unassigned_contexts,26);
+});
+test('effective26 queue and explicit raw42 queue show actual received counts',{skip:!original||!links},async()=>{
+ const s=summary(links),held=original.contexts.find(c=>c.client_number===null&&!links.some(l=>l.context_id===c.context_id)),raw=original.contexts.find(c=>c.client_number===null),nodes=new Map(),node=k=>{if(!nodes.has(k))nodes.set(k,{innerHTML:'',querySelector:node,querySelectorAll:()=>[]});return nodes.get(k);},host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:()=>[]};
+ const rawEnvelope={...envelope(),kind:'recovered-native-sources'};
+ const request=async path=>{if(path.includes('/source-clients?'))return{source_scope:'dtmax-test-copy',program:'T1',imported_source_only:true,tax_cases_created:0,total:0,offset:0,available_years:[],clients:[]};if(path.endsWith('/effective/summary'))return s;if(path.includes('/effective/unassigned?'))return {...envelope(),offset:0,limit:1,total:26,records:[wrapper(held)]};if(path.includes('/unassigned?'))return {...rawEnvelope,offset:0,limit:1,total:42,records:[raw]};throw Error('Unexpected source request');};
+ const controller=environment().mount(host,{request,historicalKind:'historical-lines'});await controller.ready;await node('[data-dtmax-recovered-review]').ontoggle({target:{open:true}});assert.ok(node('[data-dtmax-recovered-content]').innerHTML.includes('16 of 16 verified links received; 54 assigned and 26 awaiting match'));await node('[data-recovered-queue-mode]').onclick();assert.ok(node('[data-dtmax-recovered-content]').innerHTML.includes('Original queue, before the optional SOURCE identity overlay'));assert.ok(node('[data-dtmax-recovered-content]').innerHTML.includes('of 42 unassigned source contexts'));assert.ok(node('[data-dtmax-recovered-content]').innerHTML.includes('Client match unresolved'));controller.dispose();
+});
+test('pending client history cannot be cancelled by early year, F2 or F9 navigation',async()=>{
+ let release;const delayed=new Promise(resolve=>{release=resolve;}),nodes=new Map(),node=k=>{if(!nodes.has(k))nodes.set(k,{innerHTML:'',value:'',querySelector:node,querySelectorAll:()=>[],focus(){}});return nodes.get(k);},host={isConnected:true,innerHTML:'',querySelector:node,querySelectorAll:()=>[]};
+ let historyStarted;const started=new Promise(resolve=>{historyStarted=resolve;});const requests=[];
+ const request=async path=>{requests.push(path);if(path.includes('/source-clients?'))return{source_scope:'dtmax-test-copy',program:'T1',imported_source_only:true,tax_cases_created:0,total:1,offset:0,available_years:[2024],clients:[{client_number:'100',name:'Synthetic',historical_years:[2024],pending_years:[]}]};
+  const u=new URL(path,'https://local.invalid');if(u.searchParams.get('limit')==='100'){historyStarted();await delayed;}return {test_copy:true,tax_cases_imported:0,kind:'historical-lines',client_number:'100',offset:0,total:0,records:[]};};
+ const c=api.mount(host,{request,historicalKind:'historical-lines'});await c.ready;const pending=c.open('100');await started;
+ assert.equal(node('[data-dtmax-year]').disabled,true);await node('[data-dtmax-year]').onchange({target:{value:'2023'}});await c.show('return');host.onkeydown({key:'F2',target:{tagName:'BUTTON'},preventDefault(){}});host.onkeydown({key:'F9',target:{tagName:'BUTTON'},preventDefault(){}});
+ assert.ok(host.innerHTML.includes('Loading source history'));assert.equal(requests.some(p=>p.includes('/return-pdfs')),false);release();await pending;assert.equal(node('[data-dtmax-year]').disabled,false);assert.ok(!host.innerHTML.includes('Loading source history'));c.dispose();
+});
