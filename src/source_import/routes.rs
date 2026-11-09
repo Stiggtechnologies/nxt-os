@@ -98,6 +98,7 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/identification-source-archives/chunks", post(test_copy_preserve_source_archive_chunk))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/identification-source-archives/profile", get(test_copy_source_archive_profile))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/identification-source-archives/additional-profile", get(test_copy_additional_source_archive_profile))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/identification-source-archives/mixed-profile", get(test_copy_mixed_source_archive_profile))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/identification-source-archives/commit", post(test_copy_commit_source_archive))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/clients/{client}/return-pdfs/{year}/{sha}/archive-chunks/{index}", get(test_copy_source_archive_chunk))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/reviewed-return-packets/profile", get(test_copy_reviewed_packet_profile))
@@ -365,3 +366,7 @@ async fn test_copy_source_paper_document_summary(State(state):S,Path(company):Pa
 async fn test_copy_parsed_native_forms(State(state):S,Path(company):Path<String>,Json(body):Json<super::parsed_native_forms::ParsedNativeBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_parsed_native_forms(&company,body).await?))}
 async fn test_copy_parsed_native_form_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_parsed_native_form_summary(&company).await?))}
 async fn test_copy_read_parsed_native_forms(State(state):S,Path(company):Path<String>,Json(body):Json<super::parsed_native_forms::ParsedNativeLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_parsed_native_forms(&company,body).await?))}
+
+async fn test_copy_mixed_source_archive_profile(State(state): S, Path(company): Path<String>) -> Result<Json<Value>, ImportError> {
+    Ok(Json(state.test_copy_mixed_source_archive_profile(&company).await?))
+}
