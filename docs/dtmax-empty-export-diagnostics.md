@@ -1,0 +1,7 @@
+Seven retained source lines report `System.Collections.Generic.KeyNotFoundException`. Independent inspection of their exact original extract contexts found five without EXR records and two containing only an 18-byte type8 control header. No Info1, individual data or calculation EXR payload appears in those seven contexts. Four original payload expansions (two controls and two adjacent auxiliary EXA bodies) passed independent expanded CRC checks.
+
+The shipped parser attempts a production group lookup even when no Info1 record created that group. This explains the stored missing-key error from static code and actual source framing; no new vendor runtime execution was used. The original error remains visible. A separate diagnostic describes only this exact saved export, with no assumption about contents of native database files.
+
+Each classification is bound to its unchanged original packet, metadata hash, source-line hash, original extract and context offset/hash. The UI applies the explanation only after normal source integrity checks and an exact metadata-hash match. Unknown contexts retain the ordinary error notice. No fields, zero figures, client identities or successful native parse state are invented. Opaque family auxiliary data stays separate and unresolved.
+
+The adjacent JSON retains the closed client-free source manifest and evidence hashes. No existing source packet, current profile, historical figure, slip or original document is modified by this display-only change.

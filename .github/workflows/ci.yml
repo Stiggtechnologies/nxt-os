@@ -36,6 +36,7 @@ jobs:
           node --test tests/dtmax_source_paper_documents.test.mjs
           node --test tests/dtmax_parsed_native_forms.test.mjs
           node --test tests/dtmax_keyword_labels.test.mjs
+          node --test tests/dtmax_export_diagnostics.test.mjs
           node --check public/apps/firm/firm.js
           node --check public/apps/engagements/engagements.js
           node --check public/apps/migrations/migrations.js
