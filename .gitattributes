@@ -22,3 +22,5 @@ src/source_import/mixed_identification_source_archive_profile.json text eol=lf
 src/source_import/archived_extract_profile.json -text
 src/source_import/archived_extract_source_bound_profile.json -text
 public/apps/tax/dtmax-archived-extract-profile.json -text
+
+public/apps/tax/dtmax-onvio85.js -text whitespace=cr-at-eol
