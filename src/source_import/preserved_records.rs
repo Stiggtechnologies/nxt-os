@@ -197,7 +197,8 @@ impl SourceImport {
         for v in unresolved {pending.entry(v.client_number).or_default().insert(v.tax_year);}
         let paper_years=self.preserved_pdf_figure_years(company).await?;
         let archive_years=self.identification_source_archive_years(company).await?;
-        let available: BTreeSet<u16>=years.values().chain(paper_years.values()).chain(archive_years.values()).flat_map(|v|v.iter().copied()).collect();
+        let recovered_years=self.recovered_native_source_years(company).await?;
+        let available: BTreeSet<u16>=years.values().chain(paper_years.values()).chain(archive_years.values()).chain(recovered_years.values()).flat_map(|v|v.iter().copied()).collect();
         let mut numbers=self.store.smembers(&k(company,"clients")).await.map_err(|e| storage(&e))?;
         numbers.sort_by(|a,b|(a.len(),a).cmp(&(b.len(),b)));
         let needle=page.search.trim().to_lowercase();let mut clients=Vec::new();let mut statuses=BTreeSet::new();let mut provinces=BTreeSet::new();
@@ -212,18 +213,24 @@ impl SourceImport {
                 let native_historical=years.get(number).cloned().unwrap_or_default();
                 let paper=paper_years.get(number).cloned().unwrap_or_default();
                 let archives=archive_years.get(number).cloned().unwrap_or_default();
-                let historical:BTreeSet<u16>=native_historical.iter().chain(paper.iter()).chain(archives.iter()).copied().collect();
+                let recovered=recovered_years.get(number).cloned().unwrap_or_default();
+                let historical:BTreeSet<u16>=native_historical.iter().chain(paper.iter()).chain(archives.iter()).chain(recovered.iter()).copied().collect();
                 if page.year.is_some_and(|y|!historical.contains(&y)) || !format!("{number} {name}").to_lowercase().contains(&needle) || page.status.as_ref().is_some_and(|s|s!=status) || page.province.as_ref().is_some_and(|s|s!=province) { continue }
                 let mut profile=serde_json::Map::new();
                 for field in ["processing_status","email","home_phone","work_phone","cell_phone","street","city","postal_code","province","country"] {
                     if let Some(value)=client.get(field).and_then(Value::as_str) { profile.insert(field.into(),json!(value)); }
                 }
                 let mut row=json!({"client_number":number,"name":name,"historical_years":historical,"pending_years":pending.get(number).cloned().unwrap_or_default(),"pending_years_at_import":pending_at_import.get(number).cloned().unwrap_or_default(),"source_profile":profile});
+                if !recovered.is_empty() {
+                    row["recovered_native_source_years"]=json!(recovered);
+                    row["native_historical_years"]=json!(native_historical);
+                    row["recovered_native_only_years"]=json!(recovered.iter().copied().filter(|y|!native_historical.contains(y) && !paper.contains(y) && !archives.contains(y)).collect::<BTreeSet<_>>());
+                }
                 if !paper.is_empty() || !archives.is_empty() {
                     row["native_historical_years"]=json!(native_historical);
                     row["preserved_pdf_figure_years"]=json!(paper);
                     if !archives.is_empty(){row["source_archive_years"]=json!(archives);}
-                    row["pdf_only_years"]=json!(paper.union(&archives).copied().filter(|y|!native_historical.contains(y)).collect::<BTreeSet<_>>());
+                    row["pdf_only_years"]=json!(paper.union(&archives).copied().filter(|y|!native_historical.contains(y) && !recovered.contains(y)).collect::<BTreeSet<_>>());
                 }
                 clients.push(row);
             }
@@ -334,6 +341,7 @@ impl SourceImport {
     /// Paginated source evidence for a stable individual client number. Pending mappings
     /// remain labelled in the returned record, and no return is recalculated or created.
     pub async fn test_copy_client_source_facts(&self, company: &str, client: &str, page: SourceFactPage) -> Result<Value> {
+        if page.kind=="recovered-native-sources" {return self.test_copy_client_recovered_native_sources(company,client,page).await}
         if page.kind=="parsed-native-forms" {return self.test_copy_client_parsed_native_forms(company,client,page).await}
         if page.kind=="source-paper-documents" {return self.test_copy_client_source_paper_documents(company,client,page).await}
         if page.kind=="source-summary-figures" {return self.test_copy_client_source_summary_figures(company,client,page).await}

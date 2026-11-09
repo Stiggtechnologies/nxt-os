@@ -22,6 +22,7 @@ pub mod native_module_reviews;
 pub mod native_historical_variants;
 pub mod legacy_owner_links;
 pub mod legacy_family_lineage;
+pub mod recovered_native_sources;
 
 use crate::store::Store;
 use axum::http::StatusCode;

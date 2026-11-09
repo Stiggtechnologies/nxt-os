@@ -139,5 +139,8 @@
 @media print { .dtmax-workspace { display: none; } }
 .dtmax-source-value{white-space:pre-wrap;overflow-wrap:anywhere}.dtmax-native-slip{margin:12px 0}.dtmax-native-slip th{max-width:34rem}.dtmax-native-slip th small{display:block;font-weight:normal}
 .dtmax-native-slip td small { display: block; margin: 2px 0 6px; font-size: 11px; color: #607187; }
+.dtmax-workspace [data-dtmax-recovered-review] { margin: 12px 20px 0; border: 1px solid var(--dtmax-line); border-radius: 8px; background: #fff; }
+.dtmax-workspace [data-dtmax-recovered-review] > summary { padding: 10px 12px; color: #465465; background: var(--dtmax-surface); cursor: pointer; font-weight: 500; }
+.dtmax-workspace [data-dtmax-recovered-content] p { color: var(--dtmax-muted); font-size: 12px; line-height: 1.6; }
 
 .dtmax-workspace .table-wrap td.dtmax-raw-source-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 180px; }
