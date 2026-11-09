@@ -33,7 +33,9 @@ function harness(rows){
   if(index===0&&hold===r.tax_year){started?.();return new Promise(resolve=>{resolveHeld=()=>resolve(response);});}
   return response;
  };
- const controller=context.NXTDTMaxT1.mount(host,{request});
+ // This synthetic document harness explicitly exercises the preserved reader
+ // lane; private exact-inventory projections cover the production default.
+ const controller=context.NXTDTMaxT1.mount(host,{request,historicalKind:'historical-lines'});
  return {node,host,controller,blobs,api:context.NXTDTMaxT1,get created(){return created;},fault(v){fault=v;},hold(year,signal){hold=year;started=signal;},release(){resolveHeld();}};
 }
 

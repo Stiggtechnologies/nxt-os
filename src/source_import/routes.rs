@@ -76,6 +76,9 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-slip-views/summary", get(test_copy_native_slip_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/family-files", post(test_copy_family_files))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/historical-lines", post(test_copy_historical_lines))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/wire-exact-historical-lines", post(test_copy_wire_exact_historical_lines).layer(axum::extract::DefaultBodyLimit::max(1024 * 1024)))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/wire-exact-historical-lines/read", post(test_copy_read_wire_exact_historical_lines))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/wire-exact-historical-lines/summary", get(test_copy_wire_exact_historical_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/afr-slips", post(test_copy_afr_slips))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-fact-summary", get(test_copy_source_fact_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-facts/read", post(test_copy_read_source_facts))
@@ -299,6 +302,9 @@ async fn test_copy_native_historical_variants(State(state):S,Path(company):Path<
 async fn test_copy_read_native_historical_variants(State(state):S,Path(company):Path<String>,Json(body):Json<super::native_historical_variants::HistoricalVariantLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_native_historical_variants(&company,body).await?))}
 async fn test_copy_native_historical_variant_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_native_historical_variant_summary(&company).await?))}
 async fn test_copy_recovered_native_sources(State(state):S,Path(company):Path<String>,Json(body):Json<super::recovered_native_sources::RecoveredNativeBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_recovered_native_sources(&company,body).await?))}
+async fn test_copy_wire_exact_historical_lines(State(state):S,Path(company):Path<String>,Json(body):Json<super::wire_exact_historical_lines::WireExactBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_wire_exact_historical_lines(&company,body).await?))}
+async fn test_copy_read_wire_exact_historical_lines(State(state):S,Path(company):Path<String>,Json(body):Json<super::wire_exact_historical_lines::WireExactLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_wire_exact_historical_lines(&company,body).await?))}
+async fn test_copy_wire_exact_historical_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_wire_exact_historical_summary(&company).await?))}
 async fn test_copy_read_recovered_native_sources(State(state):S,Path(company):Path<String>,Json(body):Json<super::recovered_native_sources::RecoveredNativeLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_recovered_native_sources(&company,body).await?))}
 async fn test_copy_recovered_native_source_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_recovered_native_source_summary(&company).await?))}
 async fn test_copy_unassigned_recovered_native_sources(State(state):S,Path(company):Path<String>,Query(page):Query<super::recovered_native_sources::RecoveredNativePage>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_unassigned_recovered_native_sources(&company,page).await?))}
