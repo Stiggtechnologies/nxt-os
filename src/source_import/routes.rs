@@ -60,6 +60,11 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-family-lineage", post(test_copy_legacy_family_lineage))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-family-lineage/read", post(test_copy_read_legacy_family_lineage))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/legacy-family-lineage/summary", get(test_copy_legacy_family_lineage_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources", post(test_copy_recovered_native_sources).layer(axum::extract::DefaultBodyLimit::max(3 * 1024 * 1024)))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/read", post(test_copy_read_recovered_native_sources))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/summary", get(test_copy_recovered_native_source_summary))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/unassigned", get(test_copy_unassigned_recovered_native_sources))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/evidence", get(test_copy_recovered_native_evidence))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-exceptions", post(test_copy_preserve_source_exception).get(test_copy_source_exceptions))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/source-exceptions/{archive}/{offset}", get(test_copy_source_exception_content))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/native-slip-views", post(test_copy_native_slip_views))
@@ -293,6 +298,11 @@ async fn test_copy_native_module_review_summary(State(state):S,Path(company):Pat
 async fn test_copy_native_historical_variants(State(state):S,Path(company):Path<String>,Json(body):Json<super::native_historical_variants::HistoricalVariantBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_native_historical_variants(&company,body).await?))}
 async fn test_copy_read_native_historical_variants(State(state):S,Path(company):Path<String>,Json(body):Json<super::native_historical_variants::HistoricalVariantLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_native_historical_variants(&company,body).await?))}
 async fn test_copy_native_historical_variant_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_native_historical_variant_summary(&company).await?))}
+async fn test_copy_recovered_native_sources(State(state):S,Path(company):Path<String>,Json(body):Json<super::recovered_native_sources::RecoveredNativeBatch>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_recovered_native_sources(&company,body).await?))}
+async fn test_copy_read_recovered_native_sources(State(state):S,Path(company):Path<String>,Json(body):Json<super::recovered_native_sources::RecoveredNativeLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_recovered_native_sources(&company,body).await?))}
+async fn test_copy_recovered_native_source_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_recovered_native_source_summary(&company).await?))}
+async fn test_copy_unassigned_recovered_native_sources(State(state):S,Path(company):Path<String>,Query(page):Query<super::recovered_native_sources::RecoveredNativePage>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_unassigned_recovered_native_sources(&company,page).await?))}
+async fn test_copy_recovered_native_evidence(State(state):S,Path(company):Path<String>,Query(page):Query<super::recovered_native_sources::RecoveredNativePage>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_recovered_native_evidence(&company,page).await?))}
 async fn test_copy_source_clients(State(state): S, Path(company): Path<String>, Query(page): Query<super::preserved_records::SourceClientPage>) -> Result<Json<Value>, ImportError> {
     Ok(Json(state.test_copy_source_clients(&company,page).await?))
 }

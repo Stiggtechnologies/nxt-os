@@ -10,3 +10,5 @@ src/source_import/preserved_pdf_line_authority.json text eol=lf
 src/source_import/parsed_native_form_profile.json text eol=lf
 public/apps/tax/dtmax-keywords/*.json text eol=lf
 docs/dtmax-empty-export-classifications.json -text
+public/apps/tax/dtmax-recovered-native-profile.json -text
+src/source_import/recovered_native_source_profile.json -text
