@@ -361,6 +361,7 @@ impl SourceImport {
     pub async fn test_copy_client_source_facts(&self, company: &str, client: &str, page: SourceFactPage) -> Result<Value> {
         if page.kind=="wire-exact-historical-lines" {return self.test_copy_client_wire_exact_historical_lines(company,client,page).await}
         if page.kind=="recovered-native-sources" {return self.test_copy_client_recovered_native_sources(company,client,page).await}
+        if page.kind=="archived-extract-sources" {return self.test_copy_client_archived_extract_sources(company,client,page).await}
         if page.kind=="recovered-native-effective-sources" {return self.test_copy_effective_recovered_page(company,Some(client),super::recovered_native_sources::RecoveredNativePage{offset:page.offset,limit:page.limit,source_return_year:page.source_return_year,_routing_path:None}).await}
         if page.kind=="parsed-native-forms" {return self.test_copy_client_parsed_native_forms(company,client,page).await}
         if page.kind=="source-paper-documents" {return self.test_copy_client_source_paper_documents(company,client,page).await}
