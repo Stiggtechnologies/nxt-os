@@ -111,3 +111,15 @@ test('T2 Start rejects answers, name or carry choice changed during fresh catalo
   w.releaseCatalog();await pending;assert.match(w.nodes.get('#t2err').textContent,/form changed while checking readiness/);assert.equal(w.calls.filter(c=>c.path==='/api/tax/t2/intake/start').length,0);assert.ok(!w.calls.some(c=>c.options.method==='PUT'||c.path.endsWith('/calculate')));
  }
 });
+
+
+test('resolved or disconnected Rollforward modal cannot POST after a pending catalog finishes',async()=>{
+ for(const closure of ['resolved-false','disconnected']){
+  const w=workspace();w.api.state.record={id:'TEST-prior',revision:1,program:'T1',jurisdiction:'AB',tax_year:2025,name:'Synthetic prior'};w.api.state.dirty=false;const action=w.api.rollforward();await new Promise(setImmediate);const m=w.modal();m.controls.get('tax_year').value='2026';w.pauseCatalog();const submit=m.form.onsubmit({preventDefault(){}});await new Promise(setImmediate);if(closure==='disconnected')m.form.isConnected=false;else{m.resolve(false);await new Promise(setImmediate);}w.releaseCatalog();await submit;assert.equal(w.calls.filter(c=>c.opts?.body).length,0);if(closure==='disconnected')m.resolve(false);await action;
+ }
+});
+test('detached T2 intake main or Start button cannot create after the catalog await',async()=>{
+ for(const closure of ['main','button']){
+  const answers={incorporated:true,location:'AB',period_start:'2026-01-01',period_end:'2026-12-31',had_income:true},w=guidedWorkspace(guidedRecord(2025,'AB'),answers);await w.ctx.NXTTurbo.route('tt-t2',null,'',w.main);w.main.querySelector('#tname').value='Synthetic T2';w.pauseCatalog();const pending=w.nodes.get('#startt2').handlers.get('click')();await new Promise(setImmediate);if(closure==='main')w.main.isConnected=false;else w.nodes.get('#startt2').isConnected=false;w.releaseCatalog();await pending;assert.equal(w.calls.filter(c=>c.path==='/api/tax/t2/intake/start').length,0);
+ }
+});

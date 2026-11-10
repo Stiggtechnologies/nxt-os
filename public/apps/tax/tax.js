@@ -112,6 +112,7 @@
   function setStorage(value) { $("#backend").textContent = ({ supabase: "Persistent storage · Supabase", redis: "Persistent storage · Redis", memory: "Development storage · resets on restart", unavailable: "Storage unavailable" })[value] || "Shared workspace"; }
   async function dialog(title, content, save, label = "Save", wide = false) {
     const previous = document.activeElement;
+    let dialogActive=true;
     return modal(title, (el, close) => {
       el.innerHTML = `<form>${content}<p class="form-error" role="alert" hidden></p><div class="actions"><button class="btn" type="button" data-cancel>Cancel</button><button class="btn primary" type="submit">${esc(label)}</button></div></form>`;
       const form = $("form", el), cancel = $("[data-cancel]", form), submit = $("button[type=submit]", form);
@@ -122,7 +123,7 @@
         event.preventDefault(); if (form.dataset.busy || !form.reportValidity()) return;
         form.dataset.busy = "true"; submit.disabled = true; cancel.disabled = true;
         const error = $(".form-error", form); error.hidden = true;
-        try { await save(new FormData(form), form); close(true); }
+        try { await save(new FormData(form), form,()=>dialogActive&&form.isConnected!==false); close(true); }
         catch (e) { error.textContent = e.message; error.hidden = false; }
         finally { delete form.dataset.busy; submit.disabled = false; cancel.disabled = false; }
       };
@@ -136,7 +137,7 @@
       });
       const backdrop = el.closest(".modal-back");
       backdrop.addEventListener("mousedown", event => { if (form.dataset.busy && event.target === backdrop) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
-    }, { wide }).then(saved => { if (previous?.isConnected) previous.focus(); return saved; });
+    }, { wide }).then(saved => { dialogActive=false; if (previous?.isConnected) previous.focus(); return saved; });
   }
   function showInfo(title, content) {
     return modal(title, (el, close) => { el.innerHTML = content + '<div class="actions"><button class="btn primary" data-done>Done</button></div>'; $("[data-done]", el).onclick = () => close(); }, { wide: true });
@@ -456,11 +457,11 @@
     const destination=draftDestination(catalog,source.program,Number(source.tax_year)+1,source.jurisdiction);
     state.rollforwardPreview={catalog,source};
     let created;
-    const saved = await dialog("Roll forward profile draft", `<p class="form-note">Create a separate profile draft for the next year. A draft container does not establish calculation or browser-entry readiness.</p><div class="form">${field("New tax year", input("tax_year", Number(source.tax_year) + 1, "number", 'min="2000" max="2100" required data-rollforward-year'))}${field("New workpaper name", input("name", source.name, "text", 'required maxlength="160"'))}</div><div class="compact-info" data-rollforward-readiness>${draftDestinationHtml(destination)}</div>`, async (fd,form) => {
+    const saved = await dialog("Roll forward profile draft", `<p class="form-note">Create a separate profile draft for the next year. A draft container does not establish calculation or browser-entry readiness.</p><div class="form">${field("New tax year", input("tax_year", Number(source.tax_year) + 1, "number", 'min="2000" max="2100" required data-rollforward-year'))}${field("New workpaper name", input("name", source.name, "text", 'required maxlength="160"'))}</div><div class="compact-info" data-rollforward-readiness>${draftDestinationHtml(destination)}</div>`, async (fd,form,dialogCurrent) => {
       const submitted={year:Number(fd.get("tax_year")),name:fd.get("name").trim()};
       if(!rollforwardSourceCurrent(source))throw Error("The source workpaper changed. Open Rollforward again.");
       const fresh=await request("/catalog");
-      if(!rollforwardSourceCurrent(source) || Number($("[name=tax_year]",form).value)!==submitted.year || $("[name=name]",form).value.trim()!==submitted.name)throw Error("The source or destination form changed while checking readiness. Review the destination and try again.");
+      if(!dialogCurrent() || !rollforwardSourceCurrent(source) || Number($("[name=tax_year]",form).value)!==submitted.year || $("[name=name]",form).value.trim()!==submitted.name)throw Error("The source or destination form changed while checking readiness. Review the destination and try again.");
       refreshRollforwardPreview(form,fresh,source);
       created = await request(`/returns/${pid(source.id)}/rollforward`, { body: { expected_revision: source.revision, tax_year: submitted.year, name: submitted.name } });
     }, destination.entry?"Create next-year draft":"Create read-only next-year draft");
