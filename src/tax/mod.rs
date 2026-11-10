@@ -2,6 +2,7 @@
 pub mod calculations;
 pub mod catalog;
 pub mod coverage;
+pub mod reports;
 pub mod corporate;
 pub mod models;
 pub mod parallel;

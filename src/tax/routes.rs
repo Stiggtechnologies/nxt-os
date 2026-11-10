@@ -42,6 +42,8 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/families/{id}/optimize",post(family_optimize))
         .route("/api/tax/families/{id}/accept",post(family_accept))
         .route("/api/tax/slips/catalog",get(slips_catalog))
+        .route("/api/tax/reports/catalog",get(report_catalog))
+        .route("/api/tax/reports/preview",post(report_preview))
         .route("/api/tax/t2/intake",post(t2_intake))
         .route("/api/tax/t2/intake/start",post(t2_intake_start))
         .route("/api/tax/import/preview",post(preview))
@@ -66,6 +68,8 @@ pub fn router(tax: Arc<Tax>) -> Router {
 }
 
 async fn catalog() -> R { ok(super::catalog::catalog()) }
+async fn report_catalog()->R {ok(super::reports::catalog())}
+async fn report_preview(State(t):S,identity:Option<axum::Extension<crate::firm::staff::Identity>>,Json(input):Json<super::reports::ReportRequest>)->R {ok(t.report(input,identity.as_ref().map(|x|&x.0)).await?)}
 async fn capabilities() -> R { ok(Tax::capabilities()) }
 async fn summary(State(t):S) -> R { ok(t.summary().await?) }
 #[derive(Deserialize)] struct Filter { program:Option<String> }
@@ -185,6 +189,8 @@ async fn t2_schedules(Json(input):Json<super::t2_schedules::T2Input>) -> R { ok(
 async fn t183_draft(State(t):S,Path(id):Path<String>) -> R { let r=t.get(&id).await?; ok(super::t183::draft(&r).map_err(|e|conflict(&e))?) }
 
 async fn client_scope(State(t): S, req: axum::extract::Request, next: middleware::Next) -> Response {
+    // Report projection applies the verified identity before every filter or selected field.
+    if ["/api/tax/reports/catalog","/api/tax/reports/preview"].contains(&req.uri().path()) {return next.run(req).await}
     crate::firm::staff::scope_guard(req, next, "/api/tax/returns", &["/api/tax/catalog", "/api/tax/capabilities", "/api/tax/rates", "/api/tax/t2/schedules", "/api/tax/t5013/cca", "/api/tax/slips/catalog", "/api/tax/slips/aggregate", "/api/tax/desk/me", "/api/tax/desk/queue", "/api/tax/desk/log", "/api/tax/desk/step-up/sms", "/api/tax/desk/launch"],
         |id| async move { t.get(&id).await.ok().map(|r| r.client_ref) }).await
 }

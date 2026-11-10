@@ -528,7 +528,9 @@ fn reviewer_action(method: &Method, path: &str, body: &Value) -> bool {
 pub fn check_policy(id: &Identity, method: &Method, path: &str, body: &Value) -> Result<(), String> {
     if self_service(path) { return Ok(()); }
     if !id.break_glass && !id.mfa { return Err("finish MFA enrollment before using the workspace".into()); }
-    let read = matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS);
+    // A report preview reads a scoped snapshot; its JSON filters do not mutate a workpaper.
+    let read = matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
+        || (*method == Method::POST && path == "/api/tax/reports/preview");
     if path.starts_with("/api/staff/") { return if id.role == Role::Admin { Ok(()) } else { Err("staff accounts are managed by an admin".into()) }; }
     if read { return Ok(()); }
     match id.role {

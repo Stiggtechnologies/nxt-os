@@ -7,7 +7,7 @@
   const main = $("#main"), API = "/api/tax";
   const state = { catalog: null, program: "", year: "", returns: [], record: null, draft: null, section: "", dirty: false, errors: {}, search: "", status: "", preview: null, audit: [], version: 0 };
   const request = (path, options) => api(API + path, options);
-  let sourceWorkspace=null,sourcePreparationAttempt=0,sourceWorkspaceEpoch=0;
+  let sourceWorkspace=null,sourcePreparationAttempt=0,sourceWorkspaceEpoch=0,reportWorkspace=null;
   window.NXTCompany?.onChange?.(()=>{sourceWorkspaceEpoch++;});
   window.addEventListener("storage",e=>{if(e.key===window.NXTCompany?.KEY)sourceWorkspaceEpoch++;});
   const list = value => Array.isArray(value) ? value : [];
@@ -663,10 +663,11 @@
     const hash = location.hash.slice(1) || "worklist", [path, query = ""] = hash.split("?"), [view, id] = path.split("/");
     if (state.dirty && hash !== state.loadedHash && !await confirmDiscard()) { history.replaceState(null, "", "#" + state.loadedHash); if (window.parent !== window) window.parent.postMessage({ nxt: "view", view: state.loadedHash }, location.origin); return; }
     const version = ++state.version; state.loadedHash = hash;
+    reportWorkspace?.dispose(); reportWorkspace=null;
     if (window.parent !== window) window.parent.postMessage({ nxt: "view", view: hash }, location.origin);
     $$("[data-nav]").forEach(a => a.setAttribute("aria-current", a.dataset.nav === (view === "return" ? "worklist" : view) ? "page" : "false"));
     main.setAttribute("aria-busy", "true"); main.innerHTML = '<div class="loading"><span class="spinner"></span>Loading tax workspace…</div>';
-    try { if (view.startsWith("tt-") && window.NXTTurbo) await window.NXTTurbo.route(view, id, query, main); else if (view === "return" && id) await returnWorkspace(version, id); else if (view === "import") { await importPage(version); const previewId = new URLSearchParams(query).get("preview"); if (previewId) await loadImportHandoff(version, previewId); } else if (view === "audit") await auditPage(version); else if (view === "capabilities") await capabilitiesPage(version); else await worklist(version); }
+    try { if (view==="reports"&&window.NXTTaxReports) {state.record=null;state.draft=null;state.dirty=false;renderPrograms();main.classList.remove("workspace-mode");reportWorkspace=NXTTaxReports.mount(main,{request:api,isCurrent:()=>version===state.version});await reportWorkspace.ready;} else if (view.startsWith("tt-") && window.NXTTurbo) await window.NXTTurbo.route(view, id, query, main); else if (view === "return" && id) await returnWorkspace(version, id); else if (view === "import") { await importPage(version); const previewId = new URLSearchParams(query).get("preview"); if (previewId) await loadImportHandoff(version, previewId); } else if (view === "audit") await auditPage(version); else if (view === "capabilities") await capabilitiesPage(version); else await worklist(version); }
     catch (e) { if (version !== state.version) return; if (e.status === 401) await signIn(); else { main.classList.remove("workspace-mode"); main.innerHTML = `<div class="card"><h2>This view couldn't load.</h2><p class="form-error">${esc(e.message)}</p>${button("Try again", "refresh")} <a class="btn" href="#worklist">Return to worklist</a></div>`; } }
     finally { if (version === state.version) main.removeAttribute("aria-busy"); }
   }
