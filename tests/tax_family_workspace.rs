@@ -54,6 +54,28 @@ async fn unavailable_year_locked_return_and_removed_fields_fail_closed() {
 }
 
 #[tokio::test]
+async fn paired_editor_preserves_unrepresented_saved_fields_without_allowing_new_or_changed_values(){
+    let store=Store::memory();let t=Tax::new(store.clone());
+    let mut input=serde_json::to_value(ReturnInput::from(&add(&t,"Synthetic-template",2025,"A").await)).unwrap();
+    input["name"]=json!("Synthetic grouped pension");input["slip_groups"]=json!([{"kind":"T4A","issuer":"Synthetic payer","boxes":{"016":12345}}]);input["inputs"]["legacy_unrepresented_note"]=json!({"original":"Synthetic retained field"});
+    let a=t.save(None,serde_json::from_value(input).unwrap()).await.ok().unwrap();let b=add(&t,"Synthetic spouse",2025,"A").await;
+    let w=t.save_family_members(None,link(&a,&b)).await.ok().unwrap();assert_eq!(w["paired_entry_available"],true);
+    let fid=w["family"]["id"].as_str().unwrap();let before=store.get("tax:state:v1").await.unwrap();
+    for mode in ["change","change_unknown","add","remove"] {let mut i=inputs(&w);match mode {
+        "change"=>i.primary_inputs["pension_income_cents"]=json!(12346),
+        "change_unknown"=>i.primary_inputs["legacy_unrepresented_note"]=json!({"original":"Changed"}),
+        "remove"=>{i.primary_inputs.as_object_mut().unwrap().remove("legacy_unrepresented_note");},
+        _=>i.primary_inputs["unknown_unverified_new_key"]=json!(1)
+    }
+        assert!(t.save_family_pair(fid,i).await.is_err());assert_eq!(store.get("tax:state:v1").await.unwrap(),before);
+    }
+    let mut i=inputs(&w);i.primary_inputs["instalments_cents"]=json!(7);let saved=t.save_family_pair(fid,i).await.ok().unwrap();
+    assert_eq!(saved["primary"]["inputs"]["pension_income_cents"],12345);assert_eq!(saved["primary"]["inputs"]["instalments_cents"],7);
+    assert_eq!(saved["primary"]["inputs"]["legacy_unrepresented_note"],w["primary"]["inputs"]["legacy_unrepresented_note"]);
+    assert_eq!(saved["primary"]["slip_groups"],serde_json::to_value(a.slip_groups).unwrap());
+}
+
+#[tokio::test]
 async fn family_http_routes_authorize_both_members_and_filter_before_counts(){
     use axum::{body::Body,http::Request};use tower::ServiceExt;use std::sync::Arc;use nxt_os::firm::staff;
     unsafe{std::env::set_var("ADMIN_API_KEY","family-test-key");std::env::set_var("NXT_STAFF_PBKDF2_ITERATIONS","1000");}

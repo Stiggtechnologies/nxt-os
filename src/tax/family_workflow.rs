@@ -80,7 +80,12 @@ fn editable_inputs(r:&TaxReturn,v:&Value)->TResult<()> {
     let catalog=super::catalog::catalog();let p=catalog["programs"].as_array().unwrap().iter().find(|p|p["id"]=="T1").unwrap();
     let o=v.as_object().ok_or_else(||bad("Paired inputs must be objects"))?;
     for (k,value) in o {
-        let field=p["sections"].as_array().unwrap().iter().flat_map(|s|s["fields"].as_array().unwrap()).find(|f|f["key"]==k.as_str()).ok_or_else(||bad("Unknown or unverified paired input field"))?;
+        let Some(field)=p["sections"].as_array().unwrap().iter().flat_map(|s|s["fields"].as_array().unwrap()).find(|f|f["key"]==k.as_str()) else {
+            // Simpler paired entry preserves existing fields it cannot edit, including
+            // values derived from supported saved slip groups. It cannot add/change them.
+            if r.inputs.get(k)==Some(value){continue;}
+            return Err(bad("Unknown or unverified paired input field"));
+        };
         let valid=match field["kind"].as_str().unwrap_or("") {
             "boolean"=>value.is_boolean(),"money"=>value.as_i64().is_some_and(|n|(0..=100_000_000_000_000).contains(&n)),
             "number"=>value.as_i64().is_some(),"text"|"choice"=>value.is_string(),_=>false};
