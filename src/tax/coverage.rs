@@ -65,7 +65,8 @@ pub fn catalog() -> Value {
         "schema":SCHEMA,"version":VERSION,"years":YEARS,"programs":PROGRAMS,"jurisdictions":JURISDICTIONS,
         "engine_years":engine_years(),"browser_entry_years":[2025],"scopes":scopes,
         "statement":"Availability identifies a bounded calculation path, not support for every tax situation. Each saved calculation must pass its own scope confirmations and diagnostics. No complete return, certification or filing is claimed.",
-        "browser_entry_statement":"The browser creates only the verified 2025 baseline workpaper templates. Limited 2026 calculation paths exist, including Quebec, but their year-specific browser fields, help and defaults are not yet verified. They are listed for information only; no 2025 defaults are reused for 2026.",
+        "browser_entry_statement":"New-return templates and the T1 interview use verified 2025 entry forms. Limited 2026 engine paths are listed read-only until their entry forms are verified. Profile-only Rollforward and T2 intake may create other-year draft containers; those drafts do not enable an editor or calculation scope and do not reuse 2025 defaults.",
+        "profile_only_draft_paths":["rollforward","t2_intake"],"draft_container_is_not_entry_or_calculation_readiness":true,
         "unlisted_scope_available":false,"source_years_are_not_calculation_coverage":true,"source_values_auto_mapped":false,
         "certified":false,"filing_supported":false,"full_DTMax_parity":false,
     })

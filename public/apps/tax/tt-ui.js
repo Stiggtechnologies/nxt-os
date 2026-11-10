@@ -15,6 +15,14 @@
     const rows=c.scopes.filter(x=>x.program===r.program && x.tax_year===r.tax_year && x.jurisdiction===r.jurisdiction),row=rows.length===1?rows[0]:null;
     return !!row && row.engine_scope_available===true && row.browser_entry_available===true && row.entry_state==="verified_baseline_schema" && row.entry_schema_id===p?.entry_schema_id && p?.entry_schema_id===`nxt-tax-entry/T1/${C.TAX_YEAR}/v1` && row.entry_schema_year===p?.entry_schema_year && row.tax_year===p?.entry_schema_year;
   }
+  function draftReadiness(catalog,program,year,jurisdiction) {
+    const c=catalog?.coverage,known=c?.schema==="nxt-tax-coverage/v1"&&c.version==="2026-11-09.1",rows=known&&Array.isArray(c.scopes)?c.scopes.filter(r=>r.program===program&&r.tax_year===year&&r.jurisdiction===jurisdiction):[],row=rows.length===1?rows[0]:null,p=Array.isArray(catalog?.programs)?catalog.programs.find(p=>p.id===program):null;
+    return {program,year,jurisdiction,known,engine:known&&row?.engine_scope_available===true,entry:known&&row?.browser_entry_available===true&&row.entry_state==="verified_baseline_schema"&&row.entry_schema_id===p?.entry_schema_id&&row.entry_schema_year===p?.entry_schema_year&&row.tax_year===p?.entry_schema_year};
+  }
+  function t2DraftDestination(catalog,answers) { return draftReadiness(catalog,"T2",/^\d{4}-\d{2}-\d{2}$/.test(answers.period_end||"")?Number(answers.period_end.slice(0,4)):null,answers.location||"Not selected"); }
+  function t2DraftReadinessHtml(d) {
+    return `<p><strong>Profile draft destination: ${esc(d.year??"Choose a period")} · ${esc(d.jurisdiction)}</strong><br>Limited calculation path: ${d.known?(d.engine?'available, subject to scope checks':'not available for this scope'):'readiness not verified'}.<br>Input entry: ${d.entry?'verified form available':'Read-only draft · entry form unavailable'}.</p><p>This creates a profile-only draft, without a current calculation or approval. Its inputs are empty or carried closing-to-opening balances that still need verification; yearly template defaults are not added.</p>`;
+  }
   async function requireGuidedEntry(r) {
     const catalog=await api("/api/tax/catalog");
     if(!guidedEntryAvailable(catalog,r))throw Error("The guided entry form is unavailable for this program, year and jurisdiction. Saved inputs remain unchanged.");
@@ -168,11 +176,17 @@
 
   // ---- One-page T2 intake.
   async function t2(main) {
-    let answers = {}, evald = null;
+    let answers = {}, evald = null, catalog = null;
     const yn = (name, v) => `<div class="tt-yn"><label><input type="radio" name="${name}" value="yes"${v === true ? " checked" : ""}> Yes</label><label><input type="radio" name="${name}" value="no"${v === false ? " checked" : ""}> No</label></div>`;
-    async function refresh() { evald = await api("/api/tax/t2/intake", { body: answers }); draw(); }
+    let evaluationAnswers=null,evaluationVersion=0;
+    async function refresh() {
+      const version=++evaluationVersion,snapshot=structuredClone(answers),signature=JSON.stringify(snapshot);
+      const result=await Promise.all([api("/api/tax/t2/intake", { body:snapshot }),api("/api/tax/catalog")]);
+      if(version!==evaluationVersion || JSON.stringify(answers)!==signature)return;
+      [evald,catalog]=result;evaluationAnswers=signature;draw();
+    }
     function draw() {
-      const vis = new Set(C.t2Visible(evald.next, answers)), e = evald.errors || {}, o = evald.outcome;
+      const vis = new Set(C.t2Visible(evald.next, answers)), e = evald.errors || {}, o = evald.outcome,destination=t2DraftDestination(catalog,answers);
       const blocking = (evald.dialogs || []).filter(d => d.blocking), cf = (evald.dialogs || []).find(d => d.kind === "carry_forward");
       main.innerHTML = banner() + `<section class="tt-card tt-t2"><h1>Corporate return (T2) intake</h1><p>Answer each question; the next one appears below.</p>
         <label>Client reference (optional, for duplicate checks)<input id="cref" value="${esc(answers.client_ref || "")}" maxlength="120"></label>
@@ -182,9 +196,9 @@
         ${blocking.map(d => `<div class="tt-dialog" role="alertdialog"><strong>${d.kind === "overlapping_period" ? "Overlapping tax year" : "Tax year locked"}</strong><p>${esc(d.message)}</p>${d.return_id ? `<a class="btn sm" href="#return/${encodeURIComponent(d.return_id)}">Open that return</a>` : ""}</div>`).join("")}
         ${vis.has("income") ? `<fieldset data-step="income"><legend>Did the corporation earn any income in this tax year?</legend>${yn("had_income", answers.had_income)}</fieldset>` : ""}
         ${vis.has("expenses") ? `<fieldset data-step="expenses"><legend>Any expenses other than professional fees, bank charges or office expenses?</legend>${yn("other_expenses", answers.other_expenses)}</fieldset>` : ""}
-        ${o ? `<div class="tt-result tt-${esc(o.route)}"><h2>${esc(o.label)}</h2><p>${esc(o.message)}</p>${o.schedules ? `<ul>${o.schedules.map(s => `<li>${esc(s)}</li>`).join("")}</ul><p class="tt-hint">${esc(o.engine)}</p>` : ""}
+        ${o ? `<div class="tt-result tt-${esc(o.route)}"><h2>${esc(o.label)}</h2><p>${esc(o.message)}</p>${o.schedules ? `<ul>${o.schedules.map(s => `<li>${esc(s)}</li>`).join("")}</ul><p class="tt-hint">This is a preparation route. Destination readiness is listed below; creating the draft does not calculate tax.</p>` : ""}
           ${o.route === "t1_self_employment" ? `<a class="btn primary" href="#tt-start">Start the T1 interview</a>` : ""}
-          ${(o.route === "full_t2" || o.route === "nil_t2") && !blocking.length ? `${cf ? `<div class="tt-dialog"><strong>Carry forward last year?</strong><p>${esc(cf.message)}${cf.prior_in_progress ? " The prior-year return is still in progress." : ""}</p><label><input type="checkbox" id="cf" checked> Carry forward from the prior-year T2</label></div>` : ""}<label>Workpaper name<input id="tname" value="Example Corporation 001 T2" maxlength="120"></label><button class="btn primary" id="startt2">Start this T2 workpaper</button>` : ""}</div>` : ""}
+          ${(o.route === "full_t2" || o.route === "nil_t2") && !blocking.length ? `${cf ? `<div class="tt-dialog"><strong>Carry forward last year?</strong><p>${esc(cf.message)}${cf.prior_in_progress ? " The prior-year return is still in progress." : ""}</p><label><input type="checkbox" id="cf" checked> Carry forward from the prior-year T2</label></div>` : ""}<label>Workpaper name<input id="tname" value="Example Corporation 001 T2" maxlength="120"></label><div class="tt-hint" data-t2-destination>${t2DraftReadinessHtml(destination)}</div><button class="btn primary" id="startt2">${destination.entry?"Create T2 profile draft":"Create read-only T2 profile draft"}</button>` : ""}</div>` : ""}
         <details class="tt-gt2"><summary>Import from another program (.GT2)</summary><input type="file" id="gt2" accept=".gt2,.GT2"><p id="gt2msg" class="tt-hint"></p></details><p class="form-error" id="t2err"></p></section>`;
       const set = (step, patch) => { answers = C.t2Answer(answers, step, patch); refresh().catch(x => main.querySelector("#t2err").textContent = x.message); };
       main.querySelector("#cref").addEventListener("change", ev => { answers.client_ref = ev.target.value.trim(); refresh(); });
@@ -192,7 +206,13 @@
       const loc = main.querySelector("select[name=location]"); if (loc) loc.addEventListener("change", () => set("location", { location: loc.value || undefined }));
       const pb = main.querySelector("[data-period]"); if (pb) pb.addEventListener("click", () => set("period", { period_start: main.querySelector("[name=period_start]").value || undefined, period_end: main.querySelector("[name=period_end]").value || undefined }));
       main.querySelector("#gt2").addEventListener("change", () => { main.querySelector("#gt2msg").innerHTML = esc(evald.gt2_import.message) + ' <a href="#import">Open Import</a>'; });
-      const sb = main.querySelector("#startt2"); if (sb) sb.addEventListener("click", async () => { try { const useCf = cf && main.querySelector("#cf")?.checked; const r = await api("/api/tax/t2/intake/start", { body: { answers, name: main.querySelector("#tname").value, carry_forward_from: useCf ? cf.return_id : null } }); location.hash = "#return/" + encodeURIComponent(r.return.id); } catch (x) { main.querySelector("#t2err").textContent = x.message; } });
+      const sb = main.querySelector("#startt2"); if (sb) sb.addEventListener("click", async () => { try {
+        const snapshot=structuredClone(answers),signature=JSON.stringify(snapshot),name=main.querySelector("#tname").value,useCf=!!(cf && main.querySelector("#cf")?.checked),carryFrom=useCf?cf.return_id:null,evaluation=evald;
+        if(signature!==evaluationAnswers)throw Error("Intake answers changed. Wait for the destination preview before starting.");
+        const fresh=await api("/api/tax/catalog");
+        if(main.isConnected===false || sb.isConnected===false || JSON.stringify(answers)!==signature || evaluationAnswers!==signature || evald!==evaluation || main.querySelector("#startt2")!==sb || main.querySelector("#tname").value!==name || !!(cf && main.querySelector("#cf")?.checked)!==useCf || (useCf?cf?.return_id:null)!==carryFrom)throw Error("The intake or destination form changed while checking readiness. Review it and try again.");
+        catalog=fresh;const currentDestination=t2DraftDestination(catalog,snapshot);main.querySelector("[data-t2-destination]").innerHTML=t2DraftReadinessHtml(currentDestination);sb.textContent=currentDestination.entry?"Create T2 profile draft":"Create read-only T2 profile draft";
+        const r = await api("/api/tax/t2/intake/start", { body: { answers:snapshot, name, carry_forward_from:carryFrom } }); location.hash = "#return/" + encodeURIComponent(r.return.id); } catch (x) { main.querySelector("#t2err").textContent = x.message; } });
     }
     await refresh();
   }

@@ -29,3 +29,18 @@ async fn coverage_is_authenticated_consistent_read_only_and_keeps_2026_defaults_
     assert_eq!(row(2025,"QC")["engine_scope_available"],false);assert_eq!(row(2025,"QC")["browser_entry_available"],false);assert_eq!(row(2026,"QC")["engine_scope_available"],true);assert_eq!(row(2026,"QC")["browser_entry_available"],false);assert!(row(2026,"QC")["entry_schema_id"].is_null());
     assert_eq!(store.get("tax:state:v1").await.unwrap(),before,"coverage GETs cannot rewrite or reset saved inputs");
 }
+
+#[tokio::test]
+async fn profile_only_future_drafts_do_not_reuse_template_inputs_or_change_the_original() {
+    use nxt_os::tax::models::RollforwardInput;
+    use nxt_os::tax::t2_intake::IntakeAnswers;
+    let tax=Tax::new(Store::memory());
+    let input:ReturnInput=serde_json::from_value(json!({"program":"T2","tax_year":2026,"jurisdiction":"AB","name":"TEST-original profile","client_ref":"TEST-carry","period_start":"2026-01-01","period_end":"2026-12-31","inputs":{"taxable_income_cents":98765,"loss_closing_cents":12345,"scope_confirmed":true}})).unwrap();
+    let prior=tax.save(None,input).await.ok().unwrap();let original=serde_json::to_vec(&prior).unwrap();
+    let next=tax.rollforward(&prior.id,RollforwardInput{expected_revision:prior.revision,tax_year:2027,name:None}).await.ok().unwrap();assert_eq!(next.inputs,json!({"loss_opening_cents":12345}));assert!(next.calculation.is_none());assert!(next.review.is_none());assert_eq!(next.status,"draft");assert!(!calculations::supports_scope("T2",2027,"AB"));
+    let date=chrono::NaiveDate::from_ymd_opt(2028,1,1).unwrap();
+    let fresh:IntakeAnswers=serde_json::from_value(json!({"incorporated":true,"location":"AB","period_start":"2027-01-01","period_end":"2027-12-31","had_income":true,"client_ref":"TEST-empty"})).unwrap();
+    let empty=tax.t2_intake_start(&fresh,"TEST-empty future",None,date).await.ok().unwrap();assert_eq!(empty["return"]["inputs"],json!({}));assert_eq!(empty["return"]["status"],"draft");assert!(empty["return"]["calculation"].is_null());
+    let carry:IntakeAnswers=serde_json::from_value(json!({"incorporated":true,"location":"AB","period_start":"2027-01-01","period_end":"2027-12-31","had_income":true,"client_ref":"TEST-carry"})).unwrap();
+    let copied=tax.t2_intake_start(&carry,"TEST-carried future",Some(&prior.id),date).await.ok().unwrap();assert_eq!(copied["return"]["inputs"],json!({"loss_opening_cents":12345}));assert!(copied["return"]["calculation"].is_null());assert_eq!(serde_json::to_vec(&tax.get(&prior.id).await.ok().unwrap()).unwrap(),original);
+}
