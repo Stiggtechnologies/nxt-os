@@ -174,6 +174,10 @@ pub struct FamilyLink {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct TaxState {
+    #[serde(default,skip_serializing_if="Vec::is_empty")]
+    pub batches: Vec<super::batch::BatchJob>,
+    #[serde(default,skip_serializing_if="Vec::is_empty")]
+    pub batch_archives: Vec<super::batch::ArchiveRef>,
     pub returns: Vec<TaxReturn>,
     pub audit: Vec<AuditEvent>,
     pub imports: Vec<ImportPreview>,

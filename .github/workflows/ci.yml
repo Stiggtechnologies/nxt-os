@@ -31,6 +31,7 @@ jobs:
           node --check public/apps/tax/tax-reports.js
           node --test tests/tax_reports.test.mjs
           node --test tests/tax_reports_setup_async.test.mjs
+          node --test tests/tax_batch_ui.test.mjs
           node --test tests/tax_scope_guard.test.mjs
           node --test tests/tax_coverage_catalog.test.mjs
           node --check public/apps/tax/family-workflow.js

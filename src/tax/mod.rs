@@ -1,5 +1,6 @@
 //! Independent Canadian tax workpapers. No DT Max runtime or filing dependency.
 pub mod calculations;
+pub mod batch;
 pub mod catalog;
 pub mod coverage;
 pub mod reports;
@@ -375,7 +376,7 @@ impl Tax {
     pub async fn audit(&self) -> TResult<Vec<AuditEvent>> { Ok(self.load().await?.audit) }
     pub async fn package(&self, record_id: &str) -> TResult<Value> {
         let r=self.get(record_id).await?;
-        Ok(json!({"format":"nxt-tax-return/v1","classification":"internal_workpaper_not_for_filing","exported_at":now(),"return":ReturnInput::from(&r),"calculation_snapshot":r.calculation,"calculation_history":r.calculations,"review":r.review,"review_history":r.reviews,"input_hash":input_hash(&r)?,"filing_enabled":false,"current_scope_supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction)}))
+        batch::package_snapshot(&r,&now())
     }
     pub async fn preview(&self, document: Value) -> TResult<Value> {
         self.preview_internal(document,false).await
