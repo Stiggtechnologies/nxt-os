@@ -89,6 +89,28 @@
     }
     return {text:csv.join('\r\n')+'\r\n',count:rows.length,filename:'dtmax-t1-source-client-list-review.csv'};
   }
+  function clientExportPath(f){return clientListPath(f,0).replace('source-clients?offset=0&limit=100&','source-clients/export?');}
+  async function verifyClientListExport(p,filters,metadata){
+    const f=clientCsvFilters(filters),sameKeys=(v,keys)=>v&&typeof v==='object'&&canonicalRecoveredSource(Object.keys(v).sort())===canonicalRecoveredSource(keys.sort());
+    if(!sameKeys(p,['schema','projection','projection_sha256','observed_stable_reads_only','atomic_snapshot'])||p.schema!=='dtmax-source-client-list-export/v1'||p.observed_stable_reads_only!==true||p.atomic_snapshot!==false||!/^([a-f0-9]{64})$/.test(p.projection_sha256)||new TextEncoder().encode(JSON.stringify(p)).length>3*1024*1024)throw Error('Complete client-list export envelope differs');
+    const r=p.projection,expected={search:f.search,year:f.year?Number(f.year):null,sort:f.sort,direction:f.direction,status:f.status||null,province:f.province||null};
+    if(!sameKeys(r,['source_scope','program','imported_source_only','total','available_years','available_statuses','available_provinces','clients','tax_cases_created','filters'])||canonicalRecoveredSource(r.filters)!==canonicalRecoveredSource(expected)||!integer(r.total)||r.total>10000||!Array.isArray(r.clients)||r.clients.length!==r.total)throw Error('Complete client-list export count or filters differ');
+    if(await sourceDigest(new TextEncoder().encode(canonicalRecoveredSource(r)))!==p.projection_sha256)throw Error('Complete client-list export content fingerprint differs');
+    const seen=new Set();let m;
+    for(let at=0;at<r.total||at===0;at+=100){m=checkClientCsvPage({...r,offset:at,limit:100,clients:r.clients.slice(at,at+100)},at,f,metadata);for(const c of r.clients.slice(at,at+100)){if(typeof c.client_number!=='string'||seen.has(c.client_number))throw Error('Duplicate source client in complete export');seen.add(c.client_number);}}
+    return {projection:r,metadata:m,sha256:p.projection_sha256};
+  }
+  async function collectWholeClientListCsv(request,filters,{assertCurrent=()=>{},progress=()=>{},expectedMetadata}={}){
+    const f=clientCsvFilters(filters);let first,total;
+    for(let pass=1;pass<=2;pass++){
+      assertCurrent();progress({pass,loaded:0,total});
+      const p=await request(clientExportPath(f));assertCurrent();
+      const verified=await verifyClientListExport(p,f,expectedMetadata);assertCurrent();
+      if(first&&(verified.sha256!==first.sha256||canonicalRecoveredSource(verified.projection)!==canonicalRecoveredSource(first.projection)))throw Error('Client roster changed between export scans; refresh the list and retry');
+      first??=verified;total=verified.projection.total;progress({pass,loaded:total,total});assertCurrent();
+    }
+    return buildClientListCsv(first.projection.clients,f);
+  }
   function tree(node,depth=0) {
     if(!node||depth>12||typeof node.tag!=='string'||!Array.isArray(node.children))throw Error('Invalid slip source fields');
     const label=node.tag.split('}').at(-1),box=node.attributes?.boxNumber;
@@ -950,7 +972,7 @@
         if(canonicalRecoveredSource(visibleClientFilters())!==serialized)throw Error('Apply the changed filters with Find client before exporting');
         const expectedMetadata=clientCsvMetadata(page);csvBusy=true;csvUi('Reading all matching source profiles. No partial CSV will be downloaded.');
         const assertCurrent=()=>{if(g!==csvGeneration||!current(n)||view!=='list'||canonicalRecoveredSource(visibleClientFilters())!==serialized)throw Error('Export cancelled because the client selection changed');};
-        const result=await collectClientListCsv(request,filters,{expectedMetadata,assertCurrent,progress:p=>csvUi('Checking roster '+p.pass+' of 2 · '+p.loaded+' of '+p.total+' matching clients. Cancel to stop; no partial download.')});
+        const result=await collectWholeClientListCsv(request,filters,{expectedMetadata,assertCurrent,progress:p=>csvUi('Checking whole roster '+p.pass+' of 2'+(p.total===undefined?'…':' · '+p.loaded+' of '+p.total+' matching clients.')+' Cancel to stop; no partial download.')});
         assertCurrent();const url=URL.createObjectURL(new Blob([result.text],{type:'text/csv;charset=utf-8'}));csvUrls.push(url);
         const a=document.createElement('a');a.href=url;a.download=result.filename;a.click();
         setTimeout(()=>{URL.revokeObjectURL(url);const at=csvUrls.indexOf(url);if(at>=0)csvUrls.splice(at,1);},1000);
@@ -1089,5 +1111,5 @@
     }
     return {ready:load(),load,facts,show,open,dispose:()=>{cancelClientCsv();disposed=true;++sequence;csvUrls.splice(0).forEach(url=>URL.revokeObjectURL(url));releasePdf();releaseExceptions();host.onkeydown=null;}};
   }
-  globalThis.NXTDTMaxT1={mount,collectClientListCsv,buildClientListCsv,priorT4Source,priorT4Notice,loadOnvio85SDK,onvio85SourcesHtml,loadArchivedProfile,checkArchivedProfile,checkArchivedEnvelope,verifyArchivedSummary,verifyArchivedPacket,parseArchivedBody,archivedSourcesHtml,exactHundredths,loadRecoveredIdentityProfile,verifyRecoveredIdentityLink,verifyEffectiveRecoveredContext,verifyEffectiveRecoveredSummary,effectiveRecoveredSourcesHtml,checkEffectiveRecoveredEnvelope,loadWireExactProfile,verifyWireExactHistoricalRecord,checkWireEnvelope,historicalTotalsHtml,canonicalRecoveredSource,verifyRecoveredNativeContext,recoveredNativeSourcesHtml,recoveredSourceValue,loadRecoveredNativeProfile,cents,validatePage,recordsHtml,entryHtml,validatePdf,validateException,exceptionsHtml,cachedFigureNotice,validatePrintedFigures,validatePreservedPdfFigures,validateSourceSummaryFigures,validateSourcePaperDocuments,decodeParsedNativeSource,parsedNativeFormsHtml,verifySourceKeywordTable,loadSourceKeywords,keywordName,sourceContextDiagnostic,exceptionsWithDiagnosticsHtml};
+  globalThis.NXTDTMaxT1={mount,verifyClientListExport,collectWholeClientListCsv,collectClientListCsv,buildClientListCsv,priorT4Source,priorT4Notice,loadOnvio85SDK,onvio85SourcesHtml,loadArchivedProfile,checkArchivedProfile,checkArchivedEnvelope,verifyArchivedSummary,verifyArchivedPacket,parseArchivedBody,archivedSourcesHtml,exactHundredths,loadRecoveredIdentityProfile,verifyRecoveredIdentityLink,verifyEffectiveRecoveredContext,verifyEffectiveRecoveredSummary,effectiveRecoveredSourcesHtml,checkEffectiveRecoveredEnvelope,loadWireExactProfile,verifyWireExactHistoricalRecord,checkWireEnvelope,historicalTotalsHtml,canonicalRecoveredSource,verifyRecoveredNativeContext,recoveredNativeSourcesHtml,recoveredSourceValue,loadRecoveredNativeProfile,cents,validatePage,recordsHtml,entryHtml,validatePdf,validateException,exceptionsHtml,cachedFigureNotice,validatePrintedFigures,validatePreservedPdfFigures,validateSourceSummaryFigures,validateSourcePaperDocuments,decodeParsedNativeSource,parsedNativeFormsHtml,verifySourceKeywordTable,loadSourceKeywords,keywordName,sourceContextDiagnostic,exceptionsWithDiagnosticsHtml};
 })();

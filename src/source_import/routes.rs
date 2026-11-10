@@ -71,6 +71,7 @@ pub fn router(state: Arc<SourceImport>) -> Router {
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/identity-links/read", post(test_copy_read_recovered_identity_links))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/effective/summary", get(test_copy_effective_recovered_summary))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/effective/source-clients", get(test_copy_effective_source_clients))
+        .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/effective/source-clients/export", get(test_copy_effective_source_client_export))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/effective/unassigned", get(test_copy_effective_recovered_unassigned))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/effective/clients/{client}", get(test_copy_effective_recovered_client))
         .route("/api/source-imports/dtmax/companies/{company}/test-copy/recovered-native-sources/effective/contexts/{context}", get(test_copy_effective_recovered_context))
@@ -323,6 +324,7 @@ async fn test_copy_recovered_identity_links(State(state):S,Path(company):Path<St
 async fn test_copy_read_recovered_identity_links(State(state):S,Path(company):Path<String>,Json(body):Json<super::recovered_native_sources::RecoveredNativeLookup>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_read_recovered_identity_links(&company,body).await?))}
 async fn test_copy_effective_recovered_summary(State(state):S,Path(company):Path<String>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_effective_recovered_summary(&company).await?))}
 async fn test_copy_effective_source_clients(State(state):S,Path(company):Path<String>,Query(page):Query<super::preserved_records::SourceClientPage>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_effective_source_clients(&company,page).await?))}
+async fn test_copy_effective_source_client_export(State(state):S,Path(company):Path<String>,Query(filters):Query<super::preserved_records::SourceClientExportFilter>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_effective_source_client_export(&company,filters).await?))}
 async fn test_copy_effective_recovered_unassigned(State(state):S,Path(company):Path<String>,Query(page):Query<super::recovered_native_sources::RecoveredNativePage>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_effective_recovered_page(&company,None,page).await?))}
 async fn test_copy_effective_recovered_client(State(state):S,Path((company,client)):Path<(String,String)>,Query(page):Query<super::recovered_native_sources::RecoveredNativePage>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_effective_recovered_page(&company,Some(&client),page).await?))}
 async fn test_copy_effective_recovered_context(State(state):S,Path((company,context)):Path<(String,String)>)->Result<Json<Value>,ImportError>{Ok(Json(state.test_copy_effective_recovered_context(&company,&context).await?))}

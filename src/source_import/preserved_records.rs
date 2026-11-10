@@ -54,6 +54,29 @@ pub struct SourceClientPage {
     #[serde(default,rename="path")] pub _routing_path: Option<String>,
 }
 
+/// A separate whole-roster reader; the existing page API remains capped at100.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceClientExportFilter {
+    #[serde(default)] pub search: String,
+    pub year: Option<u16>, pub sort: Option<String>, pub direction: Option<String>,
+    pub status: Option<String>, pub province: Option<String>,
+    #[serde(default,rename="path")] pub _routing_path: Option<String>,
+}
+const CLIENT_EXPORT_MAX_BYTES: usize=3*1024*1024;
+fn finish_client_export(mut projection:Value,filters:Value)->Result<Value>{
+    let rows=projection["clients"].as_array().ok_or_else(||storage("Export roster missing"))?;
+    if rows.len()>10000 || projection["total"].as_u64()!=Some(rows.len()as u64){return Err(storage("Export roster exceeds count bound"));}
+    let mut seen=BTreeSet::new();
+    for row in rows{let n=row["client_number"].as_str().ok_or_else(||storage("Export source ID missing"))?;
+        if !number(n)||!seen.insert(n){return Err(storage("Export source ID invalid or duplicated"));}}
+    projection["filters"]=filters;
+    let fingerprint=hex::encode(Sha256::digest(serde_json::to_vec(&projection).map_err(|_|storage("Export projection encoding failed"))?));
+    let value=json!({"schema":"dtmax-source-client-list-export/v1","projection":projection,"projection_sha256":fingerprint,"observed_stable_reads_only":true,"atomic_snapshot":false});
+    if serde_json::to_vec(&value).map_err(|_|storage("Export response encoding failed"))?.len()>CLIENT_EXPORT_MAX_BYTES{return Err(bad("Complete client-list export exceeds 3 MiB; no partial export is available"));}
+    Ok(value)
+}
+
 #[derive(Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct FamilyFile {
@@ -158,6 +181,32 @@ fn check_afr(v: &AfrSlip) -> std::result::Result<(), &'static str> {
 #[cfg(test)]
 mod recovery_tests {
     use super::*;
+    #[test]
+    fn whole_client_export_checks_exact_serialized_bound_and_ids(){
+        let make=|name:String|json!({"total":1,"clients":[{"client_number":"001","name":name}]});
+        let base=finish_client_export(make(String::new()),json!({})).unwrap();
+        let padding=CLIENT_EXPORT_MAX_BYTES-serde_json::to_vec(&base).unwrap().len();
+        assert_eq!(serde_json::to_vec(&finish_client_export(make("x".repeat(padding)),json!({})).unwrap()).unwrap().len(),CLIENT_EXPORT_MAX_BYTES);
+        assert!(finish_client_export(make("x".repeat(padding+1)),json!({})).is_err());
+        for value in [json!({"total":2,"clients":[{"client_number":"1"},{"client_number":"1"}]}),json!({"total":1,"clients":[{"client_number":"bad"}]}),json!({"total":2,"clients":[{"client_number":"1"}]}),json!({"total":10001,"clients":(0..10001).map(|i|json!({"client_number":i.to_string()})).collect::<Vec<_>>()})]{assert!(finish_client_export(value,json!({})).is_err());}
+    }
+    #[tokio::test]
+    async fn whole_client_export5856_matches_old_pages_and_reads_each_profile_once(){
+        let store=crate::store::Store::memory();let s=SourceImport::new(store.clone());let c="dtmax-test-copy";
+        for i in 1..=5856{let n=i.to_string();let p=json!({"client_number":n,"name":format!("Synthetic {i}"),"processing_status":"Ready","province":"AB"});store.set(&k(c,&format!("client:{n}")),&p.to_string()).await.unwrap();store.sadd(&k(c,"clients"),&n).await.unwrap();store.sadd(&k(c,"historical_lines"),&format!("{n}:2024:{}","a".repeat(64))).await.unwrap();}
+        store.take_test_reads();
+        let filter=||SourceClientExportFilter{search:String::new(),year:Some(2024),sort:Some("name".into()),direction:Some("desc".into()),status:Some("Ready".into()),province:Some("AB".into()),_routing_path:None};
+        let all=s.test_copy_effective_source_client_export(c,filter()).await.unwrap();assert_eq!(all["projection"]["total"],5856);assert!(serde_json::to_vec(&all).unwrap().len()<CLIENT_EXPORT_MAX_BYTES);
+        let reads=store.take_test_reads();let keys:Vec<_>=reads.iter().flatten().collect();for i in 1..=5856{let key=k(c,&format!("client:{i}"));assert_eq!(keys.iter().filter(|v|v.as_str()==key).count(),1);}assert_eq!(reads.iter().filter(|v|v.iter().any(|k|k.contains(":client:"))).count(),12);
+        let mut pages=Vec::new();for offset in (0..5856).step_by(100){let p=s.test_copy_effective_source_clients(c,SourceClientPage{offset,limit:100,search:String::new(),year:Some(2024),sort:Some("name".into()),direction:Some("desc".into()),status:Some("Ready".into()),province:Some("AB".into()),_routing_path:None}).await.unwrap();assert_eq!(p["total"],5856);pages.extend(p["clients"].as_array().unwrap().clone());}
+        assert_eq!(all["projection"]["clients"],json!(pages));
+        assert!(s.test_copy_effective_source_clients(c,SourceClientPage{offset:0,limit:101,search:String::new(),year:None,sort:None,direction:None,status:None,province:None,_routing_path:None}).await.is_err());
+    }
+    #[test]
+    fn actual_like5856_complete_export_fits_bound_with_identical_serialized_content(){
+        let Ok(p)=std::env::var("NXT_CLIENT_EXPORT_ACTUAL_LIKE")else{return};let b=std::fs::read(p).unwrap();assert_eq!(hex::encode(Sha256::digest(&b)),"9396c1e0784ac441b213d636f253a214d4522f3820705b107f374e3bb1f43b46");
+        let mut value:Value=serde_json::from_slice(&b).unwrap();let filters=value["projection"].as_object_mut().unwrap().remove("filters").unwrap();let result=finish_client_export(value["projection"].clone(),filters).unwrap();assert_eq!(serde_json::to_vec(&result).unwrap(),b);assert_eq!(b.len(),1559802);
+    }
     #[tokio::test]
     async fn matching_retry_repairs_indexes_after_body_only_persistence() {
         let store=crate::store::Store::memory();let service=SourceImport::new(store.clone());let company="recovery-test";
@@ -192,6 +241,20 @@ impl SourceImport {
         self.source_clients_projection(company,page,true).await
     }
     async fn source_clients_projection(&self, company: &str, page: SourceClientPage, effective:bool) -> Result<Value> {
+        self.test_copy_guard(company,true)?;
+        if page.limit==0 || page.limit>100{return Err(bad("Invalid source client filter"));}
+        let offset=page.offset;let limit=page.limit;
+        let mut projection=self.source_clients_full_projection(company,page,effective).await?;
+        let all=projection["clients"].as_array_mut().ok_or_else(||storage("Client projection missing"))?;
+        let selected=all.iter().skip(offset).take(limit).cloned().collect::<Vec<_>>();
+        projection["clients"]=json!(selected);projection["offset"]=json!(offset);projection["limit"]=json!(limit);Ok(projection)
+    }
+    pub async fn test_copy_effective_source_client_export(&self,company:&str,f:SourceClientExportFilter)->Result<Value>{
+        let filters=json!({"search":f.search,"year":f.year,"sort":f.sort.as_deref().unwrap_or("client_number"),"direction":f.direction.as_deref().unwrap_or("asc"),"status":f.status,"province":f.province});
+        let page=SourceClientPage{offset:0,limit:100,search:f.search,year:f.year,sort:f.sort,direction:f.direction,status:f.status,province:f.province,_routing_path:None};
+        finish_client_export(self.source_clients_full_projection(company,page,true).await?,filters)
+    }
+    async fn source_clients_full_projection(&self, company: &str, page: SourceClientPage, effective:bool) -> Result<Value> {
         self.test_copy_guard(company,true)?;
         let sort=page.sort.as_deref().unwrap_or("client_number");let direction=page.direction.as_deref().unwrap_or("asc");
         if page.limit==0 || page.limit>100 || page.search.chars().count()>100 || page.year.is_some_and(|y| !year(y)) || !["client_number","name","processing_status"].contains(&sort) || !["asc","desc"].contains(&direction) || page.status.as_ref().is_some_and(|s|s.len()>80) || page.province.as_ref().is_some_and(|s|s.len()>40) { return Err(bad("Invalid source client filter")) }
@@ -258,8 +321,8 @@ impl SourceImport {
             let order=match sort {"name"=>a["name"].as_str().unwrap_or("").to_lowercase().cmp(&b["name"].as_str().unwrap_or("").to_lowercase()).then(tie),"processing_status"=>a["source_profile"]["processing_status"].as_str().unwrap_or("").cmp(b["source_profile"]["processing_status"].as_str().unwrap_or("")).then(tie),_=>tie};
             if direction=="desc"{order.reverse()}else{order}
         });
-        let total=clients.len();let clients:Vec<_>=clients.into_iter().skip(page.offset).take(page.limit).collect();
-        Ok(json!({"source_scope":company,"program":"T1","imported_source_only":true,"total":total,"offset":page.offset,"limit":page.limit,"available_years":available,"available_statuses":statuses,"available_provinces":provinces,"clients":clients,"tax_cases_created":0}))
+        let total=clients.len();
+        Ok(json!({"source_scope":company,"program":"T1","imported_source_only":true,"total":total,"available_years":available,"available_statuses":statuses,"available_provinces":provinces,"clients":clients,"tax_cases_created":0}))
     }
     // Claim immutable facts atomically. A matching retry must still repair every
     // derived index: an earlier request may have stopped after storing the body.
