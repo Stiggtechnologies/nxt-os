@@ -28,6 +28,7 @@ jobs:
         run: |
           python3 scripts/build-dtmax-native-financial-profiles.py --check
           node --check public/apps/tax/tax.js
+          node --test tests/tax_workspace_navigation.test.mjs
           node --check public/apps/tax/tax-reports.js
           node --test tests/tax_reports.test.mjs
           node --test tests/tax_reports_setup_async.test.mjs
