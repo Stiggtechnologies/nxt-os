@@ -7,7 +7,9 @@
   const main = $("#main"), API = "/api/tax";
   const state = { catalog: null, program: "", year: "", returns: [], record: null, draft: null, section: "", dirty: false, errors: {}, search: "", status: "", preview: null, audit: [], version: 0 };
   const request = (path, options) => api(API + path, options);
-  let sourceWorkspace=null;
+  let sourceWorkspace=null,sourcePreparationAttempt=0,sourceWorkspaceEpoch=0;
+  window.NXTCompany?.onChange?.(()=>{sourceWorkspaceEpoch++;});
+  window.addEventListener("storage",e=>{if(e.key===window.NXTCompany?.KEY)sourceWorkspaceEpoch++;});
   const list = value => Array.isArray(value) ? value : [];
   const clone = value => structuredClone(value);
   const pid = value => encodeURIComponent(value);
@@ -56,8 +58,8 @@
     const p = program($("[data-create-program]", form).value), years = entryYears(p), year = $("[name=tax_year]", form), jurisdiction = $("[name=jurisdiction]", form);
     if (programChanged) year.innerHTML = choices(years).map(([v,l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
     const jurisdictions = entryJurisdictions(p, year.value), prior = jurisdiction.value;
-    jurisdiction.innerHTML = choices(jurisdictions).map(([v,l]) => `<option value="${esc(v)}"${v === prior ? " selected" : ""}>${esc(l)}</option>`).join("");
-    $("[data-program-description]", form).textContent = entryDescription(p, year.value, jurisdiction.value);
+    jurisdiction.innerHTML = (form.dataset.sourcePreparation==="true"?'<option value="">Choose preparation jurisdiction</option>':"") + choices(jurisdictions).map(([v,l]) => `<option value="${esc(v)}"${v === prior ? " selected" : ""}>${esc(l)}</option>`).join("");
+    $("[data-program-description]", form).textContent = form.dataset.sourcePreparation==="true"&&!jurisdiction.value ? "Choose a preparation jurisdiction to read its scope." : entryDescription(p, year.value, jurisdiction.value);
   }
   function draftDestination(catalog, programId, year, jurisdiction) {
     const rows=coverageRows(catalog?.coverage),matches=rows.filter(r=>r.program===programId && r.tax_year===Number(year) && r.jurisdiction===jurisdiction),row=matches.length===1?matches[0]:null,p=list(catalog?.programs).find(p=>p.id===programId);
@@ -110,12 +112,13 @@
     $("#program-year").textContent = state.record ? `${state.record.tax_year} · ${state.record.jurisdiction}` : state.year ? `Tax year ${state.year}` : "All years";
   }
   function setStorage(value) { $("#backend").textContent = ({ supabase: "Persistent storage · Supabase", redis: "Persistent storage · Redis", memory: "Development storage · resets on restart", unavailable: "Storage unavailable" })[value] || "Shared workspace"; }
-  async function dialog(title, content, save, label = "Save", wide = false) {
+  async function dialog(title, content, save, label = "Save", wide = false, options = {}) {
     const previous = document.activeElement;
     let dialogActive=true;
     return modal(title, (el, close) => {
       el.innerHTML = `<form>${content}<p class="form-error" role="alert" hidden></p><div class="actions"><button class="btn" type="button" data-cancel>Cancel</button><button class="btn primary" type="submit">${esc(label)}</button></div></form>`;
       const form = $("form", el), cancel = $("[data-cancel]", form), submit = $("button[type=submit]", form);
+      form.dataset.sourcePreparation=options.sourcePreparation?"true":"false";
       if ($("[data-create-program]", form)) { refreshCreationScope(form); defaultFiscalPeriod(form); }
       if (state.rollforwardPreview && $("[data-rollforward-year]",form)) refreshRollforwardPreview(form);
       cancel.onclick = () => close();
@@ -143,6 +146,14 @@
     return modal(title, (el, close) => { el.innerHTML = content + '<div class="actions"><button class="btn primary" data-done>Done</button></div>'; $("[data-done]", el).onclick = () => close(); }, { wide: true });
   }
 
+  function showSourceInfo(title, content) {
+    return modal(title, (el, close) => {
+      el.innerHTML = content + '<div class="actions"><button class="btn primary" data-done>Done</button></div>';
+      $("[data-done]", el).onclick = () => close();
+      $$('a[href^="#"]',el).forEach(link=>link.onclick=event=>{event.preventDefault();const route=link.getAttribute("href");close();go(route.slice(1));});
+    }, { wide: true });
+  }
+
   async function worklist(version) {
     state.record = null; state.draft = null; state.dirty = false;
     const [summary, records] = await Promise.all([request("/summary"), request("/returns")]);
@@ -157,22 +168,54 @@
   function renderWorkRows() {
     const host = $("#return-table"); if (!host) return;
     const sourceHost=$("#dtmax-t1-source");
-    if(sourceHost){const visible=!state.program||state.program.toLowerCase()==='t1';sourceHost.hidden=!visible;if(!visible){sourceWorkspace?.dispose();sourceWorkspace=null;sourceHost.innerHTML='';delete sourceHost.dataset.importVersion;}else if(sourceHost.dataset.importVersion!==String(state.version)&&window.NXTDTMaxT1){sourceWorkspace?.dispose();sourceHost.dataset.importVersion=String(state.version);const version=state.version;sourceWorkspace=NXTDTMaxT1.mount(sourceHost,{request:api,isCurrent:()=>version===state.version&&(!state.program||state.program.toLowerCase()==='t1')});}}
+    if(sourceHost){const visible=!state.program||state.program.toLowerCase()==='t1';sourceHost.hidden=!visible;if(!visible){sourceWorkspace?.dispose();sourceWorkspace=null;sourceHost.innerHTML='';delete sourceHost.dataset.importVersion;}else if(sourceHost.dataset.importVersion!==String(state.version)&&window.NXTDTMaxT1){sourceWorkspace?.dispose();sourceHost.dataset.importVersion=String(state.version);const version=state.version;sourceWorkspace=NXTDTMaxT1.mount(sourceHost,{request:api,onPrepare:prepareFromSource,isCurrent:()=>version===state.version&&(!state.program||state.program.toLowerCase()==='t1')});}}
     const records = state.returns.filter(r => (!window.NXTCompany || NXTCompany.inScope(r.client_ref)) && (!state.program || r.program.toLowerCase() === state.program.toLowerCase()) && (!state.year || String(r.tax_year) === String(state.year)) && (!state.status || r.status === state.status) && (!state.search || `${r.name} ${r.client_ref || ""}`.toLowerCase().includes(state.search.toLowerCase())));
     host.innerHTML = table(["Name / reference", "Program", "Year", "Jurisdiction", "Status", "Calculation", "Updated", ""], records, r => `<tr><td class="return-name"><strong>${esc(r.name)}</strong><div class="muted">${esc(r.client_ref || "No client reference")}</div></td><td>${esc(r.program.toUpperCase())}</td><td>${Number(r.tax_year)}</td><td>${esc(r.jurisdiction)}</td><td>${badge(r.status)}</td><td>${r.calculation ? badge(r.calculation.result?.supported ? "good" : "warning", r.calculation.input_revision === r.input_revision ? "Calculated" : "Needs recalculation") : '<span class="muted">Not calculated</span>'}</td><td>${esc(stamp(r.updated_at))}</td><td>${button("Open", "open-return", r.id, "sm")}</td></tr>`, state.returns.length ? "No matching workpapers" : "Create your first tax workpaper");
   }
-  async function newReturn() {
+  function sourceReference(r){
+    if(!r||r.kind!=="dtmax-source-preparation-locator/v1"||r.source_scope!=="dtmax-test-copy"||!/^\d{1,12}$/.test(r.client_number)||!Number.isInteger(r.source_year)||r.source_year<1990||r.source_year>2100||typeof r.display_name!=="string"||!r.display_name||!Array.isArray(r.archive_sha256)||r.archive_sha256.length>50||r.archive_sha256.some(s=>typeof s!=="string"||!/^[a-f0-9]{64}$/.test(s)))throw Error("The source preparation reference is unavailable.");
+    return Object.freeze({kind:r.kind,source_scope:r.source_scope,client_number:r.client_number,source_year:r.source_year,display_name:r.display_name,archive_sha256:Object.freeze([...r.archive_sha256])});
+  }
+  function sourceWorkspaceId(){return typeof window.NXTCompany?.get==="function"?window.NXTCompany.get():null;}
+  function sourcePreparationNotes(r){return "Preparation reference only; not an ownership or legal-identity assignment.\nSOURCE scope: "+r.source_scope+"\nSOURCE client reference: "+r.client_number+"\nSOURCE tax year: "+r.source_year+"\nArchive SHA256 references: "+(r.archive_sha256.join(", ")||"not established for this view")+"\nNo source figures, slips or carryforwards were mapped. Scope confirmations remain unconfirmed.\nTarget: Firm workspace; no company/client_ref assigned.";}
+  async function prepareFromSource(selection){
+    const reference=sourceReference(selection.reference),attempt=++sourcePreparationAttempt,version=state.version,workspace=sourceWorkspaceId(),epoch=sourceWorkspaceEpoch;
+    const current=()=>attempt===sourcePreparationAttempt&&version===state.version&&epoch===sourceWorkspaceEpoch&&sourceWorkspaceId()===workspace&&selection.isCurrent?.()===true;
+    if(!current())return;
+    const catalog=await request("/catalog");if(!current())return;
+    const p=list(catalog.programs).find(p=>p.id==="T1"),rows=coverageRows(catalog.coverage).filter(r=>r.program==="T1"&&r.tax_year===reference.source_year&&readyEntryRow(p,r));
+    if(workspace!==""||!rows.length){
+      await showSourceInfo("Source preparation readiness",`<p>SOURCE client #${esc(reference.client_number)} · source year ${reference.source_year}. The historical source remains read-only.</p><p>${workspace===null?"The target workspace could not be verified.":workspace!==""?"A company is selected ("+esc(workspace)+"). No relationship to this firm-wide personal source has been established. Choose Firm workspace in the Company selector to prepare an unassigned personal workpaper.":"No verified entry template exists for this exact source year. It will not be converted to another year."}</p><p>No draft or company assignment has been created.</p><a class="btn" href="#capabilities">View exact calculation coverage</a> <a class="btn" href="#worklist">Return to Firm-wide source worklist</a>`);return;
+    }
+    state.catalog=catalog;
+    return newReturn({reference,current});
+  }
+  async function newReturn(sourceSeed = null) {
     if (!await confirmDiscard()) return;
-    const p = program();
-    const years = entryYears(p), selectedYear = years.includes(Number(state.year)) ? Number(state.year) : years[0], jurisdictions = entryJurisdictions(p, selectedYear);
+    if(sourceSeed&&!sourceSeed.current())return;
+    const p = sourceSeed?programs().find(p=>p.id==="T1"):program();
+    const years = sourceSeed?[sourceSeed.reference.source_year]:entryYears(p), selectedYear = sourceSeed?sourceSeed.reference.source_year:years.includes(Number(state.year))?Number(state.year):years[0], jurisdictions = entryJurisdictions(p, selectedYear);
     if (!years.length || !jurisdictions.length) throw Error("Creation coverage is unavailable. Refresh the catalog before creating a workpaper.");
     let created;
-    const saved = await dialog("Create tax workpaper", `<p class="form-note">Start with an independent NXT ruleset. The source application and SDK are not used to calculate this workpaper. Only verified year-specific browser templates appear below; source years do not enable new calculation rules.</p><details><summary>Calculation and browser-entry coverage</summary>${coverageHtml()}</details><div class="form">${field("Program", select("program", programs().map(p => [p.id, `${p.id.toUpperCase()} · ${p.label}`]), p.id, "data-create-program"))}${field("Name", input("name", "", "text", 'required maxlength="160" placeholder="Workpaper name"'))}${field("Tax year", select("tax_year", choices(years), selectedYear, "data-create-year"))}${field("Jurisdiction", select("jurisdiction", choices(jurisdictions), p.default_jurisdiction || jurisdictions[0], "data-create-jurisdiction"))}${field("Client reference (optional)", input("client_ref", "", "text", 'maxlength="100"'))}${field("Period start", input("period_start", "", "date"), "Required for a T2 review.")}${field("Period end", input("period_end", "", "date"), "T2 dates must match fiscal days.")}</div><div class="compact-info" data-program-description>${esc(entryDescription(p,selectedYear,p.default_jurisdiction || jurisdictions[0]))}</div>`, async fd => {
+    const saved = await dialog("Create tax workpaper", `<p class="form-note">Start with an independent NXT ruleset. The source application and SDK are not used to calculate this workpaper. Only verified year-specific browser templates appear below; source years do not enable new calculation rules.</p><details><summary>Calculation and browser-entry coverage</summary>${coverageHtml()}</details><div class="form">${field("Program", sourceSeed?input("program","T1","text","readonly data-create-program"):select("program", programs().map(p => [p.id, `${p.id.toUpperCase()} · ${p.label}`]), p.id, "data-create-program"))}${field("Name", input("name", sourceSeed?.reference.display_name || "", "text", 'required maxlength="160" placeholder="Workpaper name"'))}${field("Tax year", sourceSeed?input("tax_year",selectedYear,"number","readonly data-create-year"):select("tax_year", choices(years), selectedYear, "data-create-year"))}${field("Jurisdiction", select("jurisdiction", sourceSeed?[["","Choose preparation jurisdiction"],...choices(jurisdictions)]:choices(jurisdictions), sourceSeed?"":p.default_jurisdiction || jurisdictions[0], "data-create-jurisdiction"+(sourceSeed?" required":"")))}${field(sourceSeed?"Target: Firm workspace · no company assigned":"Client reference (optional)", input("client_ref", "", "text", sourceSeed?"readonly":'maxlength="100"'))}${field("Period start", input("period_start", "", "date"), "Required for a T2 review.")}${field("Period end", input("period_end", "", "date"), "T2 dates must match fiscal days.")}</div>${sourceSeed?`<p class="form-note">Display name and SOURCE locator are preparation references only. Select the preparation jurisdiction independently; mailing province is not used. No source amounts or relationships are copied.</p><details><summary>Source reference</summary><pre class="form-note" style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(sourcePreparationNotes(sourceSeed.reference))}</pre></details>`:""}<div class="compact-info" data-program-description>${esc(sourceSeed?"Choose a preparation jurisdiction to read its scope.":entryDescription(p,selectedYear,p.default_jurisdiction || jurisdictions[0]))}</div>`, async (fd,form,dialogCurrent) => {
+      if(sourceSeed){
+        if(!sourceSeed.current())throw Error("The source selection or workspace changed. Close this dialog and open Preparation options again.");
+        const formKeys=["program","tax_year","jurisdiction","name","client_ref","period_start","period_end"],submitted=Object.fromEntries(formKeys.map(k=>[k,String(fd.get(k)||"")]));
+        const fresh=await request("/catalog"),visible=new FormData(form);
+        if(!dialogCurrent()||!sourceSeed.current()||formKeys.some(k=>String(visible.get(k)||"")!==submitted[k]))throw Error("The source selection, workspace or visible form changed while checking coverage. No draft was created.");
+        state.catalog=fresh;
+        if(fd.get("program")!=="T1"||Number(fd.get("tax_year"))!==sourceSeed.reference.source_year||fd.get("client_ref")!=="")throw Error("Source year, program or Firm target changed. No draft was created.");
+      }
       const selected = programs().find(p => p.id === fd.get("program"));
       if (!selected) throw Error("Choose a program from the verified creation catalog.");
-      created = await request("/returns", { body: { program: selected.id, tax_year: Number(fd.get("tax_year")), jurisdiction: fd.get("jurisdiction"), name: fd.get("name").trim(), client_ref: fd.get("client_ref").trim(), period_start: fd.get("period_start") || undefined, period_end: fd.get("period_end") || undefined, inputs: creationInput(selected,Number(fd.get("tax_year")),fd.get("jurisdiction")), parties: [], notes: "" } });
-    }, "Create workpaper", true);
-    if (saved) { toast("Tax workpaper created"); go(`return/${created.id}`); }
+      const inputs=creationInput(selected,Number(fd.get("tax_year")),fd.get("jurisdiction"));
+      if(sourceSeed&&fields(selected).some(f=>f.kind==="boolean"&&inputs[f.key]!==false))throw Error("Source preparation requires unconfirmed template flags.");
+      created = await request("/returns", { body: { program: selected.id, tax_year: Number(fd.get("tax_year")), jurisdiction: fd.get("jurisdiction"), name: fd.get("name").trim(), client_ref: sourceSeed?"":fd.get("client_ref").trim(), period_start: fd.get("period_start") || undefined, period_end: fd.get("period_end") || undefined, inputs, parties: [], notes: sourceSeed?sourcePreparationNotes(sourceSeed.reference):"" } });
+    }, "Create workpaper", true,{sourcePreparation:!!sourceSeed});
+    if(saved&&sourceSeed){
+      toast("Separate Firm-workspace preparation draft created");
+      if(sourceSeed.current())await showSourceInfo("Separate preparation draft created",`<p>A new draft was created for SOURCE reference #${esc(sourceSeed.reference.client_number)} · ${sourceSeed.reference.source_year}. No company, financial figures, legal identity or source ownership was assigned.</p><a class="btn primary" href="#return/${pid(created.id)}">Open preparation draft</a><p>This opens the draft in the current workspace. To review the unchanged historical source again, return to the T1 source worklist, find SOURCE client #${esc(sourceSeed.reference.client_number)} and select year ${sourceSeed.reference.source_year}. Its locator is recorded as an editable preparation note, not an ownership binding.</p>`);
+    }else if (saved) { toast("Tax workpaper created"); go(`return/${created.id}`); }
   }
   function defaultFiscalPeriod(form, replace = false) {
     if ($("[name=program]", form)?.value !== "T2") return;
