@@ -478,6 +478,19 @@ fn prov_pension_disability_2026(c: &mut Calculation, code: &str, pension: i64, d
     Ok(p+d)
 }
 
+/// Current implemented program/year/jurisdiction dispatch only; not complete-case validation.
+/// Keep saved drafts/history for other scopes, but never route them to a fallback formula.
+pub fn supports_scope(program: &str, year: i32, jurisdiction: &str) -> bool {
+    if !matches!(year, 2025 | 2026) { return false; }
+    match program {
+        "T1" => matches!(jurisdiction, "AB" | "ON") || super::rates::province(jurisdiction).is_some() || (year == 2026 && jurisdiction == "QC"),
+        "T2" => jurisdiction == "AB",
+        "T3" => jurisdiction == "CA-FED",
+        "T5013" => jurisdiction == "CA",
+        _ => false,
+    }
+}
+
 pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -> Result<Calculation,String> {
     let scope = match (program, jurisdiction) {
         ("T1","AB") => T1_SCOPE,
@@ -489,8 +502,8 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
         ("T5013", _) => T5013_SCOPE,
         _ => return Err("Unknown tax program".into()),
     };
-    let jurisdiction_ok = matches!((program, jurisdiction), ("T1","AB") | ("T1","ON") | ("T1","BC"|"QC"|"SK"|"MB"|"NB"|"NS"|"PE"|"NL"|"YT"|"NT"|"NU") | ("T2","AB") | ("T3","CA-FED") | ("T5013","CA"));
-    let expected = match program { "T1" => "AB, ON, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU (not QC)", "T2" => "AB", "T3" => "CA-FED", "T5013" => "CA", _ => "" };
+    let jurisdiction_ok = supports_scope(program, year, jurisdiction);
+    let expected = match program { "T1" if year==2026 => "AB, ON, BC, QC, SK, MB, NB, NS, PE, NL, YT, NT or NU (bounded 2026 scopes)", "T1" => "AB, ON, BC, SK, MB, NB, NS, PE, NL, YT, NT or NU (not QC)", "T2" => "AB", "T3" => "CA-FED", "T5013" => "CA", _ => "" };
     let obj = inputs.as_object().ok_or("inputs must be an object")?;
     let mut c = Calculation { ruleset:RULESET.into(),program:program.into(),tax_year:year,jurisdiction:jurisdiction.into(),lines:vec![],totals:BTreeMap::new(),diagnostics:vec![],supported:true,scope:scope.into(),sources:sources(program),rate_table:super::rates::CA_2025.id.into(),line_validation:BTreeMap::new() };
     c.diagnostic("workpaper_only","Independent native workpaper; not a complete tax return, CRA-certified software, or filing authorization. Relationship parties are routing metadata; only explicit calculator inputs affect amounts.",None,false);
@@ -520,7 +533,7 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
     match (program, jurisdiction) {
         ("T1","ON") => t1_ontario(&mut c,obj)?,
         ("T1", j) if super::rates::province(j).is_some() => t1_province(&mut c,obj,super::rates::province(j).unwrap())?,
-        ("T1", _) => t1(&mut c,obj)?,
+        ("T1", "AB") => t1(&mut c,obj)?,
         ("T2", _) => t2(&mut c,obj)?,
         ("T3", _) => t3(&mut c,obj,if year==2026 { super::rates::CA_2026.federal_brackets } else { FEDERAL })?,
         ("T5013", _) => partnership(&mut c,obj)?,

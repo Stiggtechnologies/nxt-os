@@ -13,7 +13,10 @@
     const saved = await api("/api/tax/returns/" + encodeURIComponent(r.id), { method: "PUT", body: body(r, inputs) });
     return api("/api/tax/returns/" + encodeURIComponent(r.id) + "/calculate", { body: { expected_revision: saved.revision, idempotency_key: "tt-" + saved.id + "-" + saved.input_revision } });
   }
-  const calcOf = r => r && r.calculation && (r.calculation.result || r.calculation);
+  const calcOf = r => {
+    const c = r && r.calculation && (r.calculation.result || r.calculation);
+    return r?.current_scope_supported === false ? { ...c, supported: false, totals: {}, diagnostics: [...(c?.diagnostics || []), { code: "unsupported_current_scope", message: "This program, year and jurisdiction are outside the current calculation scope. Saved results are historical only.", blocks_review: true }] } : c;
+  };
   function meterHtml(r) {
     const m = C.meter(calcOf(r));
     return `<div class="tt-meter tt-${m.kind}" aria-live="polite"><span>${esc(m.label)}</span><strong>${m.kind === "pending" ? "—" : money(m.cents)}</strong><small>${Number(r.tax_year)} · ${esc(r.jurisdiction)}</small></div>`;

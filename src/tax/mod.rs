@@ -192,8 +192,8 @@ impl Tax {
     pub async fn list(&self, filter: Option<&str>) -> TResult<Vec<Value>> {
         let filter = filter.map(program).transpose()?;
         Ok(self.load().await?.returns.into_iter().filter(|r| filter.as_ref().is_none_or(|p| &r.program == p)).map(|r| {
-            let calculation=r.calculation.as_ref().map(|c|json!({"id":c.id,"input_revision":c.input_revision,"created_at":c.created_at,"result":{"supported":c.result["supported"]}}));
-            json!({"id":r.id,"program":r.program,"tax_year":r.tax_year,"jurisdiction":r.jurisdiction,"name":r.name,"client_ref":r.client_ref,"period_start":r.period_start,"period_end":r.period_end,"revision":r.revision,"input_revision":r.input_revision,"status":r.status,"created_at":r.created_at,"updated_at":r.updated_at,"calculation":calculation})
+            let calculation=r.calculation.as_ref().map(|c|json!({"id":c.id,"input_revision":c.input_revision,"created_at":c.created_at,"result":{"supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) && c.result["supported"]==true}}));
+            json!({"id":r.id,"program":r.program,"tax_year":r.tax_year,"jurisdiction":r.jurisdiction,"name":r.name,"client_ref":r.client_ref,"period_start":r.period_start,"period_end":r.period_end,"revision":r.revision,"input_revision":r.input_revision,"status":r.status,"created_at":r.created_at,"updated_at":r.updated_at,"calculation":calculation,"current_scope_supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction)})
         }).collect())
     }
     pub async fn get(&self, record_id: &str) -> TResult<TaxReturn> { self.load().await?.returns.into_iter().find(|r| r.id == record_id).ok_or_else(missing) }
@@ -249,15 +249,17 @@ impl Tax {
     pub async fn calculate(&self, record_id: &str, request: RevisionInput) -> TResult<TaxReturn> {
         if let Some(key)=&request.idempotency_key { text(key,"idempotency key",160,true)?; }
         let original=self.get(record_id).await?;
+        let scope_supported=calculations::supports_scope(&original.program,original.tax_year,&original.jurisdiction);
         let fingerprint=input_hash(&original)?;
         if let Some(key)=&request.idempotency_key {
             if let Some(prior)=original.calculations.iter().find(|c|c.idempotency_key.as_ref()==Some(key)) {
+                if !scope_supported { return Err(conflict("the saved calculation scope is no longer supported; reopen and calculate with a new idempotency key")); }
                 if prior.input_hash!=fingerprint || prior.input_revision!=original.input_revision { return Err(conflict("idempotency key was already used for another input revision")); }
                 if original.calculation.as_ref().is_some_and(|c|c.id==prior.id) { return Ok(original); }
                 return Err(conflict("that calculation has been superseded; use a new idempotency key"));
             }
         }
-        if original.calculation.as_ref().is_some_and(|c|c.input_document.is_some() && c.request_revision==request.expected_revision && c.input_hash==fingerprint && c.input_revision==original.input_revision) { return Ok(original); }
+        if scope_supported && original.calculation.as_ref().is_some_and(|c|c.input_document.is_some() && c.request_revision==request.expected_revision && c.input_hash==fingerprint && c.input_revision==original.input_revision) { return Ok(original); }
         assert_revision(&original,request.expected_revision)?;
         if ["approved","filed","archived"].contains(&original.status.as_str()) { return Err(conflict("reopen the return before recalculating")); }
         let result=calculations::calculate(&original.program,original.tax_year,&original.jurisdiction,&original.inputs).map_err(bad)?;
@@ -302,9 +304,16 @@ impl Tax {
         if !["draft","in_review","approved","filed","archived"].contains(&input.status.as_str()) { return Err(bad("invalid transition status")); }
         text(&input.filing_reference,"filing reference",120,false)?; text(&input.t183_envelope_id,"T183 envelope id",120,false)?;
         let at=now();
+        if input.status=="filed" {
+            let r=self.get(record_id).await?;
+            if !calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) { return Err(conflict("this program, year and jurisdiction are outside the current calculation scope; historical results cannot be recorded as filed")); }
+        }
         if input.status=="filed" && !input.t183_envelope_id.trim().is_empty() && !input.filing_reference.trim().is_empty() { self.verify_signed_t183(record_id, input.t183_envelope_id.trim()).await?; }
         self.mutate(|s| {
             let r=s.returns.iter_mut().find(|r|r.id==record_id).ok_or_else(missing)?; assert_revision(r,input.expected_revision)?;
+            if ["in_review","approved","filed"].contains(&input.status.as_str()) && !calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) {
+                return Err(conflict("this program, year and jurisdiction are outside the current calculation scope; saved historical results cannot be reviewed, approved or recorded as filed"));
+            }
             if input.status==r.status { return Ok(r.clone()); }
             if r.status=="filed" && input.status!="archived" { return Err(conflict("a return recorded as filed can only be archived; amendments start from a new return")); }
             if input.status=="filed" {
@@ -363,7 +372,7 @@ impl Tax {
     pub async fn audit(&self) -> TResult<Vec<AuditEvent>> { Ok(self.load().await?.audit) }
     pub async fn package(&self, record_id: &str) -> TResult<Value> {
         let r=self.get(record_id).await?;
-        Ok(json!({"format":"nxt-tax-return/v1","classification":"internal_workpaper_not_for_filing","exported_at":now(),"return":ReturnInput::from(&r),"calculation_snapshot":r.calculation,"calculation_history":r.calculations,"review":r.review,"review_history":r.reviews,"input_hash":input_hash(&r)?,"filing_enabled":false}))
+        Ok(json!({"format":"nxt-tax-return/v1","classification":"internal_workpaper_not_for_filing","exported_at":now(),"return":ReturnInput::from(&r),"calculation_snapshot":r.calculation,"calculation_history":r.calculations,"review":r.review,"review_history":r.reviews,"input_hash":input_hash(&r)?,"filing_enabled":false,"current_scope_supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction)}))
     }
     pub async fn preview(&self, document: Value) -> TResult<Value> {
         self.preview_internal(document,false).await

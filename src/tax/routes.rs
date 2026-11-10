@@ -70,12 +70,16 @@ async fn capabilities() -> R { ok(Tax::capabilities()) }
 async fn summary(State(t):S) -> R { ok(t.summary().await?) }
 #[derive(Deserialize)] struct Filter { program:Option<String> }
 async fn returns(State(t):S,Query(q):Query<Filter>) -> R { ok(t.list(q.program.as_deref()).await?) }
-async fn detail(State(t):S,Path(id):Path<String>) -> R { ok(t.get(&id).await?) }
-async fn create(State(t):S,Json(input):Json<ReturnInput>) -> R { ok(t.save(None,input).await?) }
-async fn update(State(t):S,Path(id):Path<String>,Json(input):Json<ReturnInput>) -> R { ok(t.save(Some(&id),input).await?) }
-async fn calculate(State(t):S,Path(id):Path<String>,Json(input):Json<RevisionInput>) -> R { ok(t.calculate(&id,input).await?) }
-async fn transition(State(t):S,Path(id):Path<String>,Json(input):Json<TransitionInput>) -> R { ok(t.transition(&id,input).await?) }
-async fn rollforward(State(t):S,Path(id):Path<String>,Json(input):Json<RollforwardInput>) -> R { ok(t.rollforward(&id,input).await?) }
+fn return_ok(r: TaxReturn) -> R {
+    let supported=super::calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction);
+    let mut value=json!(r); value["current_scope_supported"]=json!(supported); ok(value)
+}
+async fn detail(State(t):S,Path(id):Path<String>) -> R { return_ok(t.get(&id).await?) }
+async fn create(State(t):S,Json(input):Json<ReturnInput>) -> R { return_ok(t.save(None,input).await?) }
+async fn update(State(t):S,Path(id):Path<String>,Json(input):Json<ReturnInput>) -> R { return_ok(t.save(Some(&id),input).await?) }
+async fn calculate(State(t):S,Path(id):Path<String>,Json(input):Json<RevisionInput>) -> R { return_ok(t.calculate(&id,input).await?) }
+async fn transition(State(t):S,Path(id):Path<String>,Json(input):Json<TransitionInput>) -> R { return_ok(t.transition(&id,input).await?) }
+async fn rollforward(State(t):S,Path(id):Path<String>,Json(input):Json<RollforwardInput>) -> R { return_ok(t.rollforward(&id,input).await?) }
 #[derive(Deserialize)] struct AuditQuery { #[serde(default)] offset:usize, limit:Option<usize> }
 async fn audit(State(t):S,Query(q):Query<AuditQuery>) -> R {
     let limit=q.limit.unwrap_or(200);
@@ -86,7 +90,7 @@ async fn audit(State(t):S,Query(q):Query<AuditQuery>) -> R {
 async fn preview(State(t):S,Json(input):Json<PreviewInput>) -> R { ok(t.preview(input.document).await?) }
 async fn import_preview(State(t):S,Path(id):Path<String>) -> R { ok(t.import_preview(&id).await?) }
 #[derive(Deserialize)] #[serde(deny_unknown_fields)] struct CommitInput { preview_id:String }
-async fn commit(State(t):S,Json(input):Json<CommitInput>) -> R { ok(t.commit_import(&input.preview_id).await?) }
+async fn commit(State(t):S,Json(input):Json<CommitInput>) -> R { return_ok(t.commit_import(&input.preview_id).await?) }
 async fn filing(State(t):S,Path(id):Path<String>) -> R {
     // Always refuses (409 CONFLICT): NXT never transmits. The Filing Desk calls the same stub.
     Err(t.filing_refusal(&id).await)
@@ -145,6 +149,9 @@ fn money(v:i64)->String { let sign=if v<0{"−"}else{""};let n=v.unsigned_abs();
 async fn print(State(t):S,Path(id):Path<String>) -> TResult<Response> {
     let r=t.get(&id).await?;
     let mut body=format!("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{} — NXT tax workpaper</title><style>body{{font:14px system-ui;margin:40px;color:#17201e}}h1{{font-size:26px}}.notice{{padding:16px;border:2px solid #957126;background:#fff7df}}table{{border-collapse:collapse;width:100%;margin:20px 0}}th,td{{text-align:left;padding:9px;border-bottom:1px solid #ddd}}td:last-child{{text-align:right;font-variant-numeric:tabular-nums}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f5f3;padding:16px}}.hash{{font:11px monospace;overflow-wrap:anywhere}}@media print{{body{{margin:0}}}}</style></head><body><h1>NXT Tax · {} · {}</h1><p>{} · {} · Revision {} · {}</p><p class=\"notice\"><strong>Internal workpaper. Not a certified tax return or filing.</strong><br>Review does not establish CRA/Revenu Québec acceptance. Calculation scope and diagnostics below must be read with this workpaper.</p>",esc(&r.name),esc(&r.program),r.tax_year,esc(&r.name),esc(&r.jurisdiction),r.revision,esc(&r.status));
+    if !super::calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) {
+        body.push_str("<p class=\"notice\" role=\"alert\"><strong>Unsupported current calculation scope.</strong> Any saved calculation or approval below is historical only; it is not eligible for review, approval, authorization or filing.</p>");
+    }
     if let Some(c)=&r.calculation {
         body.push_str(&format!("<h2>Calculation {}</h2><p>{}</p><p>Ruleset: {}</p><table><thead><tr><th>Line</th><th>Description</th><th>CAD</th></tr></thead><tbody>",esc(&c.id),esc(c.result["scope"].as_str().unwrap_or("Scope not provided")),esc(c.result["ruleset"].as_str().unwrap_or("unknown"))));
         if let Some(lines)=c.result["lines"].as_array(){ for line in lines { body.push_str(&format!("<tr><td>{}</td><td>{}</td><td>{}</td></tr>",esc(line["code"].as_str().unwrap_or("")),esc(line["label"].as_str().unwrap_or("")),money(line["amount"].as_i64().unwrap_or(0)))); } }

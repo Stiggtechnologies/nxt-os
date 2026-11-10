@@ -9,6 +9,7 @@ pub fn form_for(program: &str) -> Option<&'static str> {
 }
 
 pub fn draft(r: &TaxReturn) -> Result<Draft, String> {
+    if !super::calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) { return Err("this program, year and jurisdiction are outside the current calculation scope; no authorization draft can be prepared".into()); }
     let form = form_for(&r.program).ok_or("T183/T183CORP applies to T1 and T2 returns only")?;
     if r.status != "approved" { return Err("approve the return before preparing the T183 authorization".into()); }
     let calc = r.calculation.as_ref().ok_or("approved return has no calculation snapshot")?;
