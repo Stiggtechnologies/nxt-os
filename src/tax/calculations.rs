@@ -4,10 +4,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const RULESET: &str = "nxt-ca-2025.1";
-pub const T1_SCOPE: &str = "2025 federal and Alberta income-tax workpaper for a full-year Alberta resident, age 18–64, with ordinary Canadian T4 employment/interest only. Verified RRSP deduction and payroll credit/deduction amounts; no other income, deductions, credits, benefits, CPP/EI overpayments, elections, or special situations. Refundable benefits and a complete filing return are outside scope.";
-pub const T1_ON_SCOPE: &str = "2025 federal and Ontario income-tax workpaper for a full-year Ontario resident, age 18–64, with ordinary Canadian T4 employment/interest only. Ontario tax follows the published ON428 brackets, 5.05% non-refundable credit rate, basic personal amount, optional spouse amount from a supplied net income, surtax, basic tax reduction, and Ontario health premium. Age, dependant, donation, dividend, LIFT, split-income, and minimum-tax amounts are outside scope. This is not a certified ON428 and does not file.";
-pub const T1_PROV_SCOPE: &str = "2025 federal and provincial/territorial (BC, SK, MB, NB, NS, PE, NL, YT, NT, NU) income-tax workpaper for a full-year resident of that province at year-end, age 18-64, with ordinary Canadian T4 employment/interest only. Provincial tax uses the published 2025 brackets, the lowest-rate credit on the provincial basic personal amount plus verified CPP/EI (and the Canada employment amount for Yukon). Provincial reductions, surtaxes and other credits listed in the diagnostics are not calculated and must be confirmed not to apply. Quebec (TP-1) is not supported. This is not a certified provincial 428 and does not file.";
+pub const RULESET: &str = "nxt-ca-2025.2";
+/// Version equality only; input/output hashes, scope and diagnostics still require checks.
+pub fn uses_current_ruleset(result:&Value)->bool {result.get("ruleset").and_then(Value::as_str)==Some(RULESET)}
+pub const T1_SCOPE: &str = "2025 federal and Alberta income-tax workpaper for a full-year Alberta resident, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP and payroll amounts, and optional externally verified rental, ordinary receipted donation, eligible medical and current-year tuition totals use limited existing paths subject to diagnostics. Business/self-employed CPP entries remain review-blocked while CPP payable (line 42100) is not implemented. No complete T2125, T776, Schedule 8, 9 or 11; no automatic eligibility, CCA, benefits, overpayments, carryforwards, transfers or elections. Not a complete or certified filing return.";
+pub const T1_ON_SCOPE: &str = "2025 federal and Ontario income-tax workpaper for a full-year Ontario resident, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP/payroll amounts and optional externally verified rental, eligible medical, ordinary receipted donation and current-year federal tuition totals use limited existing paths subject to diagnostics; Ontario has no current-year tuition credit. Published ON428 brackets, basic personal amount, optional supplied-net-income spouse amount, surtax, basic tax reduction and health premium remain bounded workpaper paths. Age, dependant, dividend, LIFT, split-income, minimum-tax and special-gift cases remain outside this stated scope. Business/self-employed CPP entries remain review-blocked while line 42100 is missing. No complete T2125/T776/Schedules 8/9/11, benefits, overpayments, carryforwards, transfers or elections; not a certified ON428 or filing return.";
+pub const T1_PROV_SCOPE: &str = "2025 federal and provincial/territorial income-tax workpaper for a full-year resident of BC, SK, MB, NB, NS, PE, NL, YT, NT or NU, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP/payroll amounts and optional externally verified rental, eligible medical, ordinary receipted donation and current-year tuition totals use limited existing paths subject to each province’s diagnostics and tuition limits. Published brackets and basic/verified credit amounts apply; provincial reductions, surtaxes and other unimplemented adjustments flagged by diagnostics must still be confirmed not to apply. Business/self-employed CPP entries remain review-blocked while line 42100 is missing. No complete T2125/T776/Schedules 8/9/11, benefits, overpayments, carryforwards, transfers or elections. Quebec TP-1 is not supported for 2025; not a certified provincial428 or filing return.";
 pub const T2_SCOPE: &str = "2025 federal and Alberta ordinary active-business tax workpaper, permanent establishments only in Alberta, equal federal/Alberta taxable income, no associations, investment/foreign/partnership income, personal-services business, special industry/rate, credits, refundable taxes or other adjustments. SBD requires verified CCPC eligibility, prior-year taxable capital at most $10 million and adjusted aggregate investment income at most $50,000.";
 pub const T3_SCOPE: &str = "2025 federal-only ordinary-income trust workpaper: income less verified deductible expenses and deductible ordinary-income allocations. Ordinary trust rate or verified GRE/QDT graduated rates; no basic personal credit. Provincial tax, capital gains, dividends, AMT, QDT recovery tax, special trusts and other credits/elections are outside scope.";
 pub const T5013_SCOPE: &str = "2025 ordinary domestic general-partnership income reconciliation and contractual partner allocation workpaper. Verified general partners and fixed shares only; no limited/at-risk, non-resident, SIFT, multi-tier, special income categories, ACB, CCA, credits or filing XML. Allocation rounding reconciles exactly to net income/loss.";
@@ -530,6 +532,17 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
     if (year != 2025 && !y26) || !jurisdiction_ok { return Ok(c); }
     require(&mut c,obj,"scope_confirmed",scope)?;
     if boolean(obj,"other_tax_situations")? { c.diagnostic("unsupported_situation","Additional income, credits, elections or special regimes need a separately implemented ruleset; this calculation cannot be reviewed as supported.",Some("other_tax_situations"),true); }
+    // 2025-only conservative safety hold: partial income-tax totals do not include CPP payable.
+    if program=="T1" && year==2025 {
+        let business=[money(obj,"self_employment_gross_cents")?,money(obj,"self_employment_expenses_cents")?,money(obj,"self_employment_cca_cents")?].iter().any(|v|*v>0);
+        let cpp=[money(obj,"se_cpp_deduction_cents")?,money(obj,"se_cpp_credit_cents")?].iter().any(|v|*v>0);
+        if business || cpp {
+            c.diagnostic("self_employed_cpp_payable_not_implemented","2025 self-employment is an income-tax workpaper only. CPP applicability and contributions payable (line 42100) are not implemented; externally verified deduction/credit amounts do not complete the return or balance. Independent Schedule 8/RC381 review is required and supported review is blocked.",Some("se_cpp_verified"),true);
+        }
+        if cpp && !business {
+            c.diagnostic("orphan_self_employed_cpp","Self-employed CPP deduction/credit inputs have no nonzero business gross, expense or CCA input. This engine does not apply those orphan amounts; reconcile the business and Schedule 8/RC381 workpapers before relying on any result.",Some("se_cpp_verified"),true);
+        }
+    }
     match (program, jurisdiction) {
         ("T1","ON") => t1_ontario(&mut c,obj)?,
         ("T1", j) if super::rates::province(j).is_some() => t1_province(&mut c,obj,super::rates::province(j).unwrap())?,
@@ -738,7 +751,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     let income=sum(&[se_net,taxable_gain,rental,pen,in_split,elig_div,other_div,oas])?;
     Ok(T1Extra{income,deductions:sum(&[out_split,se_ded])?,pension_for_credit:(pen-out_split).max(0)+in_split,se_cpp_credit:se_credit,elig_div,other_div,oas,lines})
 }
-/// Federal credits for medical (33099), donations (34900), pension (31400), tuition (32300).
+/// Federal credits: gross medical 33099, allowable medical 33200, donation credit 34900, pension 31400, tuition 32300.
 /// 2025 low-income tax reductions from the BC, NL, PE, NS and NB 428 forms. Family income is
 /// the filer's net income plus the supplied spouse net income. Child/dependant add-ons and
 /// spouse transfers of unused amounts are not handled (tax can only be overstated).
@@ -786,6 +799,12 @@ fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, n
     if adopt>1_958_000 { return Err("adoption_expenses_cents exceeds the 2025 per-child maximum of $19,580; multiple children are outside scope".into()); }
     if adopt>0 || sli>0 { c.diagnostic("provincial_adoption_student_loan_not_calculated","Provincial adoption (58330) and student loan interest (58520) amounts are not calculated; provincial tax may be overstated.",None,false); }
     let credit_base=sum(&[medical,pension_amount,tui,x.se_cpp_credit,age_amount,spouse_fed,disability,hb,adopt,sli])?;
+    // Conservative scope bound for the unimplemented 2025 Federal Worksheet 34990.
+    // Include all modeled lowest-rate credit bases and the first $200 gift base.
+    let potential_top_up_base=sum(&[credit_base,bpa,money(obj,"employment_income_cents")?.min(147_100),money(obj,"cpp_base_credit_cents")?,money(obj,"ei_credit_cents")?,first])?;
+    if potential_top_up_base>5_737_500 {
+        c.diagnostic("top_up_tax_credit_not_implemented","The modeled lowest-rate credit bases may exceed the 2025 $57,375 threshold. The line 34990 top-up tax credit is not implemented; reconcile the Federal Worksheet before relying on this partial result. This conservative hold is not an eligibility determination.",Some("credits_verified"),true);
+    }
     let fed_dtc=sum(&[rounded_ratio(x.elig_div,150_198,1_000_000)?,rounded_ratio(x.other_div,90_301,1_000_000)?])?;
     let credit=sum(&[rounded_ratio(credit_base,1450,10000)?,donation_credit,fed_dtc])?;
     // Provincial counterparts from the 2025 428 form and worksheet (rates::PROV_CREDITS_2025).
@@ -808,7 +827,7 @@ fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, n
         (format!("{code}58689"),format!("{code} allowable medical expenses"),p_medical),(format!("{lc}_donation_credit"),format!("{code} donation credit"),p_don-p_dtc),(format!("{code}61520"),format!("{code} dividend tax credit"),p_dtc),(format!("{lc}_extra_credit_amounts"),format!("{code} additional credit amounts at the provincial rate"),p_base)];
     lines.retain(|l| l.2!=0);
     let mut out=vec![("31400".into(),"Pension income amount (max $2,000)".into(),pension_amount),("32300".into(),"Verified T2202 tuition amount (current year)".into(),tui),
-        ("33099".into(),"Allowable medical expenses (less lesser of 3% net income and $2,834)".into(),medical),("34900".into(),"Donations (federal credit: 14.5% first $200, 29%/33% above)".into(),don),("donation_credit".into(),"Federal donation credit".into(),donation_credit),("40425".into(),"Federal dividend tax credit".into(),fed_dtc),("30100".into(),"Age amount".into(),age_amount),("30300".into(),"Spouse or common-law partner amount".into(),spouse_fed),("31600".into(),"Disability amount (18+)".into(),disability),("31270".into(),"Home buyers' amount".into(),hb),("31300".into(),"Adoption expenses".into(),adopt),("31900".into(),"Interest paid on student loans".into(),sli),("extra_federal_credits".into(),"Additional federal non-refundable credits".into(),credit)];
+        ("33099".into(),"Eligible medical expenses before income threshold".into(),med),("33200".into(),"Allowable medical expenses (no other-dependant amount)".into(),medical),("34900".into(),"Federal donations and gifts credit (Schedule 9)".into(),donation_credit),("donation_credit".into(),"Federal donation credit".into(),donation_credit),("40425".into(),"Federal dividend tax credit".into(),fed_dtc),("30100".into(),"Age amount".into(),age_amount),("30300".into(),"Spouse or common-law partner amount".into(),spouse_fed),("31600".into(),"Disability amount (18+)".into(),disability),("31270".into(),"Home buyers' amount".into(),hb),("31300".into(),"Adoption expenses".into(),adopt),("31900".into(),"Interest paid on student loans".into(),sli),("extra_federal_credits".into(),"Additional federal non-refundable credits".into(),credit)];
     out.extend(lines);
     Ok((credit,p_base,p_don,out))
 }
@@ -1056,7 +1075,7 @@ mod tests {
             "schedule3_verified":true,"capital_proceeds_cents":1_500_000,"capital_acb_cents":1_000_000,"capital_outlays_cents":100_000,"t776_verified":true,"rental_gross_cents":2_400_000,"rental_expenses_cents":1_400_000,"rental_cca_cents":200_000}));
         let l=|k:&str|c.lines.iter().find(|x|x.code==k).unwrap().amount;
         assert_eq!(l("13500"),2_000_000); assert_eq!(l("12700"),200_000); assert_eq!(l("12600"),800_000); assert_eq!(c.totals["taxable_income"],3_000_000);
-        assert!(c.supported);
+        assert!(!c.supported);assert!(c.diagnostics.iter().any(|d|d.code=="self_employed_cpp_payable_not_implemented"&&d.blocks_review));
         assert!(calculate("T1",2025,"AB",&json!({"scope_confirmed":true,"full_year_resident":true,"t776_verified":true,"rental_gross_cents":100,"rental_expenses_cents":100,"rental_cca_cents":1})).is_err());
         // SE earnings >= $5,000 without verified Schedule 8 CPP block review.
         assert!(!calc("T1","AB",json!({"scope_confirmed":true,"full_year_resident":true,"t2125_verified":true,"self_employment_gross_cents":1_000_000})).supported);
@@ -1188,7 +1207,7 @@ mod tests {
         // Net $50,000: medical threshold 1,500; 4,000 expenses -> 2,500. Pension 2,000 cap. Tuition 3,000. Donations 1,200 -> 200*14.5% + 1,000*29% = 29 + 290 = 319.
         let c=calc("T1","ON",json!({"scope_confirmed":true,"full_year_resident":true,"credits_verified":true,"pension_income_cents":5_000_000,"medical_expenses_cents":400_000,"donations_cents":120_000,"tuition_cents":300_000}));
         let l=|k:&str|c.lines.iter().find(|x|x.code==k).unwrap().amount;
-        assert_eq!(l("33099"),250_000); assert_eq!(l("31400"),200_000); assert_eq!(l("donation_credit"),31_900);
+        assert_eq!(l("33099"),400_000); assert_eq!(l("33200"),250_000); assert_eq!(l("34900"),31_900); assert_eq!(l("31400"),200_000); assert_eq!(l("donation_credit"),31_900);
         assert_eq!(l("extra_federal_credits"),rounded_ratio(750_000,1450,10000).unwrap()+31_900);
         assert!(c.supported, "{:?}", c.diagnostics);
         // ON428 2025: medical cap $2,885 (3% = 1,500 applies); pension max $1,762; no current-year tuition; donations 5.05%/11.16%.

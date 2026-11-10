@@ -44,13 +44,15 @@ fn authorize(a:&Identity,s:&TaxState,j:&BatchJob,company:&Option<String>)->TResu
 fn view(mut j:BatchJob)->BatchJob{for i in &mut j.items{if let Some(a)=&mut i.artifact{a.body=None;}}j}
 fn refresh(j:&mut BatchJob){j.status=if j.items.iter().any(|i|i.state==ItemState::Running){if j.cancel_requested{"cancelling"}else{"running"}}else if j.cancel_requested{"cancelled"}else if j.items.iter().any(|i|i.state==ItemState::Pending){"ready"}else if j.items.iter().any(|i|i.state==ItemState::Held){"completed_with_holds"}else{"completed"}.into();j.revision+=1;j.updated_at=now();}
 fn outcome(code:&str,message:&str)->Value{json!({"code":code,"message":message})}
-fn recovered(r:&TaxReturn,i:&Item)->TResult<Option<Value>>{
+fn recovered(r:&TaxReturn,i:&Item,rules:&str)->TResult<Option<Value>>{
+ if rules!=calculations::RULESET{return Ok(Some(json!({"code":"ruleset_changed","message":"Captured job uses a historical ruleset; create a new explicit selection. Saved receipts and artifacts remain historical.","supported":false,"recovered_from_history":false})))}
  for c in &r.calculations{if c.idempotency_key.as_deref()==Some(i.calculation_key.as_str())&&c.request_revision==i.selection.expected_revision&&c.input_revision==i.input_revision&&c.input_hash==i.input_hash{
+  if !calculations::uses_current_ruleset(&c.result){return Ok(Some(json!({"code":"ruleset_changed","message":"Committed snapshot uses a historical ruleset; retained as evidence, not current supported calculation.","snapshot_id":c.id,"supported":false,"recovered_from_history":true})))}
   if c.output_hash!=hash(&c.result)?||c.input_document.as_ref().map(hash).transpose()?.as_deref()!=Some(c.input_hash.as_str()){return Err(conflict("saved batch calculation integrity failed"))}
   return Ok(Some(json!({"code":"calculation_committed","snapshot_id":c.id,"input_hash":c.input_hash,"output_hash":c.output_hash,"supported":c.result["supported"],"recovered_from_history":true})))
  }}Ok(None)
 }
-pub(super) fn package_snapshot(r:&TaxReturn,at:&str)->TResult<Value>{Ok(json!({"format":"nxt-tax-return/v1","classification":"internal_workpaper_not_for_filing","exported_at":at,"return":ReturnInput::from(r),"calculation_snapshot":r.calculation,"calculation_history":r.calculations,"review":r.review,"review_history":r.reviews,"input_hash":input_hash(r)?,"filing_enabled":false,"current_scope_supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction)}))}
+pub(super) fn package_snapshot(r:&TaxReturn,at:&str)->TResult<Value>{Ok(json!({"format":"nxt-tax-return/v1","classification":"internal_workpaper_not_for_filing","exported_at":at,"return":ReturnInput::from(r),"calculation_snapshot":r.calculation,"calculation_history":r.calculations,"review":r.review,"review_history":r.reviews,"input_hash":input_hash(r)?,"filing_enabled":false,"current_scope_supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction),"current_ruleset":calculations::RULESET,"current_calculation_ruleset_current":r.calculation.as_ref().is_some_and(|c|calculations::uses_current_ruleset(&c.result))}))}
 impl Tax{
  async fn load_batch_archive(&self,a:&Identity,key:&str,company:&Option<String>)->TResult<BatchJob>{let s=self.load_state().await?;let r=s.batch_archives.iter().find(|r|r.id==key).ok_or_else(super::missing)?.clone();archive_scope(a,&s,&r,company)?;let raw=self.store.get(&archive_key(key)).await?.ok_or_else(super::missing)?;if raw.len()!=r.bytes||hex::encode(sha2::Sha256::digest(raw.as_bytes()))!=r.sha256{return Err(conflict("archived batch integrity failed"))}let mut j:BatchJob=serde_json::from_str(&raw).map_err(|_|conflict("archived batch is corrupt"))?;if j.id!=r.id||j.revision!=r.revision{return Err(conflict("archive registry differs"))}authorize(a,&self.load_state().await?,&j,company)?;j.archived=true;Ok(j)}
  pub async fn batch_archive_list(&self,a:&Identity,company:Option<String>)->TResult<Vec<Value>>{let s=self.load_state().await?;Ok(s.batch_archives.iter().filter(|r|archive_scope(a,&s,r,&company).is_ok()).map(|r|json!({"id":r.id,"revision":r.revision,"operation":r.operation,"company_ref":r.company_ref,"status":"archived","item_count":r.bindings.len(),"sha256":r.sha256,"bytes":r.bytes})).collect())}
@@ -103,7 +105,7 @@ impl Tax{
    let running=j.items.iter().position(|i|i.state==ItemState::Running);
    if let Some(n)=running{
     let i=&j.items[n];let r=s.returns.iter().find(|r|r.id==i.selection.return_id).ok_or_else(forbidden)?;
-    if let Some(mut o)=if j.operation==Operation::Calculate{recovered(r,i)?}else{None}{o["recorded_after_cancel"]=json!(j.cancel_requested);if !j.step_keys.contains(&b.request_key)&&j.step_keys.len()<125{j.step_keys.push(b.request_key.clone());}j.items[n].state=if o["supported"]==true{ItemState::Succeeded}else{ItemState::Held};j.items[n].outcome=Some(o);refresh(&mut j);let jid=j.id.clone();s.batches[p]=j;super::audit(s,"","tax_batch_item_reconciled",format!("{} item{} by {}",jid,n,a.label()));return Ok(None)}
+    if let Some(mut o)=if j.operation==Operation::Calculate{recovered(r,i,&j.ruleset)?}else{None}{o["recorded_after_cancel"]=json!(j.cancel_requested);if !j.step_keys.contains(&b.request_key)&&j.step_keys.len()<125{j.step_keys.push(b.request_key.clone());}j.items[n].state=if o["supported"]==true{ItemState::Succeeded}else{ItemState::Held};j.items[n].outcome=Some(o);refresh(&mut j);let jid=j.id.clone();s.batches[p]=j;super::audit(s,"","tax_batch_item_reconciled",format!("{} item{} by {}",jid,n,a.label()));return Ok(None)}
     if i.lease_until.as_ref().is_some_and(|v|v>&now()){return Ok(None)}
     if j.cancel_requested{j.items[n].state=ItemState::Cancelled;j.items[n].outcome=Some(outcome("cancelled_inflight_unconfirmed","No committed job-key snapshot found. An already claimed call may still finish; refresh this job and inspect the return before another batch."));refresh(&mut j);let jid=j.id.clone();s.batches[p]=j;super::audit(s,"","tax_batch_item_reconciled",format!("{} item{} by {}",jid,n,a.label()));return Ok(None)}
    }
@@ -116,7 +118,7 @@ impl Tax{
   if let Some((n,item,op,rules))=work{
    let state=self.load_state().await?;let job=state.batches.iter().find(|j|j.id==key).ok_or_else(super::missing)?;authorize(a,&state,job,&b.company_ref)?;
    let r=state.returns.iter().find(|r|r.id==item.selection.return_id).ok_or_else(forbidden)?.clone();
-   let result: TResult<(Value,Option<Artifact>)>=if let Some(o)=if op==Operation::Calculate{recovered(&r,&item)?}else{None}{Ok((o,None))}
+   let result: TResult<(Value,Option<Artifact>)>=if let Some(o)=if op==Operation::Calculate{recovered(&r,&item,&rules)?}else{None}{Ok((o,None))}
    else if job.cancel_requested{Ok((outcome("cancelled_before_operation","Claim cancelled before operation"),None))}
    else if r.revision!=item.selection.expected_revision||input_hash(&r)?!=item.input_hash||hash(&r)?!=item.return_sha256{Ok((outcome("stale_selection","Saved return changed after selection; no new operation performed"),None))}
    else if op==Operation::Calculate{

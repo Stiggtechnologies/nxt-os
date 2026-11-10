@@ -118,7 +118,7 @@ async fn independent_tax_workpaper_lifecycle() {
         assert_eq!(result["status"], "calculated");
         assert_eq!(result["revision"], 2);
         assert_eq!(result["calculation"]["result"]["supported"], true, "{result}");
-        assert_eq!(result["calculation"]["result"]["ruleset"], "nxt-ca-2025.1");
+        assert_eq!(result["calculation"]["result"]["ruleset"], nxt_os::tax::calculations::RULESET);
         for (key, amount) in expected.as_object().unwrap() {
             assert_eq!(&result["calculation"]["result"]["totals"][key], amount, "{} {key}", created["program"]);
         }

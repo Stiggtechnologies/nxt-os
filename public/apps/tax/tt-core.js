@@ -139,7 +139,7 @@
   // --- Review page: diagnostics grouped with Fix-it links back into the interview.
   function reviewItems(returnId, calc) {
     const diags = (calc && calc.diagnostics) || [];
-    const items = diags.map(d => ({ code: d.code, message: d.message, blocking: !!d.blocks_review, field: d.field || null,
+    const items = diags.map(d => ({ code: d.code, message: d.message, blocking: !!d.blocks_review || d.severity === "error", field: d.field || null,
       screen: d.field ? screenFor(d.field) : "situations",
       fix: "#tt-t1/" + encodeURIComponent(returnId) + "?screen=" + (d.field ? screenFor(d.field) : "situations") + (d.field ? "&field=" + encodeURIComponent(d.field) : "") }));
     return { blocking: items.filter(i => i.blocking), notes: items.filter(i => !i.blocking), ready: !items.some(i => i.blocking) && !!(calc && calc.supported) };

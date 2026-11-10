@@ -55,7 +55,7 @@ fn exclusive(s:&TaxState,f:&FamilyLink)->bool {
 }
 fn fresh(r:&TaxReturn)->bool {
     super::calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) && r.calculation.as_ref().is_some_and(|c|
-      c.input_revision==r.input_revision && super::input_hash(r).ok().as_ref()==Some(&c.input_hash)
+      super::calculations::uses_current_ruleset(&c.result) && c.input_revision==r.input_revision && super::input_hash(r).ok().as_ref()==Some(&c.input_hash)
       && c.input_document.as_ref().and_then(|d|hash(d).ok()).as_ref()==Some(&c.input_hash)
       && hash(&c.result).ok().as_ref()==Some(&c.output_hash) && c.result["supported"]==true
       && c.result["diagnostics"].as_array().is_some_and(|ds|!ds.iter().any(|d|d["blocks_review"]==true||d["severity"]=="error")))

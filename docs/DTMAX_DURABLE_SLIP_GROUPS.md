@@ -37,3 +37,5 @@ Reload and Save are serialized. A pending Reload disables entry controls and pre
 `tests/durable_slip_groups.test.mjs` checks exact money/whole-number parsing, explicit zero versus blank, managed keys, unavailable/disposed views, exact coverage contract and shared UI wiring. The independent offline Chrome workflow exercises actual guided/keyword handlers with a synthetic persistence/CAS fixture, including reload, edit/remove, conflict, late detached-view cancellation and desktop/mobile rendering. Its mock transport is not a production or full-return calculation acceptance claim.
 
 No formula/rate, source-import, client profile, CRA adapter, filing/certification or production change is part of this patch.
+
+Changing, adding or removing a T2202 occurrence clears `credits_verified` during that explicit save. Confirm the current-year tuition and other credit evidence in a separate save with unchanged groups. An unrelated group edit with identical T2202 occurrences does not clear this credit confirmation. Reads and old saved records are never rewritten.

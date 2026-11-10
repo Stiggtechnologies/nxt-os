@@ -13,6 +13,7 @@ pub fn draft(r: &TaxReturn) -> Result<Draft, String> {
     let form = form_for(&r.program).ok_or("T183/T183CORP applies to T1 and T2 returns only")?;
     if r.status != "approved" { return Err("approve the return before preparing the T183 authorization".into()); }
     let calc = r.calculation.as_ref().ok_or("approved return has no calculation snapshot")?;
+    if !super::calculations::uses_current_ruleset(&calc.result){return Err("historical or missing calculation ruleset cannot authorize a return; explicitly recalculate and review first".into());}
     let lines = calc.result["lines"].as_array().cloned().unwrap_or_default();
     let mut summary: Vec<String> = lines.iter().take(40).map(|l| format!("{}  {}  {}", l["code"].as_str().unwrap_or(""), l["label"].as_str().unwrap_or(""), l["amount"].as_i64().map(|c| format!("{}.{:02}", c / 100, (c % 100).abs())).unwrap_or_default())).collect();
     if summary.is_empty() { summary.push("See the attached NXT printable workpaper for line amounts.".into()); }

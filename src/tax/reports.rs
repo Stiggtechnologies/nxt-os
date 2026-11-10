@@ -45,7 +45,7 @@ pub fn catalog()->Value {json!({"schema":SCHEMA,"columns":columns(),"required_co
 fn calc_state(r:&TaxReturn)->TResult<&'static str> {
  let Some(c)=&r.calculation else{return Ok("none")};
  if !calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction){return Ok("historical_unsupported_scope")}
- if c.input_revision!=r.input_revision || c.input_hash!=hash(&ReturnInput::from(r))? || c.input_document.as_ref().map(hash).transpose()?.as_deref()!=Some(c.input_hash.as_str()) || hash(&c.result)?!=c.output_hash{return Ok("stale")}
+ if !calculations::uses_current_ruleset(&c.result) || c.input_revision!=r.input_revision || c.input_hash!=hash(&ReturnInput::from(r))? || c.input_document.as_ref().map(hash).transpose()?.as_deref()!=Some(c.input_hash.as_str()) || hash(&c.result)?!=c.output_hash{return Ok("stale")}
  let diagnostics_clear=c.result["diagnostics"].as_array().is_some_and(|d|!d.iter().any(|x|x["blocks_review"]==true||x["severity"]=="error"));
  Ok(if c.result["supported"]==true&&diagnostics_clear{"current_supported"}else{"current_blocked"})
 }

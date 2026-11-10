@@ -35,12 +35,16 @@
     if(!isCurrent())throw Error("The entry view changed after saving. Reload the saved workpaper before calculating.");
     return api("/api/tax/returns/" + encodeURIComponent(r.id) + "/calculate", { body: { expected_revision: saved.revision, idempotency_key: "tt-" + saved.id + "-" + saved.input_revision } });
   }
-  const calcOf = r => {
+  const calcOf = (r,expectedRuleset) => {
     const c = r && r.calculation && (r.calculation.result || r.calculation);
-    return r?.current_scope_supported === false ? { ...c, supported: false, totals: {}, diagnostics: [...(c?.diagnostics || []), { code: "unsupported_current_scope", message: "This program, year and jurisdiction are outside the current calculation scope. Saved results are historical only.", blocks_review: true }] } : c;
+    if(!c)return c;
+    if(r?.current_scope_supported === false)return { ...c, supported: false, totals: {}, diagnostics: [...(c?.diagnostics || []), { code: "unsupported_current_scope", message: "This program, year and jurisdiction are outside the current calculation scope. Saved results are historical only.", blocks_review: true }] };
+    if(r.current_calculation_ruleset_current!==true || typeof expectedRuleset!=="string" || c.ruleset!==expectedRuleset)return {...c,supported:false,totals:{},diagnostics:[...(c.diagnostics||[]),{code:"historical_ruleset",message:"Saved result uses an earlier or missing ruleset. Explicitly recalculate and review; this is not a current balance estimate.",blocks_review:true}]};
+    if(c.supported!==true || (c.diagnostics||[]).some(d=>d.blocks_review||d.severity==="error"))return {...c,supported:false,totals:{}};
+    return c;
   };
-  function meterHtml(r) {
-    const m = C.meter(calcOf(r));
+  function meterHtml(r,ruleset) {
+    const m = C.meter(calcOf(r,ruleset));
     return `<div class="tt-meter tt-${m.kind}" aria-live="polite"><span>${esc(m.label)}</span><strong>${m.kind === "pending" ? "—" : money(m.cents)}</strong><small>${Number(r.tax_year)} · ${esc(r.jurisdiction)}</small></div>`;
   }
   const SCREENS = [["profile", "About you"], ["situations", "What applies"], ["slips", "Slips"], ["deductions", "Deductions & credits"], ["review", "Review"], ["pay", "Pay fee"]];
@@ -79,7 +83,7 @@
     let r = await api("/api/tax/returns/" + encodeURIComponent(id));
     const catalog=await api("/api/tax/catalog");
     if(!guidedEntryAvailable(catalog,r)) { guidedReadOnly(main,r);return; }
-    const head = () => `${banner()}<div class="tt-top"><a href="#return/${encodeURIComponent(id)}">← Workpaper view</a><h1>${esc(r.name)}</h1>${meterHtml(r)}</div>${steps(id, screen)}`;
+    const head = () => `${banner()}<div class="tt-top"><a href="#return/${encodeURIComponent(id)}">← Workpaper view</a><h1>${esc(r.name)}</h1>${meterHtml(r,catalog.ruleset)}</div>${steps(id, screen)}`;
     const go = s => { location.hash = "#tt-t1/" + encodeURIComponent(id) + "?screen=" + s; };
     const inputs = Object.assign({}, r.inputs || {});
     const commit = async (next, nextScreen, isCurrent=()=>true) => { r = await saveAndCalc(r, next, isCurrent);if(!isCurrent())return; if (nextScreen) go(nextScreen); else render(); };
@@ -124,7 +128,7 @@
       const controller=NXTSlipGroups.mount(host,{record:r,isCurrent:()=>host.isConnected,onSaved:saved=>{r=saved;render();}});await controller.ready;
     }
     function review() {
-      const rv = C.reviewItems(id, calcOf(r)), oos = C.outOfScope({ situations: JSON.parse(sessionStorage.getItem("tt-sit-" + id) || "[]") });
+      const rv = C.reviewItems(id, calcOf(r,catalog.ruleset)), oos = C.outOfScope({ situations: JSON.parse(sessionStorage.getItem("tt-sit-" + id) || "[]") });
       const item = i => `<li class="${i.blocking ? "tt-block" : "tt-note"}"><span>${esc(i.message)}</span> <a class="btn sm" href="${esc(i.fix)}">Fix it</a></li>`;
       main.innerHTML = head() + `<section class="tt-card"><h2>Review</h2>${oos.length ? `<p class="tt-scope">Outside scope: ${oos.map(esc).join(", ")}. A preparer must handle these in certified software.</p>` : ""}
         <h3>${rv.blocking.length ? rv.blocking.length + " item(s) to fix before review" : "No blocking items"}</h3><ul class="tt-list">${rv.blocking.map(item).join("")}</ul>

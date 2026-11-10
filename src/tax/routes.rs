@@ -80,7 +80,8 @@ async fn summary(State(t):S) -> R { ok(t.summary().await?) }
 async fn returns(State(t):S,Query(q):Query<Filter>) -> R { ok(t.list(q.program.as_deref()).await?) }
 fn return_ok(r: TaxReturn) -> R {
     let supported=super::calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction);
-    let mut value=json!(r); value["current_scope_supported"]=json!(supported); ok(value)
+    let current=r.calculation.as_ref().is_some_and(|c|super::calculations::uses_current_ruleset(&c.result));
+    let mut value=json!(r);value["current_scope_supported"]=json!(supported);value["current_ruleset"]=json!(super::calculations::RULESET);value["current_calculation_ruleset_current"]=json!(current);ok(value)
 }
 async fn detail(State(t):S,Path(id):Path<String>) -> R { return_ok(t.get(&id).await?) }
 async fn create(State(t):S,Json(input):Json<ReturnInput>) -> R { return_ok(t.save(None,input).await?) }
@@ -170,6 +171,7 @@ pub(super) fn print_workpaper(r:&TaxReturn)->TResult<String>{
         body.push_str("<p class=\"notice\" role=\"alert\"><strong>Unsupported current calculation scope.</strong> Any saved calculation or approval below is historical only; it is not eligible for review, approval, authorization or filing.</p>");
     }
     if let Some(c)=&r.calculation {
+        if !super::calculations::uses_current_ruleset(&c.result){body.push_str("<p class=\"notice\" role=\"alert\"><strong>Historical calculation ruleset.</strong> Saved amounts and approvals are retained evidence only. Explicit recalculation and a new review are required before current authorization or approval.</p>");}
         body.push_str(&format!("<h2>Calculation {}</h2><p>{}</p><p>Ruleset: {}</p><table><thead><tr><th>Line</th><th>Description</th><th>CAD</th></tr></thead><tbody>",esc(&c.id),esc(c.result["scope"].as_str().unwrap_or("Scope not provided")),esc(c.result["ruleset"].as_str().unwrap_or("unknown"))));
         if let Some(lines)=c.result["lines"].as_array(){ for line in lines { body.push_str(&format!("<tr><td>{}</td><td>{}</td><td>{}</td></tr>",esc(line["code"].as_str().unwrap_or("")),esc(line["label"].as_str().unwrap_or("")),money(line["amount"].as_i64().unwrap_or(0)))); } }
         body.push_str("</tbody></table><h2>Workpaper totals</h2><table><thead><tr><th>Total</th><th>CAD</th></tr></thead><tbody>");
