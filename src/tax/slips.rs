@@ -185,6 +185,8 @@ pub fn replace_inputs(inputs:&mut Value, previous:&[Slip], groups:&[Slip])->Resu
     if previous!=groups {
         if previous.iter().chain(groups).any(|s|s.kind=="T4"){target.insert("payroll_verified".into(),json!(false));}
         if previous.iter().chain(groups).any(|s|s.kind=="T5008"){target.insert("schedule3_verified".into(),json!(false));}
+        let old_tuition=previous.iter().filter(|s|s.kind=="T2202").collect::<Vec<_>>();let new_tuition=groups.iter().filter(|s|s.kind=="T2202").collect::<Vec<_>>();
+        if old_tuition!=new_tuition{target.insert("credits_verified".into(),json!(false));}
     }
     Ok(())
 }

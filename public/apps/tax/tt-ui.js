@@ -28,17 +28,23 @@
   function guidedReadOnly(main,r) {
     main.innerHTML=banner()+`<section class="tt-card"><h1>Guided entry unavailable</h1><p role="alert">The entry form for this program, year and jurisdiction has not been verified. Saved inputs remain unchanged; no interview changes or calculation were submitted.</p>${r?`<p>${Number(r.tax_year)} · ${esc(r.jurisdiction)}</p><a class="btn" href="#return/${encodeURIComponent(r.id)}">Open saved workpaper</a>`:'<a class="btn" href="#worklist">Open worklist</a>'} <a class="btn" href="#capabilities">View calculation coverage</a></section>`;
   }
-  async function saveAndCalc(r, inputs) {
+  async function saveAndCalc(r, inputs, isCurrent=()=>true) {
     await requireGuidedEntry(r);
+    if(!isCurrent())throw Error("The entry view changed; no save was submitted.");
     const saved = await api("/api/tax/returns/" + encodeURIComponent(r.id), { method: "PUT", body: body(r, inputs) });
+    if(!isCurrent())throw Error("The entry view changed after saving. Reload the saved workpaper before calculating.");
     return api("/api/tax/returns/" + encodeURIComponent(r.id) + "/calculate", { body: { expected_revision: saved.revision, idempotency_key: "tt-" + saved.id + "-" + saved.input_revision } });
   }
-  const calcOf = r => {
+  const calcOf = (r,expectedRuleset) => {
     const c = r && r.calculation && (r.calculation.result || r.calculation);
-    return r?.current_scope_supported === false ? { ...c, supported: false, totals: {}, diagnostics: [...(c?.diagnostics || []), { code: "unsupported_current_scope", message: "This program, year and jurisdiction are outside the current calculation scope. Saved results are historical only.", blocks_review: true }] } : c;
+    if(!c)return c;
+    if(r?.current_scope_supported === false)return { ...c, supported: false, totals: {}, diagnostics: [...(c?.diagnostics || []), { code: "unsupported_current_scope", message: "This program, year and jurisdiction are outside the current calculation scope. Saved results are historical only.", blocks_review: true }] };
+    if(r.current_calculation_ruleset_current!==true || typeof expectedRuleset!=="string" || c.ruleset!==expectedRuleset)return {...c,supported:false,totals:{},diagnostics:[...(c.diagnostics||[]),{code:"historical_ruleset",message:"Saved result uses an earlier or missing ruleset. Explicitly recalculate and review; this is not a current balance estimate.",blocks_review:true}]};
+    if(c.supported!==true || (c.diagnostics||[]).some(d=>d.blocks_review||d.severity==="error"))return {...c,supported:false,totals:{}};
+    return c;
   };
-  function meterHtml(r) {
-    const m = C.meter(calcOf(r));
+  function meterHtml(r,ruleset) {
+    const m = C.meter(calcOf(r,ruleset));
     return `<div class="tt-meter tt-${m.kind}" aria-live="polite"><span>${esc(m.label)}</span><strong>${m.kind === "pending" ? "—" : money(m.cents)}</strong><small>${Number(r.tax_year)} · ${esc(r.jurisdiction)}</small></div>`;
   }
   const SCREENS = [["profile", "About you"], ["situations", "What applies"], ["slips", "Slips"], ["deductions", "Deductions & credits"], ["review", "Review"], ["pay", "Pay fee"]];
@@ -77,10 +83,10 @@
     let r = await api("/api/tax/returns/" + encodeURIComponent(id));
     const catalog=await api("/api/tax/catalog");
     if(!guidedEntryAvailable(catalog,r)) { guidedReadOnly(main,r);return; }
-    const head = () => `${banner()}<div class="tt-top"><a href="#return/${encodeURIComponent(id)}">← Workpaper view</a><h1>${esc(r.name)}</h1>${meterHtml(r)}</div>${steps(id, screen)}`;
+    const head = () => `${banner()}<div class="tt-top"><a href="#return/${encodeURIComponent(id)}">← Workpaper view</a><h1>${esc(r.name)}</h1>${meterHtml(r,catalog.ruleset)}</div>${steps(id, screen)}`;
     const go = s => { location.hash = "#tt-t1/" + encodeURIComponent(id) + "?screen=" + s; };
     const inputs = Object.assign({}, r.inputs || {});
-    const commit = async (next, nextScreen) => { r = await saveAndCalc(r, next); if (nextScreen) go(nextScreen); else render(); };
+    const commit = async (next, nextScreen, isCurrent=()=>true) => { r = await saveAndCalc(r, next, isCurrent);if(!isCurrent())return; if (nextScreen) go(nextScreen); else render(); };
     function err(e) { const el = main.querySelector(".form-error"); if (el) el.textContent = e.message; }
     function render() {
       if (screen === "profile") {
@@ -103,10 +109,15 @@
       } else if (screen === "slips") slipsScreen();
       else if (screen === "pay") { pay().catch(err); }
       else if (screen === "deductions") {
-        main.innerHTML = head() + `<section class="tt-card"><h2>Deductions & credits checklist</h2><form class="tt-form" id="f">${C.DEDUCTIONS.map(d => `<fieldset class="tt-ded${d.supported ? "" : " tt-off"}"><legend>${esc(d.label)}${d.supported ? "" : " — not calculated; note it for the preparer"}</legend>${d.keys.map(k => `<label>${esc(k.replace(/_cents$/, "").replace(/_/g, " "))}<input name="${k}" inputmode="decimal" value="${inputs[k] ? (inputs[k] / 100).toFixed(2) : ""}"${focus === k ? " autofocus" : ""}></label>`).join("")}${d.verify ? `<label><input type="checkbox" name="${d.verify}"${inputs[d.verify] ? " checked" : ""}${focus === d.verify ? " autofocus" : ""}> Receipts / support verified</label>` : ""}</fieldset>`).join("")}
+        const optional=C.optionalSections(catalog,r),optionalFields=optional.flatMap(s=>s.fields),optionalKeys=new Set(optionalFields.map(f=>f.key)),deductions=C.DEDUCTIONS.filter(d=>!d.keys.some(k=>optionalKeys.has(k))),managed=new Set(C.managedSlipKeys(r.slip_groups));
+        const optionalControl=f=>{const present=Object.hasOwn(inputs,f.key),v=inputs[f.key],attrs=`name="${esc(f.key)}" data-optional-key="${esc(f.key)}"${managed.has(f.key)?' disabled readonly':''}`;return `<label>${esc(f.label)}${f.kind==='boolean'?`<input type="checkbox" ${attrs}${v===true?' checked':''}>`:`<input ${attrs} inputmode="decimal" value="${esc(present?(v/100).toFixed(2):'')}">`}<small>${esc(f.help)}${managed.has(f.key)?' Edit the saved slip occurrence to change this amount.':''}</small></label>${f.kind==='boolean'?`<button type="button" class="btn sm" data-guided-clear="${esc(f.key)}">Clear verification value</button>`:''}`;};
+        main.innerHTML = head() + `<section class="tt-card"><h2>Deductions & credits checklist</h2><form class="tt-form" id="f">${deductions.map(d => `<fieldset class="tt-ded${d.supported ? "" : " tt-off"}"><legend>${esc(d.label)}${d.supported ? "" : " — not calculated; note it for the preparer"}</legend>${d.keys.map(k => `<label>${esc(k.replace(/_cents$/, "").replace(/_/g, " "))}<input name="${k}" inputmode="decimal" value="${inputs[k] ? (inputs[k] / 100).toFixed(2) : ""}"${focus === k ? " autofocus" : ""}></label>`).join("")}${d.verify ? `<label><input type="checkbox" name="${d.verify}"${inputs[d.verify] ? " checked" : ""}${focus === d.verify ? " autofocus" : ""}> Receipts / support verified</label>` : ""}</fieldset>`).join("")}${optional.map(s=>`<fieldset class="tt-ded"><legend>${esc(s.label)}</legend><p>Optional verified workpaper totals. Blank stays absent; an entered 0 is retained. These are not complete schedules or filing calculations.</p>${s.id==='business-totals'?'<p class="tt-scope">Independent Schedule 8 review is required. Self-employed CPP payable (42100) is not calculated; income-tax-only results cannot establish a full return balance.</p>':''}${s.fields.map(optionalControl).join('')}</fieldset>`).join('')}
           <button class="btn primary">Continue to review</button><p class="form-error"></p></form></section>`;
         const f = main.querySelector("#f");
-        f.addEventListener("submit", async e => { e.preventDefault(); try { const next = Object.assign({}, inputs); for (const d of C.DEDUCTIONS) { for (const k of d.keys) { const v = f.elements[k].value.trim(); if (!v) delete next[k]; else { const c = C.toCents(v); if (!Number.isFinite(c) || c < 0) throw new Error(k + " must be a positive amount"); next[k] = c; } } if (d.verify) next[d.verify] = f.elements[d.verify].checked; } await commit(next, "review"); } catch (x) { err(x); } });
+        let deductionBusy=false;
+        f.querySelectorAll('[data-optional-key]').forEach(el=>el.addEventListener('change',()=>{el.dataset.changed='true';el.dataset.optionalClear='false';}));
+        f.querySelectorAll('[data-guided-clear]').forEach(b=>b.onclick=()=>{const el=f.elements[b.dataset.guidedClear];el.checked=false;el.dataset.changed='true';el.dataset.optionalClear='true';});
+        f.addEventListener("submit", async e => { e.preventDefault();if(deductionBusy||f.isConnected===false)return; try { const next = Object.assign({}, inputs); for (const d of deductions) { for (const k of d.keys) { const v = f.elements[k].value.trim(); if (!v) delete next[k]; else { const c = C.toCents(v); if (!Number.isFinite(c) || c < 0) throw new Error(k + " must be a positive amount"); next[k] = c; } } if (d.verify) next[d.verify] = f.elements[d.verify].checked; }for(const field of optionalFields){if(managed.has(field.key))continue;const el=f.elements[field.key];C.applyOptionalInput(next,field,field.kind==='boolean'?el.checked:el.value,{changed:el.dataset.changed==='true',clear:el.dataset.optionalClear==='true'});}deductionBusy=true;f.querySelectorAll('input,button').forEach(el=>el.disabled=true);await commit(next, "review",()=>f.isConnected!==false&&main.isConnected!==false); } catch (x) {if(f.isConnected!==false)err(x); }finally{deductionBusy=false;if(f.isConnected!==false)f.querySelectorAll('input,button').forEach(el=>{if(!el.hasAttribute?.('readonly'))el.disabled=false;});} });
       } else review();
       const el = focus && main.querySelector(`[name="${CSS.escape(focus)}"]`); if (el) { el.focus(); el.closest("label,fieldset")?.classList.add("tt-fix"); }
     }
@@ -117,7 +128,7 @@
       const controller=NXTSlipGroups.mount(host,{record:r,isCurrent:()=>host.isConnected,onSaved:saved=>{r=saved;render();}});await controller.ready;
     }
     function review() {
-      const rv = C.reviewItems(id, calcOf(r)), oos = C.outOfScope({ situations: JSON.parse(sessionStorage.getItem("tt-sit-" + id) || "[]") });
+      const rv = C.reviewItems(id, calcOf(r,catalog.ruleset)), oos = C.outOfScope({ situations: JSON.parse(sessionStorage.getItem("tt-sit-" + id) || "[]") });
       const item = i => `<li class="${i.blocking ? "tt-block" : "tt-note"}"><span>${esc(i.message)}</span> <a class="btn sm" href="${esc(i.fix)}">Fix it</a></li>`;
       main.innerHTML = head() + `<section class="tt-card"><h2>Review</h2>${oos.length ? `<p class="tt-scope">Outside scope: ${oos.map(esc).join(", ")}. A preparer must handle these in certified software.</p>` : ""}
         <h3>${rv.blocking.length ? rv.blocking.length + " item(s) to fix before review" : "No blocking items"}</h3><ul class="tt-list">${rv.blocking.map(item).join("")}</ul>

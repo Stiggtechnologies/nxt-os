@@ -114,11 +114,32 @@
     for (const [k, v] of Object.entries((aggregate && aggregate.inputs) || {})) out[k] = v;
     return out;
   }
+  const OPTIONAL_FIELD_CATALOG_VERSION = "nxt-tax-fields/T1/2025/2";
+  function optionalSections(catalog, record) {
+    const p=catalog?.programs?.find(p=>p.id==="T1"),sections=p?.sections?.filter(s=>s.fields?.some(f=>f.optional===true))||[];
+    if(!sections.length)return [];
+    if(record.program!=="T1"||record.tax_year!==2025||p.field_catalog_version!==OPTIONAL_FIELD_CATALOG_VERSION)throw Error("Optional entry metadata is unavailable for this workpaper.");
+    for(const s of sections)for(const f of s.fields)if(f.optional!==true||f.default_policy!=="omit"||!["money","boolean"].includes(f.kind)||!f.tax_years?.includes(record.tax_year)||!f.jurisdictions?.includes(record.jurisdiction))throw Error("Optional field scope or omission contract differs.");
+    return sections;
+  }
+  function applyOptionalInput(out, field, raw, {changed=false,clear=false}={}) {
+    if(field.optional!==true||field.default_policy!=="omit")throw Error("Optional field contract differs.");
+    if(clear){delete out[field.key];return out;}
+    if(field.kind==="boolean"){
+      if(typeof raw!=="boolean")throw Error("Verification must be an explicit checkbox value.");
+      if(changed||Object.hasOwn(out,field.key))out[field.key]=raw;
+    }else if(field.kind==="money"){
+      if(typeof raw!=="string")throw Error("Enter a dollar amount or leave it blank.");
+      if(raw.trim()===""){delete out[field.key];return out;}
+      const value=toCents(raw);if(!Number.isSafeInteger(value)||value<0||value>1e14)throw Error("Enter a nonnegative dollar amount with at most two decimals, within the displayed bound.");out[field.key]=value;
+    }else throw Error("Optional field type is unavailable.");
+    return out;
+  }
 
   // --- Review page: diagnostics grouped with Fix-it links back into the interview.
   function reviewItems(returnId, calc) {
     const diags = (calc && calc.diagnostics) || [];
-    const items = diags.map(d => ({ code: d.code, message: d.message, blocking: !!d.blocks_review, field: d.field || null,
+    const items = diags.map(d => ({ code: d.code, message: d.message, blocking: !!d.blocks_review || d.severity === "error", field: d.field || null,
       screen: d.field ? screenFor(d.field) : "situations",
       fix: "#tt-t1/" + encodeURIComponent(returnId) + "?screen=" + (d.field ? screenFor(d.field) : "situations") + (d.field ? "&field=" + encodeURIComponent(d.field) : "") }));
     return { blocking: items.filter(i => i.blocking), notes: items.filter(i => !i.blocking), ready: !items.some(i => i.blocking) && !!(calc && calc.supported) };
@@ -158,7 +179,7 @@
     if (!s.stripe_enabled) return { kind: "disabled", title: "Online payment is not available", cta: null };
     return { kind: "ready", title: "Pay the filing fee", cta: "Pay with card" };
   }
-  const api = { BANNER, TAX_YEAR, PROVINCES, SITUATIONS, DEDUCTIONS, FIELD_SCREEN, T2_STEPS, validSin, maskSin, meter, screenFor, profileInputs, outOfScope, searchSlips, slipForm, slipFromForm, toCents, managedSlipKeys, mergeSlipInputs, reviewItems, t2Visible, t2Answer, formatFee, payScreenState };
+  const api = { BANNER, TAX_YEAR, PROVINCES, SITUATIONS, DEDUCTIONS, FIELD_SCREEN, T2_STEPS, validSin, maskSin, meter, screenFor, profileInputs, outOfScope, searchSlips, slipForm, slipFromForm, toCents, managedSlipKeys, mergeSlipInputs, OPTIONAL_FIELD_CATALOG_VERSION, optionalSections, applyOptionalInput, reviewItems, t2Visible, t2Answer, formatFee, payScreenState };
   root.NXTTurboCore = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

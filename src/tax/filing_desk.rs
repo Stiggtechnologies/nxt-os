@@ -125,7 +125,7 @@ pub fn blockers(r: &TaxReturn) -> Vec<Value> {
     match r.calculation.as_ref() {
         None => push("not_calculated", "calculate the current inputs first".into(), None),
         Some(c) => {
-            let fresh = c.input_revision == r.input_revision && input_hash(r).map(|h| h == c.input_hash).unwrap_or(false) && hash(&c.result).map(|h| h == c.output_hash).unwrap_or(false);
+            let fresh = super::calculations::uses_current_ruleset(&c.result) && c.input_revision == r.input_revision && input_hash(r).map(|h| h == c.input_hash).unwrap_or(false) && hash(&c.result).map(|h| h == c.output_hash).unwrap_or(false);
             if !fresh { push("stale_calculation", "the calculation is stale; recalculate and send back to review".into(), None); }
             if c.result["supported"] != true { push("unsupported", "the engine does not support this return's situation".into(), None); }
             for d in c.result["diagnostics"].as_array().into_iter().flatten() {
@@ -142,6 +142,7 @@ fn fee_paid(d: &DeskState, rid: &str) -> bool { d.fees.iter().find(|f| f.return_
 fn is_filer(d: &DeskState, who: &Identity) -> bool { !who.break_glass && d.filers.iter().any(|g| g.user_id == who.user_id) }
 fn valid_confirmation<'a>(d: &'a DeskState, r: &TaxReturn, fp: &str) -> Option<&'a DeskConfirmation> {
     if !super::calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) { return None; }
+    if !r.calculation.as_ref().is_some_and(|c|super::calculations::uses_current_ruleset(&c.result)){return None;}
     d.confirmations.iter().rev().find(|c| c.return_id == r.id && c.fingerprint == fp && c.revision == r.revision)
 }
 fn preparer(r: &TaxReturn) -> String { r.preparer_signoff.as_ref().map(|s| s.by.clone()).unwrap_or_default() }
@@ -159,6 +160,7 @@ pub fn two_person_rule(r: &TaxReturn, who: &Identity) -> Result<(), String> {
 
 fn totals(r: &TaxReturn) -> Value { r.calculation.as_ref().map(|c| c.result["totals"].clone()).unwrap_or(Value::Null) }
 fn money(r: &TaxReturn) -> Value {
+    if !r.calculation.as_ref().is_some_and(|c|super::calculations::uses_current_ruleset(&c.result)){return json!({"kind":"pending","cents":0,"historical_ruleset":true});}
     match totals(r)["balance"].as_i64() {
         Some(b) if b < 0 => json!({"kind":"refund","cents":-b}),
         Some(b) if b > 0 => json!({"kind":"owing","cents":b}),

@@ -200,7 +200,7 @@ impl Tax {
     pub async fn list(&self, filter: Option<&str>) -> TResult<Vec<Value>> {
         let filter = filter.map(program).transpose()?;
         Ok(self.load().await?.returns.into_iter().filter(|r| filter.as_ref().is_none_or(|p| &r.program == p)).map(|r| {
-            let calculation=r.calculation.as_ref().map(|c|json!({"id":c.id,"input_revision":c.input_revision,"created_at":c.created_at,"result":{"supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) && c.result["supported"]==true}}));
+            let calculation=r.calculation.as_ref().map(|c|json!({"id":c.id,"input_revision":c.input_revision,"created_at":c.created_at,"result":{"supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) && calculations::uses_current_ruleset(&c.result) && c.result["supported"]==true,"ruleset":c.result["ruleset"]}}));
             json!({"id":r.id,"program":r.program,"tax_year":r.tax_year,"jurisdiction":r.jurisdiction,"name":r.name,"client_ref":r.client_ref,"period_start":r.period_start,"period_end":r.period_end,"revision":r.revision,"input_revision":r.input_revision,"status":r.status,"created_at":r.created_at,"updated_at":r.updated_at,"calculation":calculation,"current_scope_supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction)})
         }).collect())
     }
@@ -274,7 +274,7 @@ impl Tax {
                 return Err(conflict("that calculation has been superseded; use a new idempotency key"));
             }
         }
-        if scope_supported && original.calculation.as_ref().is_some_and(|c|c.input_document.is_some() && c.request_revision==request.expected_revision && c.input_hash==fingerprint && c.input_revision==original.input_revision) { return Ok(original); }
+        if scope_supported && original.calculation.as_ref().is_some_and(|c|calculations::uses_current_ruleset(&c.result) && c.input_document.is_some() && c.request_revision==request.expected_revision && c.input_hash==fingerprint && c.input_revision==original.input_revision) { return Ok(original); }
         assert_revision(&original,request.expected_revision)?;
         if ["approved","filed","archived"].contains(&original.status.as_str()) { return Err(conflict("reopen the return before recalculating")); }
         if !original.slip_groups.is_empty() {
@@ -317,7 +317,7 @@ impl Tax {
         self.mutate(|s| {
             let r=s.returns.iter_mut().find(|r|r.id==record_id).ok_or_else(missing)?;
             // A retried or racing calculation of exactly the same rules and inputs is one snapshot.
-            if r.calculation.as_ref().is_some_and(|c|c.input_document.is_some() && c.input_hash==fingerprint && c.output_hash==output_hash && c.input_revision==r.input_revision) { return Ok(r.clone()); }
+            if r.calculation.as_ref().is_some_and(|c|calculations::uses_current_ruleset(&c.result) && c.input_document.is_some() && c.input_hash==fingerprint && c.output_hash==output_hash && c.input_revision==r.input_revision) { return Ok(r.clone()); }
             assert_revision(r,request.expected_revision)?;
             if input_hash(r)? != fingerprint { return Err(conflict("inputs changed while calculating")); }
             if r.calculations.len()>=20 { return Err(conflict("calculation history capacity reached (20); preserve/export the return before creating a new workpaper")); }
@@ -336,12 +336,14 @@ impl Tax {
             let r=self.get(record_id).await?;
             if !calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) { return Err(conflict("this program, year and jurisdiction are outside the current calculation scope; historical results cannot be recorded as filed")); }
         }
+        if input.status=="filed" {let r=self.get(record_id).await?;if !r.calculation.as_ref().is_some_and(|c|calculations::uses_current_ruleset(&c.result)){return Err(conflict("historical ruleset cannot authorize or record filing"));}}
         if input.status=="filed" && !input.t183_envelope_id.trim().is_empty() && !input.filing_reference.trim().is_empty() { self.verify_signed_t183(record_id, input.t183_envelope_id.trim()).await?; }
         self.mutate(|s| {
             let r=s.returns.iter_mut().find(|r|r.id==record_id).ok_or_else(missing)?; assert_revision(r,input.expected_revision)?;
             if ["in_review","approved","filed"].contains(&input.status.as_str()) && !calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) {
                 return Err(conflict("this program, year and jurisdiction are outside the current calculation scope; saved historical results cannot be reviewed, approved or recorded as filed"));
             }
+            if ["in_review","approved","filed"].contains(&input.status.as_str()) && !r.calculation.as_ref().is_some_and(|c|calculations::uses_current_ruleset(&c.result)) {return Err(conflict("saved result uses a historical or missing ruleset; explicitly recalculate and review before authorization"));}
             if input.status==r.status { return Ok(r.clone()); }
             if r.status=="filed" && input.status!="archived" { return Err(conflict("a return recorded as filed can only be archived; amendments start from a new return")); }
             if input.status=="filed" {
@@ -531,7 +533,9 @@ fn family_side(r: &TaxReturn) -> Value {
         "jurisdiction": r.jurisdiction,
         "tax_year": r.tax_year,
         "status": r.status,
-        "supported": r.calculation.as_ref().map(|c| c.result["supported"].clone()),
+        "supported": r.calculation.as_ref().map(|c| json!(calculations::uses_current_ruleset(&c.result)&&c.result["supported"]==true)),
+        "saved_ruleset":r.calculation.as_ref().map(|c|c.result["ruleset"].clone()),
+        "historical_only":r.calculation.as_ref().is_some_and(|c|!calculations::uses_current_ruleset(&c.result)),
         "totals": r.calculation.as_ref().and_then(|c| c.result.get("totals").cloned()),
     })
 }
