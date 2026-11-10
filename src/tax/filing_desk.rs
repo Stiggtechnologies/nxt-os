@@ -119,6 +119,7 @@ pub fn blockers(r: &TaxReturn) -> Vec<Value> {
     let mut out = vec![];
     let mut push = |code: &str, message: String, field: Option<&str>| out.push(json!({"code":code,"message":message,"field":field,"fix":fix_link(r, field)}));
     if !["T1", "T2"].contains(&r.program.as_str()) { push("program", "the Filing Desk handles T1 and T2 returns only".into(), None); }
+    if !super::calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) { push("unsupported_current_scope", "this program, year and jurisdiction are outside the current calculation scope; historical approval does not make it eligible".into(), None); }
     if r.status != "approved" { push("not_approved", format!("the return is {}; it must pass review (approved) first", r.status), None); }
     if r.review.is_none() { push("no_review", "no reviewer approval is on file".into(), None); }
     match r.calculation.as_ref() {
@@ -140,6 +141,7 @@ pub fn blockers(r: &TaxReturn) -> Vec<Value> {
 fn fee_paid(d: &DeskState, rid: &str) -> bool { d.fees.iter().find(|f| f.return_id == rid).is_some_and(|f| f.paid) }
 fn is_filer(d: &DeskState, who: &Identity) -> bool { !who.break_glass && d.filers.iter().any(|g| g.user_id == who.user_id) }
 fn valid_confirmation<'a>(d: &'a DeskState, r: &TaxReturn, fp: &str) -> Option<&'a DeskConfirmation> {
+    if !super::calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) { return None; }
     d.confirmations.iter().rev().find(|c| c.return_id == r.id && c.fingerprint == fp && c.revision == r.revision)
 }
 fn preparer(r: &TaxReturn) -> String { r.preparer_signoff.as_ref().map(|s| s.by.clone()).unwrap_or_default() }
@@ -381,7 +383,7 @@ impl Tax {
         let (by, at) = (who.label(), now());
         self.mutate(|s| {
             if input.enabled {
-                let cleared = s.desk.launch.test_runs.iter().any(|t| s.returns.iter().any(|r| r.id == t.return_id && fingerprint(r).map(|f| f == t.fingerprint).unwrap_or(false)));
+                let cleared = s.desk.launch.test_runs.iter().any(|t| s.returns.iter().any(|r| r.id == t.return_id && blockers(r).is_empty() && fingerprint(r).map(|f| f == t.fingerprint).unwrap_or(false)));
                 if !cleared { return Err(conflict("client launch stays off until an end-to-end internal test return has cleared intake and the Filing Desk (record a test run first)")); }
             }
             s.desk.launch.client_launch_enabled = input.enabled; s.desk.launch.changed_by = Some(by.clone()); s.desk.launch.changed_at = Some(at.clone());

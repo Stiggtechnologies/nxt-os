@@ -303,7 +303,8 @@ async fn independent_tax_workpaper_lifecycle() {
     fails(&router, "PUT", &endpoint(&archived, ""), Some(editable(&archived)), 409).await;
     let summary = ok(&router, "GET", "/api/tax/summary", None).await;
     assert_eq!(summary["filing_enabled"], false); assert_eq!(summary["auth_required"], true);
-    assert_eq!(summary["calculation_years"], json!([2025]));
+    assert_eq!(summary["calculation_years"], json!([2025,2026]));
+    assert_eq!(summary["browser_entry_years"], json!([2025]));
     let audit = ok(&router, "GET", "/api/tax/audit", None).await;
     for action in ["created", "calculated", "edited", "transition", "imported", "rolled_forward"] {
         assert!(audit.as_array().unwrap().iter().any(|e| e["action"] == action), "missing {action} audit event");

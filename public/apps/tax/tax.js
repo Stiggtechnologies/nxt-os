@@ -25,7 +25,52 @@
   const fields = p => list(p?.sections).flatMap(s => list(s.fields));
   const defaults = p => Object.assign({}, ...fields(p).map(f => ({ [f.key]: clone(f.default ?? (f.kind === "boolean" ? false : f.kind === "text" ? "" : 0)) })), clone(p.defaults || {}));
   const statuses = [["", "All statuses"], ["draft", "Draft"], ["calculated", "Calculated"], ["in_review", "In review"], ["approved", "Approved"], ["filed", "Filed (recorded, outside NXT)"], ["archived", "Archived"]];
-  const canEdit = record => !!record && !["approved", "filed", "archived"].includes(record.status);
+  const canEdit = record => !!record && browserEntryAvailable(record) && !["approved", "filed", "archived"].includes(record.status);
+  function coverageRows(coverage = state.catalog?.coverage) {
+    return coverage?.schema === "nxt-tax-coverage/v1" && coverage.version === "2026-11-09.1" ? list(coverage.scopes) : [];
+  }
+  function scopeRow(p, year, jurisdiction) {
+    const rows = coverageRows().filter(r => r.program === p?.id && r.tax_year === Number(year) && r.jurisdiction === jurisdiction);
+    return rows.length === 1 ? rows[0] : null;
+  }
+  function readyEntryRow(p, row) {
+    return !!row && row.engine_scope_available === true && row.browser_entry_available === true && row.entry_state === "verified_baseline_schema" && row.entry_schema_id === p?.entry_schema_id && row.entry_schema_year === p?.entry_schema_year && row.tax_year === p?.entry_schema_year;
+  }
+  function entryRows(p) { return coverageRows().filter(r => r.program === p?.id && readyEntryRow(p, r)); }
+  function entryYears(p) { return [...new Set(entryRows(p).map(r => r.tax_year))]; }
+  function entryJurisdictions(p, year) { return entryRows(p).filter(r => r.tax_year === Number(year)).map(r => r.jurisdiction); }
+  function browserEntryAvailable(record) {
+    const p = programs().find(p => p.id === record?.program);
+    return readyEntryRow(p, scopeRow(p, record?.tax_year, record?.jurisdiction));
+  }
+  function creationInput(p, year, jurisdiction) {
+    const row = scopeRow(p, year, jurisdiction);
+    if (!readyEntryRow(p, row)) throw Error("An entry form is not available for this program, year and jurisdiction. Saved sources and workpapers remain unchanged.");
+    return defaults(p);
+  }
+  function entryDescription(p, year, jurisdiction) {
+    const row = scopeRow(p, year, jurisdiction);
+    return readyEntryRow(p, row) ? row.entry_scope : "An entry form is not available for this selection.";
+  }
+  function refreshCreationScope(form, programChanged = false) {
+    const p = program($("[data-create-program]", form).value), years = entryYears(p), year = $("[name=tax_year]", form), jurisdiction = $("[name=jurisdiction]", form);
+    if (programChanged) year.innerHTML = choices(years).map(([v,l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+    const jurisdictions = entryJurisdictions(p, year.value), prior = jurisdiction.value;
+    jurisdiction.innerHTML = choices(jurisdictions).map(([v,l]) => `<option value="${esc(v)}"${v === prior ? " selected" : ""}>${esc(l)}</option>`).join("");
+    $("[data-program-description]", form).textContent = entryDescription(p, year.value, jurisdiction.value);
+  }
+  function coverageHtml(coverage = state.catalog?.coverage) {
+    const rows = coverageRows(coverage);
+    if (!rows.length) return '<p role="alert">Calculation coverage is unavailable. Refresh before creating a workpaper.</p>';
+    const groups = [];
+    for (const p of programs()) for (const year of coverage.years) {
+      const available = rows.filter(r => r.program === p.id && r.tax_year === year && r.engine_scope_available === true);
+      if (!available.length) continue;
+      const ready = available.filter(r => readyEntryRow(p,r));
+      groups.push({program:p.id,year,jurisdictions:available.map(r=>r.jurisdiction),entry:ready.length ? '2025 workpaper entry available' : 'Read-only availability · entry form pending'});
+    }
+    return `<p>${esc(coverage.statement)}</p><p>${esc(coverage.browser_entry_statement)}</p>` + table(["Program", "Year", "Limited calculation jurisdictions", "Browser entry"], groups, r => `<tr><th scope="row">${esc(r.program)}</th><td>${r.year}</td><td>${r.jurisdictions.map(esc).join(", ")}</td><td>${esc(r.entry)}</td></tr>`);
+  }
   const isCorporate = record => record?.program?.toUpperCase() === "T2";
   const corporateSections = ["corp-identification", "corp-records", "gifi-balance", "gifi-opening", "gifi-income", "corp-adjustments", "province", "output"];
   const provinces = [["", "Choose jurisdiction"], ["AB", "Alberta"], ["BC", "British Columbia"], ["MB", "Manitoba"], ["NB", "New Brunswick"], ["NL", "Newfoundland and Labrador"], ["NS", "Nova Scotia"], ["NT", "Northwest Territories"], ["NU", "Nunavut"], ["ON", "Ontario"], ["PE", "Prince Edward Island"], ["QC", "Québec"], ["SK", "Saskatchewan"], ["YT", "Yukon"]];
@@ -54,7 +99,7 @@
     return modal(title, (el, close) => {
       el.innerHTML = `<form>${content}<p class="form-error" role="alert" hidden></p><div class="actions"><button class="btn" type="button" data-cancel>Cancel</button><button class="btn primary" type="submit">${esc(label)}</button></div></form>`;
       const form = $("form", el), cancel = $("[data-cancel]", form), submit = $("button[type=submit]", form);
-      if ($("[data-create-program]", form)) defaultFiscalPeriod(form);
+      if ($("[data-create-program]", form)) { refreshCreationScope(form); defaultFiscalPeriod(form); }
       cancel.onclick = () => close();
       form.onsubmit = async event => {
         event.preventDefault(); if (form.dataset.busy || !form.reportValidity()) return;
@@ -101,10 +146,13 @@
   async function newReturn() {
     if (!await confirmDiscard()) return;
     const p = program();
+    const years = entryYears(p), selectedYear = years.includes(Number(state.year)) ? Number(state.year) : years[0], jurisdictions = entryJurisdictions(p, selectedYear);
+    if (!years.length || !jurisdictions.length) throw Error("Creation coverage is unavailable. Refresh the catalog before creating a workpaper.");
     let created;
-    const saved = await dialog("Create tax workpaper", `<p class="form-note">Start with an independent NXT ruleset. The source application and SDK are not used to calculate this workpaper.</p><div class="form">${field("Program", select("program", programs().map(p => [p.id, `${p.id.toUpperCase()} · ${p.label}`]), p.id, "data-create-program"))}${field("Name", input("name", "", "text", 'required maxlength="160" placeholder="Workpaper name"'))}${field("Tax year", select("tax_year", choices(p.years), state.year || p.years[0]))}${field("Jurisdiction", select("jurisdiction", choices(p.jurisdictions), p.jurisdictions[0]))}${field("Client reference (optional)", input("client_ref", "", "text", 'maxlength="100"'))}${field("Period start", input("period_start", "", "date"), "Required for a T2 review.")}${field("Period end", input("period_end", "", "date"), "T2 dates must match fiscal days.")}</div><div class="compact-info" data-program-description>${esc(p.description)}</div>`, async fd => {
-      const selected = program(fd.get("program"));
-      created = await request("/returns", { body: { program: selected.id, tax_year: Number(fd.get("tax_year")), jurisdiction: fd.get("jurisdiction"), name: fd.get("name").trim(), client_ref: fd.get("client_ref").trim(), period_start: fd.get("period_start") || undefined, period_end: fd.get("period_end") || undefined, inputs: defaults(selected), parties: [], notes: "" } });
+    const saved = await dialog("Create tax workpaper", `<p class="form-note">Start with an independent NXT ruleset. The source application and SDK are not used to calculate this workpaper. Only verified year-specific browser templates appear below; source years do not enable new calculation rules.</p><details><summary>Calculation and browser-entry coverage</summary>${coverageHtml()}</details><div class="form">${field("Program", select("program", programs().map(p => [p.id, `${p.id.toUpperCase()} · ${p.label}`]), p.id, "data-create-program"))}${field("Name", input("name", "", "text", 'required maxlength="160" placeholder="Workpaper name"'))}${field("Tax year", select("tax_year", choices(years), selectedYear, "data-create-year"))}${field("Jurisdiction", select("jurisdiction", choices(jurisdictions), p.default_jurisdiction || jurisdictions[0], "data-create-jurisdiction"))}${field("Client reference (optional)", input("client_ref", "", "text", 'maxlength="100"'))}${field("Period start", input("period_start", "", "date"), "Required for a T2 review.")}${field("Period end", input("period_end", "", "date"), "T2 dates must match fiscal days.")}</div><div class="compact-info" data-program-description>${esc(entryDescription(p,selectedYear,p.default_jurisdiction || jurisdictions[0]))}</div>`, async fd => {
+      const selected = programs().find(p => p.id === fd.get("program"));
+      if (!selected) throw Error("Choose a program from the verified creation catalog.");
+      created = await request("/returns", { body: { program: selected.id, tax_year: Number(fd.get("tax_year")), jurisdiction: fd.get("jurisdiction"), name: fd.get("name").trim(), client_ref: fd.get("client_ref").trim(), period_start: fd.get("period_start") || undefined, period_end: fd.get("period_end") || undefined, inputs: creationInput(selected,Number(fd.get("tax_year")),fd.get("jurisdiction")), parties: [], notes: "" } });
     }, "Create workpaper", true);
     if (saved) { toast("Tax workpaper created"); go(`return/${created.id}`); }
   }
@@ -191,7 +239,7 @@
   }
 
   function currentResult() { return state.record?.calculation?.result; }
-  function freshCalculation() { return !!state.record?.calculation && !state.dirty && state.record.calculation.input_revision === state.record.input_revision; }
+  function freshCalculation() { return state.record?.current_scope_supported !== false && !!state.record?.calculation && !state.dirty && state.record.calculation.input_revision === state.record.input_revision; }
   async function returnWorkspace(version, id) {
     const record = await request(`/returns/${pid(id)}`);
     if (version !== state.version) return;
@@ -203,8 +251,8 @@
   function renderWorkspace() {
     const r = state.record, p = program(r.program); main.classList.add("workspace-mode");
     const editable = canEdit(r);
-    main.innerHTML = `<div class="work-head"><a class="back" href="#worklist">← Tax worklist</a><div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary")}${button("Calculate", "calculate", "", "ink")}${r.status === "calculated" ? button("Submit for review", "review-return") : r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Print workpaper", "print")}${button("Roll forward", "rollforward")}${r.program === "T1" ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
-      <div class="return-grid">${workspaceNavigation(r,p)}<section class="return-editor" id="return-editor" aria-label="Return data"></section><aside class="result-panel" id="result-panel" aria-label="Calculation status and diagnostics"></aside></div>`;
+    main.innerHTML = `<div class="work-head"><a class="back" href="#worklist">← Tax worklist</a><div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary")}${button("Calculate", "calculate", "", "ink")}${r.current_scope_supported !== false && r.status === "calculated" ? button("Submit for review", "review-return") : r.current_scope_supported !== false && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Print workpaper", "print")}${button("Roll forward", "rollforward")}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
+      ${r.current_scope_supported===false?'<div class="notice" role="alert"><strong>Unsupported current calculation scope.</strong><p>Saved calculations and approvals are historical only. This workpaper cannot enter review, approval, authorization or recorded filing in this program, year and jurisdiction.</p></div>':""}${!browserEntryAvailable(r) && r.current_scope_supported!==false ? '<div class="notice" role="note"><strong>Year-specific browser editor pending.</strong><p>Input editing is unavailable for this saved workpaper. Its inputs remain unchanged; calculation results, diagnostics, history and exports remain available. A limited engine path does not verify an entry form.</p></div>' : ""}<div class="return-grid">${workspaceNavigation(r,p)}<section class="return-editor" id="return-editor" aria-label="Return data"></section><aside class="result-panel" id="result-panel" aria-label="Calculation status and diagnostics"></aside></div>`;
     $$("[data-action=save-return],[data-action=calculate]", main).forEach(b => b.disabled = !editable);
     renderEditor(); renderSidePanel(); setDirtyStatus();
   }
@@ -217,6 +265,10 @@
     const host = $("#return-editor"), r = state.draft, p = program(r.program), editable = canEdit(state.record);
     $$("[data-section]", main).forEach(b => b.classList.toggle("active", b.dataset.section === state.section));
     $$("[data-topic]", main).forEach(b => { const active=b.dataset.topic===corporateTopic(state.section); b.classList.toggle("active",active); b.setAttribute("aria-pressed",String(active)); });
+    if (!browserEntryAvailable(state.record) && !["calculation", "diagnostics", "review"].includes(state.section)) {
+      host.innerHTML = '<div class="card"><h2>Browser entry unavailable for this scope</h2><p>The entry fields, help and defaults for this year must be verified before editing. Saved inputs remain unchanged. Results, diagnostics, history and workpaper exports remain available.</p></div>';
+      return;
+    }
     if (state.section === "identity") {
       host.innerHTML = `<div class="editor-title"><h2>Return information</h2>${badge("neutral", "NXT workpaper")}</div>${!editable ? '<p class="form-note">Reopen the workpaper as a draft before editing. Changing inputs invalidates the prior calculation and review.</p>' : ""}<div class="card"><div class="form">${field("Name", input("name", r.name, "text", 'data-meta required maxlength="160"'))}${field("Client reference", input("client_ref", r.client_ref || "", "text", 'data-meta maxlength="100"'))}${field("Tax year", select("tax_year", choices([...new Set([...list(p.years),r.tax_year])]), r.tax_year, 'disabled aria-label="Tax year, immutable; use roll forward for a new year"'))}${field("Jurisdiction", select("jurisdiction", choices(p.jurisdictions), r.jurisdiction, "data-meta"))}${field("Period start", input("period_start", r.period_start || "", "date", "data-meta"))}${field("Period end", input("period_end", r.period_end || "", "date", "data-meta"))}${field("Review notes", `<textarea name="notes" data-meta rows="6" maxlength="10000">${esc(r.notes || "")}</textarea>`, "Do not store passwords or filing credentials in these notes.", true)}</div></div><div class="notice" style="margin-top:17px"><span>ⓘ</span><div><strong>Independent calculation source</strong><p>${esc(p.description)} This module does not claim DT Max format compatibility or filing certification.</p></div></div>`;
     } else if (isCorporate(r) && corporateSections.includes(state.section)) renderCorporateEditor();
@@ -232,6 +284,7 @@
     setWorkspaceBusy();
   }
   function renderKeyword(f) {
+    if (f.key === "scope_confirmed") f = {...f,help:entryDescription(program(state.record?.program),state.record?.tax_year,state.record?.jurisdiction)};
     const value = state.draft.inputs[f.key] ?? f.default, id = "tax-field-" + f.key, attr = `id="${esc(id)}" data-keyword="${esc(f.key)}"`;
     let control;
     if (f.kind === "boolean") control = `<input type="checkbox" ${attr}${value ? " checked" : ""} aria-label="${esc(f.label)}">`;
@@ -259,12 +312,12 @@
   function renderSidePanel() {
     const host = $("#result-panel"); if (!host) return;
     const result = currentResult(), fresh = freshCalculation(), diagnostics = list(result?.diagnostics), blocking = diagnostics.filter(d => d.blocks_review).length;
-    host.innerHTML = `<div class="panel-label">Workpaper status</div><h2>${badge(state.record.status)}</h2>${state.dirty ? '<p class="source-note unsaved">Unsaved changes. Save and recalculate before review.</p>' : result && !fresh ? '<p class="source-note unsaved">Inputs changed after the last calculation. Recalculate to review current values.</p>' : ""}<div class="panel-label">Calculation</div>${result ? `${badge(fresh ? result.supported ? "good" : "warning" : "neutral", fresh ? result.supported ? "Calculated · supported scope" : "Scope / validation issues" : "Out of date")}<p class="source-note">${esc(result.ruleset || "Independent NXT ruleset")}<br>${esc(stamp(state.record.calculation.created_at))}</p>${totalsRows(result, 5)}<div class="panel-label">Diagnostics · ${diagnostics.length}</div>${blocking ? badge("error", `${blocking} blocking`) : ""}${diagnosticsMarkup(diagnostics.slice(0, 4))}${diagnostics.length > 4 ? '<button class="btn sm" data-section="diagnostics">View all diagnostics</button>' : ""}` : '<div class="diagnostic-panel-empty">No calculation yet.<br>Enter the keywords, save and calculate to produce a versioned workpaper.</div>'}${isCorporate(state.record)?`<div class="panel-label">Corporate workpaper</div><p class="source-note">${state.draft?.corporate?`${list(state.draft.corporate.gifi).length} financial lines · ${list(state.draft.corporate.adjustments).length} adjustments`:`Optional profile not added`}</p>`:""}<div class="panel-label">Filing status</div>${badge("neutral", "Not enabled")}<p class="source-note">This is a workpaper, not a certified tax return or filing acknowledgement.</p>`;
+    host.innerHTML = `<div class="panel-label">Workpaper status</div><h2>${badge(state.record.status)}</h2>${state.dirty ? '<p class="source-note unsaved">Unsaved changes. Save and recalculate before review.</p>' : result && state.record.current_scope_supported===false ? '<p class="source-note unsaved">Saved amounts are historical only. This program, year and jurisdiction are outside the current calculation scope.</p>' : result && !fresh ? '<p class="source-note unsaved">Inputs changed after the last calculation. Recalculate to review current values.</p>' : ""}<div class="panel-label">Calculation</div>${result ? `${badge(fresh ? result.supported ? "good" : "warning" : "neutral", fresh ? result.supported ? "Calculated · supported scope" : "Scope / validation issues" : state.record.current_scope_supported===false ? "Historical · unsupported scope" : "Out of date")}<p class="source-note">${esc(result.ruleset || "Independent NXT ruleset")}<br>${esc(stamp(state.record.calculation.created_at))}</p>${totalsRows(result, 5)}<div class="panel-label">Diagnostics · ${diagnostics.length}</div>${blocking ? badge("error", `${blocking} blocking`) : ""}${diagnosticsMarkup(diagnostics.slice(0, 4))}${diagnostics.length > 4 ? '<button class="btn sm" data-section="diagnostics">View all diagnostics</button>' : ""}` : '<div class="diagnostic-panel-empty">No calculation yet.<br>Enter the keywords, save and calculate to produce a versioned workpaper.</div>'}${isCorporate(state.record)?`<div class="panel-label">Corporate workpaper</div><p class="source-note">${state.draft?.corporate?`${list(state.draft.corporate.gifi).length} financial lines · ${list(state.draft.corporate.adjustments).length} adjustments`:`Optional profile not added`}</p>`:""}<div class="panel-label">Filing status</div>${badge("neutral", "Not enabled")}<p class="source-note">This is a workpaper, not a certified tax return or filing acknowledgement.</p>`;
   }
   function renderCalculation() {
     const result = currentResult(), host = $("#return-editor");
     if (!result) { host.innerHTML = `<div class="card">${empty("Calculate to build the workpaper", "Enter and save the required inputs, then calculate with the independent NXT ruleset.", button("Calculate", "calculate", "", "primary"))}</div>`; return; }
-    host.innerHTML = `<div class="editor-title"><h2>Calculated workpaper</h2>${badge(freshCalculation() ? "good" : "warning", freshCalculation() ? "Current input revision" : "Recalculation required")}</div><p class="form-note">${esc(result.scope || "Declared independent calculation scope")} · ${esc(result.ruleset || "")}</p><div class="calc-lines">${table(["Line / keyword", "Description", "Amount (CAD)"], list(result.lines), line => `<tr><td class="mono">${esc(line.code)}</td><td>${esc(line.label)}</td><td class="num">${money(line.amount)}</td></tr>`, "No calculated lines")}</div><div class="card" style="margin-top:15px"><h3>Totals</h3>${totalsRows(result)}</div><div class="card"><h3>Ruleset sources</h3>${sourceList(result.sources)}</div>${corporateAnalysisMarkup(result.corporate_analysis)}`;
+    host.innerHTML = `<div class="editor-title"><h2>Calculated workpaper</h2>${badge(freshCalculation() ? "good" : "warning", freshCalculation() ? "Current input revision" : state.record.current_scope_supported===false ? "Historical · unsupported scope" : "Recalculation required")}</div><p class="form-note">${esc(result.scope || "Declared independent calculation scope")} · ${esc(result.ruleset || "")}</p><div class="calc-lines">${table(["Line / keyword", "Description", "Amount (CAD)"], list(result.lines), line => `<tr><td class="mono">${esc(line.code)}</td><td>${esc(line.label)}</td><td class="num">${money(line.amount)}</td></tr>`, "No calculated lines")}</div><div class="card" style="margin-top:15px"><h3>${state.record.current_scope_supported===false?"Historical totals":"Totals"}</h3>${totalsRows(result)}</div><div class="card"><h3>Ruleset sources</h3>${sourceList(result.sources)}</div>${corporateAnalysisMarkup(result.corporate_analysis)}`;
   }
   function sourceList(sources) { return list(sources).length ? `<ul class="source-list">${sources.map(s => { const url = safeUrl(s.url); return `<li>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(s.title || url)}</a>` : esc(s.title || "Source reference")}</li>`; }).join("")}</ul>` : '<p class="form-note">No source references were supplied by this ruleset.</p>'; }
   function safeUrl(value) { try { const u = new URL(value); return ["http:", "https:"].includes(u.protocol) ? u.href : ""; } catch { return ""; } }
@@ -356,6 +409,7 @@
     return { expected_revision: state.record.revision, program: d.program, tax_year: Number(d.tax_year), jurisdiction: d.jurisdiction, name: d.name.trim(), client_ref: String(d.client_ref || "").trim(), period_start: d.period_start || undefined, period_end: d.period_end || undefined, inputs: d.inputs, parties: d.parties, notes: d.notes || "", corporate: isCorporate(d)?d.corporate||null:undefined };
   }
   async function saveReturn() {
+    if (!browserEntryAvailable(state.record)) throw new Error("The entry form for this year is unavailable; input editing remains disabled.");
     if (!canEdit(state.record)) throw new Error("Reopen the workpaper as a draft before editing.");
     if (!state.dirty) return;
     if (Object.keys(state.errors).length) throw new Error("Correct the highlighted values before saving.");
@@ -365,6 +419,7 @@
     state.record = record; state.draft = clone(record); state.dirty = false; state.errors = {}; renderPrograms(); renderWorkspace(); toast("Workpaper saved");
   }
   async function calculate() {
+    if (!browserEntryAvailable(state.record)) throw Error("The year-specific browser editor is unavailable; no calculation was requested.");
     if (state.dirty) await saveReturn();
     const record = await request(`/returns/${pid(state.record.id)}/calculate`, { body: { expected_revision: state.record.revision } });
     state.record = record; state.draft = clone(record); state.dirty = false; state.section = "calculation"; renderWorkspace(); toast("Calculation snapshot recorded");
@@ -424,7 +479,7 @@
   async function auditPage(version) { state.record = null; const events = list(await request("/audit")); page(version, "Tax audit trail", "Changes, calculation snapshots, imports and review decisions recorded by the workspace.", "", `<div class="card">${auditMarkup(events)}</div>`); }
   async function capabilitiesPage(version) {
     state.record = null; const c = await request("/capabilities");
-    page(version, "Calculation coverage", "The actual independent-engine boundary, including unsupported and unconfigured capabilities.", "", `<div class="notice"><span>ⓘ</span><div><strong>Filing is disabled. This tax suite is not certified filing software.</strong><p>It prepares workpapers within declared narrow rulesets. Review every result and source before use.</p></div></div><div class="capability-grid">${programs().map(p => `<article class="card"><div class="row"><h3>${esc(p.id.toUpperCase())} · ${esc(p.label)}</h3><span class="spacer"></span>${badge("neutral", "Independent")}</div><p>${esc(p.description)}</p><p>Years: ${list(p.years).map(esc).join(", ")}<br>Jurisdictions: ${list(p.jurisdictions).map(j => esc(typeof j === "string" ? j : j.label || j.value)).join(", ")}</p>${button("Create workpaper", "new-return-program", p.id, "sm")}</article>`).join("")}</div><div class="card" style="margin-top:16px"><h2>Declared limitations</h2><ul class="source-list">${list(c.limitations).map(x => `<li>${esc(typeof x === "string" ? x : x.message || x.label || "Ruleset limitation")}</li>`).join("")}</ul><div class="row">${badge("neutral", "Certification: not certified")}${badge("neutral", "DT Max SDK: not used for calculations")}${badge("neutral", "External filing: disabled")}</div><p class="form-note" style="margin-top:14px">Relationships and reviewer labels are metadata under shared workspace authentication. They do not create verified staff identities, filing authority, or client-company tenancy.</p></div>`);
+    page(version, "Calculation coverage", "The actual independent-engine boundary, including unsupported and unconfigured capabilities.", "", `<div class="notice"><span>ⓘ</span><div><strong>Filing is disabled. This tax suite is not certified filing software.</strong><p>It prepares workpapers within declared narrow rulesets. Review every result and source before use.</p></div></div><div class="card"><h2>Versioned scope availability</h2>${coverageHtml(c.coverage)}</div><div class="capability-grid">${programs().map(p => `<article class="card"><div class="row"><h3>${esc(p.id.toUpperCase())} · ${esc(p.label)}</h3><span class="spacer"></span>${badge("neutral", "Independent")}</div><p>${esc(p.description)}</p><p>Verified browser-entry years: ${entryYears(p).map(esc).join(", ")}<br>Entry jurisdictions: ${list(p.jurisdictions).map(j => esc(typeof j === "string" ? j : j.label || j.value)).join(", ")}</p>${button("Create workpaper", "new-return-program", p.id, "sm")}</article>`).join("")}</div><div class="card" style="margin-top:16px"><h2>Declared limitations</h2><ul class="source-list">${list(c.limitations).map(x => `<li>${esc(typeof x === "string" ? x : x.message || x.label || "Ruleset limitation")}</li>`).join("")}</ul><div class="row">${badge("neutral", "Certification: not certified")}${badge("neutral", "DT Max SDK: not used for calculations")}${badge("neutral", "External filing: disabled")}</div><p class="form-note" style="margin-top:14px">Relationships and reviewer labels are metadata under shared workspace authentication. They do not create verified staff identities, filing authority, or client-company tenancy.</p></div>`);
   }
 
   const actions = {
@@ -503,7 +558,8 @@
     if (el.matches("[data-corporate]")&&["checkbox","select-one"].includes(el.type)&&canEdit(state.record)) updateCorporateInput(el);
     if (el.matches("[data-work-filter]")) updateWorkFilter(el);
     if (el.matches("[data-keyword]") && ["checkbox", "select-one"].includes(el.type)) updateKeyword(el);
-    if (el.matches("[data-create-program]")) { const p = program(el.value), form = el.closest("form"); $("[name=tax_year]", form).innerHTML = choices(p.years).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join(""); $("[name=jurisdiction]", form).innerHTML = choices(p.jurisdictions).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join(""); $("[data-program-description]", form).textContent = p.description; defaultFiscalPeriod(form); }
+    if (el.matches("[data-create-program]")) { const form=el.closest("form"); refreshCreationScope(form,true); defaultFiscalPeriod(form); }
+    if (el.matches("[data-create-year],[data-create-jurisdiction]")) refreshCreationScope(el.closest("form"));
     if (el.name === "tax_year" && el.closest("form")?.querySelector("[data-create-program]")) defaultFiscalPeriod(el.closest("form"), true);
     if (el.matches("[data-import-file]")) { const file = el.files[0]; if (!file) return; if (file.size > 512 * 1024) { toast("Choose a package smaller than 512 KiB.", true); return; } $("[data-import-document]").value = await file.text(); resetImportPreview(); }
   });

@@ -1,5 +1,7 @@
 # Independent NXT Tax engine: evidence and reconstruction boundary
 
+> Historical evidence boundary: this investigation is dated 25 October 2026. Its installed-artifact and authority-page observations are not a fresh current-feature/certification check. Current bounded engine availability and browser-entry limits are described by `/api/tax/catalog.coverage` and [the coverage guide](DTMAX_TAX_COVERAGE.md); later code implements additional limited paths without establishing full DT Max parity.
+
 Status: 25 October 2026. The user selected an **independent NXT calculation engine**, integrated into the NXT OS. DT Max is a workflow/reference target, not a runtime dependency. No SDK automation action was invoked, no tax calculation was run in DT Max, and no real client database was opened during this investigation.
 
 This document distinguishes shipped-artifact observations, vendor documentation, and the deliberately narrower initial NXT implementation scope. It does not assert complete DT Max parity or filing readiness. The measurable completion plan is [DTMAX_PARITY_ROADMAP.md](DTMAX_PARITY_ROADMAP.md).

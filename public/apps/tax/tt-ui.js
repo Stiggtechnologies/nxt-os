@@ -9,33 +9,56 @@
   const loadSlips = id => { try { return JSON.parse(localStorage.getItem(slipStoreKey(id)) || "{\"slips\":[],\"keys\":[]}"); } catch { return { slips: [], keys: [] }; } };
   const saveSlips = (id, v) => { try { localStorage.setItem(slipStoreKey(id), JSON.stringify(v)); } catch {} };
   const body = (r, inputs) => ({ program: r.program, tax_year: r.tax_year, jurisdiction: r.jurisdiction, name: r.name, client_ref: r.client_ref || "", period_start: r.period_start, period_end: r.period_end, inputs, parties: r.parties || [], corporate: r.corporate ?? null, notes: r.notes || "", expected_revision: r.revision });
+  function guidedEntryAvailable(catalog, r) {
+    const c=catalog?.coverage,p=Array.isArray(catalog?.programs)?catalog.programs.find(p=>p.id===r?.program):null;
+    if(r?.program!=="T1" || r.current_scope_supported===false || r.tax_year!==C.TAX_YEAR || c?.schema!=="nxt-tax-coverage/v1" || c.version!=="2026-11-09.1" || !Array.isArray(c.scopes))return false;
+    const rows=c.scopes.filter(x=>x.program===r.program && x.tax_year===r.tax_year && x.jurisdiction===r.jurisdiction),row=rows.length===1?rows[0]:null;
+    return !!row && row.engine_scope_available===true && row.browser_entry_available===true && row.entry_state==="verified_baseline_schema" && row.entry_schema_id===p?.entry_schema_id && p?.entry_schema_id===`nxt-tax-entry/T1/${C.TAX_YEAR}/v1` && row.entry_schema_year===p?.entry_schema_year && row.tax_year===p?.entry_schema_year;
+  }
+  async function requireGuidedEntry(r) {
+    const catalog=await api("/api/tax/catalog");
+    if(!guidedEntryAvailable(catalog,r))throw Error("The guided entry form is unavailable for this program, year and jurisdiction. Saved inputs remain unchanged.");
+    return catalog;
+  }
+  function guidedReadOnly(main,r) {
+    main.innerHTML=banner()+`<section class="tt-card"><h1>Guided entry unavailable</h1><p role="alert">The entry form for this program, year and jurisdiction has not been verified. Saved inputs remain unchanged; no interview changes or calculation were submitted.</p>${r?`<p>${Number(r.tax_year)} · ${esc(r.jurisdiction)}</p><a class="btn" href="#return/${encodeURIComponent(r.id)}">Open saved workpaper</a>`:'<a class="btn" href="#worklist">Open worklist</a>'} <a class="btn" href="#capabilities">View calculation coverage</a></section>`;
+  }
   async function saveAndCalc(r, inputs) {
+    await requireGuidedEntry(r);
     const saved = await api("/api/tax/returns/" + encodeURIComponent(r.id), { method: "PUT", body: body(r, inputs) });
     return api("/api/tax/returns/" + encodeURIComponent(r.id) + "/calculate", { body: { expected_revision: saved.revision, idempotency_key: "tt-" + saved.id + "-" + saved.input_revision } });
   }
-  const calcOf = r => r && r.calculation && (r.calculation.result || r.calculation);
+  const calcOf = r => {
+    const c = r && r.calculation && (r.calculation.result || r.calculation);
+    return r?.current_scope_supported === false ? { ...c, supported: false, totals: {}, diagnostics: [...(c?.diagnostics || []), { code: "unsupported_current_scope", message: "This program, year and jurisdiction are outside the current calculation scope. Saved results are historical only.", blocks_review: true }] } : c;
+  };
   function meterHtml(r) {
     const m = C.meter(calcOf(r));
     return `<div class="tt-meter tt-${m.kind}" aria-live="polite"><span>${esc(m.label)}</span><strong>${m.kind === "pending" ? "—" : money(m.cents)}</strong><small>${Number(r.tax_year)} · ${esc(r.jurisdiction)}</small></div>`;
   }
   const SCREENS = [["profile", "About you"], ["situations", "What applies"], ["slips", "Slips"], ["deductions", "Deductions & credits"], ["review", "Review"], ["pay", "Pay fee"]];
   function steps(id, cur) { return `<ol class="tt-steps">${SCREENS.map(([s, l]) => `<li${s === cur ? ' aria-current="step"' : ""}><a href="#tt-t1/${encodeURIComponent(id)}?screen=${s}">${esc(l)}</a></li>`).join("")}</ol>`; }
-  const provinceOptions = sel => C.PROVINCES.map(([c, n]) => `<option value="${c}"${c === sel ? " selected" : ""}>${esc(n)}</option>`).join("");
+  const provinceOptions = (sel,catalog) => C.PROVINCES.filter(([j])=>guidedEntryAvailable(catalog,{program:"T1",tax_year:C.TAX_YEAR,jurisdiction:j})).map(([c, n]) => `<option value="${c}"${c === sel ? " selected" : ""}>${esc(n)}</option>`).join("");
 
   // ---- Start: Me vs Me + spouse.
   async function start(main) {
+    const catalog=await api("/api/tax/catalog");
+    if(!C.PROVINCES.some(([j])=>guidedEntryAvailable(catalog,{program:"T1",tax_year:C.TAX_YEAR,jurisdiction:j}))) { guidedReadOnly(main,null);return; }
     main.innerHTML = `${banner()}<section class="tt-card"><h1>Who is this return for?</h1><p>Pick one. A couple gets two linked T1 workpapers so they can be compared and optimised.</p>
       <form id="tt-start" class="tt-form"><div class="tt-choice"><label><input type="radio" name="who" value="me" checked> <strong>One person</strong><span>Single T1</span></label><label><input type="radio" name="who" value="couple"> <strong>A couple</strong><span>Two linked T1s, spouse proposals</span></label></div>
       <label>Display name<input name="name" value="Example Person 001" maxlength="120" required></label>
       <label class="tt-spouse">Spouse display name<input name="spouse" value="Example Person 002" maxlength="120"></label>
-      <label>Province or territory on December 31, ${C.TAX_YEAR}<select name="prov">${provinceOptions("AB")}</select></label>
+      <label>Province or territory on December 31, ${C.TAX_YEAR}<select name="prov">${provinceOptions("AB",catalog)}</select></label>
       <p class="tt-hint">Use a synthetic display name or the firm client reference. Do not enter a real name or SIN here.</p>
       <button class="btn primary">Start the interview</button><p class="form-error" id="tt-err"></p></form></section>`;
     const f = main.querySelector("#tt-start");
     f.addEventListener("submit", async e => {
       e.preventDefault(); const d = new FormData(f);
       try {
-        const mk = name => api("/api/tax/returns", { body: { program: "T1", tax_year: C.TAX_YEAR, jurisdiction: d.get("prov"), name, inputs: {}, expected_revision: null } });
+        const mk = async name => {
+          await requireGuidedEntry({program:"T1",tax_year:C.TAX_YEAR,jurisdiction:d.get("prov")});
+          return api("/api/tax/returns", { body: { program: "T1", tax_year: C.TAX_YEAR, jurisdiction: d.get("prov"), name, inputs: {}, expected_revision: null } });
+        };
         const a = await mk(String(d.get("name")));
         if (d.get("who") === "couple") { const b = await mk(String(d.get("spouse") || "Example Person 002")); await api("/api/tax/families", { body: { label: a.name + " & " + b.name, primary_return_id: a.id, spouse_return_id: b.id } }); }
         location.hash = "#tt-t1/" + encodeURIComponent(a.id) + "?screen=profile";
@@ -47,6 +70,8 @@
   async function t1(main, id, query) {
     const q = new URLSearchParams(query), screen = q.get("screen") || "profile", focus = q.get("field");
     let r = await api("/api/tax/returns/" + encodeURIComponent(id));
+    const catalog=await api("/api/tax/catalog");
+    if(!guidedEntryAvailable(catalog,r)) { guidedReadOnly(main,r);return; }
     const head = () => `${banner()}<div class="tt-top"><a href="#return/${encodeURIComponent(id)}">← Workpaper view</a><h1>${esc(r.name)}</h1>${meterHtml(r)}</div>${steps(id, screen)}`;
     const go = s => { location.hash = "#tt-t1/" + encodeURIComponent(id) + "?screen=" + s; };
     const inputs = Object.assign({}, r.inputs || {});
