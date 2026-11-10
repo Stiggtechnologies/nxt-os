@@ -59,6 +59,22 @@
     jurisdiction.innerHTML = choices(jurisdictions).map(([v,l]) => `<option value="${esc(v)}"${v === prior ? " selected" : ""}>${esc(l)}</option>`).join("");
     $("[data-program-description]", form).textContent = entryDescription(p, year.value, jurisdiction.value);
   }
+  function draftDestination(catalog, programId, year, jurisdiction) {
+    const rows=coverageRows(catalog?.coverage),matches=rows.filter(r=>r.program===programId && r.tax_year===Number(year) && r.jurisdiction===jurisdiction),row=matches.length===1?matches[0]:null,p=list(catalog?.programs).find(p=>p.id===programId);
+    const known=catalog?.coverage?.schema==="nxt-tax-coverage/v1" && catalog.coverage.version==="2026-11-09.1";
+    return {known,engine:known && row?.engine_scope_available===true,entry:known && readyEntryRow(p,row),program:programId,year:Number(year),jurisdiction};
+  }
+  function draftDestinationHtml(d) {
+    return `<p><strong>Destination: ${esc(d.program)} · ${esc(d.year)} · ${esc(d.jurisdiction)}</strong><br>Limited calculation path: ${d.known?(d.engine?'available, subject to scope checks':'not available for this scope'):'readiness not verified'}.<br>Input entry: ${d.entry?'verified form available':'Read-only draft · entry form unavailable'}.</p><p>Only a profile draft is created. Calculation and approval are not copied. Any closing balances carried into opening fields still need verification; yearly template defaults are not added.</p>`;
+  }
+  function rollforwardSourceCurrent(source) {
+    return !!source && !state.dirty && ["id","revision","program","jurisdiction","tax_year","name"].every(k=>state.record?.[k]===source[k]);
+  }
+  function refreshRollforwardPreview(form, catalog=state.rollforwardPreview?.catalog, source=state.rollforwardPreview?.source) {
+    const d=draftDestination(catalog,source.program,Number($("[name=tax_year]",form).value),source.jurisdiction);
+    $("[data-rollforward-readiness]",form).innerHTML=draftDestinationHtml(d);
+    $("button[type=submit]",form).textContent=d.entry?'Create next-year draft':'Create read-only next-year draft';
+  }
   function coverageHtml(coverage = state.catalog?.coverage) {
     const rows = coverageRows(coverage);
     if (!rows.length) return '<p role="alert">Calculation coverage is unavailable. Refresh before creating a workpaper.</p>';
@@ -100,6 +116,7 @@
       el.innerHTML = `<form>${content}<p class="form-error" role="alert" hidden></p><div class="actions"><button class="btn" type="button" data-cancel>Cancel</button><button class="btn primary" type="submit">${esc(label)}</button></div></form>`;
       const form = $("form", el), cancel = $("[data-cancel]", form), submit = $("button[type=submit]", form);
       if ($("[data-create-program]", form)) { refreshCreationScope(form); defaultFiscalPeriod(form); }
+      if (state.rollforwardPreview && $("[data-rollforward-year]",form)) refreshRollforwardPreview(form);
       cancel.onclick = () => close();
       form.onsubmit = async event => {
         event.preventDefault(); if (form.dataset.busy || !form.reportValidity()) return;
@@ -433,8 +450,21 @@
   }
   async function rollforward() {
     if (state.dirty) throw new Error("Save changes before rolling forward.");
+    const source=Object.fromEntries(["id","revision","program","jurisdiction","tax_year","name"].map(k=>[k,state.record[k]]));
+    const catalog=await request("/catalog");
+    if(!rollforwardSourceCurrent(source))throw Error("The source workpaper changed while loading readiness. Open Rollforward again.");
+    const destination=draftDestination(catalog,source.program,Number(source.tax_year)+1,source.jurisdiction);
+    state.rollforwardPreview={catalog,source};
     let created;
-    const saved = await dialog("Roll forward workpaper", `<p class="form-note">Create a separate draft with a new year and fresh calculation/review state. The ruleset must support the selected year before it can calculate.</p><div class="form">${field("New tax year", input("tax_year", Number(state.record.tax_year) + 1, "number", 'min="2000" max="2100" required'))}${field("New workpaper name", input("name", state.record.name, "text", 'required maxlength="160"'))}</div>`, async fd => { created = await request(`/returns/${pid(state.record.id)}/rollforward`, { body: { expected_revision: state.record.revision, tax_year: Number(fd.get("tax_year")), name: fd.get("name").trim() } }); }, "Create next-year draft");
+    const saved = await dialog("Roll forward profile draft", `<p class="form-note">Create a separate profile draft for the next year. A draft container does not establish calculation or browser-entry readiness.</p><div class="form">${field("New tax year", input("tax_year", Number(source.tax_year) + 1, "number", 'min="2000" max="2100" required data-rollforward-year'))}${field("New workpaper name", input("name", source.name, "text", 'required maxlength="160"'))}</div><div class="compact-info" data-rollforward-readiness>${draftDestinationHtml(destination)}</div>`, async (fd,form) => {
+      const submitted={year:Number(fd.get("tax_year")),name:fd.get("name").trim()};
+      if(!rollforwardSourceCurrent(source))throw Error("The source workpaper changed. Open Rollforward again.");
+      const fresh=await request("/catalog");
+      if(!rollforwardSourceCurrent(source) || Number($("[name=tax_year]",form).value)!==submitted.year || $("[name=name]",form).value.trim()!==submitted.name)throw Error("The source or destination form changed while checking readiness. Review the destination and try again.");
+      refreshRollforwardPreview(form,fresh,source);
+      created = await request(`/returns/${pid(source.id)}/rollforward`, { body: { expected_revision: source.revision, tax_year: submitted.year, name: submitted.name } });
+    }, destination.entry?"Create next-year draft":"Create read-only next-year draft");
+    if(state.rollforwardPreview?.source===source)state.rollforwardPreview=null;
     if (saved) { state.section = "identity"; go(`return/${created.id}`); toast("New-year draft created"); }
   }
   async function downloadReturn(kind) {
@@ -558,6 +588,7 @@
     if (el.matches("[data-corporate]")&&["checkbox","select-one"].includes(el.type)&&canEdit(state.record)) updateCorporateInput(el);
     if (el.matches("[data-work-filter]")) updateWorkFilter(el);
     if (el.matches("[data-keyword]") && ["checkbox", "select-one"].includes(el.type)) updateKeyword(el);
+    if (el.matches("[data-rollforward-year]")) refreshRollforwardPreview(el.closest("form"));
     if (el.matches("[data-create-program]")) { const form=el.closest("form"); refreshCreationScope(form,true); defaultFiscalPeriod(form); }
     if (el.matches("[data-create-year],[data-create-jurisdiction]")) refreshCreationScope(el.closest("form"));
     if (el.name === "tax_year" && el.closest("form")?.querySelector("[data-create-program]")) defaultFiscalPeriod(el.closest("form"), true);
