@@ -20,11 +20,11 @@ fn program(id:&str,label:&str,description:&str,jurisdiction:&str,scope:&str,sect
         let schema=match kind {"money"=>json!({"type":"integer","minimum":0,"maximum":100_000_000_000_000_i64,"unit":"CAD cents"}),"number"=>json!({"type":"integer"}),"boolean"=>json!({"type":"boolean"}),"json"=>json!({"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","name","share_bps"],"properties":{"id":{"type":"string"},"name":{"type":"string"},"share_bps":{"type":"integer","minimum":0,"maximum":10000}}}}),_=>json!({"type":"string"})};
         properties.insert(key.into(),schema);
     }}
-    json!({"id":id,"label":label,"description":description,"years":[2025],"jurisdictions":[jurisdiction],"scope":scope,"ruleset":RULESET,"filing_supported":false,"sections":sections,"defaults":defaults,"input_schema":{"type":"object","additionalProperties":false,"properties":properties},"sources":sources(id)})
+    json!({"id":id,"label":label,"description":description,"years":super::coverage::entry_years(id),"jurisdictions":super::coverage::entry_jurisdictions(id,2025),"default_jurisdiction":jurisdiction,"entry_schema_id":super::coverage::entry_schema_id(id),"entry_schema_year":2025,"scope":scope,"ruleset":RULESET,"filing_supported":false,"sections":sections,"defaults":defaults,"input_schema":{"type":"object","additionalProperties":false,"properties":properties},"sources":sources(id)})
 }
 
 pub fn catalog()->Value {
-    let t1=program("T1","T1 — Personal","Federal and Alberta ordinary employment/interest income-tax workpaper.","AB",T1_SCOPE,vec![
+    let t1=program("T1","T1 — Personal","Selected 2025 employment and interest workpapers. Choose a jurisdiction to read its exact entry scope.","AB",T1_SCOPE,vec![
         scope_fields(T1_SCOPE),
         section("residence","Residency",vec![yes("full_year_resident","Full-year Canadian resident; resident of the selected province at year-end","Adult age 18–64 in this scope. Newcomer, emigrant, deemed resident, deceased, bankruptcy, spouse/dependant and age-credit cases require additional rules."),yes("provincial_adjustments_not_applicable","Provincial reductions/credits not calculated do not apply (BC, SK, MB, NB, NS, PE, NL, YT, NT, NU only)","Required for the generic provincial engine; the calculation diagnostics list what is not calculated for the chosen province. Ignored for AB and ON.")]),
         section("income","Income",vec![money("employment_income_cents","T4 employment income","Ordinary Canadian employment; dollars in the editor, integer cents in the API. Standard insurable employment only; foreign employment and self-employment are excluded."),money("interest_income_cents","Canadian interest income","Ordinary Canadian-source interest only. Dividends, capital gains and foreign income are excluded.")]),
@@ -53,7 +53,7 @@ pub fn catalog()->Value {
         section("partners","Partner agreement",vec![partners,yes("allocation_verified","General-partner status, agreement shares and tax adjustments verified","No limited partnership, at-risk, non-resident or special allocation rules. Tax is calculated on partners' own returns, not as ordinary partnership tax here.")]),
     ]);
     let mut doc=json!({"ruleset":RULESET,"engine":"independent_nxt","money_unit":"CAD cents","rounding":"integer arithmetic; nearest cent, half away from zero; partnership largest-remainder allocation","filing_supported":false,"certified":false,"sdk_runtime_required":false,"programs":[t1,t2,t3,t5013]});
-    doc["programs"][0]["jurisdictions"]=json!(["AB","ON","BC","SK","MB","NB","NS","PE","NL","YT","NT","NU"]);
+    doc["coverage"]=super::coverage::catalog();
     doc["programs"][0]["provincial_scope"]=json!(super::calculations::T1_PROV_SCOPE);
     doc["programs"][0]["ontario_scope"]=json!(super::calculations::T1_ON_SCOPE);
     doc

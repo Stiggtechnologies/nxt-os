@@ -168,7 +168,7 @@ async fn print(State(t):S,Path(id):Path<String>) -> TResult<Response> {
 }
 
 async fn audit_verify(State(t):S) -> R { ok(super::verify_audit(&t.audit().await?)) }
-async fn rates() -> R { ok(super::rates::catalog()) }
+async fn rates() -> R { ok(super::coverage::rate_metadata()) }
 #[derive(Deserialize)] #[serde(deny_unknown_fields)] struct SlipsInput { slips: Vec<super::slips::Slip> }
 async fn slips_aggregate(Json(input):Json<SlipsInput>) -> R { ok(super::slips::aggregate(&input.slips).map_err(super::bad)?) }
 /// Body: the `rows` from GET /api/company-books/{company}/trial-balance plus an explicit account -> GIFI mapping.

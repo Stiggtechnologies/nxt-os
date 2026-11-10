@@ -1,0 +1,23 @@
+# Versioned tax coverage and browser creation
+
+`GET /api/tax/catalog` now includes `coverage`, schema `nxt-tax-coverage/v1`, version `2026-11-09.1`. The same object is returned in capabilities. It enumerates 120 finite program/year/jurisdiction combinations for T1, T2, T3 and T5013, 2025/2026 and the 15 recognized jurisdiction codes. Every `engine_scope_available` flag comes directly from `calculations::supports_scope`. Unlisted combinations have no availability claim. This is a calculation-path inventory, not complete tax-situation coverage or certification.
+
+There are 31 bounded engine paths: 15 for 2025 and16 for 2026. Quebec T1 is absent for 2025 and has a limited implemented path for 2026. T2 remains Alberta, T3 federal-only and T5013 ordinary domestic allocation. Per-case inputs, confirmations and diagnostics still decide whether any saved calculation is supported. No formula, rate, supported jurisdiction or year was added.
+
+Browser entry is a separate contract. Only the existing 2025 baseline templates have an accepted field/help/default schema (`nxt-tax-entry/<program>/2025/v1`). Those 15 entries remain creatable. The 16 2026 paths are listed read-only with `year_specific_schema_pending`, null entry-schema identity/year/scope and no defaults. They must not inherit2025 payroll maxima, help text, input lists or confirmations. Additional engine/API fields are not automatically a verified browser interview.
+
+The Create workpaper dialog obtains program/year/jurisdiction choices from matching verified entry rows, uses that row's exact scope explanation, checks the schema identity/year again before making a create request and clones only those original year-specific defaults. No source client, source amount or family is mapped or created automatically. Modified selections, duplicate rows, unknown coverage versions and unavailable schemas cannot silently create a default draft. Existing generic backend preparation APIs can still save unsupported drafts; the exact scope guard prevents unsupported calculations/review and this change does not broaden those APIs.
+
+Input fields for an existing API-created workpaper without a verified browser entry schema are read-only in the generic editor. Its inputs are not replaced by the 2025 form. Calculated results, diagnostics, history, package export and printable workpaper remain available. Save, calculation shortcuts and guided-interview links cannot substitute an unverified entry form. The backend remains authoritative about whether an existing valid calculation can be reviewed.
+
+The coverage page displays engine years and browser-entry years separately. Summary `calculation_years` now reports2025/2026 from this inventory; `browser_entry_years` remains2025. Rate metadata is qualified at the API boundary with the same engine/browser distinction and coverage version; its original rate-table bodies remain exact. No rates module or formula was changed here. Older narrative starter tables are not browser-entry or full-return coverage contracts.
+
+Tests exhaustively compare all 120 flags to the actual guard, check every original2025 template against its admitted jurisdiction, verify authentication and that catalog/capabilities/summary reads cannot mutate saved2026 inputs, and exercise actual creation/change/submit/render flows in a synthetic Node VM. No tax client data, production requests, government services or vendor runtime are used.
+
+Full DT Max functionality remains open. Historical source access, complete editable families/keywords, complete calculations/diagnostics/carryforwards, batch jobs, official forms, transmission/certification and configurable autonomy require their separate acceptance work. This availability catalog does not close those gates.
+
+## Direct guided-route guard
+
+Guided T1 routes check the same versioned catalog contract before rendering any interview, including direct bookmarks to profile, slips, deductions, review or payment. The guided core's own year is an additional compatibility check, not the coverage authority. Unsupported 2025 Quebec, unverified 2026 forms, duplicate/mismatched rows and unknown catalog versions show a read-only notice and workpaper/coverage links.
+
+Every guided save fetches and validates the current catalog again before any PUT; this also blocks previously captured/autosave handlers when availability changes after the page was opened. Start filters provinces through that catalog and rechecks the chosen year/jurisdiction before each create POST. No 2025 interview mapping is allowed to overwrite 2026 inputs. Backend draft validation and financial formulas remain unchanged.

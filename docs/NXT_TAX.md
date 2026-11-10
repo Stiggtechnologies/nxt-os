@@ -1,8 +1,10 @@
 # NXT Tax operations and coverage
 
-NXT Tax is an independent internal-workpaper module at `/apps/tax/`, backed by `/api/tax`. It does not use a DT Max runtime or license. It cannot transmit a return, produce a certified filing, or mark a workpaper filed or authority-accepted. Its catalog is the authoritative description of each implemented calculation scope.
+> Coverage update,9 November 2026: use the versioned `/api/tax/catalog.coverage` contract and [coverage guide](DTMAX_TAX_COVERAGE.md) for current bounded program/year/jurisdiction availability and verified browser templates. The initial 2025 scope tables below describe starter workpapers and do not enumerate later limited API rules.2026 engine availability is distinct from a verified browser editor. Older shared-key/initial-release summaries must also be read with the later staff-authorization and Filing Desk sections; no certification or transmission is implied.
 
-## Supported calculation scopes
+NXT Tax is an independent internal-workpaper module at `/apps/tax/`, backed by `/api/tax`. It does not use a DT Max runtime or license. It cannot transmit a return, produce a certified filing or establish authority acceptance. It can record a human filing completed outside NXT only through the existing approval, signed-authorization and external-reference gates. The versioned catalog distinguishes bounded engine availability from verified browser entry.
+
+## Initial 2025 calculation scopes (historical starter summary)
 
 The current ruleset is `nxt-ca-2025.1`. Money is integer **CAD cents** in the API; the editor displays CAD. Rates and partner shares use basis points. Calculators use integer arithmetic and documented rounding, rather than floating point.
 

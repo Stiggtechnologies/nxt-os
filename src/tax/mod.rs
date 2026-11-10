@@ -1,6 +1,7 @@
 //! Independent Canadian tax workpapers. No DT Max runtime or filing dependency.
 pub mod calculations;
 pub mod catalog;
+pub mod coverage;
 pub mod corporate;
 pub mod models;
 pub mod parallel;
@@ -200,10 +201,10 @@ impl Tax {
     pub async fn summary(&self) -> TResult<Value> {
         let s = self.load().await?; let n = |status: &str| s.returns.iter().filter(|r|r.status == status).count();
         let by_program = ["T1","T2","T3","T5013"].into_iter().map(|p|(p.to_string(),json!(s.returns.iter().filter(|r|r.program == p).count()))).collect::<serde_json::Map<_,_>>();
-        Ok(json!({"returns":s.returns.len(),"total":s.returns.len(),"drafts":n("draft"),"calculated":n("calculated"),"in_review":n("in_review"),"approved":n("approved"),"archived":n("archived"),"by_program":by_program,"storage":self.store.backend_name(),"auth_required":crate::referral::routes::auth_required(),"filing_enabled":false,"calculation_years":[2025],"engine":"Independent NXT engine","access_model":"shared workspace credential; labels are not verified individual identities"}))
+        Ok(json!({"returns":s.returns.len(),"total":s.returns.len(),"drafts":n("draft"),"calculated":n("calculated"),"in_review":n("in_review"),"approved":n("approved"),"archived":n("archived"),"by_program":by_program,"storage":self.store.backend_name(),"auth_required":crate::referral::routes::auth_required(),"filing_enabled":false,"calculation_years":coverage::engine_years(),"browser_entry_years":[2025],"engine":"Independent NXT engine","access_model":"shared workspace credential; labels are not verified individual identities"}))
     }
     pub fn capabilities() -> Value {
-        json!({"engine":"independent","filing_enabled":false,"efile":efile_status(),"rate_tables":rates::catalog(),"filed_status":"human record of filing done outside NXT; requires approved return, signed T183 envelope id and reference","certification":"not_certified","parallel_compare":"supplied dtmax or webtax lines only; vendor file bytes are not fetched","sdk":{"mode":"reference_only","connected":false},"exports":["nxt-tax-json","printable-workpaper-html"],"programs":catalog::catalog()["programs"],"limitations":["Native calculations cover only the explicit ruleset cases in the catalog, not every DT Max form, province, year or election.","Output is an internal workpaper, not a CRA/Revenu Québec filing or certified form.","A parallel comparison does not replace the old system and does not file.","Related parties are metadata; use calculation input fields for supported allocations.","Client/company isolation and individual approval authority are not implemented by the shared workspace credential.","No DT Max client database, SDK runtime, license secret or filing credential is accessed."]})
+        json!({"engine":"independent","filing_enabled":false,"efile":efile_status(),"rate_tables":coverage::rate_metadata(),"filed_status":"human record of filing done outside NXT; requires approved return, signed T183 envelope id and reference","certification":"not_certified","parallel_compare":"supplied dtmax or webtax lines only; vendor file bytes are not fetched","sdk":{"mode":"reference_only","connected":false},"exports":["nxt-tax-json","printable-workpaper-html"],"programs":catalog::catalog()["programs"],"coverage":coverage::catalog(),"limitations":["Native calculations cover only the explicit ruleset cases in the catalog, not every DT Max form, province, year or election.","Output is an internal workpaper, not a CRA/Revenu Québec filing or certified form.","A parallel comparison does not replace the old system and does not file.","Related parties are metadata; use calculation input fields for supported allocations.","Client/company isolation and individual approval authority are not implemented by the shared workspace credential.","No DT Max client database, SDK runtime, license secret or filing credential is accessed."]})
     }
     pub async fn save(&self, existing: Option<&str>, input: ReturnInput) -> TResult<TaxReturn> {
         let input = validate(input)?; let record_id = existing.map(str::to_owned).unwrap_or_else(||id("tax")); let at=now();

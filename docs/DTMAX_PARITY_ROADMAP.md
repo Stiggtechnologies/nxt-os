@@ -1,5 +1,7 @@
 # NXT Tax parity roadmap
 
+> Coverage update,9 November 2026: the versioned `/api/tax/catalog.coverage` contract and [coverage guide](DTMAX_TAX_COVERAGE.md) distinguish actual bounded engine paths from verified browser-entry schemas. The initial-release tables below are historical starter scope, not an exhaustive current calculation inventory or release acceptance claim.2026 paths are listed read-only until their browser schemas are verified. Full parity remains open.
+
 The target is an original, independent tax module in the NXT OS. “Full parity” is a measurable future acceptance goal, not the current release label. DT Max SDK presence, a matching program name, or a successful sample calculation does not establish complete coverage.
 
 ## Current release gate
