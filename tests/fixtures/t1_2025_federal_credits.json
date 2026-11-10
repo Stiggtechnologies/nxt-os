@@ -1,0 +1,456 @@
+{
+  "schema": "nxt-t1-2025-federal-credits-independent-examples/v1",
+  "synthetic_only": true,
+  "method": "Decimal amounts in dollars; CRA form lines rounded half-up at reported lines. Expected values generated independently of Rust implementation. These are arithmetic fixtures, not a claim of individual claim eligibility or CRA certification.",
+  "sources": [
+    {
+      "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-25e.pdf",
+      "sha256": "477acbdabab91fc2cfff8cad4962d89d225fbd683441560f022949f792f5349d",
+      "bytes": 59001
+    },
+    {
+      "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s9/5000-s9-25e.pdf",
+      "sha256": "214e13f2b2e2b8e29d3687165f0ac10459cbcd1909a265be464500cf37282d2e",
+      "bytes": 20225
+    },
+    {
+      "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5009-r/5009-r-25e.pdf",
+      "sha256": "0c9df6c7b1f1741f49821dc6be9f17019eefccf2ec973c6a6ae9c2e34f4152d8",
+      "bytes": 90977
+    }
+  ],
+  "cases": [
+    {
+      "name": "baseline",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 0,
+        "donations_cents": 0,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 1760000,
+        "33800": 255200,
+        "34900": 0,
+        "34990": 0,
+        "35000": 255200,
+        "42000": 469800
+      }
+    },
+    {
+      "name": "exact_base_threshold",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 3977500,
+        "donations_cents": 0,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 5737500,
+        "33800": 831938,
+        "34900": 0,
+        "34990": 0,
+        "35000": 831938,
+        "42000": 0
+      }
+    },
+    {
+      "name": "base_threshold_plus_one_cent",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 3977501,
+        "donations_cents": 0,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 5737501,
+        "33800": 831938,
+        "34900": 0,
+        "34990": 0,
+        "35000": 831938,
+        "42000": 0
+      }
+    },
+    {
+      "name": "top_up_rounds_down",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 3977600,
+        "donations_cents": 0,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 5737600,
+        "33800": 831952,
+        "34900": 0,
+        "34990": 0,
+        "35000": 831952,
+        "42000": 0
+      }
+    },
+    {
+      "name": "top_up_first_cent",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 3977604,
+        "donations_cents": 0,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 5737604,
+        "33800": 831953,
+        "34900": 0,
+        "34990": 1,
+        "35000": 831954,
+        "42000": 0
+      }
+    },
+    {
+      "name": "combined_claim",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 4000000,
+        "donations_cents": 0,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 5760000,
+        "33800": 835200,
+        "34900": 0,
+        "34990": 113,
+        "35000": 835313,
+        "42000": 0
+      }
+    },
+    {
+      "name": "first_200_donation_threshold",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 3957500,
+        "donations_cents": 20000,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 5717500,
+        "33800": 829038,
+        "34900": 2900,
+        "34990": 0,
+        "35000": 831938,
+        "42000": 0
+      }
+    },
+    {
+      "name": "donation_199_99",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 4000000,
+        "donations_cents": 19999,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 5760000,
+        "33800": 835200,
+        "34900": 2900,
+        "34990": 213,
+        "35000": 838313,
+        "42000": 0
+      }
+    },
+    {
+      "name": "donation_200",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 4000000,
+        "donations_cents": 20000,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 5760000,
+        "33800": 835200,
+        "34900": 2900,
+        "34990": 213,
+        "35000": 838313,
+        "42000": 0
+      }
+    },
+    {
+      "name": "donation_200_01",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 4000000,
+        "donations_cents": 20001,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 5760000,
+        "33800": 835200,
+        "34900": 2900,
+        "34990": 213,
+        "35000": 838313,
+        "42000": 0
+      }
+    },
+    {
+      "name": "large_donation_not_all_lowest_rate",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 20000000,
+        "tuition_cents": 0,
+        "donations_cents": 10000000,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 1713411,
+        "33800": 248445,
+        "34900": 2897100,
+        "34990": 0,
+        "35000": 3145545,
+        "42000": 1145434
+      }
+    },
+    {
+      "name": "positive_tax_after_top_up",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 20000000,
+        "tuition_cents": 10000000,
+        "donations_cents": 0,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 11713411,
+        "33800": 1698445,
+        "34900": 0,
+        "34990": 29894,
+        "35000": 1728339,
+        "42000": 2562640
+      }
+    },
+    {
+      "name": "medical_above_threshold",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 20000000,
+        "tuition_cents": 0,
+        "donations_cents": 0,
+        "medical_expenses_cents": 11000000,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 12430011,
+        "33800": 1802352,
+        "34900": 0,
+        "34990": 33479,
+        "35000": 1835831,
+        "42000": 2455148
+      }
+    },
+    {
+      "name": "all_supported_components",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 10000000,
+        "tuition_cents": 4000000,
+        "donations_cents": 120000,
+        "medical_expenses_cents": 400000,
+        "cpp_base_credit_cents": 335610,
+        "ei_credit_cents": 107748,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 6319958,
+        "33800": 916394,
+        "34900": 31900,
+        "34990": 3014,
+        "35000": 951308,
+        "42000": 754442
+      }
+    },
+    {
+      "name": "single_aggregate_rounding",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000001,
+        "tuition_cents": 1,
+        "donations_cents": 0,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 1,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 1760002,
+        "33800": 255200,
+        "34900": 0,
+        "34990": 0,
+        "35000": 255200,
+        "42000": 469800
+      }
+    },
+    {
+      "name": "rounding_29_cents",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 29,
+        "donations_cents": 0,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 1,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 1760030,
+        "33800": 255204,
+        "34900": 0,
+        "34990": 0,
+        "35000": 255204,
+        "42000": 469796
+      }
+    },
+    {
+      "name": "bpa_phaseout_and_33_percent_gift",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 30000000,
+        "tuition_cents": 10000000,
+        "donations_cents": 10000000,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 11600900,
+        "33800": 1682131,
+        "34900": 3083444,
+        "34990": 29432,
+        "35000": 4795007,
+        "42000": 2582316
+      }
+    },
+    {
+      "name": "donation_75_percent_limit",
+      "inputs": {
+        "scope_confirmed": true,
+        "full_year_resident": true,
+        "provincial_adjustments_not_applicable": true,
+        "employment_income_cents": 5000000,
+        "tuition_cents": 0,
+        "donations_cents": 3750000,
+        "medical_expenses_cents": 0,
+        "cpp_base_credit_cents": 0,
+        "ei_credit_cents": 0,
+        "credits_verified": true,
+        "payroll_verified": true
+      },
+      "expected": {
+        "33500": 1760000,
+        "33800": 255200,
+        "34900": 1084600,
+        "34990": 0,
+        "35000": 1339800,
+        "42000": 0
+      }
+    }
+  ]
+}

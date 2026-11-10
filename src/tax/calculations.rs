@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const RULESET: &str = "nxt-ca-2025.2";
+pub const RULESET: &str = "nxt-ca-2025.3";
 /// Version equality only; input/output hashes, scope and diagnostics still require checks.
 pub fn uses_current_ruleset(result:&Value)->bool {result.get("ruleset").and_then(Value::as_str)==Some(RULESET)}
 pub const T1_SCOPE: &str = "2025 federal and Alberta income-tax workpaper for a full-year Alberta resident, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP and payroll amounts, and optional externally verified rental, ordinary receipted donation, eligible medical and current-year tuition totals use limited existing paths subject to diagnostics. Business/self-employed CPP entries remain review-blocked while CPP payable (line 42100) is not implemented. No complete T2125, T776, Schedule 8, 9 or 11; no automatic eligibility, CCA, benefits, overpayments, carryforwards, transfers or elections. Not a complete or certified filing return.";
@@ -580,9 +580,8 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
     let reduction=rounded_ratio((taxable-17_788_200).clamp(0,7_553_200),159_100,7_553_200)?;
     let bpa=1_612_900-reduction; let employment_amount=employment.min(147_100);
     let federal_before=progressive(taxable,FEDERAL)?;
-    let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
-    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,"AB")?;
-    let federal=(federal_before-federal_credits-xcredit).max(0);
+    let (federal_credit_reduction,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,"AB")?;
+    let federal=(federal_before-federal_credit_reduction).max(0);
     let federal=t1_foreign_and_flags(c,obj,federal,taxable)?;
     let provincial_before=progressive(taxable,ALBERTA)?;
     // AB428: credits at 8%, plus the 2025 Alberta supplemental tax credit of 2% on
@@ -596,7 +595,7 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
         ("10100","Employment income",employment),("12100","Canadian interest income",interest),("15000","Total income",income),
         ("20800","Verified RRSP deduction",rrsp),("22215","Verified enhanced CPP deduction",enhanced),("23600","Net income",taxable),("26000","Taxable income",taxable),
         ("30000","Federal basic personal amount",bpa),("30800","Verified base CPP credit amount",cpp),("31200","Verified EI credit amount",ei),("31260","Canada employment amount",employment_amount),
-        ("federal_before_credits","Federal tax before credits",federal_before),("35000","Scoped federal non-refundable credits",federal_credits),("42000","Scoped net federal income tax",federal),
+        ("federal_before_credits","Federal tax before credits",federal_before),("42000","Scoped net federal income tax",federal),
         ("AB58040","Alberta basic personal amount",2_232_300),("ab_before_credits","Alberta tax before credits",provincial_before),("AB61500","Scoped Alberta non-refundable credits",provincial_credits),("ab_supplemental_credit","Alberta supplemental tax credit (2% of credit amounts over $60,000)",ab_supplemental),("42800","Scoped Alberta income tax",provincial),
     ] { c.line(code,label,amount); }
     for (code,label,amount) in x.lines.iter().chain(xlines.iter()) { c.line(code,label,*amount); }
@@ -632,9 +631,8 @@ fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::P
     let reduction=rounded_ratio((taxable-17_788_200).clamp(0,7_553_200),159_100,7_553_200)?;
     let bpa=1_612_900-reduction; let employment_amount=employment.min(147_100);
     let federal_before=progressive(taxable,FEDERAL)?;
-    let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
-    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,p.code)?;
-    let federal=(federal_before-federal_credits-xcredit).max(0);
+    let (federal_credit_reduction,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,p.code)?;
+    let federal=(federal_before-federal_credit_reduction).max(0);
     let federal=t1_foreign_and_flags(c,obj,federal,taxable)?;
     if p.code=="MB" && taxable>20_000_000 { c.diagnostic("mb_bpa_phaseout","Manitoba phases out its basic personal amount for net income between $200,000 and $400,000 from 2025; this is not calculated.",None,true); }
     let prov_bpa=p.bpa_cents.unwrap_or(bpa);
@@ -650,7 +648,7 @@ fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::P
         ("10100".to_string(),"Employment income".to_string(),employment),("12100".into(),"Canadian interest income".into(),interest),("15000".into(),"Total income".into(),income),
         ("20800".into(),"Verified RRSP deduction".into(),rrsp),("22215".into(),"Verified enhanced CPP deduction".into(),enhanced),("23600".into(),"Net income".into(),taxable),("26000".into(),"Taxable income".into(),taxable),
         ("30000".into(),"Federal basic personal amount".into(),bpa),("30800".into(),"Verified base CPP credit amount".into(),cpp),("31200".into(),"Verified EI credit amount".into(),ei),("31260".into(),"Canada employment amount".into(),employment_amount),
-        ("federal_before_credits".into(),"Federal tax before credits".into(),federal_before),("35000".into(),"Scoped federal non-refundable credits".into(),federal_credits),("42000".into(),"Scoped net federal income tax".into(),federal),
+        ("federal_before_credits".into(),"Federal tax before credits".into(),federal_before),("42000".into(),"Scoped net federal income tax".into(),federal),
         (format!("{}58040",p.code),format!("{} basic personal amount",p.name),prov_bpa),(format!("{lc}_before_credits"),format!("{} tax on taxable income",p.name),provincial_before),
         (format!("{}61500",p.code),format!("Scoped {} non-refundable credits",p.name),provincial_credits),(format!("{lc}_low_income_reduction"),format!("{} low-income tax reduction",p.name),low_income),("42800".into(),format!("Scoped {} income tax",p.name),provincial),
     ] { c.line(&code,&label,amount); }
@@ -773,6 +771,7 @@ fn provincial_low_income_reduction(c: &mut Calculation, obj: &Map<String,Value>,
 }
 /// Returns (federal credit, provincial credit amounts at the provincial rate, provincial donation credit, lines).
 fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, net: i64, bpa: i64, code: &str) -> Result<(i64,i64,i64,Vec<(String,String,i64)>),String> {
+    c.sources.extend([source("CRA 2025 Federal Worksheet (line 34990)", "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-25e.pdf"),source("CRA 2025 Schedule 9 (line 22)", "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s9/5000-s9-25e.pdf")]);
     let (med,don,tui)=(money(obj,"medical_expenses_cents")?,money(obj,"donations_cents")?,money(obj,"tuition_cents")?);
     let pension_amount=if x.pension_for_credit>0 { x.pension_for_credit.min(200_000) } else { 0 };
     if pension_amount>0 { c.diagnostic("pension_amount_eligibility","Line 31400 eligibility depends on age and pension type (age 65+ for most RRIF/annuity income). Verify that the pension income is eligible.",None,false); }
@@ -799,14 +798,20 @@ fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, n
     if adopt>1_958_000 { return Err("adoption_expenses_cents exceeds the 2025 per-child maximum of $19,580; multiple children are outside scope".into()); }
     if adopt>0 || sli>0 { c.diagnostic("provincial_adoption_student_loan_not_calculated","Provincial adoption (58330) and student loan interest (58520) amounts are not calculated; provincial tax may be overstated.",None,false); }
     let credit_base=sum(&[medical,pension_amount,tui,x.se_cpp_credit,age_amount,spouse_fed,disability,hb,adopt,sli])?;
-    // Conservative scope bound for the unimplemented 2025 Federal Worksheet 34990.
-    // Include all modeled lowest-rate credit bases and the first $200 gift base.
-    let potential_top_up_base=sum(&[credit_base,bpa,money(obj,"employment_income_cents")?.min(147_100),money(obj,"cpp_base_credit_cents")?,money(obj,"ei_credit_cents")?,first])?;
-    if potential_top_up_base>5_737_500 {
-        c.diagnostic("top_up_tax_credit_not_implemented","The modeled lowest-rate credit bases may exceed the 2025 $57,375 threshold. The line 34990 top-up tax credit is not implemented; reconcile the Federal Worksheet before relying on this partial result. This conservative hold is not an eligibility determination.",Some("credits_verified"),true);
-    }
+    // T1 page 6: aggregate all modeled credit amounts before applying 14.5% once.
+    // Federal Worksheet page 7 uses the rounded 33800 and Schedule 9 line 22,
+    // not the unrounded credit bases or the total Schedule 9 donation credit.
+    let baseline_base=sum(&[bpa,money(obj,"employment_income_cents")?.min(147_100),money(obj,"cpp_base_credit_cents")?,money(obj,"ei_credit_cents")?])?;
+    let federal_base=sum(&[baseline_base,credit_base])?;
+    let lowest_rate_credit=rounded_ratio(federal_base,1450,10000)?;
+    let schedule9_line22=rounded_ratio(first,1450,10000)?;
+    let top_up=rounded_ratio((sum(&[lowest_rate_credit,schedule9_line22])?-831_938).max(0),345,10000)?;
+    let non_refundable=sum(&[lowest_rate_credit,donation_credit,top_up])?;
     let fed_dtc=sum(&[rounded_ratio(x.elig_div,150_198,1_000_000)?,rounded_ratio(x.other_div,90_301,1_000_000)?])?;
-    let credit=sum(&[rounded_ratio(credit_base,1450,10000)?,donation_credit,fed_dtc])?;
+    let credit=sum(&[non_refundable,fed_dtc])?;
+    // Preserve the old informational alias as the incremental reduction relative
+    // to baseline credits. Official 35000 excludes the separate 40425 dividend credit.
+    let additional_credit=credit-rounded_ratio(baseline_base,1450,10000)?;
     // Provincial counterparts from the 2025 428 form and worksheet (rates::PROV_CREDITS_2025).
     let p=super::rates::prov_credits_2025(code).ok_or("No 2025 provincial credit parameters")?;
     let p_medical=(med-rounded_ratio(net,300,10000)?.min(p.medical_max_cents)).max(0);
@@ -827,7 +832,7 @@ fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, n
         (format!("{code}58689"),format!("{code} allowable medical expenses"),p_medical),(format!("{lc}_donation_credit"),format!("{code} donation credit"),p_don-p_dtc),(format!("{code}61520"),format!("{code} dividend tax credit"),p_dtc),(format!("{lc}_extra_credit_amounts"),format!("{code} additional credit amounts at the provincial rate"),p_base)];
     lines.retain(|l| l.2!=0);
     let mut out=vec![("31400".into(),"Pension income amount (max $2,000)".into(),pension_amount),("32300".into(),"Verified T2202 tuition amount (current year)".into(),tui),
-        ("33099".into(),"Eligible medical expenses before income threshold".into(),med),("33200".into(),"Allowable medical expenses (no other-dependant amount)".into(),medical),("34900".into(),"Federal donations and gifts credit (Schedule 9)".into(),donation_credit),("donation_credit".into(),"Federal donation credit".into(),donation_credit),("40425".into(),"Federal dividend tax credit".into(),fed_dtc),("30100".into(),"Age amount".into(),age_amount),("30300".into(),"Spouse or common-law partner amount".into(),spouse_fed),("31600".into(),"Disability amount (18+)".into(),disability),("31270".into(),"Home buyers' amount".into(),hb),("31300".into(),"Adoption expenses".into(),adopt),("31900".into(),"Interest paid on student loans".into(),sli),("extra_federal_credits".into(),"Additional federal non-refundable credits".into(),credit)];
+        ("33099".into(),"Eligible medical expenses before income threshold".into(),med),("33200".into(),"Allowable medical expenses (no other-dependant amount)".into(),medical),("34900".into(),"Federal donations and gifts credit (Schedule 9)".into(),donation_credit),("donation_credit".into(),"Federal donation credit".into(),donation_credit),("40425".into(),"Federal dividend tax credit".into(),fed_dtc),("30100".into(),"Age amount".into(),age_amount),("30300".into(),"Spouse or common-law partner amount".into(),spouse_fed),("31600".into(),"Disability amount (18+)".into(),disability),("31270".into(),"Home buyers' amount".into(),hb),("31300".into(),"Adoption expenses".into(),adopt),("31900".into(),"Interest paid on student loans".into(),sli),("extra_federal_credits".into(),"Additional federal credit reduction (including top-up and dividend credit)".into(),additional_credit),("33500".into(),"Total modeled federal credit amounts".into(),federal_base),("33800".into(),"Federal credit amounts at 14.5%".into(),lowest_rate_credit),("34990".into(),"Top-up tax credit (Federal Worksheet)".into(),top_up),("35000".into(),"Total federal non-refundable tax credits".into(),non_refundable)];
     out.extend(lines);
     Ok((credit,p_base,p_don,out))
 }
@@ -871,9 +876,8 @@ fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
     let reduction=rounded_ratio((taxable-17_788_200).clamp(0,7_553_200),159_100,7_553_200)?;
     let bpa=1_612_900-reduction; let employment_amount=employment.min(147_100);
     let federal_before=progressive(taxable,FEDERAL)?;
-    let federal_credits=rounded_ratio(sum(&[bpa,employment_amount,cpp,ei])?,1450,10000)?;
-    let (xcredit,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,"ON")?;
-    let federal=(federal_before-federal_credits-xcredit).max(0);
+    let (federal_credit_reduction,pbase,pdon,xlines)=t1_credit_extras(c,obj,&x,taxable,bpa,"ON")?;
+    let federal=(federal_before-federal_credit_reduction).max(0);
     let federal=t1_foreign_and_flags(c,obj,federal,taxable)?;
     let ontario_before=progressive(taxable,ONTARIO)?;
     let ontario_credit_base=sum(&[1_274_700, cpp, ei, pbase])?;
@@ -894,7 +898,7 @@ fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
         ("10100","Employment income",employment),("12100","Canadian interest income",interest),("15000","Total income",income),
         ("20800","Verified RRSP deduction",rrsp),("22215","Verified enhanced CPP deduction",enhanced),("23600","Net income",taxable),("26000","Taxable income",taxable),
         ("30000","Federal basic personal amount",bpa),("30800","Verified base CPP credit amount",cpp),("31200","Verified EI credit amount",ei),("31260","Canada employment amount",employment_amount),
-        ("federal_before_credits","Federal tax before credits",federal_before),("35000","Scoped federal non-refundable credits",federal_credits),("42000","Scoped net federal income tax",federal),
+        ("federal_before_credits","Federal tax before credits",federal_before),("42000","Scoped net federal income tax",federal),
         ("ON58040","Ontario basic personal amount",1_274_700),
         ("on_before_credits","Ontario tax on taxable income",ontario_before),("ON61500","Scoped Ontario non-refundable credits",ontario_credits),
         ("on_surtax","Ontario surtax",surtax),("on_tax_reduction","Ontario basic tax reduction",tax_reduction),("on_health_premium","Ontario health premium",health),("42800","Scoped Ontario income tax",provincial),

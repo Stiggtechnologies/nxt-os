@@ -9,21 +9,23 @@ fn make_historical(r:&mut TaxReturn,rules:Option<&str>){let s=r.calculation.as_m
 async fn seed(store:&Store,r:&TaxReturn){let mut s:TaxState=store.get_json("tax:state:v1").await.unwrap().unwrap();*s.returns.iter_mut().find(|x|x.id==r.id).unwrap()=r.clone();store.set_json("tax:state:v1",&s).await.unwrap();}
 fn req(historical:bool)->ReportRequest{serde_json::from_value(json!({"client_ref":"A","columns":["line:15000","line:42000","total:income_tax"],"include_historical_results":historical})).unwrap()}
 
-#[test]fn potential_2025_top_up_credit_cases_are_held_using_combined_credit_bases(){
+#[test]fn verified_2025_top_up_credit_cases_use_the_current_worksheet(){
  for jurisdiction in ["AB","ON","BC"] {
-  // $50,000 wages: BPA $16,129 + employment amount $1,471 = $17,600.
-  // The ordinary modeled base reaches $57,375 with $39,775 of tuition.
-  for (tuition,donation,held) in [(3_977_500,0,false),(3_977_501,0,true),(3_957_500,20_000,false),(3_957_501,20_000,true),(4_000_000,0,true)] {
+  for (tuition,donation,top_up) in [(3_977_500,0,0),(3_977_501,0,0),(3_957_500,20_000,0),(4_000_000,0,113)] {
    let result=c::calculate("T1",2025,jurisdiction,&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":5_000_000,"tuition_cents":tuition,"donations_cents":donation,"credits_verified":true})).unwrap();
-   assert_eq!(result.diagnostics.iter().any(|d|d.code=="top_up_tax_credit_not_implemented"&&d.blocks_review),held,"{jurisdiction}/{tuition}/{donation}");if held{assert!(!result.supported);}
+   assert!(result.supported,"{jurisdiction}: {:?}",result.diagnostics);
+   assert!(!result.diagnostics.iter().any(|d|d.code=="top_up_tax_credit_not_implemented"));
+   assert_eq!(result.lines.iter().find(|l|l.code=="34990").unwrap().amount,top_up);
   }
-  let result=c::calculate("T1",2025,jurisdiction,&json!({"scope_confirmed":true,"full_year_resident":true,"provincial_adjustments_not_applicable":true,"employment_income_cents":20_000_000,"tuition_cents":10_000_000,"credits_verified":true})).unwrap();assert!(!result.supported);assert!(result.diagnostics.iter().any(|d|d.code=="top_up_tax_credit_not_implemented"));
  }
 }
-#[tokio::test]async fn potential_top_up_result_cannot_be_reviewed_or_reported_as_current_supported_amounts(){
- let store=Store::memory();let t=Tax::new(store.clone());let mut i=input("Synthetic large credit");i.inputs["tuition_cents"]=json!(4_000_000);i.inputs["credits_verified"]=json!(true);let r=t.save(None,i).await.ok().unwrap();let r=t.calculate(&r.id,RevisionInput{expected_revision:r.revision,idempotency_key:None}).await.ok().unwrap();
+#[tokio::test]async fn top_up_credit_review_requires_verification_and_current_calculation(){
+ let store=Store::memory();let t=Tax::new(store.clone());let mut i=input("Synthetic large credit");i.inputs["tuition_cents"]=json!(4_000_000);i.inputs["credits_verified"]=json!(false);let r=t.save(None,i).await.ok().unwrap();let r=t.calculate(&r.id,RevisionInput{expected_revision:r.revision,idempotency_key:None}).await.ok().unwrap();
  let before=store.get("tax:state:v1").await.unwrap();assert_eq!(t.transition(&r.id,TransitionInput{expected_revision:r.revision,status:"in_review".into(),note:"Synthetic only".into(),reviewer:"Synthetic preparer".into(),filing_reference:String::new(),t183_envelope_id:String::new()}).await.err().unwrap().0.as_u16(),409);assert_eq!(store.get("tax:state:v1").await.unwrap(),before);
  let report=t.report(req(false),Some(&who())).await.ok().unwrap();assert_eq!(report["rows"][0]["calculation_state"],"current_blocked");assert!(report["rows"][0]["total:income_tax"].is_null());
+ let mut edit=ReturnInput::from(&r);edit.expected_revision=Some(r.revision);edit.inputs["credits_verified"]=json!(true);let edited=t.save(Some(&r.id),edit).await.ok().unwrap();assert!(edited.calculation.is_none());let current=t.calculate(&r.id,RevisionInput{expected_revision:edited.revision,idempotency_key:None}).await.ok().unwrap();assert_eq!(current.calculation.as_ref().unwrap().result["supported"],true);
+ let reviewed=t.transition(&r.id,TransitionInput{expected_revision:current.revision,status:"in_review".into(),note:"Synthetic only".into(),reviewer:"Synthetic preparer".into(),filing_reference:String::new(),t183_envelope_id:String::new()}).await.ok().unwrap();assert_eq!(reviewed.status,"in_review");
+ let report=t.report(req(false),Some(&who())).await.ok().unwrap();assert_ne!(report["rows"][0]["calculation_state"],"current_blocked");assert!(!report["rows"][0]["total:income_tax"].is_null());
 }
 
 #[test]fn official_2025_medical_and_donation_output_lines_match_their_contracts(){
@@ -44,13 +46,13 @@ fn req(historical:bool)->ReportRequest{serde_json::from_value(json!({"client_ref
  r.status="approved".into();assert!(nxt_os::tax::t183::draft(&r).unwrap_err().contains("ruleset"));assert!(filing_desk::blockers(&r).iter().any(|v|v["code"]=="stale_calculation"));}
 }
 #[tokio::test]async fn current_and_old_results_are_classified_without_rewriting_saved_snapshots(){
- let store=Store::memory();let t=Tax::new(store.clone());let a=who();let mut old=calculated(&t,None).await;let current=calculated(&t,None).await;make_historical(&mut old,Some("nxt-ca-2025.1"));seed(&store,&old).await;
+ let store=Store::memory();let t=Tax::new(store.clone());let a=who();let mut old=calculated(&t,None).await;let current=calculated(&t,None).await;make_historical(&mut old,Some("nxt-ca-2025.2"));seed(&store,&old).await;
  let family=t.save_family_members_for(None,MembersInput{label:"Synthetic comparison".into(),primary_return_id:old.id.clone(),spouse_return_id:current.id.clone(),expected_primary_revision:old.revision,expected_spouse_revision:current.revision,expected_client_ref:"A".into(),expected_family_sha256:None},&a).await.unwrap_or_else(|e|panic!("family: {}",e.1));assert_eq!(family["primary_current_supported_calculation"],false);assert_eq!(family["spouse_current_supported_calculation"],true);
  let before=store.get("tax:state:v1").await.unwrap();let report=t.report(req(false),Some(&a)).await.unwrap_or_else(|e|panic!("report: {}",e.1));let row=report["rows"].as_array().unwrap().iter().find(|v|v["id"]==old.id).unwrap();assert_eq!(row["calculation_state"],"stale");assert!(row["line:15000"].is_null());let history=t.report(req(true),Some(&a)).await.unwrap_or_else(|e|panic!("history report: {}",e.1));assert_eq!(history["rows"].as_array().unwrap().iter().find(|v|v["id"]==old.id).unwrap()["line:15000"],5000000);
  let package=t.package(&old.id).await.unwrap_or_else(|e|panic!("package: {}",e.1));assert_eq!(package["current_ruleset"],c::RULESET);assert_eq!(package["current_calculation_ruleset_current"],false);assert_eq!(package["calculation_snapshot"],serde_json::to_value(&old.calculation).unwrap());assert_eq!(store.get("tax:state:v1").await.unwrap(),before);
 }
 #[tokio::test]async fn old_idempotency_receipt_is_historical_but_new_explicit_calculate_uses_current_rules(){
- let store=Store::memory();let t=Tax::new(store.clone());let mut old=calculated(&t,Some("synthetic-old-key")).await;make_historical(&mut old,Some("nxt-ca-2025.1"));seed(&store,&old).await;let old_snapshot=serde_json::to_vec(old.calculation.as_ref().unwrap()).unwrap();let before=store.get("tax:state:v1").await.unwrap();
+ let store=Store::memory();let t=Tax::new(store.clone());let mut old=calculated(&t,Some("synthetic-old-key")).await;make_historical(&mut old,Some("nxt-ca-2025.2"));seed(&store,&old).await;let old_snapshot=serde_json::to_vec(old.calculation.as_ref().unwrap()).unwrap();let before=store.get("tax:state:v1").await.unwrap();
  let replay=t.calculate(&old.id,RevisionInput{expected_revision:1,idempotency_key:Some("synthetic-old-key".into())}).await.unwrap_or_else(|e|panic!("receipt replay: {}",e.1));assert_eq!(serde_json::to_vec(&replay).unwrap(),serde_json::to_vec(&old).unwrap());assert_eq!(store.get("tax:state:v1").await.unwrap(),before);
  let next=t.calculate(&old.id,RevisionInput{expected_revision:old.revision,idempotency_key:Some("synthetic-new-key".into())}).await.unwrap_or_else(|e|panic!("new calculation: {}",e.1));assert_eq!(next.calculation.as_ref().unwrap().result["ruleset"],c::RULESET);assert_eq!(next.calculations.len(),2);assert_eq!(serde_json::to_vec(&next.calculations[0]).unwrap(),old_snapshot);assert_eq!(next.input_revision,old.input_revision);
 }
