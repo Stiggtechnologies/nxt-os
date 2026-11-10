@@ -36,6 +36,59 @@
     }
     return p;
   }
+  const clientCsvYears=['historical_years','pending_years','pending_years_at_import','native_historical_years','preserved_pdf_figure_years','pdf_only_years','source_archive_years','recovered_native_source_years','recovered_native_only_years'];
+  const clientCsvQualification='Imported T1 SOURCE roster for list review only; not a migration-import CSV, current identity verification, tax return or financial approval. Each data cell has one reversible leading apostrophe. Two matching scans are observed stable reads, not an atomic snapshot.';
+  function clientListPath(f,at){return BASE+'recovered-native-sources/effective/source-clients?offset='+at+'&limit=100&search='+encodeURIComponent(f.search)+(f.year?'&year='+f.year:'')+'&sort='+f.sort+'&direction='+f.direction+(f.status?'&status='+encodeURIComponent(f.status):'')+(f.province?'&province='+encodeURIComponent(f.province):'');}
+  function clientCsvFilters(f){
+    if(!f||['search','year','sort','direction','status','province'].some(k=>typeof f[k]!=='string')||Array.from(f.search).length>100||f.year&&!/^(199\d|20\d\d|2100)$/.test(f.year)||!['client_number','name','processing_status'].includes(f.sort)||!['asc','desc'].includes(f.direction)||f.status.length>80||f.province.length>40)throw Error('Apply valid client-list filters before exporting');
+    return {...f};
+  }
+  function clientCsvMetadata(p){
+    for(const field of ['available_statuses','available_provinces'])if(!Array.isArray(p[field])||p[field].some(v=>typeof v!=='string')||new Set(p[field]).size!==p[field].length)throw Error('Client-list filter inventory differs');
+    return canonicalRecoveredSource({total:p.total,available_years:p.available_years,available_statuses:p.available_statuses,available_provinces:p.available_provinces});
+  }
+  function checkClientCsvPage(p,at,f,metadata){
+    validatePage(p,at);
+    if(p.limit!==100||p.total>10000||p.clients.length!==Math.min(100,Math.max(0,p.total-at))||at>p.total)throw Error('Client-list export page is incomplete or outside its bound');
+    const m=clientCsvMetadata(p);if(metadata!==undefined&&m!==metadata)throw Error('Client roster changed while exporting; refresh the list and retry');
+    for(const c of p.clients){
+      for(const field of clientCsvYears)if(c[field]!==undefined&&(!Array.isArray(c[field])||new Set(c[field]).size!==c[field].length||c[field].some(y=>!Number.isInteger(y)||y<1990||y>2100)))throw Error('Client-list source years differ');
+      if(c.source_profile!==undefined&&(!c.source_profile||typeof c.source_profile!=='object'||Array.isArray(c.source_profile)))throw Error('Client-list source profile differs');
+      for(const field of ['processing_status','province'])if(c.source_profile?.[field]!==undefined&&typeof c.source_profile[field]!=='string')throw Error('Client-list source text differs');
+      if(f.year&&!c.historical_years.includes(Number(f.year))||f.status&&c.source_profile?.processing_status!==f.status||f.province&&c.source_profile?.province!==f.province||!`${c.client_number} ${c.name}`.toLowerCase().includes(f.search.trim().toLowerCase()))throw Error('Client-list row does not match the selected filters');
+    }
+    return m;
+  }
+  async function collectClientListCsv(request,filters,{assertCurrent=()=>{},progress=()=>{},expectedMetadata}={}){
+    const f=clientCsvFilters(filters),rows=[],seen=new Set();let metadata=expectedMetadata,total;
+    // The roster has no snapshot token: require complete, identical sequential scans.
+    for(let pass=1;pass<=2;pass++){
+      let at=0;
+      do{
+        assertCurrent();const p=await request(clientListPath(f,at));assertCurrent();
+        const m=checkClientCsvPage(p,at,f,metadata);metadata??=m;total=p.total;
+        for(let i=0;i<p.clients.length;i++){
+          const c=p.clients[i];
+          if(pass===1){if(seen.has(c.client_number))throw Error('Duplicate client across export pages');seen.add(c.client_number);rows.push(c);}
+          else if(canonicalRecoveredSource(c)!==canonicalRecoveredSource(rows[at+i]))throw Error('Client roster changed between export scans; refresh the list and retry');
+        }
+        at+=p.clients.length;progress({pass,loaded:at,total});assertCurrent();
+      }while(at<total);
+    }
+    assertCurrent();if(rows.length!==total||seen.size!==total)throw Error('Incomplete client-list export');
+    return buildClientListCsv(rows,f);
+  }
+  function buildClientListCsv(rows,filters){
+    const f=clientCsvFilters(filters),headers=['source_scope','source_program','source_client_number_text','source_name_text','source_processing_status_text','source_province_text',...clientCsvYears.map(k=>'source_'+k+'_json_text'),'selected_source_year_text','search_filter_text','processing_status_filter_text','province_filter_text','sort_key','sort_direction','text_cell_encoding','source_qualification'];
+    const quote=v=>'"'+v.replaceAll('"','""')+'"';
+    const text=v=>{if(typeof v!=='string'||v.length>32768||new TextDecoder('utf-8',{fatal:true}).decode(new TextEncoder().encode(v))!==v)throw Error('Client-list text cannot be preserved as UTF-8');return quote("'"+v);};
+    const csv=['\uFEFF'+headers.map(quote).join(',')];
+    for(const c of rows){
+      const values=[SCOPE,'T1',c.client_number,c.name,c.source_profile?.processing_status??'',c.source_profile?.province??'',...clientCsvYears.map(k=>JSON.stringify(c[k]??null)),f.year,f.search,f.status,f.province,f.sort,f.direction,'leading_apostrophe_remove_exactly_one/v1',clientCsvQualification];
+      csv.push(values.map(text).join(','));
+    }
+    return {text:csv.join('\r\n')+'\r\n',count:rows.length,filename:'dtmax-t1-source-client-list-review.csv'};
+  }
   function tree(node,depth=0) {
     if(!node||depth>12||typeof node.tag!=='string'||!Array.isArray(node.children))throw Error('Invalid slip source fields');
     const label=node.tag.split('}').at(-1),box=node.attributes?.boxNumber;
@@ -788,9 +841,9 @@
     if(![wireKind,'historical-lines'].includes(historicalKind))throw Error('Unsupported historical source view');
     let sequence=0,offset=0,search='',year='',activeClient='',kind=historicalKind,factOffset=0;
     let page=null,view='list',selectedYear='',comparison='',history=[],pdfs=[],pdfUrl='',pdfRecord=null,pdfPage=1,sourceKindExplicit=false,historyLoading=false,recoveredRawQueue=false,archivedYear='2022';
-    let sort='client_number',direction='asc',status='',province='',exceptionSequence=0,ownerSequence=0,recoveredSequence=0,archivedSequence=0;const clientCache=new Map(),exceptionUrls=[];
+    let sort='client_number',direction='asc',status='',province='',exceptionSequence=0,ownerSequence=0,recoveredSequence=0,archivedSequence=0,csvGeneration=0,csvBusy=false,disposed=false;const clientCache=new Map(),exceptionUrls=[],csvUrls=[];
     const releaseExceptions=()=>{exceptionUrls.splice(0).forEach(url=>URL.revokeObjectURL(url));};
-    const current=n=>host.isConnected!==false&&isCurrent()&&n===sequence;
+    const current=n=>!disposed&&host.isConnected!==false&&isCurrent()&&n===sequence;
     const q=s=>host.querySelector(s),all=s=>host.querySelectorAll(s);
     const selected=()=>clientCache.get(activeClient);
     const releasePdf=()=>{if(pdfUrl){URL.revokeObjectURL(pdfUrl);pdfUrl='';}pdfRecord=null;};
@@ -876,18 +929,42 @@
     function sourceArchiveOnlyYear(){const c=selected(),y=Number(selectedYear);return !recoveredOnlyYear()&&c?.source_archive_years?.includes(y)&&c.pdf_only_years?.includes(y)&&!c.preserved_pdf_figure_years?.includes(y);}
     function defaultSourceKind(){if(recoveredOnlyYear())return 'recovered-native-effective-sources';if(sourceArchiveOnlyYear())return 'source-summary-figures';return !sourceArchiveOnlyYear()&&selected()?.pdf_only_years?.includes(Number(selectedYear))?'preserved-pdf-figures':historicalKind;}
     function bindClient(){q('[data-dtmax-back]').onclick=()=>show('list');q('[data-dtmax-year]').disabled=historyLoading;all('[data-dtmax-view]').forEach(b=>{if(b.dataset.dtmaxView!=='list')b.disabled=historyLoading;});q('[data-dtmax-year]').onchange=e=>{if(historyLoading)return;selectedYear=e.target.value;if(!sourceKindExplicit)kind=defaultSourceKind();return show(sourceArchiveOnlyYear()?'return':view);};}
+    const appliedClientFilters=()=>({search,year,sort,direction,status,province});
+    const visibleClientFilters=()=>({search:q('[name=search]')?.value??'',year:q('[name=year]')?.value??'',sort:q('[name=sort]')?.value||'client_number',direction:q('[name=direction]')?.value||'asc',status:q('[name=status]')?.value??'',province:q('[name=province]')?.value??''});
+    function csvUi(message){
+      const button=q('[data-dtmax-export-clients]'),cancel=q('[data-dtmax-cancel-client-export]'),note=q('[data-dtmax-client-export-status]');
+      if(button)button.disabled=csvBusy;if(cancel)cancel.disabled=!csvBusy;if(note&&message!==undefined)note.textContent=message;
+    }
+    function cancelClientCsv(){++csvGeneration;if(csvBusy){csvBusy=false;if(view==='list')csvUi('Export cancelled. No CSV downloaded.');}}
+    async function exportClientList(){
+      if(csvBusy||view!=='list'||!page||!current(sequence))return;
+      const n=sequence,g=++csvGeneration,filters=appliedClientFilters(),serialized=canonicalRecoveredSource(filters);
+      try{
+        if(canonicalRecoveredSource(visibleClientFilters())!==serialized)throw Error('Apply the changed filters with Find client before exporting');
+        const expectedMetadata=clientCsvMetadata(page);csvBusy=true;csvUi('Reading all matching source profiles. No partial CSV will be downloaded.');
+        const assertCurrent=()=>{if(g!==csvGeneration||!current(n)||view!=='list'||canonicalRecoveredSource(visibleClientFilters())!==serialized)throw Error('Export cancelled because the client selection changed');};
+        const result=await collectClientListCsv(request,filters,{expectedMetadata,assertCurrent,progress:p=>csvUi('Checking roster '+p.pass+' of 2 · '+p.loaded+' of '+p.total+' matching clients. Cancel to stop; no partial download.')});
+        assertCurrent();const url=URL.createObjectURL(new Blob([result.text],{type:'text/csv;charset=utf-8'}));csvUrls.push(url);
+        const a=document.createElement('a');a.href=url;a.download=result.filename;a.click();
+        setTimeout(()=>{URL.revokeObjectURL(url);const at=csvUrls.indexOf(url);if(at>=0)csvUrls.splice(at,1);},1000);
+        csvBusy=false;csvUi('Downloaded '+result.count+' source profiles after two matching scans. List review only; not a migration-import CSV.');
+      }catch(e){if(g===csvGeneration&&current(n)&&view==='list'){csvBusy=false;csvUi('Client list CSV unavailable: '+e.message+'. No CSV downloaded.');}}
+    }
     function renderList(){
       const p=page;
-      shell('<form data-dtmax-search class="dtmax-toolbar"><label>Find client<input name="search" type="search" maxlength="100" value="'+esc(search)+'" placeholder="Name or DT Max client number"></label><label>Imported year<select name="year"><option value="">All years</option>'+p.available_years.slice().sort((a,b)=>b-a).map(y=>'<option'+(String(y)===year?' selected':'')+'>'+y+'</option>').join('')+'</select></label><label>Processing status<select name="status"><option value="">All statuses</option>'+(p.available_statuses||[]).map(v=>'<option value="'+esc(v)+'"'+(v===status?' selected':'')+'>'+esc(v)+'</option>').join('')+'</select></label><label>Province<select name="province"><option value="">All provinces</option>'+(p.available_provinces||[]).map(v=>'<option value="'+esc(v)+'"'+(v===province?' selected':'')+'>'+esc(v)+'</option>').join('')+'</select></label><label>Sort by<select name="sort">'+[['client_number','Client number'],['name','Name'],['processing_status','Processing status']].map(([v,label])=>'<option value="'+v+'"'+(v===sort?' selected':'')+'>'+label+'</option>').join('')+'</select></label><label>Order<select name="direction"><option value="asc"'+(direction==='asc'?' selected':'')+'>Ascending</option><option value="desc"'+(direction==='desc'?' selected':'')+'>Descending</option></select></label><button type="submit">Find client</button></form><div class="dtmax-grid"><table><thead><tr><th>Client #</th><th>Name</th><th>Processing status</th><th>Province</th><th>Imported historical years</th></tr></thead><tbody>'+p.clients.map(c=>'<tr data-selected="'+(activeClient===c.client_number)+'"><td>'+esc(c.client_number)+'</td><td><button type="button" class="dtmax-name" data-imported-client="'+esc(c.client_number)+'" aria-label="Open imported T1 for '+esc(c.name)+'">'+esc(c.name)+'</button></td><td>'+esc(c.source_profile?.processing_status||'Not imported')+'</td><td>'+esc(c.source_profile?.province||'Not imported')+'</td><td class="dtmax-years">'+esc(c.historical_years.map(y=>y+(c.recovered_native_source_years?.includes(y)&&!c.native_historical_years?.includes(y)?' (recovered native source)':c.pdf_only_years?.includes(y)?(c.source_archive_years?.includes(y)?' (source archive)':' (preserved PDF)'):'')).join(', ')||'No imported historical sources')+(c.pending_years.length?'<small>Needs verification: '+esc(c.pending_years.join(', '))+'</small>':'')+'</td></tr>').join('')+'</tbody></table>'+(!p.total?'<p>No imported clients match these filters.</p>':'')+'</div><div class="dtmax-footer"><p>'+(p.total?offset+1:0)+'–'+(offset+p.clients.length)+' of '+p.total+' clients</p><div class="dtmax-page-controls"><button type="button" data-dtmax-prev '+(!offset?'disabled':'')+'>Previous</button><button type="button" data-dtmax-next '+(offset+p.clients.length>=p.total?'disabled':'')+'>Next</button></div></div>');
+      shell('<form data-dtmax-search class="dtmax-toolbar"><label>Find client<input name="search" type="search" maxlength="100" value="'+esc(search)+'" placeholder="Name or DT Max client number"></label><label>Imported year<select name="year"><option value="">All years</option>'+p.available_years.slice().sort((a,b)=>b-a).map(y=>'<option'+(String(y)===year?' selected':'')+'>'+y+'</option>').join('')+'</select></label><label>Processing status<select name="status"><option value="">All statuses</option>'+(p.available_statuses||[]).map(v=>'<option value="'+esc(v)+'"'+(v===status?' selected':'')+'>'+esc(v)+'</option>').join('')+'</select></label><label>Province<select name="province"><option value="">All provinces</option>'+(p.available_provinces||[]).map(v=>'<option value="'+esc(v)+'"'+(v===province?' selected':'')+'>'+esc(v)+'</option>').join('')+'</select></label><label>Sort by<select name="sort">'+[['client_number','Client number'],['name','Name'],['processing_status','Processing status']].map(([v,label])=>'<option value="'+v+'"'+(v===sort?' selected':'')+'>'+label+'</option>').join('')+'</select></label><label>Order<select name="direction"><option value="asc"'+(direction==='asc'?' selected':'')+'>Ascending</option><option value="desc"'+(direction==='desc'?' selected':'')+'>Descending</option></select></label><button type="submit">Find client</button></form><div class="dtmax-toolbar"><button type="button" class="dtmax-action" data-dtmax-export-clients>Export client list CSV</button><button type="button" class="dtmax-action" data-dtmax-cancel-client-export disabled>Cancel export</button></div><p class="dtmax-notice">All matching source profiles, across every page. Spreadsheet text cells use a reversible leading apostrophe; list review only, not a migration-import CSV. No tax amounts or source records are changed.</p><p data-dtmax-client-export-status role="status" aria-live="polite"></p><div class="dtmax-grid"><table><thead><tr><th>Client #</th><th>Name</th><th>Processing status</th><th>Province</th><th>Imported historical years</th></tr></thead><tbody>'+p.clients.map(c=>'<tr data-selected="'+(activeClient===c.client_number)+'"><td>'+esc(c.client_number)+'</td><td><button type="button" class="dtmax-name" data-imported-client="'+esc(c.client_number)+'" aria-label="Open imported T1 for '+esc(c.name)+'">'+esc(c.name)+'</button></td><td>'+esc(c.source_profile?.processing_status||'Not imported')+'</td><td>'+esc(c.source_profile?.province||'Not imported')+'</td><td class="dtmax-years">'+esc(c.historical_years.map(y=>y+(c.recovered_native_source_years?.includes(y)&&!c.native_historical_years?.includes(y)?' (recovered native source)':c.pdf_only_years?.includes(y)?(c.source_archive_years?.includes(y)?' (source archive)':' (preserved PDF)'):'')).join(', ')||'No imported historical sources')+(c.pending_years.length?'<small>Needs verification: '+esc(c.pending_years.join(', '))+'</small>':'')+'</td></tr>').join('')+'</tbody></table>'+(!p.total?'<p>No imported clients match these filters.</p>':'')+'</div><div class="dtmax-footer"><p>'+(p.total?offset+1:0)+'–'+(offset+p.clients.length)+' of '+p.total+' clients</p><div class="dtmax-page-controls"><button type="button" data-dtmax-prev '+(!offset?'disabled':'')+'>Previous</button><button type="button" data-dtmax-next '+(offset+p.clients.length>=p.total?'disabled':'')+'>Next</button></div></div>');
       q('[data-dtmax-search]').onsubmit=e=>{e.preventDefault();search=q('[name=search]').value;year=q('[name=year]').value;sort=q('[name=sort]').value||'client_number';direction=q('[name=direction]').value||'asc';status=q('[name=status]').value;province=q('[name=province]').value;return load(0);};
+      q('[data-dtmax-search]').oninput=cancelClientCsv;q('[data-dtmax-search]').onchange=cancelClientCsv;
+      q('[data-dtmax-export-clients]').onclick=exportClientList;q('[data-dtmax-cancel-client-export]').onclick=cancelClientCsv;
       q('[data-dtmax-prev]').onclick=()=>load(Math.max(0,offset-100));q('[data-dtmax-next]').onclick=()=>load(offset+100);
       all('[data-imported-client]').forEach(b=>b.onclick=()=>open(b.dataset.importedClient));
     }
     async function load(next=0){
+      cancelClientCsv();
       const n=++sequence;offset=next;activeClient='';view='list';historyLoading=false;releasePdf();releaseExceptions();
       host.innerHTML='<div class="card"><h2>T1 clients imported from DT Max</h2><p>Loading imported clients…</p></div>';
       try{
-        const p=validatePage(await request(BASE+'recovered-native-sources/effective/source-clients?offset='+offset+'&limit=100&search='+encodeURIComponent(search)+(year?'&year='+year:'')+'&sort='+sort+'&direction='+direction+(status?'&status='+encodeURIComponent(status):'')+(province?'&province='+encodeURIComponent(province):'')),offset);
+        const p=validatePage(await request(clientListPath(appliedClientFilters(),offset)),offset);
         if(!current(n))return;page=p;clientCache.clear();p.clients.forEach(c=>clientCache.set(c.client_number,c));renderList();
       }catch(e){if(current(n)){host.innerHTML='<div class="dtmax-error"><h2>T1 imported clients unavailable</h2><p role="alert">'+esc(e.message)+'</p><p>Unavailable data is not an empty client list. Firm-wide source access is required.</p><button data-dtmax-retry>Retry imported list</button></div>';q('[data-dtmax-retry]').onclick=()=>load(offset);}}
     }
@@ -898,7 +975,7 @@
       }while(at<total);recordsHtml(historicalKind,records);return records;
     }
     async function open(client){
-      if(!/^\d{1,12}$/.test(client))return;const lookup=++sequence;
+      if(!/^\d{1,12}$/.test(client))return;cancelClientCsv();const lookup=++sequence;
       if(!clientCache.has(client)){
         try{const found=validatePage(await request(BASE+'recovered-native-sources/effective/source-clients?offset=0&limit=100&search='+encodeURIComponent(client)),0);if(!current(lookup))return;const exact=found.clients.find(c=>c.client_number===client);if(!exact)throw Error('Family member is not in the imported client roster');clientCache.set(client,exact);}
         catch(e){if(current(lookup)){const d=q('[data-dtmax-details]');if(d)d.innerHTML='<p role="alert">'+esc(e.message)+'</p>';}return;}
@@ -910,7 +987,7 @@
     }
     function historicalRecord(y){const matches=history.filter(r=>String(r.tax_year)===y);return matches.length===1?matches[0]:null;}
     async function show(next,focus=false,requestedPdf=null){
-      if(next!=='list'&&(!selected()||historyLoading))return;if(next==='list')historyLoading=false;const n=++sequence;view=next;
+      if(next!=='list'&&(!selected()||historyLoading))return;cancelClientCsv();if(next==='list')historyLoading=false;const n=++sequence;view=next;
       if(next==='list'){releasePdf();renderList();}
       else if(next==='entry'){
         releasePdf();shell(clientHead()+'<div class="dtmax-toolbar"><label>Find keyword <input type="search" data-dtmax-keyword-find placeholder="Keyword or line number · Alt+F7"></label><span class="dtmax-missing" data-dtmax-keyword-count></span></div>'+(recoveredOnlyYear()?'<p>Recovered source fields for this year are available below. Choose Recovered native fields to review the original entries and cached versions.</p>':'')+entryHtml(selected(),historicalRecord(selectedYear),comparison,selectedYear,history.filter(r=>String(r.tax_year)===selectedYear).length));bindClient();
@@ -1003,7 +1080,7 @@
       }
       q('[data-dtmax-pdf-canvas]').innerHTML='<div class="dtmax-pdf-tools"><p>'+esc(pdfRecord.tax_year)+' · Page '+pdfPage+' of '+pdfRecord.page_count+' · Original bytes verified</p>'+(office?'<h3>Retained office T1 document</h3><p>Preserved as supplied; native generation, completeness of the original return and filed-copy status are unverified. The preserved document bytes are unchanged.</p>'+(pdfRecord.retained_office_provenance.kind==='retained_office_T1_stable_identifier_document'?'<p>Original name match remains unverified; taxpayer identifier continuity matched. This establishes continuity with the archived source, not government identity verification or a legal name change.</p>':pdfRecord.retained_office_provenance.kind==='retained_office_T1_scanned_document'?'<p>Retained office T1 scan. Visual review linked these pages to the archived tax source. This establishes source continuity; government identity, filed-copy status and financial values are unverified.</p>':''):p?'<p>Exported from DT Max’s stored print queue on '+esc(p.exported_at_utc)+'. No recalculation. Filed-copy status is unverified.</p>'+cachedFigureNotice(p):'')+'<a href="'+esc(pdfUrl)+'" download="'+(scan?'retained-office-t1-scan-':office?'retained-office-t1-':'dtmax-t1-')+esc(activeClient)+'-'+pdfRecord.tax_year+'.pdf">'+(scan?'Download retained office T1 scan':office?'Download retained office T1':'Download DT Max PDF')+'</a></div><iframe title="'+(scan?'Retained office T1 scan: ':office?'Retained office T1 document: ':'Original DT Max printed return: ')+esc(title)+'" referrerpolicy="no-referrer" src="'+esc(pdfUrl)+'#page='+pdfPage+'&view=FitH&navpanes=0"></iframe>';
     }
-    return {ready:load(),load,facts,show,open,dispose:()=>{++sequence;releasePdf();releaseExceptions();host.onkeydown=null;}};
+    return {ready:load(),load,facts,show,open,dispose:()=>{cancelClientCsv();disposed=true;++sequence;csvUrls.splice(0).forEach(url=>URL.revokeObjectURL(url));releasePdf();releaseExceptions();host.onkeydown=null;}};
   }
-  globalThis.NXTDTMaxT1={mount,priorT4Source,priorT4Notice,loadOnvio85SDK,onvio85SourcesHtml,loadArchivedProfile,checkArchivedProfile,checkArchivedEnvelope,verifyArchivedSummary,verifyArchivedPacket,parseArchivedBody,archivedSourcesHtml,exactHundredths,loadRecoveredIdentityProfile,verifyRecoveredIdentityLink,verifyEffectiveRecoveredContext,verifyEffectiveRecoveredSummary,effectiveRecoveredSourcesHtml,checkEffectiveRecoveredEnvelope,loadWireExactProfile,verifyWireExactHistoricalRecord,checkWireEnvelope,historicalTotalsHtml,canonicalRecoveredSource,verifyRecoveredNativeContext,recoveredNativeSourcesHtml,recoveredSourceValue,loadRecoveredNativeProfile,cents,validatePage,recordsHtml,entryHtml,validatePdf,validateException,exceptionsHtml,cachedFigureNotice,validatePrintedFigures,validatePreservedPdfFigures,validateSourceSummaryFigures,validateSourcePaperDocuments,decodeParsedNativeSource,parsedNativeFormsHtml,verifySourceKeywordTable,loadSourceKeywords,keywordName,sourceContextDiagnostic,exceptionsWithDiagnosticsHtml};
+  globalThis.NXTDTMaxT1={mount,collectClientListCsv,buildClientListCsv,priorT4Source,priorT4Notice,loadOnvio85SDK,onvio85SourcesHtml,loadArchivedProfile,checkArchivedProfile,checkArchivedEnvelope,verifyArchivedSummary,verifyArchivedPacket,parseArchivedBody,archivedSourcesHtml,exactHundredths,loadRecoveredIdentityProfile,verifyRecoveredIdentityLink,verifyEffectiveRecoveredContext,verifyEffectiveRecoveredSummary,effectiveRecoveredSourcesHtml,checkEffectiveRecoveredEnvelope,loadWireExactProfile,verifyWireExactHistoricalRecord,checkWireEnvelope,historicalTotalsHtml,canonicalRecoveredSource,verifyRecoveredNativeContext,recoveredNativeSourcesHtml,recoveredSourceValue,loadRecoveredNativeProfile,cents,validatePage,recordsHtml,entryHtml,validatePdf,validateException,exceptionsHtml,cachedFigureNotice,validatePrintedFigures,validatePreservedPdfFigures,validateSourceSummaryFigures,validateSourcePaperDocuments,decodeParsedNativeSource,parsedNativeFormsHtml,verifySourceKeywordTable,loadSourceKeywords,keywordName,sourceContextDiagnostic,exceptionsWithDiagnosticsHtml};
 })();
