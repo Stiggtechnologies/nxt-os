@@ -93,7 +93,8 @@ fn editable_inputs(r:&TaxReturn,v:&Value)->TResult<()> {
     }
     // Existing unrepresented fields may not be silently erased through a simpler editor.
     for k in r.inputs.as_object().ok_or_else(||bad("Saved input shape differs"))?.keys() {
-        if !o.contains_key(k) {return Err(bad("Paired entry cannot remove a saved field"));}
+        let optional=p["sections"].as_array().unwrap().iter().flat_map(|s|s["fields"].as_array().unwrap()).any(|f|f["key"]==k.as_str()&&f["optional"]==true);
+        if !o.contains_key(k)&&!optional {return Err(bad("Paired entry cannot remove a saved field"));}
     }
     let mut input=ReturnInput::from(r);input.inputs=v.clone();super::validate(input)?;Ok(())
 }

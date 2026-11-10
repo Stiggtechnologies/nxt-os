@@ -26,7 +26,7 @@
   const programs = () => list(state.catalog?.programs);
   const program = id => programs().find(p => p.id.toLowerCase() === String(id || state.program).toLowerCase()) || programs()[0];
   const fields = p => list(p?.sections).flatMap(s => list(s.fields));
-  const defaults = p => Object.assign({}, ...fields(p).map(f => ({ [f.key]: clone(f.default ?? (f.kind === "boolean" ? false : f.kind === "text" ? "" : 0)) })), clone(p.defaults || {}));
+  const defaults = p => Object.assign({}, ...fields(p).filter(f=>f.optional!==true).map(f => ({ [f.key]: clone(f.default ?? (f.kind === "boolean" ? false : f.kind === "text" ? "" : 0)) })), clone(p.defaults || {}));
   const statuses = [["", "All statuses"], ["draft", "Draft"], ["calculated", "Calculated"], ["in_review", "In review"], ["approved", "Approved"], ["filed", "Filed (recorded, outside NXT)"], ["archived", "Archived"]];
   const canEdit = record => !!record && browserEntryAvailable(record) && !["approved", "filed", "archived"].includes(record.status);
   function coverageRows(coverage = state.catalog?.coverage) {
@@ -210,7 +210,7 @@
       const selected = programs().find(p => p.id === fd.get("program"));
       if (!selected) throw Error("Choose a program from the verified creation catalog.");
       const inputs=creationInput(selected,Number(fd.get("tax_year")),fd.get("jurisdiction"));
-      if(sourceSeed&&fields(selected).some(f=>f.kind==="boolean"&&inputs[f.key]!==false))throw Error("Source preparation requires unconfirmed template flags.");
+      if(sourceSeed&&fields(selected).some(f=>f.kind==="boolean"&&(f.optional===true?Object.hasOwn(inputs,f.key)&&inputs[f.key]!==false:inputs[f.key]!==false)))throw Error("Source preparation requires unconfirmed template flags.");
       created = await request("/returns", { body: { program: selected.id, tax_year: Number(fd.get("tax_year")), jurisdiction: fd.get("jurisdiction"), name: fd.get("name").trim(), client_ref: sourceSeed?"":fd.get("client_ref").trim(), period_start: fd.get("period_start") || undefined, period_end: fd.get("period_end") || undefined, inputs, parties: [], notes: sourceSeed?sourcePreparationNotes(sourceSeed.reference):"" } });
     }, "Create workpaper", true,{sourcePreparation:!!sourceSeed});
     if(saved&&sourceSeed){
@@ -361,8 +361,8 @@
     else if (f.kind === "json" && f.key === "partners") return renderPartnerAllocations(f, value);
     else if (f.kind === "json") control = `<textarea ${attr} rows="8" spellcheck="false">${esc(JSON.stringify(value ?? null, null, 2))}</textarea>`;
     else if (f.kind === "text" && f.multiline) control = `<textarea ${attr} rows="7">${esc(value || "")}</textarea>`;
-    else control = `<input type="${f.kind === "number" ? "number" : "text"}" ${attr} value="${esc(f.kind === "money" ? ((Number(value) || 0) / 100).toFixed(2) : value ?? "")}"${f.kind === "money" ? ' class="money" inputmode="decimal" autocomplete="off"' : ""}${f.kind === "number" ? ' step="any"' : ""}>`;
-    return `<div class="keyword-field${state.errors[f.key] ? " invalid" : ""}" data-field="${esc(f.key)}"><label for="${esc(id)}"><code>${esc(f.key)}</code><span>${esc(f.label)}</span>${f.help ? `<span class="help">${esc(f.help)}</span>` : ""}</label>${control}${grouped?'<p class="help">Derived from saved slip groups. Edit the individual occurrences in Saved slip groups.</p>':""}<span class="field-error" data-error-for="${esc(f.key)}"${state.errors[f.key] ? "" : " hidden"}>${esc(state.errors[f.key] || "")}</span></div>`;
+    else control = `<input type="${f.kind === "number" ? "number" : "text"}" ${attr} value="${esc(f.kind === "money" ? (f.optional===true&&!Object.hasOwn(state.draft.inputs,f.key)?"":((Number(value) || 0) / 100).toFixed(2)) : value ?? "")}"${f.kind === "money" ? ' class="money" inputmode="decimal" autocomplete="off"' : ""}${f.kind === "number" ? ' step="any"' : ""}>`;
+    return `<div class="keyword-field${state.errors[f.key] ? " invalid" : ""}" data-field="${esc(f.key)}"><label for="${esc(id)}"><code>${esc(f.key)}</code><span>${esc(f.label)}</span>${f.help ? `<span class="help">${esc(f.help)}</span>` : ""}${f.optional===true?`<span class="help">${f.kind==="boolean"?'Optional verification. Unchecked is not confirmation; Clear removes its saved value.':'Optional. Blank is not supplied; enter 0 only when known.'} Verification is never automatic.</span>`:""}</label>${control}${f.optional===true?`<button class="btn sm" type="button" data-clear-optional="${esc(f.key)}"${grouped||!canEdit(state.record)?" disabled":""}>Clear optional value</button>`:""}${grouped?'<p class="help">Derived from saved slip groups. Edit the individual occurrences in Saved slip groups.</p>':""}<span class="field-error" data-error-for="${esc(f.key)}"${state.errors[f.key] ? "" : " hidden"}>${esc(state.errors[f.key] || "")}</span></div>`;
   }
   function renderPartnerAllocations(f, value) {
     return `<div class="partner-input" data-field="${esc(f.key)}"><div class="keyword-field"><label><code>${esc(f.key)}</code><span>${esc(f.label)}</span><span class="help">Enter percentage shares. 50.00% is stored as 5,000 basis points. Shares must total 100%.</span></label><button class="btn sm" type="button" data-add-partner>+ Add partner</button></div><div class="partner-rows">${list(value).map((p, i) => `<div class="keyword-field" data-partner-index="${i}"><label>${esc(p.name || "Partner " + (i + 1))}<input data-partner-prop="name" data-index="${i}" value="${esc(p.name || "")}" aria-label="Partner name" maxlength="160"></label><div class="row"><input data-partner-prop="share" data-index="${i}" value="${((Number(p.share_bps) || 0) / 100).toFixed(2)}" inputmode="decimal" aria-label="Partner share percent" style="width:90px;text-align:right"><span>%</span><button class="btn sm danger" type="button" data-delete-partner="${i}" aria-label="Remove partner">×</button></div></div>`).join("")}</div><div class="form-error" data-partner-errors></div></div>`;
@@ -463,6 +463,8 @@
   }
   function updateKeyword(control) {
     const f = fields(program()).find(f => f.key === control.dataset.keyword); if (!f) return;
+    if(window.NXTTurboCore?.managedSlipKeys(state.draft.slip_groups).includes(f.key))return;
+    if(f.optional===true){try{NXTTurboCore.applyOptionalInput(state.draft.inputs,f,f.kind==="boolean"?control.checked:control.value,{changed:true});collectError(f.key,"");}catch(e){collectError(f.key,e.message);}markDirty();return;}
     let value, error;
     if (f.kind === "boolean") value = control.checked;
     else if (f.kind === "money") { value = toCents(control.value); if (!Number.isSafeInteger(value)) error = "Enter a valid dollar amount with at most two decimal places."; }
@@ -584,7 +586,7 @@
   const actionLocks = new Set();
   function setWorkspaceBusy() {
     const locked = actionLocks.has("record");
-    $$(".work-actions button,#return-editor input,#return-editor select,#return-editor textarea,#return-editor [data-action],#return-editor [data-add-partner],#return-editor [data-delete-partner]", main).forEach(el => {
+    $$(".work-actions button,#return-editor input,#return-editor select,#return-editor textarea,#return-editor [data-action],#return-editor [data-add-partner],#return-editor [data-delete-partner],#return-editor [data-clear-optional]", main).forEach(el => {
       if (locked && !el.disabled) { el.dataset.lockDisabled = "true"; el.disabled = true; }
       else if (!locked && el.dataset.lockDisabled) { el.disabled = false; delete el.dataset.lockDisabled; }
     });
@@ -599,6 +601,7 @@
     finally { actionLocks.delete(key); setWorkspaceBusy(); }
   }
   document.addEventListener("click", async event => {
+    const clearOptional=event.target.closest("[data-clear-optional]");if(clearOptional){if(clearOptional.disabled||actionLocks.has("record")||!canEdit(state.record))return;const f=fields(program()).find(f=>f.key===clearOptional.dataset.clearOptional);if(!f||f.optional!==true||window.NXTTurboCore?.managedSlipKeys(state.draft.slip_groups).includes(f.key))return;NXTTurboCore.applyOptionalInput(state.draft.inputs,f,null,{clear:true});collectError(f.key,"");markDirty();renderEditor();return;}
     const os = event.target.closest("[data-os]"); if (os) { openOs(os.dataset.os); return; }
     const suite = event.target.closest("[data-program]"); if (suite) { if (!await confirmDiscard()) return; state.program = suite.dataset.program; state.year = ""; state.section = "identity"; if (location.hash === "#worklist" || !location.hash) navigate(); else go("worklist"); return; }
     const section = event.target.closest("[data-section]"); if (section) { chooseSection(section.dataset.section); return; }

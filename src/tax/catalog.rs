@@ -7,6 +7,11 @@ fn field(key:&str,label:&str,kind:&str,default:Value,help:&str)->Value {
 }
 fn money(key:&str,label:&str,help:&str)->Value {field(key,label,"money",json!(0),help)}
 fn yes(key:&str,label:&str,help:&str)->Value {field(key,label,"boolean",json!(false),help)}
+pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/2";
+fn optional(key:&str,label:&str,kind:&str,verify:&str,form:&str,help:&str)->Value {
+    let mut f=json!({"key":key,"label":label,"kind":kind,"optional":true,"default_policy":"omit","blank_policy":"delete_property","tax_years":[2025],"jurisdictions":super::coverage::entry_jurisdictions("T1",2025),"verification_key":verify,"source_form":form,"help":help});
+    if kind=="money"{f["min"]=json!(0);f["max"]=json!(100_000_000_000_000_i64);}f
+}
 fn section(id:&str,label:&str,fields:Vec<Value>)->Value {json!({"id":id,"label":label,"fields":fields})}
 fn scope_fields(scope:&str)->Value {section("scope","Calculation scope",vec![
     yes("scope_confirmed","I verified that this case fits the stated calculation scope",scope),
@@ -15,7 +20,7 @@ fn scope_fields(scope:&str)->Value {section("scope","Calculation scope",vec![
 fn program(id:&str,label:&str,description:&str,jurisdiction:&str,scope:&str,sections:Vec<Value>)->Value {
     let mut defaults=serde_json::Map::new();let mut properties=serde_json::Map::new();
     for section in &sections {for field in section["fields"].as_array().expect("static catalog fields") {
-        let key=field["key"].as_str().expect("static catalog key");defaults.insert(key.into(),field["default"].clone());
+        let key=field["key"].as_str().expect("static catalog key");if field["optional"]!=true{defaults.insert(key.into(),field["default"].clone());}
         let kind=field["kind"].as_str().expect("static catalog kind");
         let schema=match kind {"money"=>json!({"type":"integer","minimum":0,"maximum":100_000_000_000_000_i64,"unit":"CAD cents"}),"number"=>json!({"type":"integer"}),"boolean"=>json!({"type":"boolean"}),"json"=>json!({"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","name","share_bps"],"properties":{"id":{"type":"string"},"name":{"type":"string"},"share_bps":{"type":"integer","minimum":0,"maximum":10000}}}}),_=>json!({"type":"string"})};
         properties.insert(key.into(),schema);
@@ -24,14 +29,34 @@ fn program(id:&str,label:&str,description:&str,jurisdiction:&str,scope:&str,sect
 }
 
 pub fn catalog()->Value {
-    let t1=program("T1","T1 — Personal","Selected 2025 employment and interest workpapers. Choose a jurisdiction to read its exact entry scope.","AB",T1_SCOPE,vec![
+    let mut t1=program("T1","T1 — Personal","Selected 2025 workpapers, including optional verified business, rental and current-year credit totals. Read each section's limits; these are not complete schedules or a filing return.","AB",T1_SCOPE,vec![
         scope_fields(T1_SCOPE),
         section("residence","Residency",vec![yes("full_year_resident","Full-year Canadian resident; resident of the selected province at year-end","Adult age 18–64 in this scope. Newcomer, emigrant, deemed resident, deceased, bankruptcy, spouse/dependant and age-credit cases require additional rules."),yes("provincial_adjustments_not_applicable","Provincial reductions/credits not calculated do not apply (BC, SK, MB, NB, NS, PE, NL, YT, NT, NU only)","Required for the generic provincial engine; the calculation diagnostics list what is not calculated for the chosen province. Ignored for AB and ON.")]),
         section("income","Income",vec![money("employment_income_cents","T4 employment income","Ordinary Canadian employment; dollars in the editor, integer cents in the API. Standard insurable employment only; foreign employment and self-employment are excluded."),money("interest_income_cents","Canadian interest income","Ordinary Canadian-source interest only. Dividends, capital gains and foreign income are excluded.")]),
         section("deductions","Verified deductions",vec![money("rrsp_deduction_cents","RRSP deduction claimed","A deductible amount verified against receipts and the available CRA deduction limit; contribution room and carryforwards are not calculated."),money("rrsp_deduction_limit_cents","Verified available RRSP deduction limit","This is the verified available limit, not an automatic 18% contribution-room calculation."),yes("rrsp_verified","RRSP deduction and available limit verified","Required whenever an RRSP deduction is claimed."),money("cpp_enhanced_deduction_cents","Verified enhanced CPP deduction — line 22215","Schedule 8/RC381 amount, maximum $1,074.00 for 2025. Do not enter the entire T4 box 16 amount.")]),
         section("payroll","Verified payroll credits",vec![money("cpp_base_credit_cents","Verified base CPP credit amount — line 30800","Schedule 8 amount, maximum $3,356.10. Enhanced contributions are deductions, not part of this credit."),money("ei_credit_cents","Verified eligible EI credit — line 31200","Maximum $1,077.48; standard insurable earnings must exceed $2,000. Overpayments and Quebec employment are outside scope."),yes("payroll_verified","CPP/EI amounts verified against Schedule 8 and source documents","Required for any CPP/EI credit or enhanced CPP deduction. This engine does not infer contributions or refunds from wages.")]),
         section("payments","Payments",vec![money("tax_withheld_cents","Income tax withheld","Verified income tax withheld; no automatic payroll calculation."),money("instalments_cents","Income tax instalments paid","Verified payments only. Reported balance excludes refundable benefits and all other return amounts.")]),
+        section("business-totals","Optional verified business totals",vec![
+            optional("self_employment_gross_cents","Verified T2125 gross business income","money","t2125_verified","T2125","Income-tax-only workpaper totals, not a complete business schedule or return balance. CPP payable (42100) is not computed. Independent Schedule 8 review is required. No GST/HST, vehicle or home-office adjustments are computed."),
+            optional("self_employment_expenses_cents","Verified T2125 deductible current expenses","money","t2125_verified","T2125","Current deductible expenses from records, excluding separately entered CCA. No eligibility or adjustment is inferred."),
+            optional("self_employment_cca_cents","Verified T2125 CCA claim","money","t2125_verified","T2125","Externally computed CCA claim; NXT does not compute CCA classes or dispositions. This NXT workpaper rejects CCA that creates or increases a business loss; other cases are outside this calculation scope."),
+            optional("t2125_verified","T2125 totals and claim eligibility verified","boolean","t2125_verified","T2125","Confirm only after checking the source totals and deductions. This is not automatic verification or a complete T2125."),
+            optional("se_cpp_deduction_cents","Verified self-employed CPP deduction — line 22200","money","se_cpp_verified","Schedule 8","Externally calculated Schedule 8 deduction. Contributions, overpayments and elections are not computed here."),
+            optional("se_cpp_credit_cents","Verified self-employed CPP credit — line 31000","money","se_cpp_verified","Schedule 8","Externally calculated Schedule 8 eligible credit amount, not the entire CPP payment. Verify separately from employee CPP."),
+            optional("se_cpp_verified","Schedule 8 self-employed CPP amounts verified","boolean","se_cpp_verified","Schedule 8","Confirm only after independent Schedule 8 review. Deductions/credits are consumed only with nonzero business amounts. CPP payable (42100) and the contribution/overpayment calculation are incomplete; this flag does not make a full business return supported.")]),
+        section("rental-totals","Optional verified rental totals",vec![
+            optional("rental_gross_cents","Verified T776 gross rental income","money","t776_verified","T776","Aggregate verified rental totals; no property schedule, co-ownership allocation or personal-use adjustment is computed."),
+            optional("rental_expenses_cents","Verified T776 deductible current expenses","money","t776_verified","T776","Current deductible rental expenses from records, excluding separately entered CCA. Capital expenses need separate review."),
+            optional("rental_cca_cents","Verified T776 CCA claim","money","t776_verified","T776","Externally calculated CCA; NXT does not compute classes or dispositions. CCA cannot create or increase a rental loss."),
+            optional("t776_verified","T776 totals and claim eligibility verified","boolean","t776_verified","T776","Confirm only after verifying the rental totals and deductions. This is not an automatic or complete T776.")]),
+        section("current-credits","Optional verified current-year credits",vec![
+            optional("medical_expenses_cents","Eligible medical expenses before income threshold","money","credits_verified","Federal worksheet / line 33099","Verified eligible unreimbursed receipts for an allowed 12-month period ending in 2025. Enter gross eligible expenses, not the credit after the net-income threshold. Dependant line 33199 and special cases are not handled."),
+            optional("donations_cents","Verified current-year eligible charitable donations","money","credits_verified","Schedule 9","Ordinary eligible receipted donations only, within the existing 75% net-income limit. No carryforwards, transfers, securities gifts or special limits are computed."),
+            optional("tuition_cents","Verified current-year eligible tuition","money","credits_verified","Schedule 11 / T2202","Reconcile the entered current-year claim against Schedule 11, including current own-use limits, the Canada training credit and unused balances; a certificate alone does not establish the full claim. No unused balance, carryforward or transfer computation. Provincial tuition/education limitations remain in diagnostics. Saved T2202 groups own this amount when present."),
+            optional("credits_verified","Medical, donation and tuition amounts/eligibility verified","boolean","credits_verified","Federal worksheet / Schedules 9 and 11","One explicit verification for these entered current-year claims. Not checked automatically; all calculation diagnostics and scope limits still apply.")]),
     ]);
+    t1["field_catalog_version"]=json!(T1_FIELD_CATALOG_VERSION);
+    t1["optional_workpaper_statement"]=json!("Optional 2025 verified totals use existing bounded calculation paths. Blank means not supplied; an entered zero remains explicit. No complete schedules, benefits, filing or automatic confirmation are added.");
     let mut limit=money("business_limit_cents","Annual business limit before short-year proration","Maximum $500,000. Only a verified non-associated, unassigned business limit is supported.");limit["default"]=json!(50_000_000);
     let mut days=field("fiscal_days","Days in fiscal period","number",json!(365),"1–366. A year shorter than 51 weeks (357 days) prorates the limit using days/365; 357–366 days uses the full limit.");days["min"]=json!(1);days["max"]=json!(366);
     let t2=program("T2","T2 — Corporation","Federal and Alberta ordinary active-business tax calculation from verified taxable income.","AB",T2_SCOPE,vec![
@@ -63,6 +88,6 @@ pub fn catalog()->Value {
     use super::*;use super::super::calculations::calculate;
     #[test]fn catalog_defaults_match_engine_inputs_and_never_claim_filing(){
         let c=catalog();assert_eq!(c["filing_supported"],false);assert_eq!(c["certified"],false);
-        for p in c["programs"].as_array().unwrap(){let result=calculate(p["id"].as_str().unwrap(),2025,p["jurisdictions"][0].as_str().unwrap(),&p["defaults"]).unwrap();assert!(!result.supported);assert!(!p["sources"].as_array().unwrap().is_empty());let fields:usize=p["sections"].as_array().unwrap().iter().map(|s|s["fields"].as_array().unwrap().len()).sum();assert_eq!(p["defaults"].as_object().unwrap().len(),fields);}
+        for p in c["programs"].as_array().unwrap(){let result=calculate(p["id"].as_str().unwrap(),2025,p["jurisdictions"][0].as_str().unwrap(),&p["defaults"]).unwrap();assert!(!result.supported);assert!(!p["sources"].as_array().unwrap().is_empty());let fields:usize=p["sections"].as_array().unwrap().iter().flat_map(|s|s["fields"].as_array().unwrap()).filter(|f|f["optional"]!=true).count();assert_eq!(p["defaults"].as_object().unwrap().len(),fields);}
     }
 }
