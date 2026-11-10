@@ -32,6 +32,7 @@ jobs:
           node --test tests/dtmax_t1_worklist.test.mjs
           node --test tests/dtmax_reviewed_packet_ui.test.mjs
           node --test tests/dtmax_source_archives.test.mjs
+          node --test tests/dtmax_prior_t4_source.test.mjs
           node --test tests/dtmax_source_summary_figures.test.mjs
           node --test tests/dtmax_source_paper_documents.test.mjs
           node --test tests/dtmax_parsed_native_forms.test.mjs

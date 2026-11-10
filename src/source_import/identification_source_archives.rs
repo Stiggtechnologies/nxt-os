@@ -8,6 +8,8 @@ const ADDITIONAL_PROFILE: &str = "3985c4e4c02638f4abdceb6723fc8b37fea46db25c5430
 const ADDITIONAL_CLOSED_SHA: &str = "b488297b50d116e199883838ff5dadbb7feb73e92b82754aa86ed610e3a68b04";
 const MIXED_PROFILE: &str = "e14edac6ccc8d3d1067997ce45b858ec943317e03f988bbc47cedae384c21418";
 const MIXED_CLOSED_SHA: &str = "a76279e1b6ef820b7bd47b624e362847e8b063f9839545990b45501f367b4bca";
+const PRIOR_PROFILE: &str = "a5c5bb3c831479a500412eb74b827e7fc5c8fed9693105fc60873cb9c6bc500f";
+const PRIOR_CLOSED_SHA: &str = "945c28c29cef16a8f119e384b8051b0e561324f3dd6dfec93aa5df81b96b17d9";
 pub const CHUNK_BYTES: usize = 1024 * 1024;
 const MAX_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
 const KIND: &str = "retained_office_identification_source_archive";
@@ -143,8 +145,34 @@ fn mixed_profile() -> &'static Profile {
         p
     })
 }
+fn prior_profile() -> &'static Profile {
+    static P: OnceLock<Profile> = OnceLock::new();
+    P.get_or_init(|| {
+        let raw=include_bytes!("readable_prior_T4_source_archive_profile.json");
+        assert_eq!(hex::encode(Sha256::digest(raw)),PRIOR_CLOSED_SHA);
+        let p:Profile=serde_json::from_slice(raw).expect("closed readable prior T4 source profile");
+        assert_eq!(p.profile_sha256,PRIOR_PROFILE);
+        assert_eq!(hex::encode(Sha256::digest(serde_json::to_vec(&p.contract).unwrap())),PRIOR_PROFILE);
+        assert_eq!((p.record_count,p.document_count,p.allowed_record_sha256.len(),p.documents.len()),(1,1,1,1));
+        assert_eq!(p.documents.keys().cloned().collect::<BTreeSet<_>>(),p.document_sha256);
+        assert!(digest(&p.source_packet_sha256));
+        assert!(p.allowed_record_sha256.iter().chain(&p.document_sha256).all(|s|digest(s)));
+        for old in [profile(),additional_profile(),mixed_profile()] {
+            assert!(p.allowed_record_sha256.is_disjoint(&old.allowed_record_sha256));
+            assert!(p.document_sha256.is_disjoint(&old.document_sha256));
+        }
+        let d=p.documents.values().next().unwrap();
+        assert_eq!((d.bytes,d.pages,d.chunk_sha256.len()),(340070,1,1));
+        assert_eq!(d.chunk_sha256[0],p.document_sha256.iter().next().unwrap().as_str());
+        assert!(p.document_sha256.is_disjoint(&office_profile().document_sha256));
+        assert!(p.document_sha256.is_disjoint(&stable_office_profile().document_sha256));
+        assert!(p.document_sha256.is_disjoint(&scanned_office_profile().document_sha256));
+        assert!(p.document_sha256.iter().all(|s|!reviewed_packets::document_allowed(s)));
+        p
+    })
+}
 fn document(sha: &str) -> Option<&'static Document> {
-    profile().documents.get(sha).or_else(||additional_profile().documents.get(sha)).or_else(||mixed_profile().documents.get(sha))
+    profile().documents.get(sha).or_else(||additional_profile().documents.get(sha)).or_else(||mixed_profile().documents.get(sha)).or_else(||prior_profile().documents.get(sha))
 }
 pub(super) fn document_allowed(sha: &str) -> bool { document(sha).is_some() }
 pub(super) fn is_archive(r: &Record) -> bool {
@@ -157,7 +185,7 @@ fn descriptor(r: &Record) -> Value {
 }
 pub(super) fn validate_record(r: &Record) -> Result<()> {
     let provenance = r.retained_office_provenance.as_ref().ok_or_else(|| bad("Packet provenance missing"))?;
-    let p=match provenance.profile_sha256.as_str(){PROFILE=>profile(),ADDITIONAL_PROFILE=>additional_profile(),MIXED_PROFILE=>mixed_profile(),_=>return Err(bad("Packet source profile is not admitted"))};
+    let p=match provenance.profile_sha256.as_str(){PROFILE=>profile(),ADDITIONAL_PROFILE=>additional_profile(),MIXED_PROFILE=>mixed_profile(),PRIOR_PROFILE=>prior_profile(),_=>return Err(bad("Packet source profile is not admitted"))};
     let scope = r.source_archive_scope.as_ref().ok_or_else(|| bad("Source archive year section missing"))?;
     let d = p.documents.get(&r.sha256).ok_or_else(|| bad("Packet source digest is not admitted"))?;
     if provenance.kind != KIND || provenance.profile_sha256 != p.profile_sha256
@@ -171,18 +199,24 @@ pub(super) fn validate_record(r: &Record) -> Result<()> {
             &provenance.static_pdf_review_sha256, &provenance.source_metadata_sha256].iter().any(|s| !digest(s))
         || r.page_labels.iter().any(|s| s.is_empty() || s.len() > 120 || s.chars().any(char::is_control))
         || scope.full_return_completeness_verified
-        || !(["T1_identification_archive", "tax_summary_and_supporting_slips"].contains(&scope.source_role.as_str()) || (p.profile_sha256==MIXED_PROFILE && scope.source_role=="printed_slip_identification_archive"))
+        || !(["T1_identification_archive", "tax_summary_and_supporting_slips"].contains(&scope.source_role.as_str()) || (p.profile_sha256==MIXED_PROFILE && scope.source_role=="printed_slip_identification_archive") || (p.profile_sha256==PRIOR_PROFILE && scope.source_role=="earlier_revision_printed_slip_archive"))
         || scope.verified_source_pages.is_empty() || scope.verified_source_pages.len() > 20
         || scope.verified_source_pages.iter().any(|a| a.page == 0 || a.page > d.pages
             || !(["regular", "condensed", "summary"].contains(&a.layout.as_str())
-                || ([ADDITIONAL_PROFILE,MIXED_PROFILE].contains(&p.profile_sha256.as_str()) && a.layout=="unclassified")))
+                || ([ADDITIONAL_PROFILE,MIXED_PROFILE,PRIOR_PROFILE].contains(&p.profile_sha256.as_str()) && a.layout=="unclassified")))
         || scope.verified_source_pages.windows(2).any(|a| a[0].page >= a[1].page)
         || (scope.source_role == "T1_identification_archive" && (!scope.remaining_packet_pages_unverified || scope.verified_source_pages.iter().any(|a| a.layout == "summary")))
         || (scope.source_role == "tax_summary_and_supporting_slips" && (scope.remaining_packet_pages_unverified || scope.verified_source_pages.len() != 1 || scope.verified_source_pages[0].layout != "summary"))
         || r.reviewed_packet_scope.is_some()
     { return Err(bad("Source archive scope or provenance differs")); }
     let extended=scope.known_mixed_client_packet.is_some()||scope.source_name_match.is_some()||scope.source_name_qualification.is_some()||scope.printed_slip_observations_json.is_some()||scope.printed_slip_observations_sha256.is_some();
-    if p.profile_sha256!=MIXED_PROFILE && extended {return Err(bad("New source qualifications require their closed profile"));}
+    if ![MIXED_PROFILE,PRIOR_PROFILE].contains(&p.profile_sha256.as_str()) && extended {return Err(bad("New source qualifications require their closed profile"));}
+    if p.profile_sha256==PRIOR_PROFILE {
+        if scope.source_role!="earlier_revision_printed_slip_archive" || !scope.same_year_native_context_present_at_source_audit || scope.remaining_packet_pages_unverified || scope.known_mixed_client_packet.is_some() || scope.source_name_match.is_some() || scope.source_name_qualification.is_some() || scope.verified_source_pages.len()!=1 || scope.verified_source_pages[0].page!=1 || scope.verified_source_pages[0].layout!="unclassified" || scope.verified_source_pages[0].marked_amended || scope.verified_source_pages[0].annotations_visible {return Err(bad("Earlier T4 source revision scope differs"));}
+        let text=scope.printed_slip_observations_json.as_ref().ok_or_else(||bad("Earlier T4 source observations missing"))?;
+        if text.len()>8192 || scope.printed_slip_observations_sha256.as_deref()!=Some(hex::encode(Sha256::digest(text.as_bytes())).as_str()) {return Err(bad("Earlier T4 observation hash differs"));}
+        let _:Value=serde_json::from_str(text).map_err(|_|bad("Earlier T4 observations are not JSON"))?;
+    }
     if p.profile_sha256==MIXED_PROFILE {
         if scope.known_mixed_client_packet==Some(false)||!scope.remaining_packet_pages_unverified {return Err(bad("Mixed archive ownership qualification differs"));}
         if scope.source_role=="printed_slip_identification_archive" {
@@ -242,7 +276,7 @@ impl SourceImport {
     pub(in crate::source_import) async fn identification_source_archive_years(&self, company: &str) -> Result<BTreeMap<String, BTreeSet<u16>>> {
         let mut ids=self.store.smembers(&k(company, "identification_archive_associations")).await.map_err(|e| storage(&e))?;
         ids.sort();
-        if ids.len()>profile().record_count+additional_profile().record_count+mixed_profile().record_count { return Err(storage("Source archive year index exceeds closed bound")); }
+        if ids.len()>profile().record_count+additional_profile().record_count+mixed_profile().record_count+prior_profile().record_count { return Err(storage("Source archive year index exceeds closed bound")); }
         let keys:Vec<_>=ids.iter().map(|id|k(company,&format!("record:{id}"))).collect();
         let mut years:BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
         for (id,raw) in ids.iter().zip(self.store.mget(&keys).await.map_err(|e|storage(&e))?) {
@@ -266,6 +300,10 @@ impl SourceImport {
     pub async fn test_copy_mixed_source_archive_profile(&self,company:&str)->Result<Value>{
         self.test_copy_guard(company,true)?;let p=mixed_profile();
         Ok(json!({"test_copy":true,"source_scope":company,"profile_sha256":p.profile_sha256,"closed_profile_sha256":MIXED_CLOSED_SHA,"source_packet_sha256":p.source_packet_sha256,"unique_original_documents":p.document_count,"owner_year_associations":p.record_count,"General_identification_associations":20,"printed_slip_identification_associations":2,"physical_printed_slip_copies":4,"chunk_bytes":CHUNK_BYTES,"maximum_document_bytes":MAX_DOCUMENT_BYTES,"original_source_bytes_changed":false,"prior_immutable_associations_changed":false,"native_contexts_created":0,"normalized_slips_created":0,"financial_values_approved":false,"tax_cases_imported":0}))
+    }
+    pub async fn test_copy_prior_revision_source_archive_profile(&self,company:&str)->Result<Value>{
+        self.test_copy_guard(company,true)?;let p=prior_profile();
+        Ok(json!({"test_copy":true,"source_scope":company,"profile_sha256":p.profile_sha256,"closed_profile_sha256":PRIOR_CLOSED_SHA,"source_packet_sha256":p.source_packet_sha256,"readable_prior_revisions":1,"owner_year_associations":1,"physical_printed_copies":2,"chunk_bytes":CHUNK_BYTES,"maximum_document_bytes":MAX_DOCUMENT_BYTES,"latest_encrypted_versions_unlocked":0,"original_source_bytes_changed":false,"prior_immutable_associations_changed":false,"native_contexts_created":0,"normalized_slips_created":0,"financial_values_approved":false,"tax_cases_imported":0}))
     }
     pub async fn test_copy_preserve_source_archive_chunk(&self, company: &str, v: ArchiveChunkInput) -> Result<Value> {
         self.test_copy_guard(company, v.test_copy)?;
