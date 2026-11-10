@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 fn object() -> Value { serde_json::json!({}) }
+fn family_revision_zero(v:&u64)->bool { *v==0 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -167,6 +168,8 @@ pub struct FamilyLink {
     pub primary_return_id: String,
     pub spouse_return_id: String,
     pub created_at: String,
+    #[serde(default,skip_serializing_if="family_revision_zero")]
+    pub revision:u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

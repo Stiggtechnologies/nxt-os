@@ -12,6 +12,7 @@ pub mod gifi_map;
 pub mod t2_schedules;
 pub mod t5013_cca;
 pub mod spouse_optimize;
+pub mod family_workflow;
 pub mod t2_intake;
 pub mod filing_desk;
 pub mod stripe;
@@ -470,7 +471,7 @@ impl Tax {
                 return family_view(s, &existing);
             }
             if s.families.len() >= 100 { return Err(conflict("family link capacity reached")); }
-            let link = FamilyLink { id: new_id.clone(), label: label.trim().into(), primary_return_id: primary.into(), spouse_return_id: spouse.into(), created_at: at.clone() };
+            let link = FamilyLink { id: new_id.clone(), label: label.trim().into(), primary_return_id: primary.into(), spouse_return_id: spouse.into(), created_at: at.clone(), revision:0 };
             s.families.push(link.clone());
             audit(s, primary, "family_link", "Side-by-side T1 totals. No spouse credit was transferred and nothing was filed.");
             family_view(s, &link)

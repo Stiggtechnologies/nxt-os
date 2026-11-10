@@ -33,6 +33,8 @@ jobs:
           node --test tests/tax_reports_setup_async.test.mjs
           node --test tests/tax_scope_guard.test.mjs
           node --test tests/tax_coverage_catalog.test.mjs
+          node --check public/apps/tax/family-workflow.js
+          node --test tests/tax_family_workspace.test.mjs
           node --check public/apps/tax/dtmax-t1.js
           node --test tests/dtmax_t1_worklist.test.mjs
           node --test tests/dtmax_source_preparation.test.mjs

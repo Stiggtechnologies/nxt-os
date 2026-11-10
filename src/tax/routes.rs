@@ -1,6 +1,6 @@
 use super::{Tax,TResult,bad,conflict,models::*};
 use crate::referral::routes::require_admin;
-use axum::{Json, Router, body::Body, extract::{DefaultBodyLimit, Path, Query, State}, http::{StatusCode, header}, middleware, response::{IntoResponse, Response}, routing::{get,post}};
+use axum::{Json, Router, body::Body, extract::{DefaultBodyLimit, Path, Query, State}, http::{StatusCode, header}, middleware, response::{IntoResponse, Response}, routing::{get,post,put}};
 use serde::Deserialize;
 use serde_json::{Value,json};
 use std::sync::Arc;
@@ -37,6 +37,9 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/parallel-compare",post(parallel_compare))
         .route("/api/tax/returns/{id}/prior-lines",post(prior_lines))
         .route("/api/tax/families",post(create_family))
+        .route("/api/tax/family-workspaces",get(family_workspaces).post(create_family_workspace))
+        .route("/api/tax/family-workspaces/{id}",get(family_workspace).put(update_family_workspace))
+        .route("/api/tax/family-workspaces/{id}/inputs",put(update_family_pair))
         .route("/api/tax/families/{id}",get(family))
         .route("/api/tax/families/by-return/{id}",get(family_by_return))
         .route("/api/tax/families/{id}/optimize",post(family_optimize))
@@ -127,6 +130,11 @@ async fn create_family(State(t):S,Json(input):Json<FamilyInput>) -> R {
     ok(t.link_family(&input.label, &input.primary_return_id, &input.spouse_return_id).await?)
 }
 async fn family(State(t):S,Path(id):Path<String>) -> R { ok(t.family(&id).await?) }
+async fn family_workspaces(State(t):S,Extension(actor):Extension<crate::firm::staff::Identity>)->R {ok(t.family_workspaces_for(&actor).await?)}
+async fn family_workspace(State(t):S,Path(id):Path<String>,Extension(actor):Extension<crate::firm::staff::Identity>)->R {ok(t.family_workspace_for(&id,&actor).await?)}
+async fn create_family_workspace(State(t):S,Extension(actor):Extension<crate::firm::staff::Identity>,Json(i):Json<super::family_workflow::MembersInput>)->R {ok(t.save_family_members_for(None,i,&actor).await?)}
+async fn update_family_workspace(State(t):S,Path(id):Path<String>,Extension(actor):Extension<crate::firm::staff::Identity>,Json(i):Json<super::family_workflow::MembersInput>)->R {ok(t.save_family_members_for(Some(&id),i,&actor).await?)}
+async fn update_family_pair(State(t):S,Path(id):Path<String>,Extension(actor):Extension<crate::firm::staff::Identity>,Json(i):Json<super::family_workflow::PairedInputs>)->R {ok(t.save_family_pair_for(&id,i,&actor).await?)}
 async fn family_by_return(State(t):S,Path(id):Path<String>) -> R { ok(t.family_for_return(&id).await?) }
 async fn family_optimize(State(t):S,Path(id):Path<String>) -> R { ok(t.optimize_family(&id).await?) }
 #[derive(Deserialize)] #[serde(deny_unknown_fields)] struct AcceptInput { kind: String }
@@ -191,6 +199,10 @@ async fn t183_draft(State(t):S,Path(id):Path<String>) -> R { let r=t.get(&id).aw
 async fn client_scope(State(t): S, req: axum::extract::Request, next: middleware::Next) -> Response {
     // Report projection applies the verified identity before every filter or selected field.
     if ["/api/tax/reports/catalog","/api/tax/reports/preview"].contains(&req.uri().path()) {return next.run(req).await}
+    // Only this actor-checked module dispatches outside the generic returns guard.
+    let path=req.uri().path();let prefix="/api/tax/family-workspaces";
+    let family_route=path==prefix||path.strip_prefix(prefix).and_then(|s|s.strip_prefix('/')).is_some_and(|s|{let p=s.split('/').collect::<Vec<_>>();matches!(p.as_slice(),[id] if !id.is_empty())||matches!(p.as_slice(),[id,"inputs"] if !id.is_empty())});
+    if family_route{return next.run(req).await;}
     crate::firm::staff::scope_guard(req, next, "/api/tax/returns", &["/api/tax/catalog", "/api/tax/capabilities", "/api/tax/rates", "/api/tax/t2/schedules", "/api/tax/t5013/cca", "/api/tax/slips/catalog", "/api/tax/slips/aggregate", "/api/tax/desk/me", "/api/tax/desk/queue", "/api/tax/desk/log", "/api/tax/desk/step-up/sms", "/api/tax/desk/launch"],
         |id| async move { t.get(&id).await.ok().map(|r| r.client_ref) }).await
 }
