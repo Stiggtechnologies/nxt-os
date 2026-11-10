@@ -55,6 +55,7 @@
   ];
   const FIELD_SCREEN = { full_year_resident: "profile", scope_confirmed: "profile", other_tax_situations: "situations", provincial_adjustments_not_applicable: "profile",
     born_1960_or_earlier: "profile", spouse_net_income_cents: "profile", disability_tax_credit_approved: "profile",
+    slip_groups: "slips",
     employment_income_cents: "slips", interest_income_cents: "slips", tax_withheld_cents: "slips", pension_income_cents: "slips", capital_proceeds_cents: "slips", capital_acb_cents: "slips",
     payroll_verified: "slips", cpp_base_credit_cents: "slips", cpp_enhanced_deduction_cents: "slips", ei_credit_cents: "slips", schedule3_verified: "slips" };
   for (const d of DEDUCTIONS) { for (const k of d.keys) FIELD_SCREEN[k] = "deductions"; if (d.verify && !FIELD_SCREEN[d.verify]) FIELD_SCREEN[d.verify] = "deductions"; }
@@ -89,14 +90,23 @@
   // Slip-shaped form: one field per box, in box order, with calculated boxes first.
   function slipForm(entry) {
     const boxes = (entry.boxes || []).slice().sort((a, b) => (a.status === b.status ? String(a.box).localeCompare(String(b.box), undefined, { numeric: true }) : a.status === "calculated" ? -1 : 1));
-    return { kind: entry.kind, title: entry.title, fields: boxes.map(b => ({ box: b.box, label: b.label, status: b.status, name: "box_" + b.box })) };
+    return { kind: entry.kind, title: entry.title, fields: boxes.map(b => ({ box: b.box, label: b.label, status: b.status, unit:b.unit||"cents", name: "box_" + b.box })) };
   }
-  function toCents(v) { const n = Number(String(v ?? "").replace(/[$,\s]/g, "")); return Number.isFinite(n) ? Math.round(n * 100) : NaN; }
+  function toCents(v) {
+    let s=String(v??"").trim();if(!s)return 0;s=s.replace(/^\$/,"" );
+    if(!/^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(s))return NaN;
+    s=s.replace(/,/g,"");const neg=s[0]==="-";if(neg)s=s.slice(1);const [whole,minor=""]=s.split(".");let n=BigInt(whole)*100n+BigInt(minor.padEnd(2,"0"));if(neg)n=-n;
+    return n>=-100000000000000n&&n<=100000000000000n?Number(n):NaN;
+  }
+  function wholeBox(kind,box){return kind==="T2202"&&["24","25"].includes(box)||kind==="T5008"&&["15","16"].includes(box);}
   function slipFromForm(kind, issuer, values) {
-    const boxes = {};
-    for (const [box, v] of Object.entries(values || {})) { if (v === "" || v == null) continue; const c = toCents(v); if (!Number.isFinite(c) || c < 0) throw new Error("Box " + box + " must be a positive dollar amount"); if (c) boxes[box] = c; }
-    return { kind, issuer: String(issuer || "").slice(0, 120), boxes };
+    const boxes={};for(const [box,v]of Object.entries(values||{})){
+      if(v==null||String(v).trim()==="")continue;
+      const c=wholeBox(kind,box)?(/^\d+$/.test(String(v).trim())?Number(v):NaN):toCents(v);
+      if(!Number.isSafeInteger(c)||c<0||c>100000000000000)throw Error("Box "+box+" must be an exact non-negative "+(wholeBox(kind,box)?"whole number":"amount with at most two decimal places"));boxes[box]=c;
+    }return {kind,issuer:String(issuer||""),boxes};
   }
+  function managedSlipKeys(groups){const mapping={T4:{14:"employment_income_cents",22:"tax_withheld_cents"},T4A:{22:"tax_withheld_cents","016":"pension_income_cents"},T5:{13:"interest_income_cents"},T5008:{20:"capital_acb_cents",21:"capital_proceeds_cents"},T2202:{23:"tuition_cents"}};return [...new Set((groups||[]).flatMap(s=>Object.keys(s.boxes||{}).map(b=>mapping[s.kind]?.[b]).filter(Boolean)))];}
   // Merge aggregated slip inputs into the return inputs (slip-derived keys are replaced, not added twice).
   function mergeSlipInputs(inputs, aggregate, previousSlipKeys) {
     const out = Object.assign({}, inputs || {});
@@ -148,7 +158,7 @@
     if (!s.stripe_enabled) return { kind: "disabled", title: "Online payment is not available", cta: null };
     return { kind: "ready", title: "Pay the filing fee", cta: "Pay with card" };
   }
-  const api = { BANNER, TAX_YEAR, PROVINCES, SITUATIONS, DEDUCTIONS, FIELD_SCREEN, T2_STEPS, validSin, maskSin, meter, screenFor, profileInputs, outOfScope, searchSlips, slipForm, slipFromForm, toCents, mergeSlipInputs, reviewItems, t2Visible, t2Answer, formatFee, payScreenState };
+  const api = { BANNER, TAX_YEAR, PROVINCES, SITUATIONS, DEDUCTIONS, FIELD_SCREEN, T2_STEPS, validSin, maskSin, meter, screenFor, profileInputs, outOfScope, searchSlips, slipForm, slipFromForm, toCents, managedSlipKeys, mergeSlipInputs, reviewItems, t2Visible, t2Answer, formatFee, payScreenState };
   root.NXTTurboCore = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

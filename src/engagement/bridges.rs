@@ -525,6 +525,7 @@ fn tax_package(record: &EngagementRecord, jurisdiction: &str) -> EResult<Value> 
         period_end: Some(record.document.period_end.clone()),
         inputs: defaults,
         parties: Vec::new(),
+        slip_groups: None,
         corporate: Some(profile),
         notes: format!(
             "Engagement reviewed copy: {} input revision {}. Input SHA-256 {}. Output SHA-256 {}. Taxable income and tax adjustments remain unverified; no source or existing Tax record is overwritten.",

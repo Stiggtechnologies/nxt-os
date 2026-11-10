@@ -7,7 +7,8 @@
   const main = $("#main"), API = "/api/tax";
   const state = { catalog: null, program: "", year: "", returns: [], record: null, draft: null, section: "", dirty: false, errors: {}, search: "", status: "", preview: null, audit: [], version: 0 };
   const request = (path, options) => api(API + path, options);
-  let sourceWorkspace=null,sourcePreparationAttempt=0,sourceWorkspaceEpoch=0;
+  let sourceWorkspace=null,sourcePreparationAttempt=0,sourceWorkspaceEpoch=0,reportWorkspace=null;
+  let batchWorkspace=null;
   window.NXTCompany?.onChange?.(()=>{sourceWorkspaceEpoch++;});
   window.addEventListener("storage",e=>{if(e.key===window.NXTCompany?.KEY)sourceWorkspaceEpoch++;});
   const list = value => Array.isArray(value) ? value : [];
@@ -234,7 +235,7 @@
   function workspaceNavigation(r,p) {
     const nav = (id,label,sub="") => `<button type="button" data-section="${esc(id)}">${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</button>`;
     const common = nav("parties", r.program.toLowerCase()==="t1"?"Family & relationships":r.program.toLowerCase()==="t2"?"Ownership & relationships":r.program.toLowerCase()==="t3"?"Beneficiaries & relationships":"Partners & relationships", "Review metadata") + nav("calculation","Calculated workpaper") + nav("diagnostics","Diagnostics") + nav("review","Review & history");
-    const keywords = list(p.sections).map(s=>nav(s.id,s.label,`${list(s.fields).length} keywords`)).join("");
+    const keywords = (r.program==="T1"?nav("slip-groups","Saved slip groups",`${(r.slip_groups||[]).length} occurrences`):"") + list(p.sections).map(s=>nav(s.id,s.label,`${list(s.fields).length} keywords`)).join("");
     const corporate = isCorporate(r) ? `<div class="nav-group">Corporate info</div>${nav("corp-identification","Identification","001 · 002 · 040 · 060")}${nav("corp-records","Records & officer","Addresses and review metadata")}<div class="nav-group">Financial statements</div>${nav("gifi-balance","Closing balance sheet")}${nav("gifi-opening","Opening balance sheet")}${nav("gifi-income","Income statement")}${nav("corp-adjustments","Book-to-tax adjustments")}<div class="nav-group">Tax & credits</div>${keywords}${nav("province","Provincial readiness")}<div class="nav-group">Results & output</div>${common}${nav("output","Workpaper output")}` : keywords + '<div class="section-rule"></div>' + common;
     return `<nav class="keyword-nav" aria-label="Return keywords"><h2>${isCorporate(r)?"Corporate workpaper":"Keyword workspace"}</h2><input class="keyword-search" type="search" data-keyword-search placeholder="Find a keyword or code" aria-label="Find a keyword or field code">${nav("identity","Return information","Internal name, year and notes")}${corporate}</nav>`;
   }
@@ -306,7 +307,7 @@
     if (version !== state.version) return;
     state.record = record; state.draft = clone(record); state.dirty = false; state.errors = {};
     state.program = program(record.program).id; state.year = String(record.tax_year);
-    const p = program(record.program); if (!state.section || ![...list(p.sections).map(s => s.id), "identity", "parties", "calculation", "diagnostics", "review", ...(isCorporate(record) ? corporateSections : [])].includes(state.section)) state.section = "identity";
+    const p = program(record.program); if (!state.section || ![...list(p.sections).map(s => s.id), "identity", "parties", "slip-groups", "calculation", "diagnostics", "review", ...(isCorporate(record) ? corporateSections : [])].includes(state.section)) state.section = "identity";
     renderPrograms(); renderWorkspace();
   }
   function renderWorkspace() {
@@ -330,6 +331,12 @@
       host.innerHTML = '<div class="card"><h2>Browser entry unavailable for this scope</h2><p>The entry fields, help and defaults for this year must be verified before editing. Saved inputs remain unchanged. Results, diagnostics, history and workpaper exports remain available.</p></div>';
       return;
     }
+    if(state.section==="slip-groups") {
+      if(state.dirty){host.innerHTML='<p role="alert">Save other workpaper changes before editing saved slip groups.</p>';return;}
+      if(!window.NXTSlipGroups){host.innerHTML='<p role="alert">Saved slip editor unavailable.</p>';return;}
+      const token=state.version,id=state.record.id,revision=state.record.revision;
+      NXTSlipGroups.mount(host,{record:state.record,isCurrent:()=>host.isConnected&&state.version===token&&state.record?.id===id&&state.record?.revision===revision&&state.section==="slip-groups",onSaved:saved=>{state.record=saved;state.draft=clone(saved);state.dirty=false;renderWorkspace();}});return;
+    }
     if (state.section === "identity") {
       host.innerHTML = `<div class="editor-title"><h2>Return information</h2>${badge("neutral", "NXT workpaper")}</div>${!editable ? '<p class="form-note">Reopen the workpaper as a draft before editing. Changing inputs invalidates the prior calculation and review.</p>' : ""}<div class="card"><div class="form">${field("Name", input("name", r.name, "text", 'data-meta required maxlength="160"'))}${field("Client reference", input("client_ref", r.client_ref || "", "text", 'data-meta maxlength="100"'))}${field("Tax year", select("tax_year", choices([...new Set([...list(p.years),r.tax_year])]), r.tax_year, 'disabled aria-label="Tax year, immutable; use roll forward for a new year"'))}${field("Jurisdiction", select("jurisdiction", choices(p.jurisdictions), r.jurisdiction, "data-meta"))}${field("Period start", input("period_start", r.period_start || "", "date", "data-meta"))}${field("Period end", input("period_end", r.period_end || "", "date", "data-meta"))}${field("Review notes", `<textarea name="notes" data-meta rows="6" maxlength="10000">${esc(r.notes || "")}</textarea>`, "Do not store passwords or filing credentials in these notes.", true)}</div></div><div class="notice" style="margin-top:17px"><span>ⓘ</span><div><strong>Independent calculation source</strong><p>${esc(p.description)} This module does not claim DT Max format compatibility or filing certification.</p></div></div>`;
     } else if (isCorporate(r) && corporateSections.includes(state.section)) renderCorporateEditor();
@@ -346,7 +353,8 @@
   }
   function renderKeyword(f) {
     if (f.key === "scope_confirmed") f = {...f,help:entryDescription(program(state.record?.program),state.record?.tax_year,state.record?.jurisdiction)};
-    const value = state.draft.inputs[f.key] ?? f.default, id = "tax-field-" + f.key, attr = `id="${esc(id)}" data-keyword="${esc(f.key)}"`;
+    const grouped=window.NXTTurboCore?.managedSlipKeys(state.draft.slip_groups).includes(f.key);
+    const value = state.draft.inputs[f.key] ?? f.default, id = "tax-field-" + f.key, attr = `id="${esc(id)}" data-keyword="${esc(f.key)}"${grouped?" readonly disabled":""}`;
     let control;
     if (f.kind === "boolean") control = `<input type="checkbox" ${attr}${value ? " checked" : ""} aria-label="${esc(f.label)}">`;
     else if (f.kind === "choice") control = select(f.key, choices(f.choices), value, attr);
@@ -354,7 +362,7 @@
     else if (f.kind === "json") control = `<textarea ${attr} rows="8" spellcheck="false">${esc(JSON.stringify(value ?? null, null, 2))}</textarea>`;
     else if (f.kind === "text" && f.multiline) control = `<textarea ${attr} rows="7">${esc(value || "")}</textarea>`;
     else control = `<input type="${f.kind === "number" ? "number" : "text"}" ${attr} value="${esc(f.kind === "money" ? ((Number(value) || 0) / 100).toFixed(2) : value ?? "")}"${f.kind === "money" ? ' class="money" inputmode="decimal" autocomplete="off"' : ""}${f.kind === "number" ? ' step="any"' : ""}>`;
-    return `<div class="keyword-field${state.errors[f.key] ? " invalid" : ""}" data-field="${esc(f.key)}"><label for="${esc(id)}"><code>${esc(f.key)}</code><span>${esc(f.label)}</span>${f.help ? `<span class="help">${esc(f.help)}</span>` : ""}</label>${control}<span class="field-error" data-error-for="${esc(f.key)}"${state.errors[f.key] ? "" : " hidden"}>${esc(state.errors[f.key] || "")}</span></div>`;
+    return `<div class="keyword-field${state.errors[f.key] ? " invalid" : ""}" data-field="${esc(f.key)}"><label for="${esc(id)}"><code>${esc(f.key)}</code><span>${esc(f.label)}</span>${f.help ? `<span class="help">${esc(f.help)}</span>` : ""}</label>${control}${grouped?'<p class="help">Derived from saved slip groups. Edit the individual occurrences in Saved slip groups.</p>':""}<span class="field-error" data-error-for="${esc(f.key)}"${state.errors[f.key] ? "" : " hidden"}>${esc(state.errors[f.key] || "")}</span></div>`;
   }
   function renderPartnerAllocations(f, value) {
     return `<div class="partner-input" data-field="${esc(f.key)}"><div class="keyword-field"><label><code>${esc(f.key)}</code><span>${esc(f.label)}</span><span class="help">Enter percentage shares. 50.00% is stored as 5,000 basis points. Shares must total 100%.</span></label><button class="btn sm" type="button" data-add-partner>+ Add partner</button></div><div class="partner-rows">${list(value).map((p, i) => `<div class="keyword-field" data-partner-index="${i}"><label>${esc(p.name || "Partner " + (i + 1))}<input data-partner-prop="name" data-index="${i}" value="${esc(p.name || "")}" aria-label="Partner name" maxlength="160"></label><div class="row"><input data-partner-prop="share" data-index="${i}" value="${((Number(p.share_bps) || 0) / 100).toFixed(2)}" inputmode="decimal" aria-label="Partner share percent" style="width:90px;text-align:right"><span>%</span><button class="btn sm danger" type="button" data-delete-partner="${i}" aria-label="Remove partner">×</button></div></div>`).join("")}</div><div class="form-error" data-partner-errors></div></div>`;
@@ -467,7 +475,7 @@
   }
   function editPayload() {
     const d = state.draft;
-    return { expected_revision: state.record.revision, program: d.program, tax_year: Number(d.tax_year), jurisdiction: d.jurisdiction, name: d.name.trim(), client_ref: String(d.client_ref || "").trim(), period_start: d.period_start || undefined, period_end: d.period_end || undefined, inputs: d.inputs, parties: d.parties, notes: d.notes || "", corporate: isCorporate(d)?d.corporate||null:undefined };
+    return { expected_revision: state.record.revision, program: d.program, tax_year: Number(d.tax_year), jurisdiction: d.jurisdiction, name: d.name.trim(), client_ref: String(d.client_ref || "").trim(), period_start: d.period_start || undefined, period_end: d.period_end || undefined, inputs: d.inputs, ...(d.slip_groups?.length?{slip_groups:d.slip_groups}:{}), parties: d.parties, notes: d.notes || "", corporate: isCorporate(d)?d.corporate||null:undefined };
   }
   async function saveReturn() {
     if (!browserEntryAvailable(state.record)) throw new Error("The entry form for this year is unavailable; input editing remains disabled.");
@@ -644,7 +652,7 @@
     let discard = false;
     await modal("Leave unsaved changes?", (el, close) => {
       el.innerHTML = '<p class="form-note">Your draft changes have not been saved. Leave this view and discard them?</p><div class="actions"><button class="btn" data-stay>Keep editing</button><button class="btn primary" data-leave>Discard changes</button></div>';
-      $("[data-stay]", el).onclick = () => close(); $("[data-leave]", el).onclick = () => { discard = true; state.dirty = false; close(); };
+      $("[data-stay]", el).onclick = () => close(); $("[data-leave]", el).onclick = () => { discard = true; state.dirty = false; window.NXTFamilyWorkflow?.discard?.(); close(); };
     });
     return discard;
   }
@@ -663,10 +671,12 @@
     const hash = location.hash.slice(1) || "worklist", [path, query = ""] = hash.split("?"), [view, id] = path.split("/");
     if (state.dirty && hash !== state.loadedHash && !await confirmDiscard()) { history.replaceState(null, "", "#" + state.loadedHash); if (window.parent !== window) window.parent.postMessage({ nxt: "view", view: state.loadedHash }, location.origin); return; }
     const version = ++state.version; state.loadedHash = hash;
+    reportWorkspace?.dispose(); reportWorkspace=null;
+    batchWorkspace?.dispose(); batchWorkspace=null;
     if (window.parent !== window) window.parent.postMessage({ nxt: "view", view: hash }, location.origin);
-    $$("[data-nav]").forEach(a => a.setAttribute("aria-current", a.dataset.nav === (view === "return" ? "worklist" : view) ? "page" : "false"));
+    $$("[data-nav]").forEach(a => a.setAttribute("aria-current", a.dataset.nav === (view === "return" ? "worklist" : view === "family-workspace" ? "family-workspaces" : view) ? "page" : "false"));
     main.setAttribute("aria-busy", "true"); main.innerHTML = '<div class="loading"><span class="spinner"></span>Loading tax workspace…</div>';
-    try { if (view.startsWith("tt-") && window.NXTTurbo) await window.NXTTurbo.route(view, id, query, main); else if (view === "return" && id) await returnWorkspace(version, id); else if (view === "import") { await importPage(version); const previewId = new URLSearchParams(query).get("preview"); if (previewId) await loadImportHandoff(version, previewId); } else if (view === "audit") await auditPage(version); else if (view === "capabilities") await capabilitiesPage(version); else await worklist(version); }
+    try { if (view==="reports"&&window.NXTTaxReports) {state.record=null;state.draft=null;state.dirty=false;renderPrograms();main.classList.remove("workspace-mode");reportWorkspace=NXTTaxReports.mount(main,{request:api,isCurrent:()=>version===state.version});await reportWorkspace.ready;} else if (["family-workspaces","family-workspace"].includes(view) && window.NXTFamilyWorkflow) { state.record=null; state.draft=null; state.dirty=false; state.program="T1"; state.year=""; main.classList.remove("workspace-mode"); renderPrograms(); await NXTFamilyWorkflow.route(id,main,{isCurrent:()=>version===state.version,setDirty:v=>{state.dirty=v;}}); } else if (view.startsWith("tt-") && window.NXTTurbo) await window.NXTTurbo.route(view, id, query, main); else if (view === "return" && id) await returnWorkspace(version, id); else if (view === "import") { await importPage(version); const previewId = new URLSearchParams(query).get("preview"); if (previewId) await loadImportHandoff(version, previewId); } else if (view === "batches") { state.record=null;state.draft=null;state.dirty=false;state.errors={};renderPrograms();if(!window.NXTBatch)throw Error("Batch workpapers unavailable"); batchWorkspace=NXTBatch.mount(main,{request,isCurrent:()=>version===state.version,getCompany:()=>window.NXTCompany?.get()||"",inScope:r=>!window.NXTCompany||NXTCompany.inScope(r.client_ref)});await batchWorkspace.ready; } else if (view === "audit") await auditPage(version); else if (view === "capabilities") await capabilitiesPage(version); else await worklist(version); }
     catch (e) { if (version !== state.version) return; if (e.status === 401) await signIn(); else { main.classList.remove("workspace-mode"); main.innerHTML = `<div class="card"><h2>This view couldn't load.</h2><p class="form-error">${esc(e.message)}</p>${button("Try again", "refresh")} <a class="btn" href="#worklist">Return to worklist</a></div>`; } }
     finally { if (version === state.version) main.removeAttribute("aria-busy"); }
   }

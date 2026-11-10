@@ -1,6 +1,6 @@
 use super::{Tax,TResult,bad,conflict,models::*};
 use crate::referral::routes::require_admin;
-use axum::{Json, Router, body::Body, extract::{DefaultBodyLimit, Path, Query, State}, http::{StatusCode, header}, middleware, response::{IntoResponse, Response}, routing::{get,post}};
+use axum::{Json, Router, body::Body, extract::{DefaultBodyLimit, Path, Query, State}, http::{StatusCode, header}, middleware, response::{IntoResponse, Response}, routing::{get,post,put}};
 use serde::Deserialize;
 use serde_json::{Value,json};
 use std::sync::Arc;
@@ -11,6 +11,7 @@ fn ok(v: impl serde::Serialize) -> R { Ok(Json(json!(v))) }
 
 pub fn router(tax: Arc<Tax>) -> Router {
     Router::new()
+        .merge(super::batch::routes())
         .route("/api/tax/catalog",get(catalog))
         .route("/api/tax/capabilities",get(capabilities))
         .route("/api/tax/summary",get(summary))
@@ -37,11 +38,16 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/parallel-compare",post(parallel_compare))
         .route("/api/tax/returns/{id}/prior-lines",post(prior_lines))
         .route("/api/tax/families",post(create_family))
+        .route("/api/tax/family-workspaces",get(family_workspaces).post(create_family_workspace))
+        .route("/api/tax/family-workspaces/{id}",get(family_workspace).put(update_family_workspace))
+        .route("/api/tax/family-workspaces/{id}/inputs",put(update_family_pair))
         .route("/api/tax/families/{id}",get(family))
         .route("/api/tax/families/by-return/{id}",get(family_by_return))
         .route("/api/tax/families/{id}/optimize",post(family_optimize))
         .route("/api/tax/families/{id}/accept",post(family_accept))
         .route("/api/tax/slips/catalog",get(slips_catalog))
+        .route("/api/tax/reports/catalog",get(report_catalog))
+        .route("/api/tax/reports/preview",post(report_preview))
         .route("/api/tax/t2/intake",post(t2_intake))
         .route("/api/tax/t2/intake/start",post(t2_intake_start))
         .route("/api/tax/import/preview",post(preview))
@@ -66,6 +72,8 @@ pub fn router(tax: Arc<Tax>) -> Router {
 }
 
 async fn catalog() -> R { ok(super::catalog::catalog()) }
+async fn report_catalog()->R {ok(super::reports::catalog())}
+async fn report_preview(State(t):S,identity:Option<axum::Extension<crate::firm::staff::Identity>>,Json(input):Json<super::reports::ReportRequest>)->R {ok(t.report(input,identity.as_ref().map(|x|&x.0)).await?)}
 async fn capabilities() -> R { ok(Tax::capabilities()) }
 async fn summary(State(t):S) -> R { ok(t.summary().await?) }
 #[derive(Deserialize)] struct Filter { program:Option<String> }
@@ -123,6 +131,11 @@ async fn create_family(State(t):S,Json(input):Json<FamilyInput>) -> R {
     ok(t.link_family(&input.label, &input.primary_return_id, &input.spouse_return_id).await?)
 }
 async fn family(State(t):S,Path(id):Path<String>) -> R { ok(t.family(&id).await?) }
+async fn family_workspaces(State(t):S,Extension(actor):Extension<crate::firm::staff::Identity>)->R {ok(t.family_workspaces_for(&actor).await?)}
+async fn family_workspace(State(t):S,Path(id):Path<String>,Extension(actor):Extension<crate::firm::staff::Identity>)->R {ok(t.family_workspace_for(&id,&actor).await?)}
+async fn create_family_workspace(State(t):S,Extension(actor):Extension<crate::firm::staff::Identity>,Json(i):Json<super::family_workflow::MembersInput>)->R {ok(t.save_family_members_for(None,i,&actor).await?)}
+async fn update_family_workspace(State(t):S,Path(id):Path<String>,Extension(actor):Extension<crate::firm::staff::Identity>,Json(i):Json<super::family_workflow::MembersInput>)->R {ok(t.save_family_members_for(Some(&id),i,&actor).await?)}
+async fn update_family_pair(State(t):S,Path(id):Path<String>,Extension(actor):Extension<crate::firm::staff::Identity>,Json(i):Json<super::family_workflow::PairedInputs>)->R {ok(t.save_family_pair_for(&id,i,&actor).await?)}
 async fn family_by_return(State(t):S,Path(id):Path<String>) -> R { ok(t.family_for_return(&id).await?) }
 async fn family_optimize(State(t):S,Path(id):Path<String>) -> R { ok(t.optimize_family(&id).await?) }
 #[derive(Deserialize)] #[serde(deny_unknown_fields)] struct AcceptInput { kind: String }
@@ -148,6 +161,10 @@ fn esc(s:&str)->String { s.replace('&',"&amp;").replace('<',"&lt;").replace('>',
 fn money(v:i64)->String { let sign=if v<0{"−"}else{""};let n=v.unsigned_abs();format!("{sign}${}.{:02}",n/100,n%100) }
 async fn print(State(t):S,Path(id):Path<String>) -> TResult<Response> {
     let r=t.get(&id).await?;
+    let body=print_workpaper(&r)?;
+    Ok((StatusCode::OK,[(header::CONTENT_TYPE,"text/html; charset=utf-8"),(header::CACHE_CONTROL,"no-store"),(header::CONTENT_SECURITY_POLICY,"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'")],Body::from(body)).into_response())
+}
+pub(super) fn print_workpaper(r:&TaxReturn)->TResult<String>{
     let mut body=format!("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{} — NXT tax workpaper</title><style>body{{font:14px system-ui;margin:40px;color:#17201e}}h1{{font-size:26px}}.notice{{padding:16px;border:2px solid #957126;background:#fff7df}}table{{border-collapse:collapse;width:100%;margin:20px 0}}th,td{{text-align:left;padding:9px;border-bottom:1px solid #ddd}}td:last-child{{text-align:right;font-variant-numeric:tabular-nums}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f5f3;padding:16px}}.hash{{font:11px monospace;overflow-wrap:anywhere}}@media print{{body{{margin:0}}}}</style></head><body><h1>NXT Tax · {} · {}</h1><p>{} · {} · Revision {} · {}</p><p class=\"notice\"><strong>Internal workpaper. Not a certified tax return or filing.</strong><br>Review does not establish CRA/Revenu Québec acceptance. Calculation scope and diagnostics below must be read with this workpaper.</p>",esc(&r.name),esc(&r.program),r.tax_year,esc(&r.name),esc(&r.jurisdiction),r.revision,esc(&r.status));
     if !super::calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction) {
         body.push_str("<p class=\"notice\" role=\"alert\"><strong>Unsupported current calculation scope.</strong> Any saved calculation or approval below is historical only; it is not eligible for review, approval, authorization or filing.</p>");
@@ -164,7 +181,7 @@ async fn print(State(t):S,Path(id):Path<String>) -> TResult<Response> {
     if let Some(review)=&r.review{body.push_str(&format!("<h2>Internal review</h2><p>{} · {} (workspace responsibility label)</p><pre>{}</pre>",esc(&review.reviewer),esc(&review.at),esc(&review.note)));}
     body.push_str(&format!("<h2>Inputs</h2><pre>{}</pre><h2>Notes</h2><pre>{}</pre><p>Generated by the independent NXT engine. No DT Max runtime, CRA transmission or certified form is used.</p></body></html>",esc(&serde_json::to_string_pretty(&r.inputs).unwrap_or_default()),esc(&r.notes)));
     if body.len()>4*1024*1024 { return Err(conflict("printable workpaper exceeds its 4 MiB limit")); }
-    Ok((StatusCode::OK,[(header::CONTENT_TYPE,"text/html; charset=utf-8"),(header::CACHE_CONTROL,"no-store"),(header::CONTENT_SECURITY_POLICY,"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'")],Body::from(body)).into_response())
+    Ok(body)
 }
 
 async fn audit_verify(State(t):S) -> R { ok(super::verify_audit(&t.audit().await?)) }
@@ -185,6 +202,14 @@ async fn t2_schedules(Json(input):Json<super::t2_schedules::T2Input>) -> R { ok(
 async fn t183_draft(State(t):S,Path(id):Path<String>) -> R { let r=t.get(&id).await?; ok(super::t183::draft(&r).map_err(|e|conflict(&e))?) }
 
 async fn client_scope(State(t): S, req: axum::extract::Request, next: middleware::Next) -> Response {
+    // Report projection applies the verified identity before every filter or selected field.
+    if ["/api/tax/reports/catalog","/api/tax/reports/preview"].contains(&req.uri().path()) {return next.run(req).await}
+    // Only this actor-checked module dispatches outside the generic returns guard.
+    let path=req.uri().path();let prefix="/api/tax/family-workspaces";
+    let family_route=path==prefix||path.strip_prefix(prefix).and_then(|s|s.strip_prefix('/')).is_some_and(|s|{let p=s.split('/').collect::<Vec<_>>();matches!(p.as_slice(),[id] if !id.is_empty())||matches!(p.as_slice(),[id,"inputs"] if !id.is_empty())});
+    if family_route{return next.run(req).await;}
+    // Batch handlers recheck every current selected return binding on all routes.
+    if req.uri().path()=="/api/tax/batches"||req.uri().path().starts_with("/api/tax/batches/"){return next.run(req).await;}
     crate::firm::staff::scope_guard(req, next, "/api/tax/returns", &["/api/tax/catalog", "/api/tax/capabilities", "/api/tax/rates", "/api/tax/t2/schedules", "/api/tax/t5013/cca", "/api/tax/slips/catalog", "/api/tax/slips/aggregate", "/api/tax/desk/me", "/api/tax/desk/queue", "/api/tax/desk/log", "/api/tax/desk/step-up/sms", "/api/tax/desk/launch"],
         |id| async move { t.get(&id).await.ok().map(|r| r.client_ref) }).await
 }

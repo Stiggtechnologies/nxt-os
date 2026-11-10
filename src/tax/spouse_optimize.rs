@@ -20,11 +20,27 @@ fn with(v: &Value, edits: &[(&str, i64)]) -> Value {
 }
 /// Total income tax the engine computes for these inputs (None when the engine rejects them).
 pub fn income_tax(s: &Side, inputs: &Value) -> Option<i64> {
-    calculations::calculate("T1", s.year, s.jurisdiction, inputs).ok().and_then(|c| c.totals.get("income_tax").copied())
+    calculations::calculate("T1", s.year, s.jurisdiction, inputs).ok().and_then(|c| {
+        if !c.supported || c.diagnostics.iter().any(|d|d.blocks_review || d.severity=="error") {return None;}
+        c.totals.get("income_tax").copied()
+    })
 }
 fn pair_delta(a: &Side, ai: &Value, b: &Side, bi: &Value) -> Option<i64> {
     let base = income_tax(a, a.inputs)? + income_tax(b, b.inputs)?;
     Some(income_tax(a, ai)? + income_tax(b, bi)? - base)
+}
+
+#[cfg(test)]mod supported_proposal_tests {
+    use super::*;
+    #[test]fn partial_totals_are_not_supported_savings(){
+        let a=json!({"scope_confirmed":true,"full_year_resident":true,"pension_income_cents":6_000_000});
+        let b=json!({"scope_confirmed":true,"full_year_resident":true,"employment_income_cents":1_000_000});
+        let sa=Side{id:"A",year:2025,jurisdiction:"AB",inputs:&a};let sb=Side{id:"B",year:2025,jurisdiction:"AB",inputs:&b};
+        let mut unverified=a.clone();unverified["pension_split_out_cents"]=json!(1_000_000);
+        let c=calculations::calculate("T1",2025,"AB",&unverified).unwrap();assert!(c.totals.contains_key("income_tax"));assert!(!c.supported);assert!(c.diagnostics.iter().any(|d|d.blocks_review));assert_eq!(income_tax(&sa,&unverified),None);
+        assert!(propose(&sa,&sb)["proposals"].as_array().unwrap().iter().all(|p|p["calculated"]!=true));
+        let mut unsupported=b.clone();unsupported["scope_confirmed"]=json!(false);assert_eq!(income_tax(&sb,&unsupported),None);
+    }
 }
 
 /// Compute proposals for a couple. `a` and `b` are the two T1s; nothing is mutated.

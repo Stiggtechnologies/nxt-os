@@ -273,7 +273,7 @@ async fn start_tax_return(scope: &Scope, staff: &crate::firm::staff::Identity, t
     let client_ref = returns.iter().filter(same).find_map(|r| r["client_ref"].as_str().filter(|c| !c.is_empty()).map(str::to_string)).unwrap_or_default();
     let input = crate::tax::models::ReturnInput {
         program: "T1".into(), tax_year: T1_YEAR, jurisdiction: "AB".into(), name: name.clone(), client_ref,
-        period_start: None, period_end: None, inputs: serde_json::json!({}), parties: vec![], corporate: None,
+        period_start: None, period_end: None, inputs: serde_json::json!({}), parties: vec![], slip_groups: None, corporate: None,
         notes: format!("Started by voice by {}. Draft only; filing is off.", staff.label()), expected_revision: None,
     };
     let created = scope.tax.save(None, input).await.map_err(fail)?;

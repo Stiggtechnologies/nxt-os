@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 fn object() -> Value { serde_json::json!({}) }
+fn family_revision_zero(v:&u64)->bool { *v==0 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -48,6 +49,8 @@ pub struct TaxReturn {
     pub period_end: Option<String>,
     pub inputs: Value,
     pub parties: Vec<Party>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slip_groups: Vec<super::slips::Slip>,
     #[serde(default)] pub corporate: Option<super::corporate::CorporateProfile>,
     pub notes: String,
     pub revision: u64,
@@ -93,6 +96,9 @@ pub struct ReturnInput {
     pub period_end: Option<String>,
     #[serde(default = "object")] pub inputs: Value,
     #[serde(default)] pub parties: Vec<Party>,
+    /// Omitted on old PUTs: preserve groups. Explicit [] removes them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slip_groups: Option<Vec<super::slips::Slip>>,
     #[serde(default)] pub corporate: Option<super::corporate::CorporateProfile>,
     #[serde(default)] pub notes: String,
     pub expected_revision: Option<u64>,
@@ -100,7 +106,7 @@ pub struct ReturnInput {
 
 impl From<&TaxReturn> for ReturnInput {
     fn from(r: &TaxReturn) -> Self {
-        Self { program: r.program.clone(), tax_year: r.tax_year, jurisdiction: r.jurisdiction.clone(), name: r.name.clone(), client_ref: r.client_ref.clone(), period_start: r.period_start.clone(), period_end: r.period_end.clone(), inputs: r.inputs.clone(), parties: r.parties.clone(), corporate:r.corporate.clone(), notes: r.notes.clone(), expected_revision: None }
+        Self { program: r.program.clone(), tax_year: r.tax_year, jurisdiction: r.jurisdiction.clone(), name: r.name.clone(), client_ref: r.client_ref.clone(), period_start: r.period_start.clone(), period_end: r.period_end.clone(), inputs: r.inputs.clone(), parties: r.parties.clone(), slip_groups: (!r.slip_groups.is_empty()).then(||r.slip_groups.clone()), corporate:r.corporate.clone(), notes: r.notes.clone(), expected_revision: None }
     }
 }
 
@@ -167,10 +173,16 @@ pub struct FamilyLink {
     pub primary_return_id: String,
     pub spouse_return_id: String,
     pub created_at: String,
+    #[serde(default,skip_serializing_if="family_revision_zero")]
+    pub revision:u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct TaxState {
+    #[serde(default,skip_serializing_if="Vec::is_empty")]
+    pub batches: Vec<super::batch::BatchJob>,
+    #[serde(default,skip_serializing_if="Vec::is_empty")]
+    pub batch_archives: Vec<super::batch::ArchiveRef>,
     pub returns: Vec<TaxReturn>,
     pub audit: Vec<AuditEvent>,
     pub imports: Vec<ImportPreview>,

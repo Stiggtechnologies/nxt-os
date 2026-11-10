@@ -13,7 +13,7 @@ fn day(s: &str) -> NaiveDate { NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
 #[tokio::test]
 async fn spouse_optimizer_proposes_only_and_audits_acceptance() {
     let tax = Tax::new(Store::memory());
-    let base = json!({"scope_confirmed":true,"full_year_resident":true});
+    let base = json!({"scope_confirmed":true,"full_year_resident":true,"t1032_verified":true});
     let mut a_in = base.clone(); a_in["pension_income_cents"] = json!(6_000_000);
     let mut b_in = base.clone(); b_in["employment_income_cents"] = json!(1_000_000);
     let a = tax.save(None, t1("Example Person 001", a_in.clone())).await.ok().unwrap();

@@ -1,7 +1,9 @@
 //! Independent Canadian tax workpapers. No DT Max runtime or filing dependency.
 pub mod calculations;
+pub mod batch;
 pub mod catalog;
 pub mod coverage;
+pub mod reports;
 pub mod corporate;
 pub mod models;
 pub mod parallel;
@@ -11,6 +13,7 @@ pub mod gifi_map;
 pub mod t2_schedules;
 pub mod t5013_cca;
 pub mod spouse_optimize;
+pub mod family_workflow;
 pub mod t2_intake;
 pub mod filing_desk;
 pub mod stripe;
@@ -86,6 +89,10 @@ fn validate(mut input: ReturnInput) -> TResult<ReturnInput> {
     if !input.inputs.is_object() { return Err(bad("inputs must be an object")); }
     bounded_json(&input.inputs, 0)?;
     if serde_json::to_vec(&input.inputs).map_err(|_| bad("invalid inputs"))?.len() > 128 * 1024 { return Err(bad("return inputs exceed 128 KiB")); }
+    if let Some(groups)=&input.slip_groups {
+        if !groups.is_empty()&&!slips::available(&input.program,input.tax_year,&input.jurisdiction){return Err(bad("typed slip groups are available only for verified 2025 T1 scopes"));}
+        slips::validate(groups).map_err(bad)?;
+    }
     if input.parties.len() > 100 { return Err(bad("at most 100 related parties are allowed")); }
     if let Some(profile)=&input.corporate {
         if input.program!="T2" { return Err(bad("a corporate profile is supported for T2 only")); }
@@ -123,7 +130,7 @@ pub fn verify_audit(events: &[AuditEvent]) -> Value {
     json!({"valid":true,"chained":chained,"pre_chain":legacy})
 }
 fn record(input: &ReturnInput, record_id: &str, at: &str) -> TaxReturn {
-    TaxReturn { id:record_id.into(), program:input.program.clone(), tax_year:input.tax_year, jurisdiction:input.jurisdiction.clone(), name:input.name.clone(), client_ref:input.client_ref.clone(), period_start:input.period_start.clone(), period_end:input.period_end.clone(), inputs:input.inputs.clone(), parties:input.parties.clone(), corporate:input.corporate.clone(), notes:input.notes.clone(), revision:1, input_revision:1, status:"draft".into(), calculation:None, calculations:Vec::new(), review:None, reviews:Vec::new(), rollforward_from:None, created_at:at.into(), updated_at:at.into(), parallel_comparisons:Vec::new(), prior_lines:Vec::new(), preparer_signoff:None, filed_record:None }
+    TaxReturn { id:record_id.into(), program:input.program.clone(), tax_year:input.tax_year, jurisdiction:input.jurisdiction.clone(), name:input.name.clone(), client_ref:input.client_ref.clone(), period_start:input.period_start.clone(), period_end:input.period_end.clone(), inputs:input.inputs.clone(), parties:input.parties.clone(), slip_groups:input.slip_groups.clone().unwrap_or_default(), corporate:input.corporate.clone(), notes:input.notes.clone(), revision:1, input_revision:1, status:"draft".into(), calculation:None, calculations:Vec::new(), review:None, reviews:Vec::new(), rollforward_from:None, created_at:at.into(), updated_at:at.into(), parallel_comparisons:Vec::new(), prior_lines:Vec::new(), preparer_signoff:None, filed_record:None }
 }
 
 impl Tax {
@@ -214,7 +221,14 @@ impl Tax {
             let prior=s.returns.iter().find(|r|r.id==record_id).cloned();
             if existing.is_some() && prior.is_none() { return Err(missing()); }
             if prior.is_none() && s.returns.len() >= 500 { return Err(conflict("tax return capacity reached (500)")); }
-            let mut r=record(&input,&record_id,&at);
+            let mut normalized=input.clone();
+            let prior_groups=prior.as_ref().map(|r|r.slip_groups.as_slice()).unwrap_or(&[]);
+            let groups=input.slip_groups.as_deref().unwrap_or(prior_groups).to_vec();
+            if !groups.is_empty()&&!slips::available(&input.program,input.tax_year,&input.jurisdiction){return Err(bad("existing slip groups cannot move to an unavailable scope"));}
+            slips::replace_inputs(&mut normalized.inputs,prior_groups,&groups).map_err(bad)?;
+            normalized.slip_groups=(!groups.is_empty()).then_some(groups);
+            let normalized=validate(normalized)?;
+            let mut r=record(&normalized,&record_id,&at);
             if let Some(previous)=prior {
                 assert_revision(&previous,input.expected_revision.unwrap())?;
                 if ["approved","filed","archived"].contains(&previous.status.as_str()) { return Err(conflict("reopen the return to draft before editing")); }
@@ -263,8 +277,21 @@ impl Tax {
         if scope_supported && original.calculation.as_ref().is_some_and(|c|c.input_document.is_some() && c.request_revision==request.expected_revision && c.input_hash==fingerprint && c.input_revision==original.input_revision) { return Ok(original); }
         assert_revision(&original,request.expected_revision)?;
         if ["approved","filed","archived"].contains(&original.status.as_str()) { return Err(conflict("reopen the return before recalculating")); }
+        if !original.slip_groups.is_empty() {
+            if !slips::available(&original.program,original.tax_year,&original.jurisdiction){return Err(bad("saved slip groups are unavailable for this scope"));}
+            let grouped=slips::aggregate(&original.slip_groups).map_err(bad)?;
+            if grouped["inputs"].as_object().unwrap().iter().any(|(key,value)|original.inputs.get(key)!=Some(value)){return Err(conflict("saved slip groups and their derived inputs differ; reload and save the groups before calculating"));}
+        }
         let result=calculations::calculate(&original.program,original.tax_year,&original.jurisdiction,&original.inputs).map_err(bad)?;
         let mut result=serde_json::to_value(result).map_err(|_|bad("calculation could not be encoded"))?;
+        if !original.slip_groups.is_empty() {
+            let grouped=slips::aggregate(&original.slip_groups).map_err(bad)?;
+            if let Some(flags)=grouped["flags"].as_array(){for flag in flags {
+                if flag["blocks_review"]==true { result["supported"]=json!(false); }
+                if let Some(d)=result["diagnostics"].as_array_mut(){d.push(json!({"code":"slip_box_not_calculated","severity":if flag["blocks_review"]==true{"error"}else{"warning"},"field":"slip_groups","message":flag["message"],"blocks_review":flag["blocks_review"]}));}
+            }}
+            result["slip_group_summary"]=grouped;
+        }
         if original.program=="T2" {
             let issue=match (&original.period_start,&original.period_end) {
                 (Some(start),Some(end)) => {
@@ -353,6 +380,7 @@ impl Tax {
         let prior=self.get(record_id).await?; assert_revision(&prior,input.expected_revision)?;
         if input.tax_year!=prior.tax_year+1 { return Err(bad("roll forward to the next tax year only")); }
         let mut next=ReturnInput::from(&prior); next.tax_year=input.tax_year; next.name=input.name.unwrap_or_else(||format!("{} — {}",prior.name,input.tax_year)); next.period_start=None; next.period_end=None;
+        next.slip_groups=None;
         next.inputs=carryforward_inputs(&prior.inputs); next.notes="Rolled forward profile only. Income, allocations, calculations and approvals were cleared. Closing carryforward balances (*_closing_cents) became *_opening_cents and must be verified against the notice of assessment.".into();
         if let Some(profile)=&mut next.corporate { profile.gifi.clear(); profile.adjustments.clear(); profile.reconciliation_confirmed=false; profile.notes.clear(); }
         for party in &mut next.parties { party.id=id("party"); party.allocation_cents=0; }
@@ -373,7 +401,7 @@ impl Tax {
     pub async fn audit(&self) -> TResult<Vec<AuditEvent>> { Ok(self.load().await?.audit) }
     pub async fn package(&self, record_id: &str) -> TResult<Value> {
         let r=self.get(record_id).await?;
-        Ok(json!({"format":"nxt-tax-return/v1","classification":"internal_workpaper_not_for_filing","exported_at":now(),"return":ReturnInput::from(&r),"calculation_snapshot":r.calculation,"calculation_history":r.calculations,"review":r.review,"review_history":r.reviews,"input_hash":input_hash(&r)?,"filing_enabled":false,"current_scope_supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction)}))
+        batch::package_snapshot(&r,&now())
     }
     pub async fn preview(&self, document: Value) -> TResult<Value> {
         self.preview_internal(document,false).await
@@ -469,7 +497,7 @@ impl Tax {
                 return family_view(s, &existing);
             }
             if s.families.len() >= 100 { return Err(conflict("family link capacity reached")); }
-            let link = FamilyLink { id: new_id.clone(), label: label.trim().into(), primary_return_id: primary.into(), spouse_return_id: spouse.into(), created_at: at.clone() };
+            let link = FamilyLink { id: new_id.clone(), label: label.trim().into(), primary_return_id: primary.into(), spouse_return_id: spouse.into(), created_at: at.clone(), revision:0 };
             s.families.push(link.clone());
             audit(s, primary, "family_link", "Side-by-side T1 totals. No spouse credit was transferred and nothing was filed.");
             family_view(s, &link)

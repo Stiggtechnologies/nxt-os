@@ -27,9 +27,18 @@ jobs:
       - name: Verify browser and operational scripts
         run: |
           python3 scripts/build-dtmax-native-financial-profiles.py --check
+          node --check public/apps/tax/slip-groups.js
+          node --test tests/durable_slip_groups.test.mjs
           node --check public/apps/tax/tax.js
+          node --test tests/tax_workspace_navigation.test.mjs
+          node --check public/apps/tax/tax-reports.js
+          node --test tests/tax_reports.test.mjs
+          node --test tests/tax_reports_setup_async.test.mjs
+          node --test tests/tax_batch_ui.test.mjs
           node --test tests/tax_scope_guard.test.mjs
           node --test tests/tax_coverage_catalog.test.mjs
+          node --check public/apps/tax/family-workflow.js
+          node --test tests/tax_family_workspace.test.mjs
           node --check public/apps/tax/dtmax-t1.js
           node --test tests/dtmax_t1_worklist.test.mjs
           node --test tests/dtmax_source_preparation.test.mjs
