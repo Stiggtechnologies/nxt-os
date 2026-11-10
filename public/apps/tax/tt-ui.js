@@ -5,10 +5,7 @@
   "use strict";
   const C = window.NXTTurboCore, { api, esc, money } = window.NXT;
   const banner = () => `<div class="tt-banner" role="note">${esc(C.BANNER)}</div>`;
-  const slipStoreKey = id => "nxt-tt-slips-" + id;
-  const loadSlips = id => { try { return JSON.parse(localStorage.getItem(slipStoreKey(id)) || "{\"slips\":[],\"keys\":[]}"); } catch { return { slips: [], keys: [] }; } };
-  const saveSlips = (id, v) => { try { localStorage.setItem(slipStoreKey(id), JSON.stringify(v)); } catch {} };
-  const body = (r, inputs) => ({ program: r.program, tax_year: r.tax_year, jurisdiction: r.jurisdiction, name: r.name, client_ref: r.client_ref || "", period_start: r.period_start, period_end: r.period_end, inputs, parties: r.parties || [], corporate: r.corporate ?? null, notes: r.notes || "", expected_revision: r.revision });
+  const body = (r, inputs) => ({ program: r.program, tax_year: r.tax_year, jurisdiction: r.jurisdiction, name: r.name, client_ref: r.client_ref || "", period_start: r.period_start, period_end: r.period_end, inputs, parties: r.parties || [], corporate: r.corporate ?? null, notes: r.notes || "", expected_revision: r.revision, ...(r.slip_groups?.length?{slip_groups:r.slip_groups}:{}) });
   function guidedEntryAvailable(catalog, r) {
     const c=catalog?.coverage,p=Array.isArray(catalog?.programs)?catalog.programs.find(p=>p.id===r?.program):null;
     if(r?.program!=="T1" || r.current_scope_supported===false || r.tax_year!==C.TAX_YEAR || c?.schema!=="nxt-tax-coverage/v1" || c.version!=="2026-11-09.1" || !Array.isArray(c.scopes))return false;
@@ -114,19 +111,10 @@
       const el = focus && main.querySelector(`[name="${CSS.escape(focus)}"]`); if (el) { el.focus(); el.closest("label,fieldset")?.classList.add("tt-fix"); }
     }
     async function slipsScreen() {
-      const catalog = await api("/api/tax/slips/catalog"), st = loadSlips(id);
-      main.innerHTML = head() + `<section class="tt-card"><h2>Add your slips</h2><label class="tt-search">Search slips<input id="q" placeholder="Try T4, tuition, interest, pension" autocomplete="off"></label><ul id="res" class="tt-results"></ul><div id="form"></div>
-        <h3>Slips on this return</h3><ul class="tt-list">${st.slips.map((s, i) => `<li>${esc(s.kind)} · ${esc(s.issuer || "Unnamed issuer")} · ${Object.entries(s.boxes).map(([b, c]) => "box " + esc(b) + " " + money(c)).join(", ")} <button class="btn sm ghost" data-del="${i}">Remove</button></li>`).join("") || "<li>No slips yet.</li>"}</ul>
-        <button class="btn primary" id="next">Continue</button><p class="form-error"></p></section>`;
-      const res = main.querySelector("#res"), q = main.querySelector("#q");
-      const list = () => { res.innerHTML = C.searchSlips(catalog, q.value).map(s => `<li><button class="tt-slip" data-kind="${esc(s.kind)}"><strong>${esc(s.kind)}</strong> ${esc(s.title)}</button></li>`).join("") || "<li>No matching slip. Note it for the preparer.</li>"; };
-      q.addEventListener("input", list); list();
-      const apply = async slips => { const agg = slips.length ? await api("/api/tax/slips/aggregate", { body: { slips } }) : { inputs: {} }; const next = C.mergeSlipInputs(inputs, agg, st.keys); saveSlips(id, { slips, keys: Object.keys(agg.inputs || {}) }); await commit(next); };
-      res.addEventListener("click", e => { const b = e.target.closest("[data-kind]"); if (!b) return; const form = C.slipForm(catalog.slips.find(s => s.kind === b.dataset.kind));
-        main.querySelector("#form").innerHTML = `<form class="tt-form tt-slipform" id="sf"><h3>${esc(form.kind)} — ${esc(form.title)}</h3><label>Issuer (payer name)<input name="issuer" maxlength="120"></label><div class="tt-boxes">${form.fields.map(fl => `<label class="tt-box ${fl.status}"><span>Box ${esc(fl.box)}</span><input name="${esc(fl.name)}" inputmode="decimal"><small>${esc(fl.label)}${fl.status === "recorded" ? " (recorded, flagged)" : ""}</small></label>`).join("")}</div><button class="btn primary">Add slip</button></form>`;
-        const sf = main.querySelector("#sf"); sf.addEventListener("submit", async ev => { ev.preventDefault(); try { const vals = {}; for (const fl of form.fields) vals[fl.box] = sf.elements[fl.name].value; await apply(st.slips.concat([C.slipFromForm(form.kind, sf.elements.issuer.value, vals)])); } catch (x) { err(x); } }); });
-      main.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => { try { await apply(st.slips.filter((_, i) => i !== +b.dataset.del)); } catch (x) { err(x); } }));
-      main.querySelector("#next").addEventListener("click", () => go("deductions"));
+      main.innerHTML=head()+'<section class="tt-card"><div data-durable-slips></div><a class="btn primary" href="#tt-t1/'+encodeURIComponent(id)+'?screen=deductions">Continue</a></section>';
+      const host=main.querySelector('[data-durable-slips]');
+      if(!window.NXTSlipGroups){host.innerHTML='<p role="alert">Saved-slip editor unavailable; no browser-only replacement was used.</p>';return;}
+      const controller=NXTSlipGroups.mount(host,{record:r,isCurrent:()=>host.isConnected,onSaved:saved=>{r=saved;render();}});await controller.ready;
     }
     function review() {
       const rv = C.reviewItems(id, calcOf(r)), oos = C.outOfScope({ situations: JSON.parse(sessionStorage.getItem("tt-sit-" + id) || "[]") });

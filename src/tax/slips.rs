@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 const MAX: i64 = 100_000_000_000_000;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Slip {
     /// T4, T4A or T5.
@@ -111,6 +111,7 @@ pub fn aggregate(slips: &[Slip]) -> Result<Value, String> {
             }
         }
     }
+    if inputs.values().any(|v|*v>MAX) || recorded.values().any(|v|v["cents"].as_i64().unwrap_or(i64::MAX)>MAX) { return Err("slip totals exceed exact entry limit".into()); }
     let mut obj = Map::new();
     for (k, v) in &inputs { obj.insert((*k).into(), json!(v)); }
     Ok(json!({"inputs": obj, "lines": lines, "recorded_not_calculated": recorded, "flags": flags, "slip_count": slips.len()}))
@@ -166,7 +167,24 @@ pub fn catalog() -> Value {
         let mut boxes: Vec<Value> = MAPPED.iter().filter(|m| m.0 == *kind)
             .map(|m| json!({"box": m.1, "label": format!("Line {} ({})", m.3, m.2.trim_end_matches("_cents").replace('_', " ")), "status": "calculated", "line": m.3})).collect();
         boxes.extend(RECORDED.iter().filter(|r| r.0 == *kind).map(|r| json!({"box": r.1, "label": r.2, "status": "recorded"})));
+        for b in &mut boxes { b["unit"]=json!(if whole_box(kind,b["box"].as_str().unwrap_or("")){"whole_number"}else{"cents"}); }
         json!({"kind": kind, "title": title, "keywords": keywords, "boxes": boxes})
     }).collect();
     json!({"slips": slips, "note": "Calculated boxes flow to the native T1 lines; recorded boxes are kept and flagged for the preparer."})
+}
+
+
+pub fn whole_box(kind:&str, b:&str)->bool { (kind=="T2202"&&["24","25"].contains(&b))||(kind=="T5008"&&["15","16"].contains(&b)) }
+pub fn available(program:&str,year:i32,jurisdiction:&str)->bool { program=="T1"&&year==2025&&super::calculations::supports_scope(program,year,jurisdiction) }
+/// Only formerly/newly slip-managed keys are replaced. All other manual inputs survive.
+pub fn replace_inputs(inputs:&mut Value, previous:&[Slip], groups:&[Slip])->Result<(),String> {
+    let old=aggregate(previous)?;let next=aggregate(groups)?;
+    let target=inputs.as_object_mut().ok_or("inputs must be an object")?;
+    for key in old["inputs"].as_object().unwrap().keys(){target.insert(key.clone(),json!(0));}
+    for (key,value)in next["inputs"].as_object().unwrap(){target.insert(key.clone(),value.clone());}
+    if previous!=groups {
+        if previous.iter().chain(groups).any(|s|s.kind=="T4"){target.insert("payroll_verified".into(),json!(false));}
+        if previous.iter().chain(groups).any(|s|s.kind=="T5008"){target.insert("schedule3_verified".into(),json!(false));}
+    }
+    Ok(())
 }
