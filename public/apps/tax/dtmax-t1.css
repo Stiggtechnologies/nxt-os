@@ -137,6 +137,97 @@
 }
 @media (prefers-reduced-motion: reduce) { .dtmax-workspace button { transition: none; } }
 @media print { .dtmax-workspace { display: none; } }
+
+.tax-toolbar-icon {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+}
+.dtmax-tabs button,
+.dtmax-command-bar > *,
+.dtmax-workpaper-tabs > * {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.dtmax-tabs kbd { margin-left: 2px; }
+.dtmax-command-bar,
+.dtmax-workpaper-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.dtmax-command-bar {
+  padding: 11px 20px;
+  background: var(--dtmax-surface);
+  border-bottom: 1px solid var(--dtmax-line);
+}
+.dtmax-workpaper-tabs { margin-bottom: 14px; }
+.dtmax-command-bar > *,
+.dtmax-workpaper-tabs > * {
+  min-height: 36px;
+  padding: 5px 10px;
+  border: 1px solid #d6e0eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #24384f;
+  font: 500 12px/1.3 var(--ui, system-ui, sans-serif);
+  text-decoration: none;
+  cursor: pointer;
+}
+.dtmax-command-bar a { color: #24384f; }
+.dtmax-toolbar input { width: 240px; }
+.dtmax-toolbar select { min-width: 112px; }
+[data-dtmax-clear-filters],
+.work-actions .btn:has(.tax-toolbar-icon) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.work-actions .tax-toolbar-icon { width: 16px; height: 16px; }
+.dtmax-command-bar > :hover,
+.dtmax-workpaper-tabs > :hover { background: #eef3f8; }
+.dtmax-workpaper-tabs [aria-pressed="true"] {
+  border-color: #d6a84d;
+  background: #fff4d8;
+}
+.dtmax-workpaper-tabs kbd { font-size: 10px; color: #526174; }
+.dtmax-export-feedback {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 7px 20px;
+  color: var(--dtmax-muted);
+}
+.dtmax-export-feedback button:disabled { display: none; }
+.dtmax-source-queues { padding-bottom: 12px; }
+@media (max-width: 640px) {
+  .dtmax-tabs .tax-toolbar-icon { width: 15px; height: 15px; }
+  .dtmax-tabs button { gap: 4px; padding-inline: 5px; }
+  .dtmax-tabs kbd { display: none; }
+  .dtmax-command-bar { padding-inline: 12px; }
+}
+@media print {
+  body:has(#dtmax-t1-source.dtmax-print-list) #main > :not(#dtmax-t1-source),
+  #dtmax-t1-source.dtmax-print-list .dtmax-workspace > :not(.dtmax-caption, #dtmax-panel),
+  #dtmax-t1-source.dtmax-print-list #dtmax-panel > :not(.dtmax-grid, .dtmax-footer),
+  #dtmax-t1-source.dtmax-print-list .dtmax-caption > span,
+  #dtmax-t1-source.dtmax-print-list .dtmax-page-controls { display: none !important; }
+  #dtmax-t1-source.dtmax-print-list .dtmax-workspace {
+    display: block;
+    overflow: visible;
+    border: 0;
+    box-shadow: none;
+  }
+  #dtmax-t1-source.dtmax-print-list .dtmax-grid {
+    max-height: none;
+    overflow: visible;
+  }
+  #dtmax-t1-source.dtmax-print-list .dtmax-grid th { position: static; }
+  #dtmax-t1-source.dtmax-print-list .dtmax-grid tr { break-inside: avoid; }
+  .dtmax-workpaper-tabs { display: none; }
+}
 .dtmax-source-value{white-space:pre-wrap;overflow-wrap:anywhere}.dtmax-native-slip{margin:12px 0}.dtmax-native-slip th{max-width:34rem}.dtmax-native-slip th small{display:block;font-weight:normal}
 .dtmax-native-slip td small { display: block; margin: 2px 0 6px; font-size: 11px; color: #607187; }
 .dtmax-workspace [data-dtmax-recovered-review] { margin: 12px 20px 0; border: 1px solid var(--dtmax-line); border-radius: 8px; background: #fff; }

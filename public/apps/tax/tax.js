@@ -17,7 +17,7 @@
   const pretty = value => String(value ?? "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   const stamp = value => value ? new Date(value).toLocaleString("en-CA", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
   const date = value => value ? new Date(value + "T00:00:00").toLocaleDateString("en-CA") : "—";
-  const button = (label, action, id = "", style = "") => `<button class="btn ${style}" type="button" data-action="${esc(action)}" data-id="${esc(id)}">${esc(label)}</button>`;
+  const button = (label, action, id = "", style = "", icon = "") => `<button class="btn ${style}" type="button" data-action="${esc(action)}" data-id="${esc(id)}">${icon ? window.NXTDTMaxT1?.toolbarIcon?.(icon) || "" : ""}${esc(label)}</button>`;
   const badge = (status, label) => `<span class="pill ${esc(status)}">${esc(label || pretty(status))}</span>`;
   const field = (label, control, help = "", full = false) => `<label class="f${full ? " full" : ""}">${esc(label)}${control}${help ? `<span class="help">${esc(help)}</span>` : ""}</label>`;
   const input = (name, value = "", type = "text", attributes = "") => `<input name="${name}" type="${type}" value="${esc(value ?? "")}" ${attributes}>`;
@@ -162,8 +162,8 @@
     state.returns = list(records); setStorage(summary.storage); renderPrograms();
     const years = [...new Set([...programs().flatMap(p => list(p.years)), ...state.returns.map(r => r.tax_year)])].sort((a, b) => b - a);
     page(version, "Tax worklist", "Prepare, calculate and review independently versioned workpapers across the tax suite.", button("Import package", "import") + button("Create return", "new-return", "", "primary"),
-      restrictedNotice() + `<div class="summary-grid">${[["Draft workpapers", summary.drafts || 0], ["Calculated", summary.calculated || 0], ["Awaiting review", summary.in_review || 0], ["Approved", summary.approved || 0]].map(([label, value]) => `<div class="summary-tile"><span class="label">${label}</span><strong>${Number(value)}</strong></div>`).join("")}</div>
-      <div id="dtmax-t1-source"></div><div class="card"><h2>NXT preparation workpapers</h2><p>The company selector filters these workpapers. Imported personal T1 source clients above are firm-wide.</p><div class="list-filters"><label>Program${select("program", [["", "All programs"], ...programs().map(p => [p.id, p.id.toUpperCase()])], state.program, "data-work-filter")}</label><label>Tax year${select("year", [["", "All years"], ...years.map(y => [y, y])], state.year, "data-work-filter")}</label><label>Status${select("status", statuses, state.status, "data-work-filter")}</label><label class="search">Search workpapers${input("search", state.search, "search", 'placeholder="Name or client reference" data-work-filter')}</label></div><div id="return-table"></div></div>`);
+      restrictedNotice() + `<div id="dtmax-t1-source"></div><div class="summary-grid">${[["Draft workpapers", summary.drafts || 0], ["Calculated", summary.calculated || 0], ["Awaiting review", summary.in_review || 0], ["Approved", summary.approved || 0]].map(([label, value]) => `<div class="summary-tile"><span class="label">${label}</span><strong>${Number(value)}</strong></div>`).join("")}</div>
+      <div class="card"><h2>NXT preparation workpapers</h2><p>The company selector filters these workpapers. Imported personal T1 source clients above are firm-wide.</p><div class="list-filters"><label>Program${select("program", [["", "All programs"], ...programs().map(p => [p.id, p.id.toUpperCase()])], state.program, "data-work-filter")}</label><label>Tax year${select("year", [["", "All years"], ...years.map(y => [y, y])], state.year, "data-work-filter")}</label><label>Status${select("status", statuses, state.status, "data-work-filter")}</label><label class="search">Search workpapers${input("search", state.search, "search", 'placeholder="Name or client reference" data-work-filter')}</label></div><div id="return-table"></div></div>`);
     renderWorkRows();
   }
   function renderWorkRows() {
@@ -311,10 +311,25 @@
     const p = program(record.program); if (!state.section || ![...list(p.sections).map(s => s.id), "identity", "parties", "slip-groups", "calculation", "diagnostics", "review", ...(isCorporate(record) ? corporateSections : [])].includes(state.section)) state.section = "identity";
     renderPrograms(); renderWorkspace();
   }
+  function t1WorkpaperTabs() {
+    const icon = name => window.NXTDTMaxT1?.toolbarIcon?.(name) || "";
+    return '<nav class="dtmax-workpaper-tabs" aria-label="T1 workpaper views">'
+      + `<a href="#worklist">${icon("clients")}<span>Client list</span><kbd>F10</kbd></a>`
+      + `<button type="button" data-t1-workpaper-view="entry" aria-pressed="false">${icon("entry")}<span>Data entry</span><kbd>F2</kbd></button>`
+      + `<button type="button" data-section="calculation" data-t1-workpaper-view="return" aria-pressed="false">${icon("return")}<span>Tax return</span><kbd>F9</kbd></button>`
+      + `<button type="button" data-section="diagnostics" data-t1-workpaper-view="diagnostics" aria-pressed="false">${icon("diagnostics")}<span>Diagnostics</span></button>`
+      + '</nav>';
+  }
+  function showT1DataEntry() {
+    const p = program(state.record.program);
+    const entrySections = ["identity", "parties", "slip-groups", ...list(p.sections).map(s => s.id)];
+    if (!entrySections.includes(state.section)) chooseSection("identity");
+    else $("#return-editor")?.scrollIntoView?.({block: "nearest"});
+  }
   function renderWorkspace() {
     const r = state.record, p = program(r.program); main.classList.add("workspace-mode");
     const editable = canEdit(r);
-    main.innerHTML = `<div class="work-head"><a class="back" href="#worklist">← Tax worklist</a><div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary")}${button("Calculate", "calculate", "", "ink")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Print workpaper", "print")}${button("Roll forward", "rollforward")}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
+    main.innerHTML = `<div class="work-head">${r.program === "T1" ? t1WorkpaperTabs() : '<a class="back" href="#worklist">← Tax worklist</a>'}<div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary", r.program === "T1" ? "save" : "")}${button("Calculate", "calculate", "", "ink", r.program === "T1" ? "calculate" : "")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Print workpaper", "print", "", "", r.program === "T1" ? "print" : "")}${button("Roll forward", "rollforward")}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
       ${r.current_scope_supported===false?'<div class="notice" role="alert"><strong>Unsupported current calculation scope.</strong><p>Saved calculations and approvals are historical only. This workpaper cannot enter review, approval, authorization or recorded filing in this program, year and jurisdiction.</p></div>':""}${!browserEntryAvailable(r) && r.current_scope_supported!==false ? '<div class="notice" role="note"><strong>Year-specific browser editor pending.</strong><p>Input editing is unavailable for this saved workpaper. Its inputs remain unchanged; calculation results, diagnostics, history and exports remain available. A limited engine path does not verify an entry form.</p></div>' : ""}<div class="return-grid">${workspaceNavigation(r,p)}<section class="return-editor" id="return-editor" aria-label="Return data"></section><aside class="result-panel" id="result-panel" aria-label="Calculation status and diagnostics"></aside></div>`;
     $$("[data-action=save-return],[data-action=calculate]", main).forEach(b => b.disabled = !editable);
     renderEditor(); renderSidePanel(); setDirtyStatus();
@@ -327,6 +342,11 @@
   function renderEditor() {
     const host = $("#return-editor"), r = state.draft, p = program(r.program), editable = canEdit(state.record);
     $$("[data-section]", main).forEach(b => b.classList.toggle("active", b.dataset.section === state.section));
+    const activeView = state.section === "calculation" ? "return"
+      : state.section === "diagnostics" ? "diagnostics" : "entry";
+    $$("[data-t1-workpaper-view]", main).forEach(b => {
+      b.setAttribute("aria-pressed", String(b.dataset.t1WorkpaperView === activeView));
+    });
     $$("[data-topic]", main).forEach(b => { const active=b.dataset.topic===corporateTopic(state.section); b.classList.toggle("active",active); b.setAttribute("aria-pressed",String(active)); });
     if (!browserEntryAvailable(state.record) && !["calculation", "diagnostics", "review"].includes(state.section)) {
       host.innerHTML = '<div class="card"><h2>Browser entry unavailable for this scope</h2><p>The entry fields, help and defaults for this year must be verified before editing. Saved inputs remain unchanged. Results, diagnostics, history and workpaper exports remain available.</p></div>';
@@ -605,6 +625,8 @@
     const clearOptional=event.target.closest("[data-clear-optional]");if(clearOptional){if(clearOptional.disabled||actionLocks.has("record")||!canEdit(state.record))return;const f=fields(program()).find(f=>f.key===clearOptional.dataset.clearOptional);if(!f||f.optional!==true||window.NXTTurboCore?.managedSlipKeys(state.draft.slip_groups).includes(f.key))return;NXTTurboCore.applyOptionalInput(state.draft.inputs,f,null,{clear:true});collectError(f.key,"");markDirty();renderEditor();return;}
     const os = event.target.closest("[data-os]"); if (os) { openOs(os.dataset.os); return; }
     const suite = event.target.closest("[data-program]"); if (suite) { if (!await confirmDiscard()) return; state.program = suite.dataset.program; state.year = ""; state.section = "identity"; if (location.hash === "#worklist" || !location.hash) navigate(); else go("worklist"); return; }
+    const entry = event.target.closest('[data-t1-workpaper-view="entry"]');
+    if (entry && state.record?.program === "T1") { showT1DataEntry(); return; }
     const section = event.target.closest("[data-section]"); if (section) { chooseSection(section.dataset.section); return; }
     const jump = event.target.closest("[data-jump-field]"); if (jump) { const key = jump.dataset.jumpField, section = sectionForField(key); if (section) { chooseSection(section); const corporateKey=key.replace(/^corporate(?:_profile)?\./,""); (document.getElementById("tax-field-"+key)||$$('[data-corporate]',main).find(el=>el.dataset.corporate===corporateKey))?.focus(); } return; }
     const addPartner = event.target.closest("[data-add-partner]"); if (addPartner) { state.draft.inputs.partners = list(state.draft.inputs.partners); state.draft.inputs.partners.push({ id: "partner-" + crypto.randomUUID(), name: "", share_bps: 0 }); markDirty(); renderEditor(); return; }
@@ -663,7 +685,35 @@
   function go(view) { location.hash = view; }
   function openOs(app) { if (window.parent !== window) window.parent.postMessage({ nxt: "open-app", app, view: "" }, location.origin); else location.href = "/#/" + app; }
   window.addEventListener("beforeunload", event => { if (state.dirty) { event.preventDefault(); event.returnValue = ""; } });
-  document.addEventListener("keydown", event => { if (!(event.ctrlKey || event.metaKey) || !state.record || $(".modal-back")) return; if (event.key.toLowerCase() === "s") { event.preventDefault(); invokeAction("save-return").catch(e => toast(e.message, true)); } if (event.key === "Enter") { event.preventDefault(); invokeAction("calculate").catch(e => toast(e.message, true)); } });
+  document.addEventListener("keydown", event => {
+    if (event.defaultPrevented || !state.record || $(".modal-back")) return;
+    const nativeT1 = state.record.program === "T1"
+      && location.hash.split("?")[0] === "#return/" + pid(state.record.id)
+      && $(".dtmax-workpaper-tabs", main);
+    if (nativeT1 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.repeat) {
+      if (!event.altKey && ["F2", "F9", "F10"].includes(event.key)) {
+        event.preventDefault();
+        if (event.key === "F2") showT1DataEntry();
+        if (event.key === "F9") chooseSection("calculation");
+        if (event.key === "F10") go("worklist");
+        return;
+      }
+      if (event.altKey && event.key === "F9" && canEdit(state.record)) {
+        event.preventDefault();
+        invokeAction("calculate").catch(e => toast(e.message, true));
+        return;
+      }
+    }
+    if (!(event.ctrlKey || event.metaKey)) return;
+    if (event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      invokeAction("save-return").catch(e => toast(e.message, true));
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      invokeAction("calculate").catch(e => toast(e.message, true));
+    }
+  });
   $(".skip").onclick = event => { event.preventDefault(); main.focus(); };
   async function signIn() {
     if (window.parent !== window) { main.innerHTML = '<div class="card">Sign in to NXT OS to open Tax.</div>'; return; }
