@@ -280,3 +280,139 @@ fn shift_month(d: NaiveDate, by: i32) -> NaiveDate {
     let total = d.year() * 12 + d.month() as i32 - 1 + by;
     NaiveDate::from_ymd_opt(total.div_euclid(12), (total.rem_euclid(12) + 1) as u32, 1).unwrap()
 }
+
+// ---- REA 2026-11-05: QuickBooks report parity (cash flow, comparisons, balances) ----
+
+/// Statement of Cash Flows section for a balance-sheet account (indirect method).
+/// Bank-role accounts are cash. Fixed assets (codes 15xx-19xx, except accumulated
+/// depreciation, which is a non-cash add-back) are investing; long-term liabilities
+/// (25xx-29xx) and equity are financing; everything else is operating.
+fn cash_flow_section(a: &Account) -> &'static str {
+    let fixed = a.kind == AccountKind::Asset && a.code.len() >= 2 && ("15".."2").contains(&&a.code[..2]);
+    let long_term = a.kind == AccountKind::Liability && a.code.len() >= 2 && ("25".."3").contains(&&a.code[..2]);
+    if a.role == AccountRole::Bank {
+        "cash"
+    } else if fixed && !a.name.to_lowercase().contains("accumulated") {
+        "investing"
+    } else if long_term || a.kind == AccountKind::Equity {
+        "financing"
+    } else {
+        "operating"
+    }
+}
+
+fn add_months(d: NaiveDate, n: u32) -> NaiveDate {
+    let m0 = d.month0() + n;
+    NaiveDate::from_ymd_opt(d.year() + (m0 / 12) as i32, m0 % 12 + 1, 1).unwrap()
+}
+
+fn ymd(d: NaiveDate) -> String {
+    d.format("%Y-%m-%d").to_string()
+}
+
+impl Ledger {
+    /// Statement of Cash Flows (indirect method), QBO "Statement of Cash Flows".
+    pub async fn cash_flow(&self, from: &str, to: &str) -> LResult<Value> {
+        parse_date(from)?;
+        parse_date(to)?;
+        let b = self.books().await?;
+        let net = b.net(Some(from), to);
+        let net_income: i64 = b
+            .accounts
+            .iter()
+            .filter(|a| matches!(a.kind, AccountKind::Income | AccountKind::Expense))
+            .map(|a| -net.get(&a.id).copied().unwrap_or(0))
+            .sum();
+        let mut sec: BTreeMap<&str, (Vec<Value>, i64)> = BTreeMap::new();
+        let mut cash_change = 0;
+        for a in b.accounts.iter().filter(|a| matches!(a.kind, AccountKind::Asset | AccountKind::Liability | AccountKind::Equity)) {
+            let d = net.get(&a.id).copied().unwrap_or(0);
+            if d == 0 {
+                continue;
+            }
+            let s = cash_flow_section(a);
+            if s == "cash" {
+                cash_change += d;
+                continue;
+            }
+            // A debit increase in a non-cash account uses cash; a credit increase provides it.
+            let e = sec.entry(s).or_default();
+            e.0.push(row(a, -d));
+            e.1 += -d;
+        }
+        let take = |s: &str, sec: &BTreeMap<&str, (Vec<Value>, i64)>| sec.get(s).cloned().unwrap_or_default();
+        let (op, top) = take("operating", &sec);
+        let (inv, tinv) = take("investing", &sec);
+        let (fin, tfin) = take("financing", &sec);
+        let opening = b.net(None, &day_before(from));
+        let cash_ids: Vec<&str> = b.accounts.iter().filter(|a| a.role == AccountRole::Bank).map(|a| a.id.as_str()).collect();
+        let cash_begin: i64 = cash_ids.iter().map(|id| opening.get(*id).copied().unwrap_or(0)).sum();
+        let operating = net_income + top;
+        Ok(json!({
+            "from": from, "to": to,
+            "net_income": net_income,
+            "operating_adjustments": op, "net_cash_operating": operating,
+            "investing": inv, "net_cash_investing": tinv,
+            "financing": fin, "net_cash_financing": tfin,
+            "net_change_in_cash": operating + tinv + tfin,
+            "cash_beginning": cash_begin,
+            "cash_ending": cash_begin + cash_change,
+            "reconciles": operating + tinv + tfin == cash_change,
+        }))
+    }
+
+    /// Profit and Loss by Month: one column per calendar month in [from, to].
+    pub async fn profit_loss_by_month(&self, from: &str, to: &str) -> LResult<Value> {
+        let f = parse_date(from)?;
+        let t = parse_date(to)?;
+        if t < f {
+            return Err(super::engine::LedgerError::BadRequest("'to' is before 'from'".into()));
+        }
+        let mut cols = Vec::new();
+        let mut start = f;
+        while start <= t && cols.len() < 120 {
+            let next = add_months(start, 1);
+            let end = (next - chrono::Duration::days(1)).min(t);
+            let pl = self.profit_loss(&ymd(start), &ymd(end)).await?;
+            cols.push(json!({ "label": start.format("%b %Y").to_string(), "from": ymd(start), "to": ymd(end),
+                "total_income": pl["total_income"], "total_cogs": pl["total_cogs"], "gross_profit": pl["gross_profit"],
+                "total_expenses": pl["total_expenses"], "net_income": pl["net_income"], "income": pl["income"], "expenses": pl["expenses"], "cogs": pl["cogs"] }));
+            start = next;
+        }
+        let total = self.profit_loss(from, to).await?;
+        Ok(json!({ "from": from, "to": to, "columns": cols, "total": total }))
+    }
+
+    /// Profit and Loss Comparison: the range against the same range one year earlier.
+    pub async fn profit_loss_comparison(&self, from: &str, to: &str) -> LResult<Value> {
+        let f = parse_date(from)?;
+        let t = parse_date(to)?;
+        let back = |d: NaiveDate| d.with_year(d.year() - 1).unwrap_or_else(|| d - chrono::Duration::days(365));
+        let (pf, pt) = (ymd(back(f)), ymd(back(t)));
+        let cur = self.profit_loss(from, to).await?;
+        let prior = self.profit_loss(&pf, &pt).await?;
+        let mut deltas = json!({});
+        for k in ["total_income", "total_cogs", "gross_profit", "total_expenses", "net_income"] {
+            let (c, p) = (cur[k].as_i64().unwrap_or(0), prior[k].as_i64().unwrap_or(0));
+            let pct = if p == 0 { Value::Null } else { json!(((c - p) as f64 / p.abs() as f64 * 10000.0).round() / 100.0) };
+            deltas[k] = json!({ "current": c, "prior": p, "change": c - p, "change_pct": pct });
+        }
+        Ok(json!({ "current": cur, "prior": prior, "prior_from": pf, "prior_to": pt, "comparison": deltas }))
+    }
+
+    /// Customer / Vendor Balance Summary: open document balance per contact.
+    pub async fn contact_balances(&self, kind: DocKind, as_of: &str) -> LResult<Value> {
+        parse_date(as_of)?;
+        let contacts: HashMap<String, String> = self.contacts(None).await?.into_iter().map(|c| (c.id, c.name)).collect();
+        let mut per: BTreeMap<String, (i64, usize)> = BTreeMap::new();
+        for doc in self.docs(Some(kind)).await?.into_iter().filter(|x| x.balance() > 0 && x.date.as_str() <= as_of) {
+            let name = contacts.get(&doc.contact_id).cloned().unwrap_or_default();
+            let e = per.entry(name).or_default();
+            e.0 += doc.balance();
+            e.1 += 1;
+        }
+        let total: i64 = per.values().map(|v| v.0).sum();
+        let rows: Vec<Value> = per.into_iter().map(|(n, (b, c))| json!({ "contact": n, "balance": b, "open_documents": c })).collect();
+        Ok(json!({ "as_of": as_of, "rows": rows, "total": total }))
+    }
+}
