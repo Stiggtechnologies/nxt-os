@@ -280,6 +280,10 @@ pub struct Review {
     pub decisions: Vec<Decision>,
     pub cutover: Option<CutoverPacket>,
     pub surfaces: Vec<SurfacePacket>,
+    /// `workspace_ledger` for a ledger review, `gods_eye` for a firm-wide watch run.
+    /// Older stored reviews have no scope and read as a ledger review.
+    #[serde(default)]
+    pub scope: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

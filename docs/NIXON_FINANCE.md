@@ -132,6 +132,10 @@ Every Sync Context voice item found in `ai-maintenance-system` is listed once. "
 | Field-mode checkpoint speech and map display modes. | Realtime field instructions, SCX-VOICE-003 prototype | Not ported. There is no field or map workspace in NXT OS. |
 | GuardVoice phone transport. | Not part of Sync Context; draft PR #4 | Not modified. In-app voice reuses only the rule that a spoken read is answered and a consequential act is not performed. |
 
+## God's Eye
+
+The firm-wide watch view built on these screens and gates is documented in [GODS_EYE.md](GODS_EYE.md).
+
 ## Done and remaining
 
 Done in this change:
