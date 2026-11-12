@@ -34,7 +34,10 @@
     { id: "pension", label: "Pension or annuity income (T4A)", screen: "slips", supported: true },
     { id: "tuition", label: "Post-secondary tuition (T2202)", screen: "slips", supported: true },
     { id: "securities", label: "Sold stocks, funds or other securities (T5008)", screen: "slips", supported: true },
-    { id: "self_employed", label: "Self-employed or freelance income", screen: "deductions", supported: true },
+    { id: "self_employed", label: "Self-employed or freelance business income (T2125)", screen: "deductions", supported: true },
+    { id: "professional", label: "Self-employed professional or commission income (T2125)", screen: "deductions", supported: true },
+    { id: "farming", label: "Farming income (T2042)", screen: "deductions", supported: true },
+    { id: "fishing", label: "Fishing income (T2121)", screen: "deductions", supported: true },
     { id: "rental", label: "Rental property income", screen: "deductions", supported: true },
     { id: "foreign", label: "Foreign property over $100,000 (T1135)", screen: null, supported: false },
     { id: "moved", label: "Moved provinces or left/entered Canada", screen: null, supported: false },
@@ -48,6 +51,10 @@
     { id: "student_loan", label: "Student loan interest", keys: ["student_loan_interest_cents"], verify: null, supported: true },
     { id: "home_buyers", label: "First-time home buyers' amount", keys: ["home_buyers_amount_cents"], verify: null, supported: true },
     { id: "self_employment", label: "Business income and expenses (T2125)", keys: ["self_employment_gross_cents", "self_employment_expenses_cents"], verify: "t2125_verified", supported: true },
+    { id: "professional", label: "Professional income and expenses (T2125)", keys: ["professional_gross_cents", "professional_expenses_cents"], verify: "t2125_professional_verified", supported: true },
+    { id: "commission", label: "Commission income and expenses (T2125)", keys: ["commission_gross_cents", "commission_expenses_cents"], verify: "t2125_commission_verified", supported: true },
+    { id: "farming", label: "Farming income and expenses (T2042)", keys: ["farming_gross_cents", "farming_expenses_cents"], verify: "t2042_verified", supported: true },
+    { id: "fishing", label: "Fishing income and expenses (T2121)", keys: ["fishing_gross_cents", "fishing_expenses_cents"], verify: "t2121_verified", supported: true },
     { id: "rental", label: "Rental income and expenses (T776)", keys: ["rental_gross_cents", "rental_expenses_cents"], verify: "t776_verified", supported: true },
     { id: "fhsa", label: "FHSA contributions", keys: [], verify: null, supported: false },
     { id: "childcare", label: "Child care expenses", keys: [], verify: null, supported: false },
@@ -114,8 +121,8 @@
     for (const [k, v] of Object.entries((aggregate && aggregate.inputs) || {})) out[k] = v;
     return out;
   }
-  const OPTIONAL_FIELD_CATALOG_VERSION = "nxt-tax-fields/T1/2025/3";
-  const OPTIONAL_FIELD_CATALOG_VERSIONS = new Set(["nxt-tax-fields/T1/2025/2", OPTIONAL_FIELD_CATALOG_VERSION]);
+  const OPTIONAL_FIELD_CATALOG_VERSION = "nxt-tax-fields/T1/2025/4";
+  const OPTIONAL_FIELD_CATALOG_VERSIONS = new Set(["nxt-tax-fields/T1/2025/2", "nxt-tax-fields/T1/2025/3", OPTIONAL_FIELD_CATALOG_VERSION]);
   function optionalSections(catalog, record) {
     const p=catalog?.programs?.find(p=>p.id==="T1"),sections=p?.sections?.filter(s=>s.fields?.some(f=>f.optional===true))||[];
     if(!sections.length)return [];

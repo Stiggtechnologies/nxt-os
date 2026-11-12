@@ -49,6 +49,7 @@ The T1 engine covers AB and ON, each with its own calculator. A generic engine (
 
 ## Additional T1 income and credits (API inputs; all require preparer verification)
 - **T2125** (13500): gross minus expenses minus CCA. CCA cannot create a loss. Self-employed CPP is not calculated: enter a verified line 22200/31000 amount, otherwise review is blocked at $5,000 or more.
+- **Professional, commission, farming and fishing** (13699/13700, 13899/13900 on T2125; 14099/14100 on T2042; 14299/14300 on T2121): verified gross, current expenses and CCA per activity, each with its own verification key. Net = gross minus expenses minus CCA; CCA cannot create a loss; a farming loss blocks review (restricted farm losses are not calculated). All five net lines sum to T1 line 27, which feeds total income and Schedule 8 Part 4 line 1. See docs/TAX_CALCULATION_CONTRACTS.md.
 - **Schedule 3** (12700): proceeds minus ACB minus outlays, with 50% inclusion. A net loss is reported only. There is no ACB tracking, LCGE or principal-residence handling.
 - **T776** (12600): gross minus expenses minus CCA. CCA cannot create a loss.
 - **T1032**: lines 11500, 11600 and 21000. Line 21000 is capped at 50%.

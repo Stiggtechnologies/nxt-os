@@ -70,7 +70,21 @@ fn print_net(record: &TaxReturn) -> TResult<i64> {
     let amount = |code: &str| {
         lines.iter().find(|line| line["code"] == code).and_then(|line| line["amount"].as_i64())
     };
-    let net = amount("13500").filter(|net| *net >= 0).ok_or_else(unavailable)?;
+    // Part 4 line 1 is T1 line 27: the sum of the net self-employment lines present.
+    let mut net = 0;
+    let mut present = false;
+    for code in super::t2125::NET_LINES {
+        if let Some(amount) = amount(code) {
+            if amount < 0 {
+                return Err(unavailable());
+            }
+            present = true;
+            net += amount;
+        }
+    }
+    if !present {
+        return Err(unavailable());
+    }
     let part = full_year_part4(net);
     for (code, expected) in [
         ("42100", part.payable), ("31000", part.credit_amount), ("22200", part.deduction),
@@ -215,6 +229,25 @@ mod tests {
         assert_eq!(print_net(&calculated).unwrap_or_else(|err| panic!("{}", err.1)), 5_000_000);
         calculated.inputs["self_employment_gross_cents"] = json!(5_500_000);
         assert!(print_net(&calculated).is_err());
+    }
+
+    #[tokio::test]
+    async fn printable_net_is_t1_line_27_across_activities() {
+        let tax = Tax::new(Store::memory());
+        let input = serde_json::from_value(json!({
+            "program": "T1", "tax_year": 2025, "jurisdiction": "AB", "name": "Synthetic activities",
+            "inputs": {
+                "scope_confirmed": true, "full_year_resident": true, "schedule8_part4_verified": true,
+                "t2125_verified": true, "self_employment_gross_cents": 2_000_000,
+                "t2125_professional_verified": true, "professional_gross_cents": 1_000_000,
+                "t2121_verified": true, "fishing_gross_cents": 500_000, "fishing_expenses_cents": 100_000
+            }
+        })).unwrap();
+        let draft = tax.save(None, input).await.unwrap_or_else(|err| panic!("{}", err.1));
+        let calculated = tax.calculate(&draft.id, RevisionInput {
+            expected_revision: draft.revision, idempotency_key: None,
+        }).await.unwrap_or_else(|err| panic!("{}", err.1));
+        assert_eq!(print_net(&calculated).unwrap_or_else(|err| panic!("{}", err.1)), 3_400_000);
     }
 
     #[test]

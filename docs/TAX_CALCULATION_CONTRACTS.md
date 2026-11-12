@@ -20,6 +20,25 @@ The native workpaper can download a populated 2025 CRA Schedule 8 PDF once the c
 
 Changing, adding or removing T2202 occurrences clears the shared credit-verification flag. A separate explicit confirmation is retained when the occurrences are unchanged; an unrelated T4 edit does not clear that credit flag. This change applies only to newly requested mutations, not to records read during deployment.
 
+## 2025 professional, commission, farming and fishing lines (field catalog 2025/4)
+
+DT Max 2025 keeps separate gross/net keywords for each T1 self-employment line: `GrossBusiness`/`BusinessInc`, `GrossProfession`/`ProfessionalInc`, `GrossCommission`/`CommissionInc`, `GrossFarming`/`FarmingInc` and `GrossFishing`/`FishingInc` (keyword table `public/apps/tax/dtmax-keywords/2025.json`, ids 14927–14938). NXT previously modeled only the business line (13499/13500). The [2025 T1 return](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-r/5000-r-25e.pdf) lines 22–27 define the five lines, and lines 22–26 add to line 27, net self-employment income.
+
+New optional inputs, each set with its own verification key:
+
+| Activity | Inputs | Verification | Form lines | T1 lines |
+| --- | --- | --- | --- | --- |
+| Professional | `professional_gross_cents`, `professional_expenses_cents`, `professional_cca_cents` | `t2125_professional_verified` | [T2125](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2125/t2125-25e.pdf) 8299 / 9368 / 9946 (Part 3B) | 13699 / 13700 |
+| Commission | `commission_gross_cents`, `commission_expenses_cents`, `commission_cca_cents` | `t2125_commission_verified` | T2125 8299 / 9368 / 9946 | 13899 / 13900 |
+| Farming | `farming_gross_cents`, `farming_expenses_cents`, `farming_cca_cents` | `t2042_verified` | [T2042](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2042/t2042-25e.pdf) 9659 / 9898 / 9946 | 14099 / 14100 |
+| Fishing | `fishing_gross_cents`, `fishing_expenses_cents`, `fishing_cca_cents` | `t2121_verified` | [T2121](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2121/t2121-25e.pdf) 8299 / 9368 / 9946 | 14299 / 14300 |
+
+Net = gross − current expenses − CCA. CCA cannot create or increase a loss. A farming loss carries a blocking diagnostic because restricted farm losses and farm loss carryovers are not calculated. Farm inventory adjustments (9941/9942), partnership shares, reserves and the T2125 itemized expense path for these activities are not modeled; use separate preparation when they apply.
+
+Line 27 (the sum of 13500, 13700, 13900, 14100 and 14300) is added to total income once. Schedule 8 Part 4 line 1 is "line 12200 plus line 27", so the Part 4 calculation and the Schedule 8 PDF now use line 27 instead of 13500 alone. Part 4 still requires no employment or payroll amounts, and now rejects a loss on any of the five lines. Without Part 4, every activity carries the same CPP-payable hold as business income.
+
+The ruleset version stays `nxt-ca-2025.4`: every input document the .4 engine accepted calculates to the same lines, because the new keys were previously rejected as unknown fields. The T1 field catalog version moves to `nxt-tax-fields/T1/2025/4`; the browser accepts versions 2, 3 and 4. The DT Max keywords are recorded on catalog fields as `dtmax_keywords` (`mapping: reference_only`). SOURCE → preparation still maps no figures, so nothing is imported from DT Max automatically.
+
 ## 2025 federal credit reconciliation (version .3)
 
 For all existing 2025 non-Quebec T1 engine paths, line 33500 is the sum of modeled eligible credit amounts and line 33800 applies 14.5% once to that aggregate. This corrects the former separate rounding of baseline and additional credits, which could differ by a cent. Line 34990 now follows the [2025 Federal Worksheet, page 7](https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-25e.pdf): add rounded line 33800 and rounded Schedule 9 line 22, subtract $8,319.38 with a zero floor, then multiply by 3.45% and round to cents. Schedule 9 line 22 is the 14.5% credit on the first $200 of eligible gifts; neither the entire gift base nor the entire donation credit belongs in that top-up calculation.

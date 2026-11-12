@@ -32,6 +32,9 @@ test('every deduction key the checklist writes is accepted by the 2025 T1 engine
   const rs = read('src/tax/calculations.rs');
   const t1 = rs.slice(rs.indexOf('fn t1(c: &mut Calculation'));
   const allowed = new Set([...t1.slice(0, t1.indexOf('])?')).matchAll(/"([a-z0-9_]+)"/g)].map(m => m[1]));
+  // check_t1_2025_fields also accepts the T2125/T2042/T2121 activity keys declared in t2125.rs.
+  for (const m of read('src/tax/t2125.rs').matchAll(/(?:gross|expenses|cca|verify)_key: "([a-z0-9_]+)"/g)) allowed.add(m[1]);
+  assert.ok(rs.includes('keys.extend(super::t2125::input_keys()'), 'activity keys are accepted by the field check');
   for (const d of C.DEDUCTIONS) for (const k of d.keys.concat(d.verify ? [d.verify] : [])) assert.ok(allowed.has(k), k);
   for (const k of ['full_year_resident', 'scope_confirmed', 'other_tax_situations', 'born_1960_or_earlier']) assert.ok(allowed.has(k), k);
   assert.ok(C.DEDUCTIONS.filter(d => !d.supported).every(d => d.keys.length === 0), 'unsupported items write no inputs');
