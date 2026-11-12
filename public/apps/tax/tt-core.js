@@ -114,11 +114,12 @@
     for (const [k, v] of Object.entries((aggregate && aggregate.inputs) || {})) out[k] = v;
     return out;
   }
-  const OPTIONAL_FIELD_CATALOG_VERSION = "nxt-tax-fields/T1/2025/2";
+  const OPTIONAL_FIELD_CATALOG_VERSION = "nxt-tax-fields/T1/2025/3";
+  const OPTIONAL_FIELD_CATALOG_VERSIONS = new Set(["nxt-tax-fields/T1/2025/2", OPTIONAL_FIELD_CATALOG_VERSION]);
   function optionalSections(catalog, record) {
     const p=catalog?.programs?.find(p=>p.id==="T1"),sections=p?.sections?.filter(s=>s.fields?.some(f=>f.optional===true))||[];
     if(!sections.length)return [];
-    if(record.program!=="T1"||record.tax_year!==2025||p.field_catalog_version!==OPTIONAL_FIELD_CATALOG_VERSION)throw Error("Optional entry metadata is unavailable for this workpaper.");
+    if(record.program!=="T1"||record.tax_year!==2025||!OPTIONAL_FIELD_CATALOG_VERSIONS.has(p.field_catalog_version))throw Error("Optional entry metadata is unavailable for this workpaper.");
     for(const s of sections)for(const f of s.fields)if(f.optional!==true||f.default_policy!=="omit"||!["money","boolean"].includes(f.kind)||!f.tax_years?.includes(record.tax_year)||!f.jurisdictions?.includes(record.jurisdiction))throw Error("Optional field scope or omission contract differs.");
     return sections;
   }

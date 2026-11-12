@@ -1,5 +1,7 @@
 //! Independent Canadian tax workpapers. No DT Max runtime or filing dependency.
 pub mod calculations;
+mod schedule8;
+mod t2125;
 pub mod batch;
 pub mod catalog;
 pub mod coverage;
@@ -281,6 +283,12 @@ impl Tax {
             if !slips::available(&original.program,original.tax_year,&original.jurisdiction){return Err(bad("saved slip groups are unavailable for this scope"));}
             let grouped=slips::aggregate(&original.slip_groups).map_err(bad)?;
             if grouped["inputs"].as_object().unwrap().iter().any(|(key,value)|original.inputs.get(key)!=Some(value)){return Err(conflict("saved slip groups and their derived inputs differ; reload and save the groups before calculating"));}
+        }
+        if original.program == "T1" && original.tax_year == 2025
+            && original.inputs[schedule8::CONFIRMATION] == true
+            && original.slip_groups.iter().any(|group| group.kind == "T4")
+        {
+            return Err(bad("A saved T4 requires a different Schedule 8 calculation. Review the payroll and CPP information before calculating."));
         }
         let result=calculations::calculate(&original.program,original.tax_year,&original.jurisdiction,&original.inputs).map_err(bad)?;
         let mut result=serde_json::to_value(result).map_err(|_|bad("calculation could not be encoded"))?;

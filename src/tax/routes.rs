@@ -23,6 +23,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/rollforward",post(rollforward))
         .route("/api/tax/returns/{id}/package",get(package))
         .route("/api/tax/returns/{id}/print",get(print))
+        .route("/api/tax/returns/{id}/schedule8-print",get(print_schedule8))
         .route("/api/tax/returns/{id}/filing",post(filing))
         .route("/api/tax/desk/me",get(desk_me))
         .route("/api/tax/desk/queue",get(desk_queue))
@@ -164,6 +165,14 @@ async fn print(State(t):S,Path(id):Path<String>) -> TResult<Response> {
     let r=t.get(&id).await?;
     let body=print_workpaper(&r)?;
     Ok((StatusCode::OK,[(header::CONTENT_TYPE,"text/html; charset=utf-8"),(header::CACHE_CONTROL,"no-store"),(header::CONTENT_SECURITY_POLICY,"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'")],Body::from(body)).into_response())
+}
+async fn print_schedule8(State(t):S,Path(id):Path<String>) -> TResult<Response> {
+    let record = t.get(&id).await?;
+    let bytes = super::schedule8::print(&record).await?;
+    Ok(([
+        (header::CONTENT_TYPE, "application/pdf"),
+        (header::CONTENT_DISPOSITION, "attachment; filename=\"5000-s8-25e.pdf\""),
+    ], bytes).into_response())
 }
 pub(super) fn print_workpaper(r:&TaxReturn)->TResult<String>{
     let mut body=format!("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{} — NXT tax workpaper</title><style>body{{font:14px system-ui;margin:40px;color:#17201e}}h1{{font-size:26px}}.notice{{padding:16px;border:2px solid #957126;background:#fff7df}}table{{border-collapse:collapse;width:100%;margin:20px 0}}th,td{{text-align:left;padding:9px;border-bottom:1px solid #ddd}}td:last-child{{text-align:right;font-variant-numeric:tabular-nums}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f5f3;padding:16px}}.hash{{font:11px monospace;overflow-wrap:anywhere}}@media print{{body{{margin:0}}}}</style></head><body><h1>NXT Tax · {} · {}</h1><p>{} · {} · Revision {} · {}</p><p class=\"notice\"><strong>Internal workpaper. Not a certified tax return or filing.</strong><br>Review does not establish CRA/Revenu Québec acceptance. Calculation scope and diagnostics below must be read with this workpaper.</p>",esc(&r.name),esc(&r.program),r.tax_year,esc(&r.name),esc(&r.jurisdiction),r.revision,esc(&r.status));
