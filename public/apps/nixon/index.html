@@ -71,6 +71,14 @@
     </form>
     <p id="voiceSay" style="margin-top:12px"></p>
   </div>
+  <div class="card" id="godsEyeCard" style="margin-top:16px">
+    <div class="card-head"><h2 style="font-size:18px">God's Eye</h2><span class="pill">Internal · read only</span></div>
+    <p class="meta">Every company's books, cash, filings and deadlines in one view. Watchers flag and draft; a named person approves or dismisses. Nothing is posted, filed, paid or sent.</p>
+    <div class="row" style="margin-top:8px"><button class="btn" id="geRefresh" type="button">Refresh</button><button class="btn primary" id="geRunBtn" type="button">Save as review with proposals</button></div>
+    <div id="geSummary" style="margin-top:10px"><p class="meta">Loading…</p></div>
+    <div id="geFindings"></div>
+    <div id="geRun" style="margin-top:12px"></div>
+  </div>
   <div class="card" id="clientsCard" style="margin-top:16px">
     <div class="card-head"><h2 style="font-size:18px">Clients</h2><span class="pill">Read only</span></div>
     <div id="clients"><p class="meta">Loading…</p></div>
@@ -81,5 +89,6 @@
 <script src="/nxt/ui.js"></script>
 <script src="/nxt/company-switcher.js"></script>
 <script src="nixon.js"></script>
+<script src="gods-eye.js"></script>
 </body>
 </html>

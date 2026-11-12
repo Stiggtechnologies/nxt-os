@@ -95,13 +95,18 @@ pub fn fingerprint(r: &TaxReturn) -> TResult<String> {
 /// Statutory filing deadline used for sorting (T1: April 30 of the next year; T2: six months
 /// after the period end).
 pub fn deadline(r: &TaxReturn) -> String {
-    if r.program == "T2" {
-        if let Some(end) = r.period_end.as_deref().and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()) {
+    deadline_for(&r.program, r.tax_year, r.period_end.as_deref())
+}
+
+/// Same rule as [`deadline`], from the fields `Tax::list` already returns.
+pub fn deadline_for(program: &str, tax_year: i32, period_end: Option<&str>) -> String {
+    if program == "T2" {
+        if let Some(end) = period_end.and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()) {
             if let Some(d) = end.checked_add_months(chrono::Months::new(6)) { return d.to_string(); }
         }
-        return format!("{}-06-30", r.tax_year + 1);
+        return format!("{}-06-30", tax_year + 1);
     }
-    format!("{}-04-30", r.tax_year + 1)
+    format!("{}-04-30", tax_year + 1)
 }
 
 fn fix_link(r: &TaxReturn, field: Option<&str>) -> String {

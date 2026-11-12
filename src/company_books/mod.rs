@@ -15,6 +15,7 @@ use axum::http::StatusCode;
 use chrono::{NaiveDate, Utc};
 use models::*;
 pub use routes::router;
+pub(crate) use views::is_payroll_account;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};

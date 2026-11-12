@@ -44,6 +44,9 @@ pub fn router(scope: super::voice::Scope) -> Router {
             "/api/nixon/reviews/{id}/proposals/{pid}/execute",
             post(execute),
         )
+        .route("/api/nixon/gods-eye", get(gods_eye_view))
+        .route("/api/nixon/gods-eye/runs", post(gods_eye_run))
+        .route("/api/nixon/gods-eye/runs/{id}/proposals/{pid}/ai-draft", post(gods_eye_ai_draft))
         .route("/api/nixon/clients", get(list_clients))
         .route("/api/nixon/clients/{client}", get(client_view))
         .route("/api/nixon/actions", post(action))
@@ -79,6 +82,19 @@ async fn client_view(State(scope): S, Extension(id): Extension<Identity>, Path(c
     }
     let assigned = id.clients.iter().any(|c| c.eq_ignore_ascii_case(client.trim()));
     Ok(Json(super::clients::view(&scope, &client, assigned).await?))
+}
+
+// God's Eye is firm-wide and internal: these paths fall through `client_scope` to `firm_wide_only`.
+async fn gods_eye_view(State(scope): S, axum::extract::Query(q): axum::extract::Query<super::gods_eye::ViewQuery>) -> Result<Json<Value>, ApiError> {
+    ok(super::gods_eye::view(&scope, q).await)
+}
+
+async fn gods_eye_run(State(scope): S, body: Option<Json<super::gods_eye::RunRequest>>) -> Result<Json<Value>, ApiError> {
+    ok(super::gods_eye::run(&scope, body.map(|b| b.0).unwrap_or_default()).await)
+}
+
+async fn gods_eye_ai_draft(State(scope): S, Path((id, pid)): Path<(String, String)>) -> Result<Json<Value>, ApiError> {
+    ok(super::gods_eye::ai_draft(&scope, &id, &pid).await)
 }
 
 async fn create_review(

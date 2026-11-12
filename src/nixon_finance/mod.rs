@@ -9,8 +9,10 @@
 //! GuardVoice draft PR #4 owns `src/nixon/` as the phone engine. This module
 //! stays in `nixon_finance` so the two can merge without sharing a file.
 
+pub mod ai_gateway;
 pub mod analyze;
 pub mod clients;
+pub mod gods_eye;
 pub mod models;
 pub mod navigate;
 pub mod routes;

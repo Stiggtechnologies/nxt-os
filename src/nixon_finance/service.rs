@@ -134,7 +134,7 @@ mod person_tests {
     }
 }
 
-fn nid(prefix: &str) -> String {
+pub(crate) fn nid(prefix: &str) -> String {
     format!(
         "{prefix}_{}",
         &uuid::Uuid::new_v4().simple().to_string()[..12]
@@ -357,6 +357,7 @@ pub async fn run_review(ledger: &Ledger, request: ReviewRequest) -> Result<Revie
         decisions: vec![],
         cutover: request.cutover,
         surfaces,
+        scope: "workspace_ledger".into(),
     };
     save_review(ledger, &review).await?;
     if let Some(key) = &review.idempotency_key {
@@ -403,7 +404,7 @@ pub async fn run_review(ledger: &Ledger, request: ReviewRequest) -> Result<Revie
     Ok(review)
 }
 
-async fn save_review(ledger: &Ledger, review: &Review) -> Result<(), NixonError> {
+pub(crate) async fn save_review(ledger: &Ledger, review: &Review) -> Result<(), NixonError> {
     ledger
         .store
         .set_json(&format!("nixon:review:{}", review.id), review)
@@ -455,6 +456,7 @@ pub async fn list_reviews(ledger: &Ledger) -> Result<Vec<Value>, NixonError> {
                 "pending_approval": pending,
                 "posting": review.posting,
                 "filing": review.filing,
+                "scope": if review.scope.is_empty() { "workspace_ledger" } else { review.scope.as_str() },
             }));
         }
     }
@@ -503,7 +505,9 @@ pub async fn decide(
     let decision = match request.decision.as_str() {
         "approve" => "approve",
         "reject" => "reject",
-        _ => return Err(NixonError::new(400, "decision must be approve or reject")),
+        // God's Eye findings are dismissed rather than rejected; same gate, same record.
+        "dismiss" => "dismiss",
+        _ => return Err(NixonError::new(400, "decision must be approve, reject or dismiss")),
     };
     if request.note.chars().count() > 2_000 {
         return Err(NixonError::new(400, "note is too long"));
@@ -529,10 +533,10 @@ pub async fn decide(
             "the person who prepared this cannot approve it",
         ));
     }
-    proposal.status = if decision == "approve" {
-        "approved_no_execution"
-    } else {
-        "rejected"
+    proposal.status = match decision {
+        "approve" => "approved_no_execution",
+        "dismiss" => "dismissed",
+        _ => "rejected",
     }
     .into();
     proposal.applied = false;
