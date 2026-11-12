@@ -4,6 +4,7 @@
 //! (`client_journey::capability`) or recorded by staff, and human gates stay human.
 
 pub mod agent;
+pub mod autonomy;
 pub mod guardvoice;
 pub mod ledger;
 pub mod nixon;
@@ -95,6 +96,8 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
             referrals: referrals.clone(),
             journeys: journeys.clone(),
         }))
+        // Autonomous execution of approved God's Eye / Nixon proposals. Off unless NXT_AUTONOMOUS_EXECUTION=on.
+        .merge(autonomy::router(Arc::new(autonomy::Autonomy::new(ledger.clone(), autonomy::Config::from_env()))))
         .merge(tax::stripe::router(std::sync::Arc::new(tax::stripe::StripePay::new(tax.clone(), ledger.clone()))))
         .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
         .merge(referral::routes::app(referrals))
