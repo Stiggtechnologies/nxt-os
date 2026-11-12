@@ -38,3 +38,26 @@ test('guided error severity blocks review and balance even when legacy blocking 
 test('actual keyword actions require supported current results and no blocking or error diagnostic',()=>{
  for(const status of ['calculated','in_review'])for(const mode of ['unsupported','blocking','severity']){const {api,nodes}=workspace(),r=legacy(true);r.status=status;r.jurisdiction='AB';if(mode==='unsupported')r.calculation.result.supported=false;else r.calculation.result.diagnostics=[{code:'synthetic_hold',blocks_review:mode==='blocking',severity:mode==='severity'?'error':'warning'}];const before=JSON.stringify(r);api.state.catalog={ruleset:'nxt-ca-2025.2',programs:[{id:'T1',label:'T1',sections:[]}]};Object.assign(api.state,{record:r,draft:structuredClone(r),dirty:false,section:'calculation'});api.renderWorkspace();assert.equal(api.freshCalculation(),true);assert.doesNotMatch(nodes.get('#main').innerHTML,/data-action="(?:review-return|approve-return)"/);assert.equal(JSON.stringify(r),before);}
 });
+
+test('Schedule 8 PDF action requires a current, saved, eligible calculation',()=>{
+ const {api,nodes}=workspace();
+ const r=legacy(true);
+ r.jurisdiction='AB';
+ r.inputs.schedule8_part4_verified=true;
+ r.calculation.result.lines=[{code:'42100',label:'CPP payable',amount:553350}];
+ api.state.catalog={ruleset:r.current_ruleset,programs:[{id:'T1',label:'T1',sections:[]}]};
+ Object.assign(api.state,{record:r,draft:structuredClone(r),dirty:false,section:'calculation'});
+ const action=/data-action="schedule8-print"/;
+ api.renderWorkspace();
+ assert.match(nodes.get('#main').innerHTML,action);
+ for(const key of ['dirty','stale','unsupported','missing-line']){
+  const record=structuredClone(r);
+  api.state.dirty=key==='dirty';
+  if(key==='stale')record.current_calculation_ruleset_current=false;
+  if(key==='unsupported')record.calculation.result.supported=false;
+  if(key==='missing-line')record.calculation.result.lines=[];
+  Object.assign(api.state,{record,draft:structuredClone(record)});
+  api.renderWorkspace();
+  assert.doesNotMatch(nodes.get('#main').innerHTML,action,key);
+ }
+});

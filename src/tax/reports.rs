@@ -37,12 +37,12 @@ pub fn columns()->Vec<Column> {
   let label=f["label"].as_str().unwrap_or(key);inputs.entry(key.to_string()).or_insert_with(||column(&format!("input:{key}"),label,kind,"inputs"));
  }}}
  out.extend(inputs.into_values());
- for code in ["15000","23600","26000","33500","33800","34900","34990","35000","40425","42000","48400","48500"]{out.push(column(&format!("line:{code}"),&format!("Saved line {code}"),"money","calculation"));}
- for key in ["taxable_income","net_income","federal_tax","provincial_tax","income_tax","payments","balance","federal_balance","beneficiary_allocations","sbd_income"]{out.push(column(&format!("total:{key}"),&format!("Saved total · {}",key.replace('_'," ")),"money","calculation"));}
+ for code in ["15000","22200","23600","26000","31000","33500","33800","34900","34990","35000","40425","42000","42100","43500","48400","48500"]{out.push(column(&format!("line:{code}"),&format!("Saved line {code}"),"money","calculation"));}
+ for key in ["taxable_income","net_income","federal_tax","provincial_tax","income_tax","cpp_payable","total_payable","payments","balance","federal_balance","beneficiary_allocations","sbd_income"]{out.push(column(&format!("total:{key}"),&format!("Saved total · {}",key.replace('_'," ")),"money","calculation"));}
  out
 }
 pub fn catalog()->Value {json!({"schema":SCHEMA,"columns":columns(),"required_columns":REQUIRED,"operators":["equals","not_equals","greater_than","less_than","contains","is_blank","is_present"],"max_rows":MAX_ROWS,"max_response_bytes":MAX_BYTES,"money_unit":"integer_cents","blank_is_zero":false,"native_preparation_workpapers_only":true,"immutable_source_records_included":false,"historical_results_default":false,"financial_approval":false,"filing_supported":false})}
-fn calc_state(r:&TaxReturn)->TResult<&'static str> {
+pub(super) fn calc_state(r:&TaxReturn)->TResult<&'static str> {
  let Some(c)=&r.calculation else{return Ok("none")};
  if !calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction){return Ok("historical_unsupported_scope")}
  if !calculations::uses_current_ruleset(&c.result) || c.input_revision!=r.input_revision || c.input_hash!=hash(&ReturnInput::from(r))? || c.input_document.as_ref().map(hash).transpose()?.as_deref()!=Some(c.input_hash.as_str()) || hash(&c.result)?!=c.output_hash{return Ok("stale")}

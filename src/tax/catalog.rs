@@ -7,7 +7,7 @@ fn field(key:&str,label:&str,kind:&str,default:Value,help:&str)->Value {
 }
 fn money(key:&str,label:&str,help:&str)->Value {field(key,label,"money",json!(0),help)}
 fn yes(key:&str,label:&str,help:&str)->Value {field(key,label,"boolean",json!(false),help)}
-pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/2";
+pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/3";
 fn optional(key:&str,label:&str,kind:&str,verify:&str,form:&str,help:&str)->Value {
     let mut f=json!({"key":key,"label":label,"kind":kind,"optional":true,"default_policy":"omit","blank_policy":"delete_property","tax_years":[2025],"jurisdictions":super::coverage::entry_jurisdictions("T1",2025),"verification_key":verify,"source_form":form,"help":help});
     if kind=="money"{f["min"]=json!(0);f["max"]=json!(100_000_000_000_000_i64);}f
@@ -28,6 +28,22 @@ fn program(id:&str,label:&str,description:&str,jurisdiction:&str,scope:&str,sect
     json!({"id":id,"label":label,"description":description,"years":super::coverage::entry_years(id),"jurisdictions":super::coverage::entry_jurisdictions(id,2025),"default_jurisdiction":jurisdiction,"entry_schema_id":super::coverage::entry_schema_id(id),"entry_schema_year":2025,"scope":scope,"ruleset":RULESET,"filing_supported":false,"sections":sections,"defaults":defaults,"input_schema":{"type":"object","additionalProperties":false,"properties":properties},"sources":sources(id)})
 }
 
+fn t2125_expense_fields() -> Vec<Value> {
+    let mut fields = vec![optional(
+        super::t2125::CONFIRMATION, "Verify sole-proprietor business and expense breakdown", "boolean",
+        super::t2125::CONFIRMATION, "T2125",
+        "Confirm a single ordinary sole proprietorship with verified adjusted gross revenue and deductible expenses. Inventory, partnership, professional or commission reporting, rebates, reserves and business-use-of-home adjustments are outside this itemized path.",
+    )];
+    for expense in super::t2125::EXPENSES {
+        fields.push(optional(
+            expense.key, &format!("{} (line {})", expense.label, expense.line), "money",
+            super::t2125::CONFIRMATION, "T2125",
+            "Enter the verified deductible business portion. Apply applicable limits or adjustments before entering the amount.",
+        ));
+    }
+    fields
+}
+
 pub fn catalog()->Value {
     let mut t1=program("T1","T1 — Personal","Selected 2025 workpapers, including optional verified business, rental and current-year credit totals. Read each section's limits; these are not complete schedules or a filing return.","AB",T1_SCOPE,vec![
         scope_fields(T1_SCOPE),
@@ -37,13 +53,15 @@ pub fn catalog()->Value {
         section("payroll","Verified payroll credits",vec![money("cpp_base_credit_cents","Verified base CPP credit amount — line 30800","Schedule 8 amount, maximum $3,356.10. Enhanced contributions are deductions, not part of this credit."),money("ei_credit_cents","Verified eligible EI credit — line 31200","Maximum $1,077.48; standard insurable earnings must exceed $2,000. Overpayments and Quebec employment are outside scope."),yes("payroll_verified","CPP/EI amounts verified against Schedule 8 and source documents","Required for any CPP/EI credit or enhanced CPP deduction. This engine does not infer contributions or refunds from wages.")]),
         section("payments","Payments",vec![money("tax_withheld_cents","Income tax withheld","Verified income tax withheld; no automatic payroll calculation."),money("instalments_cents","Income tax instalments paid","Verified payments only. Reported balance excludes refundable benefits and all other return amounts.")]),
         section("business-totals","Optional verified business totals",vec![
-            optional("self_employment_gross_cents","Verified T2125 gross business income","money","t2125_verified","T2125","Income-tax-only workpaper totals, not a complete business schedule or return balance. CPP payable (42100) is not computed. Independent Schedule 8 review is required. No GST/HST, vehicle or home-office adjustments are computed."),
-            optional("self_employment_expenses_cents","Verified T2125 deductible current expenses","money","t2125_verified","T2125","Current deductible expenses from records, excluding separately entered CCA. No eligibility or adjustment is inferred."),
+            optional("self_employment_gross_cents","Verified T2125 gross business income","money","t2125_verified","T2125","Verified gross business income after any applicable sales tax adjustments. Use Schedule 8 Part 4 below for qualifying self-employed-only CPP cases."),
+            optional("self_employment_expenses_cents","Verified T2125 deductible current expenses","money","t2125_verified","T2125","Enter deductible current expenses here when using verified aggregate totals. Leave this blank when entering itemized expenses. Enter CCA separately."),
             optional("self_employment_cca_cents","Verified T2125 CCA claim","money","t2125_verified","T2125","Externally computed CCA claim; NXT does not compute CCA classes or dispositions. This NXT workpaper rejects CCA that creates or increases a business loss; other cases are outside this calculation scope."),
             optional("t2125_verified","T2125 totals and claim eligibility verified","boolean","t2125_verified","T2125","Confirm only after checking the source totals and deductions. This is not automatic verification or a complete T2125."),
             optional("se_cpp_deduction_cents","Verified self-employed CPP deduction — line 22200","money","se_cpp_verified","Schedule 8","Externally calculated Schedule 8 deduction. Contributions, overpayments and elections are not computed here."),
             optional("se_cpp_credit_cents","Verified self-employed CPP credit — line 31000","money","se_cpp_verified","Schedule 8","Externally calculated Schedule 8 eligible credit amount, not the entire CPP payment. Verify separately from employee CPP."),
-            optional("se_cpp_verified","Schedule 8 self-employed CPP amounts verified","boolean","se_cpp_verified","Schedule 8","Confirm only after independent Schedule 8 review. Deductions/credits are consumed only with nonzero business amounts. CPP payable (42100) and the contribution/overpayment calculation are incomplete; this flag does not make a full business return supported.")]),
+            optional("se_cpp_verified","Externally prepared CPP amounts verified","boolean","se_cpp_verified","Schedule 8","Applies to manually entered deduction and credit on a partial workpaper."),
+            optional(super::schedule8::CONFIRMATION,"Calculate full-year self-employed CPP (Schedule 8 Part 4)","boolean",super::schedule8::CONFIRMATION,"Schedule 8","Confirm you were subject to CPP for all 12 months, had only self-employment earnings for CPP purposes, no employment or Québec earnings, no QPP contributions, no proration, disability pension, election or special adjustments. Leave manually entered CPP amounts blank.")]),
+        section("business-expenses","Itemized T2125 business expenses",t2125_expense_fields()),
         section("rental-totals","Optional verified rental totals",vec![
             optional("rental_gross_cents","Verified T776 gross rental income","money","t776_verified","T776","Aggregate verified rental totals; no property schedule, co-ownership allocation or personal-use adjustment is computed."),
             optional("rental_expenses_cents","Verified T776 deductible current expenses","money","t776_verified","T776","Current deductible rental expenses from records, excluding separately entered CCA. Capital expenses need separate review."),

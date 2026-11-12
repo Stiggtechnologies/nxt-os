@@ -303,6 +303,11 @@
   function currentResult() { return state.record?.calculation?.result; }
   function freshCalculation() { return state.record?.current_scope_supported !== false && !!state.record?.calculation && state.record.current_calculation_ruleset_current===true && typeof state.catalog?.ruleset==="string" && state.record.calculation.result?.ruleset===state.catalog.ruleset && !state.dirty && state.record.calculation.input_revision === state.record.input_revision; }
   function reviewableCalculation() { const c=state.record?.calculation?.result; return freshCalculation() && c?.supported===true && Array.isArray(c.diagnostics) && !c.diagnostics.some(d=>d.blocks_review||d.severity==="error"); }
+  function schedule8PrintAvailable() {
+    const r = state.record;
+    return r?.program === "T1" && r.tax_year === 2025 && r.inputs?.schedule8_part4_verified === true &&
+      reviewableCalculation() && r.calculation.result.lines?.some(line => line.code === "42100");
+  }
   async function returnWorkspace(version, id) {
     const record = await request(`/returns/${pid(id)}`);
     if (version !== state.version) return;
@@ -329,7 +334,7 @@
   function renderWorkspace() {
     const r = state.record, p = program(r.program); main.classList.add("workspace-mode");
     const editable = canEdit(r);
-    main.innerHTML = `<div class="work-head">${r.program === "T1" ? t1WorkpaperTabs() : '<a class="back" href="#worklist">← Tax worklist</a>'}<div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary", r.program === "T1" ? "save" : "")}${button("Calculate", "calculate", "", "ink", r.program === "T1" ? "calculate" : "")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Print workpaper", "print", "", "", r.program === "T1" ? "print" : "")}${button("Roll forward", "rollforward")}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
+    main.innerHTML = `<div class="work-head">${r.program === "T1" ? t1WorkpaperTabs() : '<a class="back" href="#worklist">← Tax worklist</a>'}<div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary", r.program === "T1" ? "save" : "")}${button("Calculate", "calculate", "", "ink", r.program === "T1" ? "calculate" : "")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Print workpaper", "print", "", "", r.program === "T1" ? "print" : "")}${schedule8PrintAvailable() ? button("Print Schedule 8", "schedule8-print") : ""}${button("Roll forward", "rollforward")}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
       ${r.current_scope_supported===false?'<div class="notice" role="alert"><strong>Unsupported current calculation scope.</strong><p>Saved calculations and approvals are historical only. This workpaper cannot enter review, approval, authorization or recorded filing in this program, year and jurisdiction.</p></div>':""}${!browserEntryAvailable(r) && r.current_scope_supported!==false ? '<div class="notice" role="note"><strong>Year-specific browser editor pending.</strong><p>Input editing is unavailable for this saved workpaper. Its inputs remain unchanged; calculation results, diagnostics, history and exports remain available. A limited engine path does not verify an entry form.</p></div>' : ""}<div class="return-grid">${workspaceNavigation(r,p)}<section class="return-editor" id="return-editor" aria-label="Return data"></section><aside class="result-panel" id="result-panel" aria-label="Calculation status and diagnostics"></aside></div>`;
     $$("[data-action=save-return],[data-action=calculate]", main).forEach(b => b.disabled = !editable);
     renderEditor(); renderSidePanel(); setDirtyStatus();
@@ -547,8 +552,13 @@
     const r = state.record, response = await fetch(`${API}/returns/${pid(r.id)}/${kind}`, { headers: { authorization: "Bearer " + NXT.key.get() } });
     if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || "Workpaper output is unavailable."); }
     const blob = await response.blob(), url = URL.createObjectURL(blob), a = document.createElement("a");
-    a.href = url; a.download = `nxt-${r.program.toLowerCase()}-${r.tax_year}-${r.id.slice(-8)}${kind === "print" ? ".html" : ".nxt-tax.json"}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1500);
-    toast(kind === "print" ? "Printable workpaper downloaded. Open it to print." : "NXT workpaper package downloaded");
+    const output = {
+      print: [".html", "Printable workpaper downloaded. Open it to print."],
+      "schedule8-print": ["-schedule-8.pdf", "2025 CRA Schedule 8 downloaded."],
+      package: [".nxt-tax.json", "NXT workpaper package downloaded"],
+    }[kind];
+    a.href = url; a.download = `nxt-${r.program.toLowerCase()}-${r.tax_year}-${r.id.slice(-8)}${output[0]}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1500);
+    toast(output[1]);
   }
 
   async function importPage(version) {
@@ -592,6 +602,7 @@
     "open-return": id => go(`return/${id}`), "import": () => go("import"), "save-return": () => saveReturn(), "calculate": () => calculate(),
     "review-return": () => transition("in_review"), "approve-return": () => transition("approved"), "reopen-return": () => transition("draft"), "archive-return": () => transition("archived"),
     "rollforward": () => rollforward(), "package": () => downloadReturn("package"), "print": () => downloadReturn("print"),
+    "schedule8-print": () => downloadReturn("schedule8-print"),
     "add-corporate": () => { if(!canEdit(state.record)||!isCorporate(state.record)) return; state.draft.corporate=newCorporateProfile(); markDirty(); renderEditor(); },
     "remove-corporate": async () => { if(!canEdit(state.record)||!state.draft.corporate) return; if(!await NXT.confirm("Remove corporate profile?","Remove the profile, financial lines and adjustments from this draft. The calculation inputs remain available. Save to record this change.","Remove profile")) return; state.draft.corporate=null; Object.keys(state.errors).filter(k=>k.startsWith("gifi-")||k.startsWith("adjustment-")).forEach(k=>delete state.errors[k]); markDirty(); renderEditor(); },
     "add-gifi": section => { if(!canEdit(state.record)||!state.draft.corporate) return; if(state.draft.corporate.gifi.length>=200) throw new Error("The corporate profile supports at most 200 GIFI lines."); if(!Object.values(gifiSections).some(s=>s[0]===section)) return; state.draft.corporate.gifi.push({section,code:"",label:"",current_cents:0,prior_cents:0}); markDirty(); renderEditor(); const controls=$$("[data-gifi-prop=code]",main); controls.at(-1)?.focus(); },
