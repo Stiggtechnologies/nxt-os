@@ -132,6 +132,55 @@ mod person_tests {
         assert!(require_person("Bob [usr_1; drop]").is_err());
         assert_eq!(require_person(" Orville Test ").ok().unwrap(), "Orville Test");
     }
+
+    #[tokio::test]
+    async fn a_stale_write_never_overwrites_a_decision() {
+        use super::{DecisionRequest, decide, get_review, get_review_versioned, replace_review, save_review};
+        use crate::ledger::engine::Ledger;
+        use crate::nixon_finance::models::Review;
+        let ledger = Ledger::new(crate::store::Store::memory());
+        let review: Review = serde_json::from_value(serde_json::json!({
+            "id": "ge_cas", "correlation_id": "cor_cas", "created_at": "2026-11-12T00:00:00Z", "as_of": "2026-11-12",
+            "currency": "CAD", "source_class": "workspace_books", "digest": "d", "idempotency_key": null,
+            "autonomy_level": "advisory", "execution_mode": "advisory", "posting": "disabled", "filing": "disabled",
+            "summary": "Synthetic", "findings": [], "verifications": [], "decisions": [], "cutover": null, "surfaces": [],
+            "scope": "gods_eye",
+            "proposals": [{"id": "p1", "finding_id": null, "kind": "staff_follow_up", "changes_books": false, "files_tax": false,
+                "execution": "disabled", "applied": false, "status": "pending_approval", "summary": "s",
+                "prepared_by": "God's Eye watcher", "payload": {}}],
+        })).unwrap();
+        save_review(&ledger, &review).await.ok().unwrap();
+        // A slow writer (an AI draft) reads first; a person decides meanwhile.
+        let (mut stale, raw) = get_review_versioned(&ledger, "ge_cas").await.ok().unwrap();
+        decide(&ledger, "ge_cas", "p1", DecisionRequest { actor_name: "Casey Quinn".into(), decision: "dismiss".into(), note: String::new() }).await.ok().unwrap();
+        stale.proposals[0].payload["ai_draft"] = serde_json::json!({"text": "late"});
+        let err = replace_review(&ledger, &stale, &raw).await.unwrap_err();
+        assert_eq!(err.status, 409);
+        let now = get_review(&ledger, "ge_cas").await.ok().unwrap();
+        assert_eq!(now.proposals[0].status, "dismissed");
+        assert!(now.proposals[0].payload.get("ai_draft").is_none());
+        // The preparer cannot approve under another label format.
+        let mut r2 = now.clone();
+        r2.id = "ge_cas2".into();
+        r2.proposals[0].status = "pending_approval".into();
+        save_review(&ledger, &r2).await.ok().unwrap();
+        for who in ["God's Eye watcher [usr_1]", "Gods Eye  Watcher"] {
+            let e = decide(&ledger, "ge_cas2", "p1", DecisionRequest { actor_name: who.into(), decision: "approve".into(), note: String::new() }).await.unwrap_err();
+            assert_eq!(e.status, 403, "{who}");
+        }
+    }
+
+    #[test]
+    fn self_approval_cannot_hide_behind_label_format() {
+        use super::same_person;
+        assert!(same_person("God's Eye watcher [usr_1]", "God's Eye watcher"));
+        assert!(same_person("Gods  Eye   Watcher", "God's Eye watcher"));
+        assert!(same_person("Jane Doe", "Jane Doe [usr_abc]"));
+        assert!(same_person("J. Doe [usr_abc]", "Jane Doe [usr_abc]"), "same stamped id");
+        assert!(same_person("jane-doe", "Jane Doe"));
+        assert!(!same_person("Casey Quinn", "God's Eye watcher"));
+        assert!(!same_person("Casey Quinn [usr_2]", "Jane Doe [usr_1]"));
+    }
 }
 
 pub(crate) fn nid(prefix: &str) -> String {
@@ -166,7 +215,7 @@ fn role_name(role: AccountRole) -> &'static str {
 
 pub async fn load_context(ledger: &Ledger) -> Result<FinanceContext, NixonError> {
     let company = ledger.company().await?;
-    let accounts = ledger.accounts().await?;
+    let accounts = ledger.accounts_read().await?;
     let mut entries = ledger.entries().await?;
     let docs = ledger.docs(None).await?;
     let payments = ledger.payments().await?;
@@ -418,6 +467,53 @@ pub(crate) async fn save_review(ledger: &Ledger, review: &Review) -> Result<(), 
     Ok(())
 }
 
+/// A review plus the exact stored text it was read from, for compare-and-swap updates.
+pub(crate) async fn get_review_versioned(ledger: &Ledger, id: &str) -> Result<(Review, String), NixonError> {
+    let raw = ledger
+        .store
+        .get(&format!("nixon:review:{id}"))
+        .await
+        .map_err(|m| NixonError::new(500, m))?
+        .ok_or_else(|| NixonError::new(404, format!("review '{id}' not found")))?;
+    let review = serde_json::from_str(&raw).map_err(|_| NixonError::new(500, "a stored review is unreadable"))?;
+    Ok((review, raw))
+}
+
+/// Replaces an existing review only while it still matches `expected` (the text read by
+/// [`get_review_versioned`]). A concurrent decision or draft is never overwritten: the
+/// later writer gets 409 and must reload.
+pub(crate) async fn replace_review(ledger: &Ledger, review: &Review, expected: &str) -> Result<(), NixonError> {
+    let raw = serde_json::to_string(review).map_err(|e| NixonError::new(500, e.to_string()))?;
+    let swapped = ledger
+        .store
+        .compare_exchange(&format!("nixon:review:{}", review.id), Some(expected), &raw)
+        .await
+        .map_err(|m| NixonError::new(500, m))?;
+    if !swapped {
+        return Err(NixonError::new(409, "this review changed while the request was in progress; reload and try again"));
+    }
+    Ok(())
+}
+
+/// The person behind a decision label: the name of "Name [usr_id]" reduced to lowercase
+/// letters and digits (so spacing, case and punctuation cannot disguise it), and the id.
+fn person_key(label: &str) -> (String, Option<String>) {
+    let full = label.trim();
+    let (name, id) = match full.rsplit_once('[') {
+        Some((n, rest)) if rest.ends_with(']') => (n, Some(rest[..rest.len() - 1].trim().to_ascii_lowercase())),
+        _ => (full, None),
+    };
+    let name: String = name.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect();
+    (name, id.filter(|i| !i.is_empty()))
+}
+
+/// True when two labels name the same person (same normalized name, or the same stamped id).
+pub(crate) fn same_person(a: &str, b: &str) -> bool {
+    let (na, ia) = person_key(a);
+    let (nb, ib) = person_key(b);
+    (!na.is_empty() && na == nb) || matches!((ia, ib), (Some(x), Some(y)) if x == y)
+}
+
 pub async fn get_review(ledger: &Ledger, id: &str) -> Result<Review, NixonError> {
     ledger
         .store
@@ -512,7 +608,7 @@ pub async fn decide(
     if request.note.chars().count() > 2_000 {
         return Err(NixonError::new(400, "note is too long"));
     }
-    let mut review = get_review(ledger, review_id).await?;
+    let (mut review, stored) = get_review_versioned(ledger, review_id).await?;
     let proposal = review
         .proposals
         .iter_mut()
@@ -527,7 +623,7 @@ pub async fn decide(
     if proposal.status != "pending_approval" {
         return Err(NixonError::new(409, "this proposal already has a decision"));
     }
-    if actor.eq_ignore_ascii_case(proposal.prepared_by.trim()) {
+    if same_person(&actor, &proposal.prepared_by) {
         return Err(NixonError::new(
             403,
             "the person who prepared this cannot approve it",
@@ -551,7 +647,7 @@ pub async fn decide(
         execution: "disabled".into(),
         verification_state: "not_verification".into(),
     });
-    save_review(ledger, &review).await?;
+    replace_review(ledger, &review, &stored).await?;
     ledger
         .audit(
             "nixon.decision",

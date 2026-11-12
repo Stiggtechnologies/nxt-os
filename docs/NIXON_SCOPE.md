@@ -2,7 +2,7 @@
 
 Names, as used in this repository: the intelligence layer is **Nixon**, the phone layer is **GuardVoice**, and accounting is **NXT Ledger**. This note records what the code actually contains and the gaps that remain. Sentences marked **proposed** are not implemented and are not a commitment already present in the code.
 
-Nixon is not merged. Draft pull request [#4](https://github.com/Stiggtechnologies/nxt-os/pull/4) (`cursor/guardvoice-2109`) is held for an explicit go. This branch does not modify, rebase, or merge it.
+Pull request [#4](https://github.com/Stiggtechnologies/nxt-os/pull/4) (`cursor/guardvoice-2109`, GuardVoice and the phone Nixon in `src/nixon/`) is **merged** into `main` (2026-11-01 UTC). It is no longer a draft. The sections below were first written while it was open; they describe what it added. Other work does not modify `src/nixon/`.
 
 ## What exists on main
 
@@ -17,7 +17,7 @@ The system prompt on `main` tells it to answer from live data, treat money as in
 
 The firm, tax, engagement, and migration work extends the same Ask NXT assistant. It can prepare a bounded firm task or report with `propose_firm_action`. That tool queues an immutable proposal. It does not approve or execute it. The prompt tells Ask NXT that tax output is an internal workpaper, that it cannot file, and that parallel-test snapshots are not migrated balances. Ask NXT is still not Nixon.
 
-## What exists only in draft #4
+## What PR #4 added (merged)
 
 `src/nixon/` on `cursor/guardvoice-2109` defines `nixon::Engine`:
 
@@ -28,14 +28,14 @@ GuardVoice (`src/guardvoice/`) is the phone layer: Twilio ConversationRelay or `
 
 Nixon's tool gate, from `src/nixon/tools.rs` on that branch:
 
-| Level | Tools | Behavior in that draft |
+| Level | Tools | Behavior in PR #4 |
 | --- | --- | --- |
 | Read | `get_dashboard`, `run_report`, `list_documents`, `search_contacts`, `referral_overview` | Run immediately |
 | Write | `create_contact`, `update_contact`, `create_invoice`, `schedule_followup` | Run when autonomy is `write`; queued when autonomy is `read` |
 | Consequential | `record_payment`, `void_document`, `send_sms`, `place_outbound_call` | Always wait for a person |
 | Control | `record_message`, `escalate`, `transfer_call`, `end_call` | Always run |
 
-`docs/GUARDVOICE.md` on that branch says Nixon introduces itself as "Nixon, the virtual assistant," does not pretend to be the owner, and does not dial 911, 988, or other N11 numbers. Live Twilio calls are not part of its CI. That draft also adds its own `.github/workflows/ci.yml`. It is a separate line of work from the migration pull request.
+`docs/GUARDVOICE.md` on that branch says Nixon introduces itself as "Nixon, the virtual assistant," does not pretend to be the owner, and does not dial 911, 988, or other N11 numbers. Live Twilio calls are not part of its CI. PR #4 also added its own `.github/workflows/ci.yml`. It is a separate line of work from the migration pull request.
 
 ## Intended boundary
 
@@ -51,11 +51,11 @@ Nixon's tool gate, from `src/nixon/tools.rs` on that branch:
 
 ## Gaps and acceptance criteria
 
-Each row is open. None of these are done by merging the migration branch or by the existence of draft #4.
+Each row is open. None of these are done by merging the migration branch or by the existence of PR #4.
 
 | Gap | Evidence it is open | Acceptance criteria |
 | --- | --- | --- |
-| Nixon is not on `main` or on this migration branch | `src/nixon/` exists only on `cursor/guardvoice-2109` | #4 is merged only after Orville's explicit go, CI on that branch is green, and the phone screen still says GuardVoice while the assistant name stays Nixon |
+| ~~Nixon is not on `main`~~ **Closed** | PR #4 merged; `src/nixon/` is on `main` | Met: #4 is merged. The phone screen still says GuardVoice while the assistant name stays Nixon |
 | Ask NXT and Nixon are different assistants | `main` prompt says "You are NXT"; #4 prompt says Nixon | A reader of status JSON can tell them apart: Ask NXT stays on `/api/os/ask`; Nixon is reported by GuardVoice status as `assistant: Nixon`. **Proposed:** the shell does not label Ask NXT as Nixon |
 | Nixon cannot see firm, tax, engagement, or company-book state | #4 tools call ledger and referral engines only. This branch's extra Ask NXT tools are not in `src/nixon/tools.rs` | **Proposed:** a later change lists the exact Nixon tools for those modules, each classified read, write, or consequential, with tests that consequential tools wait for approval |
 | No shared approval identity | Both sides still use the workspace key or an operator label | **Proposed:** a payment, void, outbound message, import commit, and tax approval each require a verified person who is not the model, and the test shows the model cannot approve its own request |
@@ -65,4 +65,4 @@ Each row is open. None of these are done by merging the migration branch or by t
 
 ## What this document does not do
 
-It does not authorize a production phone number, a production database migration, a Vercel production change, or a tax filing. Draft #4 stays untouched.
+It does not authorize a production phone number, a production database migration, a Vercel production change, or a tax filing. PR #4's code (`src/nixon/`) stays untouched.

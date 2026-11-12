@@ -85,16 +85,21 @@ async fn client_view(State(scope): S, Extension(id): Extension<Identity>, Path(c
 }
 
 // God's Eye is firm-wide and internal: these paths fall through `client_scope` to `firm_wide_only`.
-async fn gods_eye_view(State(scope): S, axum::extract::Query(q): axum::extract::Query<super::gods_eye::ViewQuery>) -> Result<Json<Value>, ApiError> {
-    ok(super::gods_eye::view(&scope, q).await)
+fn oidc_header(headers: &axum::http::HeaderMap) -> Option<String> {
+    headers.get(super::ai_gateway::OIDC_HEADER).and_then(|v| v.to_str().ok()).map(str::to_string)
+}
+
+async fn gods_eye_view(State(scope): S, headers: axum::http::HeaderMap, axum::extract::Query(q): axum::extract::Query<super::gods_eye::ViewQuery>) -> Result<Json<Value>, ApiError> {
+    ok(super::gods_eye::view(&scope, q, oidc_header(&headers)).await)
 }
 
 async fn gods_eye_run(State(scope): S, body: Option<Json<super::gods_eye::RunRequest>>) -> Result<Json<Value>, ApiError> {
     ok(super::gods_eye::run(&scope, body.map(|b| b.0).unwrap_or_default()).await)
 }
 
-async fn gods_eye_ai_draft(State(scope): S, Path((id, pid)): Path<(String, String)>) -> Result<Json<Value>, ApiError> {
-    ok(super::gods_eye::ai_draft(&scope, &id, &pid).await)
+/// The requester is the signed-in account's stamped label, never request-body text.
+async fn gods_eye_ai_draft(State(scope): S, Extension(who): Extension<Identity>, headers: axum::http::HeaderMap, Path((id, pid)): Path<(String, String)>) -> Result<Json<Value>, ApiError> {
+    ok(super::gods_eye::ai_draft(&scope, &id, &pid, &who.label(), oidc_header(&headers)).await)
 }
 
 async fn create_review(

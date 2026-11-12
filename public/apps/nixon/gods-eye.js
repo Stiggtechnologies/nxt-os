@@ -36,21 +36,21 @@
       const ai = p.payload.ai_draft ? `<p class="meta"><b>AI wording (${esc(p.payload.ai_draft.model)}, not verified):</b> ${esc(p.payload.ai_draft.text)}</p>` : "";
       const controls = decided
         ? `<p class="meta">Decision: ${esc(p.status.replace(/_/g, " "))}</p>`
-        : `<div class="row"><input data-ge-actor="${esc(p.id)}" placeholder="Your name" aria-label="Your name"><button class="btn sm" data-ge="${esc(p.id)}" data-choice="dismiss">Dismiss</button><button class="btn sm primary" data-ge="${esc(p.id)}" data-choice="approve">Approve</button>${r.ai_enabled ? `<button class="btn sm" data-ge-ai="${esc(p.id)}">AI wording</button>` : ""}</div>`;
+        : `<div class="row"><button class="btn sm" data-ge="${esc(p.id)}" data-choice="dismiss">Dismiss</button><button class="btn sm primary" data-ge="${esc(p.id)}" data-choice="approve">Approve</button>${r.ai_enabled ? `<button class="btn sm" data-ge-ai="${esc(p.id)}">AI wording</button>` : ""}</div>`;
       return `<div class="card" style="margin-top:8px"><b>${esc(p.payload.company_id)}</b> · ${esc(p.payload.watcher)}<p>${esc(p.summary)}</p>${ai}${controls}</div>`;
     }).join("");
-    el("#geRun").innerHTML = `<p class="meta">Run ${esc(r.id)}. Approving records your name. It does not post, file, pay or contact anyone.</p>${rows}`;
+    el("#geRun").innerHTML = `<p class="meta">Run ${esc(r.id)}. Approving records your signed-in staff account (the server stamps it; typed names are not used). It does not post, file, pay or contact anyone.</p>${rows}`;
     el("#geRun").querySelectorAll("[data-ge]").forEach((b) => (b.onclick = () => decide(b.dataset.ge, b.dataset.choice)));
     el("#geRun").querySelectorAll("[data-ge-ai]").forEach((b) => (b.onclick = () => aiDraft(b.dataset.geAi)));
   }
 
   async function decide(pid, choice) {
-    const actor = (el(`[data-ge-actor="${CSS.escape(pid)}"]`)?.value || "").trim();
-    if (!actor) return toast("Enter your name first.");
+    // actor_name is left empty on purpose: the server replaces it with the signed-in
+    // account's stamped label. The shared workspace key has no person, so it is refused.
     try {
-      const r = await api(`/api/nixon/reviews/${encodeURIComponent(run.id)}/proposals/${encodeURIComponent(pid)}/decide`, { body: { actor_name: actor, decision: choice, note: "" } });
+      const r = await api(`/api/nixon/reviews/${encodeURIComponent(run.id)}/proposals/${encodeURIComponent(pid)}/decide`, { body: { actor_name: "", decision: choice, note: "" } });
       renderRun({ ...r, ai_enabled: run.ai_enabled });
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(/named person/.test(e.message) ? "Sign in with your own staff account to decide." : e.message); }
   }
 
   async function aiDraft(pid) {

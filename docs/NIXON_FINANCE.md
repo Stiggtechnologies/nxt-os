@@ -88,13 +88,13 @@ Pull request **#5** is squash-merged to `main` as `8bb0df0`. Firm Operations, NX
 - Tax filing stays disabled in NXT Tax. Nixon's `file_return` proposal stays `blocked`. Nixon does not calculate a T1, T2, T3, or T5013 return.
 - Migration and company books keep their receipts and compare-and-exchange. Nixon's cutover packet is a read-only check. Nixon does not publish a receipt or post a migration journal.
 
-Draft PR **#4** (`cursor/guardvoice-2109`, GuardVoice) is untouched. It uses the name Nixon for the phone engine in `src/nixon/`. Finance Nixon lives in `src/nixon_finance` and under `/api/nixon/`. GuardVoice routes stay under `/api/guardvoice/`. When both exist, the phone engine may call these read APIs. It must not gain a path that posts or files.
+PR **#4** (`cursor/guardvoice-2109`, GuardVoice) is merged into `main` and untouched here. It uses the name Nixon for the phone engine in `src/nixon/`. Finance Nixon lives in `src/nixon_finance` and under `/api/nixon/`. GuardVoice routes stay under `/api/guardvoice/`. When both exist, the phone engine may call these read APIs. It must not gain a path that posts or files.
 
 Workspace auth is still one shared key. The name on a decision is operational metadata, the same limit Firm's PR already calls out. Individual accounts are separate work.
 
 ## Sync Context voice
 
-Sync Context voice is slice SC-08 in `docs/sync-context/`. The current contract is the governed Realtime session in `supabase/functions/_shared/sync-realtime-core.ts` and `src/hooks/useSyncRealtimeVoice.ts`. Short speech output is `stripForSpeech` in `supabase/functions/_shared/sync-tts-core.ts`. Meet Sync was a separate booth and is not the current surface; see the checklist. Draft PR #4's phone Nixon (`src/nixon` on `cursor/guardvoice-2109`) is a separate transport. This branch does not change that PR. It reuses the gate idea: a spoken read is answered, and a consequential act is not performed by the voice.
+Sync Context voice is slice SC-08 in `docs/sync-context/`. The current contract is the governed Realtime session in `supabase/functions/_shared/sync-realtime-core.ts` and `src/hooks/useSyncRealtimeVoice.ts`. Short speech output is `stripForSpeech` in `supabase/functions/_shared/sync-tts-core.ts`. Meet Sync was a separate booth and is not the current surface; see the checklist. PR #4's phone Nixon (`src/nixon`, merged) is a separate transport. This work does not change it. It reuses the gate idea: a spoken read is answered, and a consequential act is not performed by the voice.
 
 | Sync Context voice piece | SyncAI home | Nixon finance |
 | --- | --- | --- |
@@ -130,7 +130,7 @@ Every Sync Context voice item found in `ai-maintenance-system` is listed once. "
 | Speaker identity and silence treated as agreement. | `meetingRunner.ts` explicitly refuses both | Not ported as features. Nixon does not infer who is speaking, and recap says no decision was recorded. |
 | ElevenLabs overlay. | `sync-tts` comments | Not ported. Sync Context treats it as optional and unused. |
 | Field-mode checkpoint speech and map display modes. | Realtime field instructions, SCX-VOICE-003 prototype | Not ported. There is no field or map workspace in NXT OS. |
-| GuardVoice phone transport. | Not part of Sync Context; draft PR #4 | Not modified. In-app voice reuses only the rule that a spoken read is answered and a consequential act is not performed. |
+| GuardVoice phone transport. | Not part of Sync Context; PR #4 (merged) | Not modified. In-app voice reuses only the rule that a spoken read is answered and a consequential act is not performed. |
 
 ## God's Eye
 

@@ -33,14 +33,11 @@ pub const DEFAULT_NVIDIA_MODELS: &[&str] = &[
     "openai/gpt-oss-20b",
 ];
 
-/// Hosts that Vercel's AI Gateway docs list with a zero-data-retention agreement
-/// (`/docs/ai-gateway/security-and-compliance/zdr`, read 2026-11-12), less the
-/// first-party labs excluded below. Anything else is refused for client data.
-const ZDR_HOSTS: &[&str] = &[
-    "anthropic", "azure", "baseten", "bedrock", "claudeaws", "digitalocean", "fireworks",
-    "vertex", "vertexAnthropic", "groq", "mistral", "modal", "nebius", "openai", "parasail",
-    "togetherai",
-];
+/// The only hosts client or company data may reach: the zero-data-retention hosts the
+/// default routes use (DeepSeek on Fireworks, Together, Baseten; Claude on Anthropic or
+/// Bedrock). Each is on Vercel's AI Gateway ZDR list. Anything else is refused for client
+/// data, even when an env override names it.
+const ZDR_HOSTS: &[&str] = &["fireworks", "togetherai", "baseten", "anthropic", "bedrock"];
 /// Never used for Canadian client or company data, even when ZDR-listed.
 const EXCLUDED_HOSTS: &[&str] = &["deepseek", "alibaba", "moonshotai", "zai", "deepinfra", "novita", "cerebras"];
 
@@ -71,6 +68,24 @@ type Env<'a> = &'a (dyn Fn(&str) -> Option<String> + Sync);
 
 pub fn process_env(k: &str) -> Option<String> {
     std::env::var(k).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
+/// Header Vercel adds to every function request with the project's short-lived OIDC token.
+pub const OIDC_HEADER: &str = "x-vercel-oidc-token";
+
+/// Process env, with `VERCEL_OIDC_TOKEN` taken from the request's `x-vercel-oidc-token`
+/// header when present. On Vercel the env var only exists at build time and in `vercel env
+/// pull`; at runtime the token arrives on the request. `AI_GATEWAY_API_KEY` still wins.
+pub fn env_with_oidc(oidc_header: Option<String>) -> impl Fn(&str) -> Option<String> + Sync {
+    let header = oidc_header.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    move |k: &str| {
+        if k == "VERCEL_OIDC_TOKEN" {
+            if let Some(t) = &header {
+                return Some(t.clone());
+            }
+        }
+        process_env(k)
+    }
 }
 
 /// AI drafting is off unless `GODS_EYE_AI` is exactly `on`.
@@ -160,15 +175,27 @@ pub fn body(route: &Route, system: &str, user: &str) -> Value {
     b
 }
 
+/// Separators allowed between digit groups of one number: space, dash, dot, slash.
+fn is_sep(c: char) -> bool {
+    matches!(c, ' ' | '-' | '.' | '/')
+}
+/// Longest separator run joined across (e.g. "123 . 456", "123   456").
+const MAX_SEP_RUN: usize = 3;
+
 /// Masks every run of seven or more digits (SINs, bank and card numbers) to its last
-/// three digits. Amounts in cents shorter than that are kept.
+/// three digits, including groups split by spaces (one or several), dashes, dots or
+/// slashes. ISO dates (2026-07-01, 2026/07/01, 2026.07.01) and amounts with thousands
+/// commas ($1,234,567.89) are kept.
 pub fn redact(text: &str) -> String {
     let c: Vec<char> = text.chars().collect();
     let n = c.len();
     let date_at = |i: usize| -> bool {
         i + 10 <= n
-            && (0..10).all(|k| if k == 4 || k == 7 { c[i + k] == '-' } else { c[i + k].is_ascii_digit() })
+            && matches!(c[i + 4], '-' | '/' | '.')
+            && c[i + 7] == c[i + 4]
+            && (0..10).all(|k| k == 4 || k == 7 || c[i + k].is_ascii_digit())
             && (i + 10 == n || !c[i + 10].is_ascii_digit())
+            && (i == 0 || !c[i - 1].is_ascii_digit())
     };
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
@@ -183,15 +210,21 @@ pub fn redact(text: &str) -> String {
             i += 10;
             continue;
         }
-        // One number, allowing single spaces or dashes between digit groups (046 454 286).
+        // One number: digit groups joined by short runs of separators (046 454 286, 046.454.286).
         let mut j = i;
         let mut digits = String::new();
         while j < n {
             if c[j].is_ascii_digit() {
                 digits.push(c[j]);
                 j += 1;
-            } else if (c[j] == ' ' || c[j] == '-') && j + 1 < n && c[j + 1].is_ascii_digit() && !date_at(j + 1) && digits.len() < 19 {
-                j += 1;
+                continue;
+            }
+            let mut k = j;
+            while k < n && is_sep(c[k]) && k - j < MAX_SEP_RUN {
+                k += 1;
+            }
+            if k > j && k < n && c[k].is_ascii_digit() && !date_at(k) && digits.len() < 19 {
+                j = k;
             } else {
                 break;
             }
@@ -290,6 +323,7 @@ pub fn describe(env: Env) -> Value {
         "enabled": enabled(env),
         "flag": "GODS_EYE_AI=on",
         "gateway_auth_configured": env("AI_GATEWAY_API_KEY").is_some() || env("VERCEL_OIDC_TOKEN").is_some(),
+        "gateway_auth": "AI_GATEWAY_API_KEY, else the request's x-vercel-oidc-token header, else VERCEL_OIDC_TOKEN",
         "nvidia_configured": env("NVIDIA_API_KEY").is_some(),
         "client_data_routes": show(Sensitivity::ClientData),
         "non_sensitive_routes": show(Sensitivity::NonSensitive),
@@ -370,6 +404,43 @@ mod tests {
         assert_eq!(redact("owes 125000 cents"), "owes 125000 cents");
         assert_eq!(redact("Q3 2026-07-01 to 2026-09-30"), "Q3 2026-07-01 to 2026-09-30");
         assert_eq!(redact("SIN 123-456-789"), "SIN •••789");
+    }
+
+    #[test]
+    fn redaction_masks_dots_slashes_and_wide_spacing() {
+        assert_eq!(redact("SIN 123.456.789 on file"), "SIN •••789 on file");
+        assert_eq!(redact("acct 0012/3456/789"), "acct •••789");
+        assert_eq!(redact("SIN 123   456   789"), "SIN •••789");
+        assert_eq!(redact("SIN 123 . 456 . 789"), "SIN •••789");
+        assert_eq!(redact("card 4111 1111 1111 1111."), "card •••111.");
+        assert_eq!(redact("transit 12345-678-1234567"), "transit •••567");
+        // Kept: dates in any ISO separator, short numbers, comma-grouped amounts.
+        assert_eq!(redact("due 2026/07/31 or 2026.07.31"), "due 2026/07/31 or 2026.07.31");
+        assert_eq!(redact("net $1,234,567.89 owing"), "net $1,234,567.89 owing");
+        assert_eq!(redact("line 105 and 108"), "line 105 and 108");
+        assert_eq!(redact("Q3 2026-07-01 to 2026-09-30"), "Q3 2026-07-01 to 2026-09-30");
+    }
+
+    #[test]
+    fn only_the_five_named_hosts_take_client_data() {
+        assert_eq!(ZDR_HOSTS, &["fireworks", "togetherai", "baseten", "anthropic", "bedrock"]);
+        for h in ["openai", "azure", "vertex", "groq", "mistral", "deepseek", "novita"] {
+            let r = Route { provider: Provider::Gateway, model: "x/y".into(), only: vec![h.into()], zero_data_retention: true };
+            assert!(guard(&r, Sensitivity::ClientData).is_err(), "{h}");
+        }
+        for h in ZDR_HOSTS {
+            let r = Route { provider: Provider::Gateway, model: "x/y".into(), only: vec![h.to_string()], zero_data_retention: true };
+            assert!(guard(&r, Sensitivity::ClientData).is_ok(), "{h}");
+        }
+    }
+
+    #[test]
+    fn oidc_header_is_preferred_over_env_and_key_wins() {
+        let e = env_with_oidc(Some("hdr".into()));
+        assert_eq!(e("VERCEL_OIDC_TOKEN").as_deref(), Some("hdr"));
+        let e = env_with_oidc(Some("  ".into()));
+        assert_eq!(e("VERCEL_OIDC_TOKEN"), process_env("VERCEL_OIDC_TOKEN"));
+        assert_eq!(e("GODS_EYE_AI"), process_env("GODS_EYE_AI"));
     }
 
     #[tokio::test]

@@ -35,6 +35,8 @@ use std::collections::BTreeMap;
 pub const SCOPE: &str = "gods_eye";
 pub const PREPARED_BY: &str = "God's Eye watcher";
 const MAX_COMPANIES: usize = 200;
+/// `CompanyBooks::list_summaries` page size (its maximum).
+const SUMMARY_PAGE: usize = 500;
 const GL_PAGE: usize = 1000;
 const GL_MAX_PAGES: usize = 5;
 const WINDOW_DAYS: i64 = 120;
@@ -169,7 +171,8 @@ fn month_end(d: NaiveDate) -> NaiveDate {
 
 async fn ledger_watch(ledger: &Ledger, company: &str, as_of: NaiveDate, out: &mut Vec<Hit>) -> Result<String, NixonError> {
     let profile = ledger.company().await?;
-    let accounts = ledger.accounts().await?;
+    // accounts_read never seeds a chart, so the view stays a pure read.
+    let accounts = ledger.accounts_read().await?;
     let entries = ledger.entries().await?;
     let as_of_s = as_of.to_string();
 
@@ -407,7 +410,8 @@ async fn tax_watch(scope: &Scope, as_of: NaiveDate, out: &mut Vec<Hit>) -> Resul
         out.push(hit(&company, "filing_deadlines", &format!("{program}_{year}_{id}"), risk,
             format!("{program} {year} return is {status}: {when}"),
             format!("Return {id} ({program} {year}) is not filed. Statutory deadline {deadline}."),
-            vec![evidence("e_return", format!("tax:{id}"), "nxt.tax", Some(deadline.clone()), format!("Return status {status}."))], vec![],
+            vec![evidence("e_return", format!("tax:{id}"), "nxt.tax", Some(deadline.clone()), format!("Return status {status}."))],
+            if program == "T1" { vec![Gap { id: "g_t1_self_employed".into(), note: format!("If the client or their spouse or common-law partner had self-employment income, the T1 filing deadline is {}-06-15. Any balance owing is still due {deadline}. NXT does not record self-employment status here, so the earlier date is used.", year + 1) }] } else { vec![] },
             "Staff: move the return through review and sign-off, then to the internal Filing Desk. A human files outside NXT.".into(),
             if days < 0 { "File as soon as possible to limit late-filing penalties.".into() } else { "Plan preparer and reviewer time now.".into() }));
     }
@@ -420,19 +424,41 @@ async fn collect(scope: &Scope, as_of: NaiveDate) -> Result<(Vec<Company>, Vec<H
     let mut companies: BTreeMap<String, Company> = BTreeMap::new();
     let mut hits = vec![];
     let mut gaps = vec![];
-    let firm_name = ledger_watch(&scope.ledger, "firm", as_of, &mut hits).await?;
+    // One failing ledger becomes a gap for that company; it never fails the whole view.
+    // Hits are kept only from a ledger that was read completely.
+    let watch = |id: &str, r: Result<String, NixonError>, mine: Vec<Hit>, hits: &mut Vec<Hit>, gaps: &mut Vec<Value>| -> Option<String> {
+        match r {
+            Ok(name) => { hits.extend(mine); Some(name) }
+            Err(e) => { gaps.push(json!({"company_id": id, "note": format!("Ledger could not be read: {}", e.message)})); None }
+        }
+    };
+    let mut mine = vec![];
+    let r = ledger_watch(&scope.ledger, "firm", as_of, &mut mine).await;
+    let firm_name = watch("firm", r, mine, &mut hits, &mut gaps).unwrap_or_default();
     companies.insert("firm".into(), Company { id: "firm".into(), name: firm_name, sources: vec!["firm_ledger"] });
 
     let opened = crate::ledger::routes::opened_company_books(&scope.ledger.store).await.map_err(err500)?;
+    if opened.len() > MAX_COMPANIES {
+        gaps.push(json!({"company_id": "firm", "note": format!("{} company ledgers are open; only the first {MAX_COMPANIES} were screened.", opened.len())}));
+    }
     for id in opened.into_iter().take(MAX_COMPANIES) {
         let l = Ledger::for_company(scope.ledger.store.clone(), &id);
-        let name = ledger_watch(&l, &id, as_of, &mut hits).await?;
+        let mut mine = vec![];
+        let r = ledger_watch(&l, &id, as_of, &mut mine).await;
+        let Some(name) = watch(&id, r, mine, &mut hits, &mut gaps) else { continue };
         companies.entry(id.clone()).or_insert(Company { id: id.clone(), name, sources: vec![] }).sources.push("company_ledger");
     }
-    let page = scope.company_books.list_summaries(0, 500).await.map_err(|e| err500(e.1))?;
+    let page = scope.company_books.list_summaries(0, SUMMARY_PAGE).await.map_err(|e| err500(e.1))?;
+    if page["has_more"] == true {
+        gaps.push(json!({"company_id": "firm", "note": format!("{} imported company books exist; only the first {SUMMARY_PAGE} were listed.", page["total"])}));
+    }
     let committed: Vec<String> = page["companies"].as_array().into_iter().flatten()
         .filter(|c| c["stage"] == "import_committed")
-        .filter_map(|c| c["company_id"].as_str().map(String::from)).take(MAX_COMPANIES).collect();
+        .filter_map(|c| c["company_id"].as_str().map(String::from)).collect();
+    if committed.len() > MAX_COMPANIES {
+        gaps.push(json!({"company_id": "firm", "note": format!("{} imported company books are committed; only the first {MAX_COMPANIES} were screened.", committed.len())}));
+    }
+    let committed: Vec<String> = committed.into_iter().take(MAX_COMPANIES).collect();
     for id in committed {
         match book_watch(scope, &id, as_of, &mut hits, &mut gaps).await {
             Ok(Some(name)) => {
@@ -465,8 +491,9 @@ fn guardrails() -> Value {
     })
 }
 
-/// The live view. Reads only; writes nothing, not even an audit row.
-pub async fn view(scope: &Scope, q: ViewQuery) -> Result<Value, NixonError> {
+/// The live view. Reads only; writes nothing, not even an audit row. `oidc_header` only
+/// changes how the AI status is reported (see [`ai_draft`]).
+pub async fn view(scope: &Scope, q: ViewQuery, oidc_header: Option<String>) -> Result<Value, NixonError> {
     let as_of = as_of_or_today(q.as_of.as_deref())?;
     let (companies, hits, gaps) = collect(scope, as_of).await?;
     let companies: Vec<Value> = companies.iter().map(|c| {
@@ -482,17 +509,44 @@ pub async fn view(scope: &Scope, q: ViewQuery) -> Result<Value, NixonError> {
     Ok(json!({
         "as_of": as_of.to_string(), "scope": SCOPE, "guardrails": guardrails(),
         "watchers": watchers(), "companies": companies, "findings": findings, "gaps": gaps,
-        "ai": ai_gateway::describe(&ai_gateway::process_env),
+        "ai": ai_gateway::describe(&ai_gateway::env_with_oidc(oidc_header)),
     }))
 }
 
-/// Saves the current findings as a Nixon review with one pending proposal each.
+/// Finding keys that already have a pending or dismissed proposal in an earlier God's Eye run.
+async fn open_or_dismissed(scope: &Scope) -> Result<std::collections::BTreeSet<String>, NixonError> {
+    let mut held = std::collections::BTreeSet::new();
+    for r in service::list_reviews(&scope.ledger).await? {
+        if r["scope"] != SCOPE {
+            continue;
+        }
+        let Some(id) = r["id"].as_str() else { continue };
+        let review = service::get_review(&scope.ledger, id).await?;
+        for p in review.proposals.iter().filter(|p| matches!(p.status.as_str(), "pending_approval" | "dismissed")) {
+            if let Some(k) = p.payload["finding_key"].as_str().map(String::from).or_else(|| p.finding_id.clone()) {
+                held.insert(k);
+            }
+        }
+    }
+    Ok(held)
+}
+
+/// Saves the current findings as a Nixon review with one pending proposal each, skipping
+/// findings that already have an open or dismissed proposal.
 pub async fn run(scope: &Scope, req: RunRequest) -> Result<Review, NixonError> {
     let as_of = as_of_or_today(req.as_of.as_deref())?;
     let (_, hits, gaps) = collect(scope, as_of).await?;
+    let held = open_or_dismissed(scope).await?;
     let mut findings = vec![];
     let mut proposals = vec![];
+    let mut skipped = 0usize;
     for h in hits {
+        // The finding id is the stable key (watcher, company, period or screen). A finding that
+        // already has an open or dismissed proposal is not proposed again.
+        if held.contains(&h.finding.id) {
+            skipped += 1;
+            continue;
+        }
         let mut f = h.finding;
         let pid = format!("p_{}", f.id);
         f.proposal_id = Some(pid.clone());
@@ -508,7 +562,7 @@ pub async fn run(scope: &Scope, req: RunRequest) -> Result<Review, NixonError> {
             summary: h.draft_fix.clone(),
             prepared_by: PREPARED_BY.into(),
             payload: json!({
-                "company_id": h.company, "watcher": h.watcher,
+                "company_id": h.company, "watcher": h.watcher, "finding_key": f.id,
                 "draft_fix": h.draft_fix, "recommendation": h.recommendation,
                 "effect": "none",
                 "note": "Approve records that a named person accepts this follow-up. It does not post, file, pay, message or contact anyone.",
@@ -539,7 +593,7 @@ pub async fn run(scope: &Scope, req: RunRequest) -> Result<Review, NixonError> {
         execution_mode: "advisory".into(),
         posting: "disabled".into(),
         filing: "disabled".into(),
-        summary: format!("God's Eye: {} finding(s) across the firm as of {as_of}. {} gap(s).", findings.len(), gaps.len()),
+        summary: format!("God's Eye: {} new finding(s) across the firm as of {as_of}. {skipped} already open or dismissed, not proposed again. {} gap(s).", findings.len(), gaps.len()),
         findings,
         proposals,
         verifications,
@@ -549,33 +603,54 @@ pub async fn run(scope: &Scope, req: RunRequest) -> Result<Review, NixonError> {
         scope: SCOPE.into(),
     };
     service::save_review(&scope.ledger, &review).await?;
-    scope.ledger.audit("nixon.gods_eye.run", format!("correlation={} review={} findings={} posting=disabled filing=disabled", review.correlation_id, review.id, review.findings.len())).await?;
+    scope.ledger.audit("nixon.gods_eye.run", format!("correlation={} review={} findings={} skipped_open_or_dismissed={skipped} posting=disabled filing=disabled", review.correlation_id, review.id, review.findings.len())).await?;
     Ok(review)
 }
 
 const DRAFT_SYSTEM: &str = "You help internal staff at a Canadian accounting firm. Rewrite the finding and the drafted follow-up as a short, plain note for the preparer (max 120 words). Do not invent figures, dates, causes or legal advice. Do not address the client. Never approve, post, file or pay.";
 
 /// Optional AI wording for one proposal. Off by default; client data only on zero-retention hosts.
-pub async fn ai_draft(scope: &Scope, review_id: &str, proposal_id: &str) -> Result<Review, NixonError> {
-    if !ai_gateway::enabled(&ai_gateway::process_env) {
+///
+/// `requester` is the signed-in account's label (recorded on the audit row). `oidc_header` is the
+/// `x-vercel-oidc-token` request header Vercel adds at runtime; it is preferred over the
+/// `VERCEL_OIDC_TOKEN` env var, and `AI_GATEWAY_API_KEY` still wins over both.
+///
+/// Only an undecided proposal can be drafted. The review is re-read after the model answers and
+/// saved with compare-and-swap, so a concurrent approve or dismiss is never overwritten.
+pub async fn ai_draft(scope: &Scope, review_id: &str, proposal_id: &str, requester: &str, oidc_header: Option<String>) -> Result<Review, NixonError> {
+    let env = ai_gateway::env_with_oidc(oidc_header);
+    if !ai_gateway::enabled(&env) {
         return Err(NixonError::new(409, "ai_drafting_disabled: set GODS_EYE_AI=on with a zero-retention gateway to enable it. Watchers work without it."));
     }
-    let mut review = service::get_review(&scope.ledger, review_id).await?;
+    let review = service::get_review(&scope.ledger, review_id).await?;
     if review.scope != SCOPE {
         return Err(NixonError::new(400, "AI drafting is only for God's Eye runs"));
     }
-    let p = review.proposals.iter().find(|p| p.id == proposal_id).ok_or_else(|| NixonError::new(404, "proposal not found"))?;
+    let undecided = |r: &Review| -> Result<(), NixonError> {
+        let p = r.proposals.iter().find(|p| p.id == proposal_id).ok_or_else(|| NixonError::new(404, "proposal not found"))?;
+        if p.status != "pending_approval" {
+            return Err(NixonError::new(409, "this proposal already has a decision; AI wording is only for undecided proposals"));
+        }
+        Ok(())
+    };
+    undecided(&review)?;
+    let p = review.proposals.iter().find(|p| p.id == proposal_id).unwrap();
     let f = review.findings.iter().find(|f| Some(&f.id) == p.finding_id.as_ref()).ok_or_else(|| NixonError::new(404, "finding not found"))?;
     let user = format!("Finding: {}\n{}\nDrafted follow-up: {}", f.title, f.summary, p.payload["draft_fix"].as_str().unwrap_or(""));
-    let d = ai_gateway::draft(Sensitivity::ClientData, DRAFT_SYSTEM, &user, &ai_gateway::process_env).await.map_err(|m| NixonError::new(502, format!("AI draft unavailable: {m}")))?;
+    let d = ai_gateway::draft(Sensitivity::ClientData, DRAFT_SYSTEM, &user, &env).await.map_err(|m| NixonError::new(502, format!("AI draft unavailable: {m}")))?;
+
+    // Re-read right before saving: a decision made while the model was answering wins.
+    let (mut review, stored) = service::get_review_versioned(&scope.ledger, review_id).await?;
+    undecided(&review)?;
     let p = review.proposals.iter_mut().find(|p| p.id == proposal_id).unwrap();
     p.payload["ai_draft"] = json!({
         "text": d.text, "provider": d.provider, "model": d.model, "zero_data_retention": d.zero_data_retention,
         "evidence_level": "ai_hypothesis", "note": "AI wording only. Not verified; the deterministic finding is the record.",
+        "requested_by": requester,
         "at": crate::ledger::engine::now(),
     });
-    service::save_review(&scope.ledger, &review).await?;
-    scope.ledger.audit("nixon.gods_eye.ai_draft", format!("correlation={} review={review_id} proposal={proposal_id} provider={} model={} zdr={}", review.correlation_id, d.provider, d.model, d.zero_data_retention)).await?;
+    service::replace_review(&scope.ledger, &review, &stored).await?;
+    scope.ledger.audit("nixon.gods_eye.ai_draft", format!("correlation={} review={review_id} proposal={proposal_id} requested_by={requester} provider={} model={} zdr={}", review.correlation_id, d.provider, d.model, d.zero_data_retention)).await?;
     Ok(review)
 }
 
@@ -595,8 +670,10 @@ mod tests {
 
     #[test]
     fn payroll_liability_names() {
-        for n in ["Payroll Liabilities", "CPP Payable", "EI payable", "Source deductions payable", "Income tax payable"] { assert!(liability_payroll(n), "{n}"); }
+        for n in ["Payroll Liabilities", "CPP Payable", "EI payable", "Source deductions payable", "Income tax withheld payable"] { assert!(liability_payroll(n), "{n}"); }
         for n in ["Payroll Expenses", "Wages & Salaries", "Vacation pay accrued", "Rent"] { assert!(!liability_payroll(n), "{n}"); }
+        // Corporate income tax and GST/HST remittance accounts are not payroll source deductions.
+        for n in ["Income tax payable", "Corporate income tax payable", "GST/HST Remittance", "HST remittance payable"] { assert!(!liability_payroll(n), "{n}"); }
     }
 
     #[test]
