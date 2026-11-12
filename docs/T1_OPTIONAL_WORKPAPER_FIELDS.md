@@ -4,6 +4,8 @@ The keyword workspace, guided Deductions screen and paired family editor can ent
 
 Entry remains limited to the existing verified 2025 T1 browser scopes. Quebec 2025 and every 2026 editor remain unavailable. No formula, rate table, calculation-year/jurisdiction dispatch, original SOURCE fact or client profile changes here. The completed migration and user exclusions remain unchanged.
 
+Field catalog `nxt-tax-fields/T1/2025/4` adds a sixth optional section, **Optional verified professional, commission, farming and fishing totals**, with 16 more inputs (gross, current expenses, CCA and a verification for each activity). The guided interview lists these activities under "What applies" and enters them on the Deductions screen like the business totals. See docs/TAX_CALCULATION_CONTRACTS.md for the line mapping.
+
 ## Optional values and compatibility
 
 The existing `nxt-tax-entry/T1/2025/v1` input meaning stays unchanged. The separate metadata version is `field_catalog_version: nxt-tax-fields/T1/2025/2`. Each new field has `optional: true`, `default_policy: omit`, its exact year/jurisdictions, source-form reference and verification key. The original 15-key default object is unchanged; the 15 optional properties are excluded from defaults. No model field is added and no existing stored inputs are rewritten.
