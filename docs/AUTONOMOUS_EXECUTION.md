@@ -33,7 +33,7 @@ The run is saved after every step.
 | firm_record_update, journey_internal_step | R2 | needs approval | yes (admin, ≤ 30 days, daily cap, revocable) |
 | books_write, quickbooks_post, cra_filing, client_contact, outbound_message, payment, reveal_identifier, repo_protected | R4 | **never** | **refused in code** |
 
-The hard-gated tools are declared in the registry so that a request for one is refused and audited by name, but they have **no executor**. Phase 1 executors write only internal `autonomy:*` records. They never touch the books, QuickBooks, CRA, Stripe, a client or any message channel. `scripts/autonomous-client-path.py` (production commits of company books) is not called and is classed `books_write`.
+The hard-gated tools are declared in the registry so that a request for one is refused and audited by name, but they have **no executor**. Phase 1 executors write only internal `autonomy:*` records. They never touch the books, QuickBooks, CRA, Stripe, a client or any message channel. `scripts/autonomous-client-path.py` (production commits of company books) is not called and is classed `books_write`. That script also can't promote to production on its own: it needs `--approved-by <named person>` bound to the exact source key, refuses agent or machine labels, and otherwise stops at `test_verified_awaiting_approval` (see `docs/AUTONOMOUS_CLIENT_PATH.md`).
 
 ## Models (when enabled)
 Autonomy reuses God's Eye's `nixon_finance::ai_gateway`, so there is no second gateway client or provider list.
