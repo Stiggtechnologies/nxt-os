@@ -3,13 +3,14 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
+use super::{schedule8_payroll, slips::Slip};
 
 pub const RULESET: &str = "nxt-ca-2025.4";
 /// Version equality only; input/output hashes, scope and diagnostics still require checks.
 pub fn uses_current_ruleset(result:&Value)->bool {result.get("ruleset").and_then(Value::as_str)==Some(RULESET)}
-pub const T1_SCOPE: &str = "2025 federal and Alberta income-tax workpaper for a full-year Alberta resident, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP and payroll amounts, and optional externally verified rental, ordinary receipted donation, eligible medical and current-year tuition totals use limited existing paths subject to diagnostics. Verified 2025 Schedule 8 Part 4 covers full-year CPP contributors with self-employment income only. No complete T2125, T776, Schedule 8, 9 or 11; no automatic eligibility, CCA, benefits, overpayments, carryforwards, transfers or elections. Not a complete or certified filing return.";
-pub const T1_ON_SCOPE: &str = "2025 federal and Ontario income-tax workpaper for a full-year Ontario resident, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP/payroll amounts and optional externally verified rental, eligible medical, ordinary receipted donation and current-year federal tuition totals use limited existing paths subject to diagnostics; Ontario has no current-year tuition credit. Published ON428 brackets, basic personal amount, optional supplied-net-income spouse amount, surtax, basic tax reduction and health premium remain bounded workpaper paths. Age, dependant, dividend, LIFT, split-income, minimum-tax and special-gift cases remain outside this stated scope. Verified 2025 Schedule 8 Part 4 covers full-year CPP contributors with self-employment income only. No complete T2125/T776/Schedules 8/9/11, benefits, overpayments, carryforwards, transfers or elections; not a certified ON428 or filing return.";
-pub const T1_PROV_SCOPE: &str = "2025 federal and provincial/territorial income-tax workpaper for a full-year resident of BC, SK, MB, NB, NS, PE, NL, YT, NT or NU, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP/payroll amounts and optional externally verified rental, eligible medical, ordinary receipted donation and current-year tuition totals use limited existing paths subject to each province’s diagnostics and tuition limits. Published brackets and basic/verified credit amounts apply; provincial reductions, surtaxes and other unimplemented adjustments flagged by diagnostics must still be confirmed not to apply. Verified 2025 Schedule 8 Part 4 covers full-year CPP contributors with self-employment income only. No complete T2125/T776/Schedules 8/9/11, benefits, overpayments, carryforwards, transfers or elections. Quebec TP-1 is not supported for 2025; not a certified provincial428 or filing return.";
+pub const T1_SCOPE: &str = "2025 federal and Alberta income-tax workpaper for a full-year Alberta resident, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP and payroll amounts, and optional externally verified rental, ordinary receipted donation, eligible medical and current-year tuition totals use limited existing paths subject to diagnostics. Verified full-year Schedule 8 paths calculate CPP for saved T4 employment, self-employment only, and mixed employment and business income. No complete T2125, T776, Schedule 8, 9 or 11; no automatic eligibility, CCA, benefits, overpayments, carryforwards, transfers or elections. Not a complete or certified filing return.";
+pub const T1_ON_SCOPE: &str = "2025 federal and Ontario income-tax workpaper for a full-year Ontario resident, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP/payroll amounts and optional externally verified rental, eligible medical, ordinary receipted donation and current-year federal tuition totals use limited existing paths subject to diagnostics; Ontario has no current-year tuition credit. Published ON428 brackets, basic personal amount, optional supplied-net-income spouse amount, surtax, basic tax reduction and health premium remain bounded workpaper paths. Age, dependant, dividend, LIFT, split-income, minimum-tax and special-gift cases remain outside this stated scope. Verified full-year Schedule 8 paths calculate CPP for saved T4 employment, self-employment only, and mixed employment and business income. No complete T2125/T776/Schedules 8/9/11, benefits, overpayments, carryforwards, transfers or elections; not a certified ON428 or filing return.";
+pub const T1_PROV_SCOPE: &str = "2025 federal and provincial/territorial income-tax workpaper for a full-year resident of BC, SK, MB, NB, NS, PE, NL, YT, NT or NU, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP/payroll amounts and optional externally verified rental, eligible medical, ordinary receipted donation and current-year tuition totals use limited existing paths subject to each province’s diagnostics and tuition limits. Published brackets and basic/verified credit amounts apply; provincial reductions, surtaxes and other unimplemented adjustments flagged by diagnostics must still be confirmed not to apply. Verified full-year Schedule 8 paths calculate CPP for saved T4 employment, self-employment only, and mixed employment and business income. No complete T2125/T776/Schedules 8/9/11, benefits, overpayments, carryforwards, transfers or elections. Quebec TP-1 is not supported for 2025; not a certified provincial428 or filing return.";
 pub const T2_SCOPE: &str = "2025 federal and Alberta ordinary active-business tax workpaper, permanent establishments only in Alberta, equal federal/Alberta taxable income, no associations, investment/foreign/partnership income, personal-services business, special industry/rate, credits, refundable taxes or other adjustments. SBD requires verified CCPC eligibility, prior-year taxable capital at most $10 million and adjusted aggregate investment income at most $50,000.";
 pub const T3_SCOPE: &str = "2025 federal-only ordinary-income trust workpaper: income less verified deductible expenses and deductible ordinary-income allocations. Ordinary trust rate or verified GRE/QDT graduated rates; no basic personal credit. Provincial tax, capital gains, dividends, AMT, QDT recovery tax, special trusts and other credits/elections are outside scope.";
 pub const T5013_SCOPE: &str = "2025 ordinary domestic general-partnership income reconciliation and contractual partner allocation workpaper. Verified general partners and fixed shares only; no limited/at-risk, non-resident, SIFT, multi-tier, special income categories, ACB, CCA, credits or filing XML. Allocation rounding reconciles exactly to net income/loss.";
@@ -494,6 +495,12 @@ pub fn supports_scope(program: &str, year: i32, jurisdiction: &str) -> bool {
 }
 
 pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -> Result<Calculation,String> {
+    calculate_with_slips(program, year, jurisdiction, inputs, &[])
+}
+
+pub(super) fn calculate_with_slips(
+    program: &str, year: i32, jurisdiction: &str, inputs: &Value, slips: &[Slip],
+) -> Result<Calculation, String> {
     let scope = match (program, jurisdiction) {
         ("T1","AB") => T1_SCOPE,
         ("T1","ON") => T1_ON_SCOPE,
@@ -533,9 +540,9 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
     require(&mut c,obj,"scope_confirmed",scope)?;
     if boolean(obj,"other_tax_situations")? { c.diagnostic("unsupported_situation","Additional income, credits, elections or special regimes need a separately implemented ruleset; this calculation cannot be reviewed as supported.",Some("other_tax_situations"),true); }
     match (program, jurisdiction) {
-        ("T1","ON") => t1_ontario(&mut c,obj)?,
-        ("T1", j) if super::rates::province(j).is_some() => t1_province(&mut c,obj,super::rates::province(j).unwrap())?,
-        ("T1", "AB") => t1(&mut c,obj)?,
+        ("T1","ON") => t1_ontario(&mut c,obj,slips)?,
+        ("T1", j) if super::rates::province(j).is_some() => t1_province(&mut c,obj,super::rates::province(j).unwrap(),slips)?,
+        ("T1", "AB") => t1(&mut c,obj,slips)?,
         ("T2", _) => t2(&mut c,obj)?,
         ("T3", _) => t3(&mut c,obj,if year==2026 { super::rates::CA_2026.federal_brackets } else { FEDERAL })?,
         ("T5013", _) => partnership(&mut c,obj)?,
@@ -547,11 +554,12 @@ pub fn calculate(program: &str, year: i32, jurisdiction: &str, inputs: &Value) -
 fn check_t1_2025_fields(obj: &Map<String, Value>, baseline: &[&str]) -> Result<(), String> {
     let mut keys = baseline.to_vec();
     keys.push(super::t2125::CONFIRMATION);
+    keys.push(schedule8_payroll::CONFIRMATION);
     keys.extend(super::t2125::EXPENSES.iter().map(|expense| expense.key));
     check_fields(obj, &keys)
 }
 
-fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
+fn t1(c: &mut Calculation, obj: &Map<String,Value>, slips: &[Slip]) -> Result<(),String> {
     check_t1_2025_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_prior_year_earned_income_cents","rrsp_unused_room_cents","rrsp_pension_adjustment_cents","rrsp_par_cents","rrsp_net_pspa_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified",super::schedule8::CONFIRMATION,"capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","home_buyers_amount_cents","adoption_expenses_cents","student_loan_interest_cents","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident","Confirm full-year Canadian residence and Alberta residence at year-end; newcomer, emigrant and deemed-resident rules are outside scope.")?;
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
@@ -566,7 +574,9 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
         if sum(&[cpp,enhanced,ei])?>employment { return Err("Declared payroll claims exceed employment income".into()); }
     }
     if ei>0 && employment<=200_000 { c.diagnostic("ei_refund_required","For this simple standard-insurable-pay scope, EI on earnings of $2,000 or less is an overpayment/refund, not a line 31200 credit; overpayments are outside scope.",Some("ei_credit_cents"),true); }
-    let x=t1_income_extras(c,obj,employment)?;
+    let x=t1_income_extras(c,obj,employment,slips)?;
+    let (cpp, enhanced, overpayment) = x.payroll_cpp.as_ref()
+        .map_or((cpp, enhanced, 0), |result| (result.employment_credit, result.employment_deduction, result.overpayment));
     let income=sum(&[employment,interest,x.income])?; let deductions=sum(&[rrsp,enhanced,x.deductions])?;
     if deductions>income { return Err("Deductions exceed current income; loss and carryforward treatment is outside this scope".into()); }
     let net_before=income-deductions;
@@ -586,7 +596,7 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
     let provincial_credits=rounded_ratio(ab_credit_base,800,10000)?;
     let ab_supplemental=rounded_ratio((ab_credit_base-6_000_000).max(0),200,10000)?;
     let provincial=(provincial_before-provincial_credits-pdon-ab_supplemental).max(0);
-    let tax=sum(&[federal,provincial,clawback])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?])?;
+    let tax=sum(&[federal,provincial,clawback])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?,overpayment])?;
     for (code,label,amount) in [
         ("10100","Employment income",employment),("12100","Canadian interest income",interest),("15000","Total income",income),
         ("20800","Verified RRSP deduction",rrsp),("22215","Verified enhanced CPP deduction",enhanced),("23600","Net income",taxable),("26000","Taxable income",taxable),
@@ -597,11 +607,11 @@ fn t1(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
     for (code,label,amount) in x.lines.iter().chain(xlines.iter()) { c.line(code,label,*amount); }
     if clawback>0 { c.line("23500","Social benefits repayment (OAS), also added on line 42200",clawback); }
     c.total("taxable_income",taxable); c.total("federal_tax",federal); c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("payments",paid); t1_payable(c, tax, paid, x.se_cpp_payable)?;
-    c.diagnostic("benefits_excluded","The balance includes modeled tax, any computed Schedule 8 Part 4 contributions and entered payments. Refundable benefits, CWB, GST/HST credits and other CPP/EI adjustments are excluded.",None,false);
+    c.diagnostic("benefits_excluded","The balance includes modeled tax, computed Schedule 8 contributions, CPP overpayments and entered payments. Refundable benefits, CWB, GST/HST credits and other CPP/EI adjustments are excluded.",None,false);
     Ok(())
 }
 
-fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::Province) -> Result<(),String> {
+fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::Province, slips: &[Slip]) -> Result<(),String> {
     check_t1_2025_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_prior_year_earned_income_cents","rrsp_unused_room_cents","rrsp_pension_adjustment_cents","rrsp_par_cents","rrsp_net_pspa_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified",super::schedule8::CONFIRMATION,"capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","home_buyers_amount_cents","adoption_expenses_cents","student_loan_interest_cents","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident",&format!("Confirm full-year Canadian residence and {} residence at December 31; part-year, multi-jurisdiction and business-income allocation are outside scope.",p.name))?;
     require(c,obj,"provincial_adjustments_not_applicable",&format!("The generic engine does not calculate: {}. Confirm none apply to this return, or prepare those amounts outside NXT.",p.not_calculated))?;
@@ -617,7 +627,9 @@ fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::P
         if sum(&[cpp,enhanced,ei])?>employment { return Err("Declared payroll claims exceed employment income".into()); }
     }
     if ei>0 && employment<=200_000 { c.diagnostic("ei_refund_required","EI on earnings of $2,000 or less is an overpayment/refund, not a line 31200 credit; overpayments are outside scope.",Some("ei_credit_cents"),true); }
-    let x=t1_income_extras(c,obj,employment)?;
+    let x=t1_income_extras(c,obj,employment,slips)?;
+    let (cpp, enhanced, overpayment) = x.payroll_cpp.as_ref()
+        .map_or((cpp, enhanced, 0), |result| (result.employment_credit, result.employment_deduction, result.overpayment));
     let income=sum(&[employment,interest,x.income])?; let deductions=sum(&[rrsp,enhanced,x.deductions])?;
     if deductions>income { return Err("Deductions exceed current income; loss and carryforward treatment is outside this scope".into()); }
     let net_before=income-deductions;
@@ -638,7 +650,7 @@ fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::P
     let after_credits=(provincial_before-provincial_credits).max(0);
     let low_income=provincial_low_income_reduction(c,obj,p.code,taxable)?;
     let provincial=(after_credits-low_income).max(0);
-    let tax=sum(&[federal,provincial,clawback])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?])?;
+    let tax=sum(&[federal,provincial,clawback])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?,overpayment])?;
     let lc=p.code.to_lowercase();
     for (code,label,amount) in [
         ("10100".to_string(),"Employment income".to_string(),employment),("12100".into(),"Canadian interest income".into(),interest),("15000".into(),"Total income".into(),income),
@@ -652,13 +664,13 @@ fn t1_province(c: &mut Calculation, obj: &Map<String,Value>, p: &super::rates::P
     if clawback>0 { c.line("23500","Social benefits repayment (OAS), also added on line 42200",clawback); }
     c.total("taxable_income",taxable); c.total("federal_tax",federal); c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("payments",paid); t1_payable(c, tax, paid, x.se_cpp_payable)?;
     c.diagnostic("provincial_scope",&format!("{} tax uses published 2025 brackets ({}) and the {}% credit rate on the basic personal amount and verified CPP/EI. Not calculated: {}.",p.name,p.bracket_source,p.credit_rate_bps as f64/100.0,p.not_calculated),None,false);
-    c.diagnostic("benefits_excluded","Balance covers only the stated income-tax workpaper and payments. Refundable benefits and all other return amounts are excluded. No return is filed.",None,false);
+    c.diagnostic("benefits_excluded","The balance includes modeled tax, computed Schedule 8 contributions and CPP overpayments, and entered payments. Refundable benefits and unmodeled amounts are excluded.",None,false);
     Ok(())
 }
 /// Additional T1 income and deductions (T2125, Schedule 3, T776, T1032). Every
 /// amount must be verified by the preparer; nothing here derives CCA, ACB or
 /// eligibility.
-pub struct T1Extra { income: i64, deductions: i64, pension_for_credit: i64, se_cpp_credit: i64, se_cpp_payable: Option<i64>, elig_div: i64, other_div: i64, oas: i64, lines: Vec<(String,String,i64)> }
+pub struct T1Extra { income: i64, deductions: i64, pension_for_credit: i64, se_cpp_credit: i64, se_cpp_payable: Option<i64>, payroll_cpp: Option<schedule8_payroll::Transfers>, elig_div: i64, other_div: i64, oas: i64, lines: Vec<(String,String,i64)> }
 /// Federal foreign tax credit on non-business income only (Form T2209, line 40500), plus
 /// unsupported-item flags for AMT (T691) and the Canada workers benefit (Schedule 6).
 fn t1_foreign_and_flags(c: &mut Calculation, obj: &Map<String,Value>, federal: i64, net: i64) -> Result<i64,String> {
@@ -694,7 +706,7 @@ fn rrsp_limit_check(c: &mut Calculation, obj: &Map<String,Value>, declared: i64)
     Ok(())
 }
 
-fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i64) -> Result<T1Extra,String> {
+fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i64, slips: &[Slip]) -> Result<T1Extra,String> {
     let mut lines: Vec<(String, String, i64)> = vec![];
     let gross = money(obj, "self_employment_gross_cents")?;
     let aggregate_expenses = money(obj, "self_employment_expenses_cents")?;
@@ -722,6 +734,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     let entered_deduction = money(obj, "se_cpp_deduction_cents")?;
     let entered_credit = money(obj, "se_cpp_credit_cents")?;
     let confirmed = boolean(obj, super::schedule8::CONFIRMATION)?;
+    let calculate_payroll = boolean(obj, schedule8_payroll::CONFIRMATION)?;
     let has_business = gross > 0 || expenses > 0 || cca > 0;
     if itemized && !has_business {
         return Err("Itemized expenses require business income, expenses or CCA.".into());
@@ -730,6 +743,23 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     let mut se_ded = 0;
     let mut se_credit = 0;
     let mut se_cpp_payable = None;
+    let payroll_cpp = if calculate_payroll {
+        if confirmed || employment == 0 || boolean(obj, "born_1960_or_earlier")? || gross - expenses - cca < 0 {
+            return Err("Payroll CPP requires full-year eligibility, positive employment income, nonnegative business income and an unselected Part 4 confirmation.".into());
+        }
+        if entered_deduction > 0 || entered_credit > 0
+            || money(obj, "cpp_base_credit_cents")? > 0 || money(obj, "cpp_enhanced_deduction_cents")? > 0
+        {
+            return Err("Clear the manually entered CPP amounts before calculating from saved T4s.".into());
+        }
+        let payroll = schedule8_payroll::Payroll::from_slips(slips, employment)?;
+        let transfers = schedule8_payroll::full_year(&payroll, gross - expenses - cca);
+        c.sources.push(source("CRA 2025 Schedule 8, Parts 3 and 5", super::schedule8::FORM));
+        lines.push(("44800".into(), "Schedule 8 CPP overpayment".into(), transfers.overpayment));
+        Some(transfers)
+    } else {
+        None
+    };
     if has_business {
         require(c, obj, "t2125_verified", "Verify the T2125 totals and claim eligibility against the business records.")?;
         se_net = gross - expenses - cca;
@@ -747,7 +777,12 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
                 ("T2125:9946".into(), "Net business income under the confirmed scope".into(), se_net),
             ]);
         }
-        if confirmed {
+        if let Some(transfers) = &payroll_cpp {
+            se_ded = transfers.business_deduction;
+            se_credit = transfers.business_credit;
+            se_cpp_payable = Some(transfers.payable);
+            lines.push(("42100".into(), "CPP contributions payable on self-employment income".into(), transfers.payable));
+        } else if confirmed {
             if employment > 0
                 || money(obj, "cpp_base_credit_cents")? > 0
                 || money(obj, "cpp_enhanced_deduction_cents")? > 0
@@ -769,8 +804,8 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
         } else {
             c.diagnostic(
                 "self_employed_cpp_payable_not_implemented",
-                "Complete the supported Schedule 8 Part 4 confirmation or reconcile CPP using the applicable Schedule 8 or RC381. This partial result omits CPP payable.",
-                Some(super::schedule8::CONFIRMATION),
+                "For full-year CPP, confirm Part 4 for business income only or save the T4s and confirm CPP from saved T4s for employment and business income. Other cases need separate Schedule 8 or RC381 preparation. This partial result omits CPP payable.",
+                Some(if employment > 0 { schedule8_payroll::CONFIRMATION } else { super::schedule8::CONFIRMATION }),
                 true,
             );
             if entered_deduction > 0 || entered_credit > 0 {
@@ -779,7 +814,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
             se_ded = entered_deduction;
             se_credit = entered_credit;
         }
-        let label = if confirmed { "Schedule 8 Part 4" } else { "Entered" };
+        let label = if confirmed { "Schedule 8 Part 4" } else if calculate_payroll { "Schedule 8" } else { "Entered" };
         lines.push(("22200".into(), format!("{label} CPP deduction on self-employment earnings"), se_ded));
         lines.push(("31000".into(), format!("{label} base CPP credit amount on self-employment earnings"), se_credit));
     } else if entered_deduction > 0 || entered_credit > 0 || confirmed {
@@ -820,7 +855,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     let oas=money(obj,"oas_pension_cents")?;
     if oas>0 { require(c,obj,"oas_verified","Verify T4A(OAS) box 18 OAS pension; recovery tax already withheld (box 22) must be entered as tax withheld. Net federal supplements and EI benefit repayments are not handled.")?; lines.push(("11300".into(),"Old age security pension".into(),oas)); }
     let income=sum(&[se_net,taxable_gain,rental,pen,in_split,elig_div,other_div,oas])?;
-    Ok(T1Extra{income,deductions:sum(&[out_split,se_ded])?,pension_for_credit:(pen-out_split).max(0)+in_split,se_cpp_credit:se_credit,se_cpp_payable,elig_div,other_div,oas,lines})
+    Ok(T1Extra{income,deductions:sum(&[out_split,se_ded])?,pension_for_credit:(pen-out_split).max(0)+in_split,se_cpp_credit:se_credit,se_cpp_payable,payroll_cpp,elig_div,other_div,oas,lines})
 }
 /// Federal credits: gross medical 33099, allowable medical 33200, donation credit 34900, pension 31400, tuition 32300.
 /// 2025 low-income tax reductions from the BC, NL, PE, NS and NB 428 forms. Family income is
@@ -885,7 +920,9 @@ fn t1_credit_extras(c: &mut Calculation, obj: &Map<String,Value>, x: &T1Extra, n
     // T1 page 6: aggregate all modeled credit amounts before applying 14.5% once.
     // Federal Worksheet page 7 uses the rounded 33800 and Schedule 9 line 22,
     // not the unrounded credit bases or the total Schedule 9 donation credit.
-    let baseline_base=sum(&[bpa,money(obj,"employment_income_cents")?.min(147_100),money(obj,"cpp_base_credit_cents")?,money(obj,"ei_credit_cents")?])?;
+    let employment_cpp = x.payroll_cpp.as_ref()
+        .map_or(money(obj,"cpp_base_credit_cents")?, |result| result.employment_credit);
+    let baseline_base=sum(&[bpa,money(obj,"employment_income_cents")?.min(147_100),employment_cpp,money(obj,"ei_credit_cents")?])?;
     let federal_base=sum(&[baseline_base,credit_base])?;
     let lowest_rate_credit=rounded_ratio(federal_base,1450,10000)?;
     let schedule9_line22=rounded_ratio(first,1450,10000)?;
@@ -935,7 +972,7 @@ fn ontario_health_premium(taxable: i64) -> Result<i64,String> {
     Ok(90_000)
 }
 
-fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String> {
+fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>, slips: &[Slip]) -> Result<(),String> {
     check_t1_2025_fields(obj,&["scope_confirmed","other_tax_situations","employment_income_cents","interest_income_cents","rrsp_deduction_cents","rrsp_deduction_limit_cents","rrsp_prior_year_earned_income_cents","rrsp_unused_room_cents","rrsp_pension_adjustment_cents","rrsp_par_cents","rrsp_net_pspa_cents","foreign_non_business_income_cents","foreign_non_business_tax_cents","foreign_tax_verified","cwb_may_apply","cpp_base_credit_cents","cpp_enhanced_deduction_cents","ei_credit_cents","tax_withheld_cents","instalments_cents","full_year_resident","payroll_verified","rrsp_verified","self_employment_gross_cents","self_employment_expenses_cents","self_employment_cca_cents","t2125_verified","se_cpp_deduction_cents","se_cpp_credit_cents","se_cpp_verified",super::schedule8::CONFIRMATION,"capital_proceeds_cents","capital_acb_cents","capital_outlays_cents","schedule3_verified","rental_gross_cents","rental_expenses_cents","rental_cca_cents","t776_verified","pension_income_cents","pension_split_out_cents","pension_split_in_cents","t1032_verified","medical_expenses_cents","donations_cents","tuition_cents","credits_verified","eligible_dividends_cents","other_dividends_cents","dividends_verified","oas_pension_cents","oas_verified","spouse_net_income_cents","born_1960_or_earlier","disability_tax_credit_approved","home_buyers_amount_cents","adoption_expenses_cents","student_loan_interest_cents","provincial_adjustments_not_applicable"])?;
     require(c,obj,"full_year_resident","Confirm full-year Canadian residence and Ontario residence at year-end; newcomer, emigrant and deemed-resident rules are outside scope.")?;
     let employment=money(obj,"employment_income_cents")?; let interest=money(obj,"interest_income_cents")?;
@@ -950,7 +987,9 @@ fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
         if sum(&[cpp,enhanced,ei])?>employment { return Err("Declared payroll claims exceed employment income".into()); }
     }
     if ei>0 && employment<=200_000 { c.diagnostic("ei_refund_required","For this simple standard-insurable-pay scope, EI on earnings of $2,000 or less is an overpayment/refund, not a line 31200 credit; overpayments are outside scope.",Some("ei_credit_cents"),true); }
-    let x=t1_income_extras(c,obj,employment)?;
+    let x=t1_income_extras(c,obj,employment,slips)?;
+    let (cpp, enhanced, overpayment) = x.payroll_cpp.as_ref()
+        .map_or((cpp, enhanced, 0), |result| (result.employment_credit, result.employment_deduction, result.overpayment));
     let income=sum(&[employment,interest,x.income])?; let deductions=sum(&[rrsp,enhanced,x.deductions])?;
     if deductions>income { return Err("Deductions exceed current income; loss and carryforward treatment is outside this scope".into()); }
     let net_before=income-deductions;
@@ -977,7 +1016,7 @@ fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
     let after_reduction=(after_surtax-tax_reduction).max(0);
     let health=ontario_health_premium(taxable)?;
     let provincial=sum(&[after_reduction,health])?;
-    let tax=sum(&[federal,provincial,clawback])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?])?;
+    let tax=sum(&[federal,provincial,clawback])?; let paid=sum(&[money(obj,"tax_withheld_cents")?,money(obj,"instalments_cents")?,overpayment])?;
     for (code,label,amount) in [
         ("10100","Employment income",employment),("12100","Canadian interest income",interest),("15000","Total income",income),
         ("20800","Verified RRSP deduction",rrsp),("22215","Verified enhanced CPP deduction",enhanced),("23600","Net income",taxable),("26000","Taxable income",taxable),
@@ -991,7 +1030,7 @@ fn t1_ontario(c: &mut Calculation, obj: &Map<String,Value>) -> Result<(),String>
     if clawback>0 { c.line("23500","Social benefits repayment (OAS), also added on line 42200",clawback); }
     c.total("taxable_income",taxable); c.total("federal_tax",federal); c.total("provincial_tax",provincial); c.total("income_tax",tax); c.total("payments",paid); t1_payable(c, tax, paid, x.se_cpp_payable)?;
     c.diagnostic("ontario_scope","Ontario amount uses published 2025 ON428 brackets, the 5.05% credit rate, surtax, the basic reduction only, and the health-premium chart. Dependant reductions, eligible-dependant and caregiver amounts, dividends, LIFT, and minimum tax are not calculated. Cent rounding is half away from zero at each workpaper line, which can differ from dollar rounding on the paper form.",None,false);
-    c.diagnostic("benefits_excluded","Balance covers only the stated income-tax workpaper and payments. Refundable benefits and all other return amounts are excluded. No return is filed.",None,false);
+    c.diagnostic("benefits_excluded","The balance includes modeled tax, computed Schedule 8 contributions and CPP overpayments, and entered payments. Refundable benefits and unmodeled amounts are excluded.",None,false);
     Ok(())
 }
 

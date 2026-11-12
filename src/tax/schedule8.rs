@@ -5,9 +5,9 @@ use lopdf::{Document, Object, dictionary};
 use sha2::{Digest, Sha256};
 use std::{io::Write, time::Duration};
 
-const BASIC_EXEMPTION: i64 = 350_000;
-const FIRST_CEILING: i64 = 7_130_000;
-const SECOND_CEILING: i64 = 8_120_000;
+pub(super) const BASIC_EXEMPTION: i64 = 350_000;
+pub(super) const FIRST_CEILING: i64 = 7_130_000;
+pub(super) const SECOND_CEILING: i64 = 8_120_000;
 
 pub(super) const CONFIRMATION: &str = "schedule8_part4_verified";
 pub(super) const FORM: &str =

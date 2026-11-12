@@ -39,6 +39,10 @@ pub const CRA_T3_SLIP_INFO: &str = "https://www.canada.ca/en/revenue-agency/serv
 /// Boxes recognised for entry and totalling but not applied by the 2025 engine.
 pub const RECORDED: &[(&str, &str, &str)] = &[
     ("T4", "16", "CPP contributions (Schedule 8 base/enhanced split must be verified)"),
+    ("T4", "16A", "Second CPP contributions (calculated with verified Schedule 8 payroll)"),
+    ("T4", "26", "CPP/QPP pensionable earnings (calculated with verified Schedule 8 payroll)"),
+    ("T4", "17", "QPP contributions (RC381 required)"),
+    ("T4", "17A", "Second QPP contributions (RC381 required)"),
     ("T4", "18", "EI premiums (line 31200 must be verified)"),
     ("T4", "20", "RPP contributions (line 20700)"),
     ("T4", "44", "Union dues (line 21200)"),
@@ -117,6 +121,21 @@ pub fn aggregate(slips: &[Slip]) -> Result<Value, String> {
     Ok(json!({"inputs": obj, "lines": lines, "recorded_not_calculated": recorded, "flags": flags, "slip_count": slips.len()}))
 }
 
+pub(super) fn mark_schedule8_applied(summary: &mut Value) {
+    use super::schedule8_payroll::SOURCE_BOXES;
+    let flags = summary["flags"].as_array_mut().expect("aggregate flags");
+    flags.retain(|flag| !flag["box"].as_str().is_some_and(|key| SOURCE_BOXES.contains(&key)));
+    let mut applied = Map::new();
+    let recorded = summary["recorded_not_calculated"].as_object_mut().expect("aggregate boxes");
+    for number in ["16", "16A", "26"] {
+        let key = format!("T4 box {number}");
+        if let Some(value) = recorded.remove(&key) {
+            applied.insert(key, value);
+        }
+    }
+    summary["applied_schedule8"] = Value::Object(applied);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,7 +185,13 @@ pub fn catalog() -> Value {
     let slips: Vec<Value> = SLIP_TITLES.iter().map(|(kind, title, keywords)| {
         let mut boxes: Vec<Value> = MAPPED.iter().filter(|m| m.0 == *kind)
             .map(|m| json!({"box": m.1, "label": format!("Line {} ({})", m.3, m.2.trim_end_matches("_cents").replace('_', " ")), "status": "calculated", "line": m.3})).collect();
-        boxes.extend(RECORDED.iter().filter(|r| r.0 == *kind).map(|r| json!({"box": r.1, "label": r.2, "status": "recorded"})));
+        boxes.extend(RECORDED.iter().filter(|r| r.0 == *kind).map(|r| {
+            let mut field = json!({"box": r.1, "label": r.2, "status": "recorded"});
+            if r.0 == "T4" && super::schedule8_payroll::SOURCE_BOXES.contains(&format!("T4 {}", r.1).as_str()) {
+                field["schedule8_source"] = json!(true);
+            }
+            field
+        }));
         for b in &mut boxes { b["unit"]=json!(if whole_box(kind,b["box"].as_str().unwrap_or("")){"whole_number"}else{"cents"}); }
         json!({"kind": kind, "title": title, "keywords": keywords, "boxes": boxes})
     }).collect();
@@ -184,6 +209,12 @@ pub fn replace_inputs(inputs:&mut Value, previous:&[Slip], groups:&[Slip])->Resu
     for (key,value)in next["inputs"].as_object().unwrap(){target.insert(key.clone(),value.clone());}
     if previous!=groups {
         if previous.iter().chain(groups).any(|s|s.kind=="T4"){target.insert("payroll_verified".into(),json!(false));}
+        let old_t4 = previous.iter().filter(|slip| slip.kind == "T4");
+        let new_t4 = groups.iter().filter(|slip| slip.kind == "T4");
+        let schedule8 = super::schedule8_payroll::CONFIRMATION;
+        if !old_t4.eq(new_t4) && target.contains_key(schedule8) {
+            target.insert(schedule8.into(), json!(false));
+        }
         if previous.iter().chain(groups).any(|s|s.kind=="T5008"){target.insert("schedule3_verified".into(),json!(false));}
         let old_tuition=previous.iter().filter(|s|s.kind=="T2202").collect::<Vec<_>>();let new_tuition=groups.iter().filter(|s|s.kind=="T2202").collect::<Vec<_>>();
         if old_tuition!=new_tuition{target.insert("credits_verified".into(),json!(false));}

@@ -7,7 +7,7 @@ fn field(key:&str,label:&str,kind:&str,default:Value,help:&str)->Value {
 }
 fn money(key:&str,label:&str,help:&str)->Value {field(key,label,"money",json!(0),help)}
 fn yes(key:&str,label:&str,help:&str)->Value {field(key,label,"boolean",json!(false),help)}
-pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/3";
+pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/4";
 fn optional(key:&str,label:&str,kind:&str,verify:&str,form:&str,help:&str)->Value {
     let mut f=json!({"key":key,"label":label,"kind":kind,"optional":true,"default_policy":"omit","blank_policy":"delete_property","tax_years":[2025],"jurisdictions":super::coverage::entry_jurisdictions("T1",2025),"verification_key":verify,"source_form":form,"help":help});
     if kind=="money"{f["min"]=json!(0);f["max"]=json!(100_000_000_000_000_i64);}f
@@ -61,6 +61,10 @@ pub fn catalog()->Value {
             optional("se_cpp_credit_cents","Verified self-employed CPP credit — line 31000","money","se_cpp_verified","Schedule 8","Externally calculated Schedule 8 eligible credit amount, not the entire CPP payment. Verify separately from employee CPP."),
             optional("se_cpp_verified","Externally prepared CPP amounts verified","boolean","se_cpp_verified","Schedule 8","Applies to manually entered deduction and credit on a partial workpaper."),
             optional(super::schedule8::CONFIRMATION,"Calculate full-year self-employed CPP (Schedule 8 Part 4)","boolean",super::schedule8::CONFIRMATION,"Schedule 8","Confirm you were subject to CPP for all 12 months, had only self-employment earnings for CPP purposes, no employment or Québec earnings, no QPP contributions, no proration, disability pension, election or special adjustments. Leave manually entered CPP amounts blank.")]),
+        section("cpp-payroll","CPP from saved T4s",vec![
+            optional(super::schedule8_payroll::CONFIRMATION,"Calculate full-year payroll and mixed-income CPP","boolean",super::schedule8_payroll::CONFIRMATION,"Schedule 8",
+                "Save all T4s first, then confirm the employment and CPP boxes are complete and CPP applied for all 12 months. This covers ordinary Canadian T4 employment with optional nonnegative business income. Québec earnings, QPP, elections, proration and disability pensions require separate preparation. Leave the manually entered CPP amounts blank."),
+        ]),
         section("business-expenses","Itemized T2125 business expenses",t2125_expense_fields()),
         section("rental-totals","Optional verified rental totals",vec![
             optional("rental_gross_cents","Verified T776 gross rental income","money","t776_verified","T776","Aggregate verified rental totals; no property schedule, co-ownership allocation or personal-use adjustment is computed."),
