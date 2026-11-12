@@ -323,6 +323,21 @@ impl Ledger {
         Ok(v)
     }
 
+    /// The chart as [`Self::accounts`] would return it, without seeding. A pure read: on a
+    /// ledger that was never seeded it returns the default chart in memory and writes nothing.
+    /// Read-only surfaces (reports, Nixon, God's Eye) use this so a view never writes the books.
+    pub async fn accounts_read(&self) -> LResult<Vec<Account>> {
+        let mut v: Vec<Account> = self.all("accounts").await?;
+        if self.store.get(&self.key("seeded")).await?.is_none() {
+            // Seeding would put the default chart over any same-id record; mirror that.
+            let defaults = default_chart();
+            v.retain(|a| !defaults.iter().any(|d| d.id == a.id));
+            v.extend(defaults);
+        }
+        v.sort_by(|a, b| a.code.cmp(&b.code));
+        Ok(v)
+    }
+
     pub async fn account(&self, id: &str) -> LResult<Account> {
         self.ensure_seeded().await?;
         self.must("accounts", id).await

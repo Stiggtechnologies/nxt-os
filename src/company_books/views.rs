@@ -9,10 +9,12 @@
 use super::*;
 
 /// Account-name tokens treated as payroll. Kept explicit and tested.
+/// Bare "remittance" (GST/HST remittance) and "income tax payable" (corporate tax) are
+/// deliberately absent: payroll income tax shows up as withheld or as a source deduction.
 const PAYROLL_TOKENS: &[&str] = &[
     "payroll", "wage", "salar", "cpp", "employment insurance", "source deduct",
-    "vacation pay", "wcb", "remittance", "paycheque", "paycheck", "employer",
-    "income tax payable",
+    "vacation pay", "wcb", "paycheque", "paycheck", "employer",
+    "tax withheld", "withholding", "income tax deduct",
 ];
 
 pub(crate) fn is_payroll_account(name: &str) -> bool {
@@ -122,6 +124,9 @@ mod tests {
     #[test]
     fn payroll_names() {
         for n in ["Payroll Expenses", "Payroll Liabilities", "WCB", "Wages & Salaries", "CPP Payable", "EI payable", "Vacation pay accrued"] { assert!(p(n), "{n}"); }
+        for n in ["Income tax withheld", "Source deductions payable", "Income tax deductions payable"] { assert!(p(n), "{n}"); }
         for n in ["Medical Expense", "Owners Draw", "Rent", "Equipment", "Receivables"] { assert!(!p(n), "{n}"); }
+        // Corporate income tax and GST/HST remittances are not payroll.
+        for n in ["Income Tax Payable", "Corporate income tax payable", "GST/HST Remittance", "Remittance clearing", "HST remittance payable"] { assert!(!p(n), "{n}"); }
     }
 }

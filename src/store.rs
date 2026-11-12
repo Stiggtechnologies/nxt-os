@@ -95,6 +95,21 @@ impl Store {
         }
     }
 
+    /// Every key and value held by the in-memory backend, sorted (sets sorted too), or None
+    /// for remote backends. Read-only; used by tests to prove a path writes nothing at all.
+    pub fn memory_snapshot(&self) -> Option<Value> {
+        let Store::Memory(m) = self else { return None };
+        let m = m.lock().ok()?;
+        let strings: std::collections::BTreeMap<&String, &String> = m.strings.iter().collect();
+        let sets: std::collections::BTreeMap<&String, Vec<&String>> = m.sets.iter().map(|(k, v)| {
+            let mut v: Vec<&String> = v.iter().collect();
+            v.sort();
+            (k, v)
+        }).collect();
+        let lists: std::collections::BTreeMap<&String, &Vec<String>> = m.lists.iter().collect();
+        Some(json!({"strings": strings, "sets": sets, "lists": lists}))
+    }
+
     /// Stable per-tenant cache key for remote backends; None for process memory.
     pub fn tenant_key(&self) -> Option<String> {
         match self {

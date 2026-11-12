@@ -56,7 +56,8 @@ fn day_before(d: &str) -> String {
 
 impl Ledger {
     async fn books(&self) -> LResult<Books> {
-        Ok(Books { company: self.company().await?, accounts: self.accounts().await?, entries: self.entries().await? })
+        // Reports are reads: never seed the chart from here.
+        Ok(Books { company: self.company().await?, accounts: self.accounts_read().await?, entries: self.entries().await? })
     }
 
     pub async fn trial_balance(&self, as_of: &str) -> LResult<Value> {

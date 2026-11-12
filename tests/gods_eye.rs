@@ -19,19 +19,34 @@ async fn ok(r: &axum::Router, method: &str, uri: &str, body: Option<Value>) -> V
     v
 }
 
-async fn books_snapshot(r: &axum::Router) -> Value {
-    json!({
-        "firm_entries": ok(r, "GET", "/api/ledger/entries", None).await,
-        "firm_invoices": ok(r, "GET", "/api/ledger/invoices", None).await,
-        "co_entries": ok(r, "GET", "/api/company-ledger/synthetic-co/entries", None).await,
-        "co_invoices": ok(r, "GET", "/api/company-ledger/synthetic-co/invoices", None).await,
-    })
+/// Every key and value in the shared memory store: accounts (the chart), seed flags, entries,
+/// documents, company books, tax returns and audit lists. Read straight from the store, not
+/// through API routes (GET /accounts itself seeds a chart), so any write by a watcher fails.
+fn store_snapshot(store: &Store) -> Value {
+    store.memory_snapshot().expect("memory store")
+}
+
+/// The snapshot without Nixon's own records (reviews) and ledger audit lists, which runs and
+/// decisions are expected to write. Everything left is books and must not change.
+fn books_only(v: &Value) -> Value {
+    let keep = |k: &str| !k.starts_with("nxt:nixon:") && !k.ends_with(":audit");
+    let mut out = v.clone();
+    for part in ["strings", "sets", "lists"] {
+        if let Some(o) = out[part].as_object_mut() { o.retain(|k, _| keep(k)); }
+    }
+    out
+}
+
+fn account_keys(v: &Value, prefix: &str) -> usize {
+    v["strings"].as_object().unwrap().keys().filter(|k| k.starts_with(prefix) && k.contains(":accounts:")).count()
 }
 
 #[tokio::test]
 async fn gods_eye_watches_flags_and_drafts_without_touching_the_books() {
     unsafe { std::env::set_var("ADMIN_API_KEY", "k") };
-    let r = app_with(Store::memory);
+    let store = Store::memory();
+    let shared = store.clone();
+    let r = app_with(move || shared.clone());
 
     // Firm ledger: Q3 HST collected and remitted in October -> no GST finding.
     let firm_c = ok(&r, "POST", "/api/ledger/contacts", Some(json!({"kind":"customer","name":"Synthetic Firm Client","terms_days":15}))).await;
@@ -51,7 +66,16 @@ async fn gods_eye_watches_flags_and_drafts_without_touching_the_books() {
     // An unfiled synthetic T1 past its deadline.
     ok(&r, "POST", "/api/tax/returns", Some(json!({"program":"T1","tax_year":2025,"jurisdiction":"AB","name":"Synthetic T1","client_ref":"synthetic-co","inputs":{},"parties":[]}))).await;
 
-    let before = books_snapshot(&r).await;
+    // A company ledger that was opened but never used: its chart was never seeded.
+    ok(&r, "POST", "/api/company-ledger/synthetic-empty/open", Some(json!({"name":"Synthetic Empty Ltd"}))).await;
+
+    // A company ledger whose profile record is unreadable: it must become a gap, not a 500.
+    store.sadd("company-ledger:index", "synthetic-broken").await.unwrap();
+    store.set("company-ledger:synthetic-broken:company", "{not json").await.unwrap();
+
+    let before = store_snapshot(&store);
+    assert!(account_keys(&before, "nxt:gl:") > 0, "the snapshot covers the firm chart of accounts");
+    assert!(account_keys(&before, "nxt:company-ledger:synthetic-co:") > 0, "the snapshot covers the company chart");
     let view = ok(&r, "GET", "/api/nixon/gods-eye?as_of=2026-11-12", None).await;
     assert_eq!(view["guardrails"]["books"], "read_only");
     assert_eq!(view["guardrails"]["client_contact"], "none");
@@ -70,7 +94,12 @@ async fn gods_eye_watches_flags_and_drafts_without_touching_the_books() {
     assert!(gst["draft_fix"].as_str().unwrap().contains("NXT does not file or pay"));
     let co = view["companies"].as_array().unwrap().iter().find(|c| c["company_id"] == "synthetic-co").unwrap();
     assert_eq!(co["name"], "Synthetic Co Ltd");
-    assert_eq!(books_snapshot(&r).await, before, "the live view must not write the books");
+    assert!(view["gaps"].as_array().unwrap().iter().any(|g| g["company_id"] == "synthetic-broken" && g["note"].as_str().unwrap().contains("could not be read")), "{view}");
+    assert!(!findings.iter().any(|f| f["company_id"] == "synthetic-broken"));
+    let t1 = findings.iter().find(|f| f["watcher"] == "filing_deadlines" && f["finding"]["title"].as_str().unwrap().starts_with("T1")).unwrap();
+    assert!(t1["finding"]["gaps"].to_string().contains("2026-06-15"), "{t1}");
+    assert_eq!(store_snapshot(&store), before, "the live view must not write anything, not even a seeded chart");
+    assert_eq!(account_keys(&before, "nxt:company-ledger:synthetic-empty:"), 0);
 
     // A run stores proposals; nothing executes.
     let run = ok(&r, "POST", "/api/nixon/gods-eye/runs", Some(json!({"as_of":"2026-11-12"}))).await;
@@ -102,7 +131,18 @@ async fn gods_eye_watches_flags_and_drafts_without_touching_the_books() {
     let (s, v) = call(&r, "POST", &format!("/api/nixon/gods-eye/runs/{id}/proposals/{gst_p}/ai-draft"), None).await;
     assert_eq!(s, 409, "{v}");
 
-    assert_eq!(books_snapshot(&r).await, before, "runs and decisions must not write the books");
+    assert_eq!(books_only(&store_snapshot(&store)), books_only(&before), "runs and decisions must not write the books");
+
+    // Save as review again: open (pending) and dismissed findings are not proposed again.
+    // The approved GST finding still trips its watcher, so it is the only one re-proposed.
+    let run2 = ok(&r, "POST", "/api/nixon/gods-eye/runs", Some(json!({"as_of":"2026-11-12"}))).await;
+    let keys2: Vec<&str> = run2["proposals"].as_array().unwrap().iter().map(|p| p["payload"]["finding_key"].as_str().unwrap()).collect();
+    let gst_key = gst_p.trim_start_matches("p_");
+    assert_eq!(keys2, vec![gst_key], "{run2}");
+    assert!(run2["summary"].as_str().unwrap().contains("already open or dismissed"), "{run2}");
+    let run3 = ok(&r, "POST", "/api/nixon/gods-eye/runs", Some(json!({"as_of":"2026-11-12"}))).await;
+    assert_eq!(run3["proposals"].as_array().unwrap().len(), 0, "nothing new: {run3}");
+    assert_eq!(books_only(&store_snapshot(&store)), books_only(&before), "repeat runs must not write the books");
     let reviews = ok(&r, "GET", "/api/nixon/reviews", None).await;
     assert!(reviews.as_array().unwrap().iter().any(|v| v["id"] == id && v["scope"] == "gods_eye"));
 }
@@ -152,7 +192,11 @@ async fn gods_eye_reads_imported_books_for_payroll_and_large_entries() {
 
     let r = app_with(|| store.clone());
     let before = ok(&r, "GET", "/api/company-books/synthetic-books/entries?offset=0&limit=100", None).await;
+    // The firm ledger here was never seeded; the view must not seed it.
+    let store_before = store_snapshot(&store);
+    assert_eq!(account_keys(&store_before, "nxt:gl:"), 0);
     let view = ok(&r, "GET", "/api/nixon/gods-eye?as_of=2026-11-12", None).await;
+    assert_eq!(store_snapshot(&store), store_before, "the live view must not write anything");
     let f: Vec<&Value> = view["findings"].as_array().unwrap().iter().filter(|f| f["company_id"] == "synthetic-books").collect();
     let payroll = f.iter().find(|f| f["watcher"] == "payroll_remittance").unwrap_or_else(|| panic!("{view}"));
     assert_eq!(payroll["finding"]["risk_level"], "high");

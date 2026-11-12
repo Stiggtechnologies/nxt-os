@@ -1,6 +1,6 @@
 # Steps still required before a production migration
 
-Nothing in this list was run against production. Do not point these commands at `os.nxtcorporation.ca` or the hosted database until Reliability has accepted the pull request and the CI on that pull request is green. Draft #4 (GuardVoice / Nixon) is not part of this migration and stays held for Orville's explicit go.
+Nothing in this list was run against production. Do not point these commands at `os.nxtcorporation.ca` or the hosted database until Reliability has accepted the pull request and the CI on that pull request is green. PR #4 (GuardVoice / Nixon) is merged separately and is not part of this migration.
 
 Roles below are the ones in `docs/CUTOVER_PLAN.md`. This file does not assign a person to a role.
 
@@ -98,6 +98,6 @@ Still out of this importer: invoices, bills, payments, payroll, attachments, ban
 | Individual login and company isolation | Product decision plus an auth design; the shared workspace key is not it | Security and engineering |
 | Off-device backup key and the first scheduled backup observation | Private backup repository and key custodian | Records owner and operations lead |
 | DT Max / WebTax parity | Vendor export or a reviewed re-entry, per program | The matching technical reviewer |
-| Nixon / GuardVoice | Explicit go from Orville; draft #4 is separate | Not this migration |
+| Nixon / GuardVoice | PR #4 merged separately | Not this migration |
 
 Until those are done, QuickBooks remains the system of record for anything this fixture did not cover, and it remains the system of record for the fixture company as well. The fixture company is synthetic.
