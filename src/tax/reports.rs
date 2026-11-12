@@ -37,7 +37,7 @@ pub fn columns()->Vec<Column> {
   let label=f["label"].as_str().unwrap_or(key);inputs.entry(key.to_string()).or_insert_with(||column(&format!("input:{key}"),label,kind,"inputs"));
  }}}
  out.extend(inputs.into_values());
- for code in ["15000","22200","23600","26000","31000","33500","33800","34900","34990","35000","40425","42000","42100","43500","48400","48500"]{out.push(column(&format!("line:{code}"),&format!("Saved line {code}"),"money","calculation"));}
+ for code in ["15000","22200","22215","23600","26000","30800","31000","33500","33800","34900","34990","35000","40425","42000","42100","43500","44800","48400","48500"]{out.push(column(&format!("line:{code}"),&format!("Saved line {code}"),"money","calculation"));}
  for key in ["taxable_income","net_income","federal_tax","provincial_tax","income_tax","cpp_payable","total_payable","payments","balance","federal_balance","beneficiary_allocations","sbd_income"]{out.push(column(&format!("total:{key}"),&format!("Saved total · {}",key.replace('_'," ")),"money","calculation"));}
  out
 }

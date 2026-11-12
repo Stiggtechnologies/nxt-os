@@ -1,6 +1,7 @@
 //! Independent Canadian tax workpapers. No DT Max runtime or filing dependency.
 pub mod calculations;
 mod schedule8;
+mod schedule8_payroll;
 mod t2125;
 pub mod batch;
 pub mod catalog;
@@ -290,10 +291,13 @@ impl Tax {
         {
             return Err(bad("A saved T4 requires a different Schedule 8 calculation. Review the payroll and CPP information before calculating."));
         }
-        let result=calculations::calculate(&original.program,original.tax_year,&original.jurisdiction,&original.inputs).map_err(bad)?;
+        let result=calculations::calculate_with_slips(&original.program,original.tax_year,&original.jurisdiction,&original.inputs,&original.slip_groups).map_err(bad)?;
         let mut result=serde_json::to_value(result).map_err(|_|bad("calculation could not be encoded"))?;
         if !original.slip_groups.is_empty() {
-            let grouped=slips::aggregate(&original.slip_groups).map_err(bad)?;
+            let mut grouped=slips::aggregate(&original.slip_groups).map_err(bad)?;
+            if original.inputs[schedule8_payroll::CONFIRMATION] == true {
+                slips::mark_schedule8_applied(&mut grouped);
+            }
             if let Some(flags)=grouped["flags"].as_array(){for flag in flags {
                 if flag["blocks_review"]==true { result["supported"]=json!(false); }
                 if let Some(d)=result["diagnostics"].as_array_mut(){d.push(json!({"code":"slip_box_not_calculated","severity":if flag["blocks_review"]==true{"error"}else{"warning"},"field":"slip_groups","message":flag["message"],"blocks_review":flag["blocks_review"]}));}

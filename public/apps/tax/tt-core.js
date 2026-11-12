@@ -114,8 +114,8 @@
     for (const [k, v] of Object.entries((aggregate && aggregate.inputs) || {})) out[k] = v;
     return out;
   }
-  const OPTIONAL_FIELD_CATALOG_VERSION = "nxt-tax-fields/T1/2025/3";
-  const OPTIONAL_FIELD_CATALOG_VERSIONS = new Set(["nxt-tax-fields/T1/2025/2", OPTIONAL_FIELD_CATALOG_VERSION]);
+  const OPTIONAL_FIELD_CATALOG_VERSION = "nxt-tax-fields/T1/2025/4";
+  const OPTIONAL_FIELD_CATALOG_VERSIONS = new Set(["nxt-tax-fields/T1/2025/2", "nxt-tax-fields/T1/2025/3", OPTIONAL_FIELD_CATALOG_VERSION]);
   function optionalSections(catalog, record) {
     const p=catalog?.programs?.find(p=>p.id==="T1"),sections=p?.sections?.filter(s=>s.fields?.some(f=>f.optional===true))||[];
     if(!sections.length)return [];
