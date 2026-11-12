@@ -86,21 +86,81 @@ class AutonomousClientPathTests(unittest.TestCase):
             "period_lock": {"verified": True, "closed_through": None, "artifact": art}}))
         return st
 
-    def test_g5_promotes_test_then_production_only_with_key(self):
-        self._real_evidence()
-        calls = []
-        def fake(run, label, origin, key, st):
-            calls.append((label, origin, bool(key)))
+    PROD = ("--test-origin", "https://test.invalid", "--production-origin", "https://prod.invalid")
+
+    def _fake_promote(self, calls):
+        def fake(run, label, origin, key, st, reviewer=acp.TEST_REVIEWER):
+            calls.append((label, origin, bool(key), reviewer))
             run.mark(f"{label}_verify", "ok", run.s["source_key"])
             return 0
-        with mock.patch.object(acp, "promote", side_effect=fake), mock.patch.dict(os.environ, {}, clear=False):
+        return fake
+
+    def _approve(self, name="Orville Davis"):
+        return ("--approved-by", name, "--approve-source-key", self.ledger()["source_key"])
+
+    def test_g5_promotes_test_then_production_only_with_key_and_named_approver(self):
+        self._real_evidence()
+        calls = []
+        with mock.patch.object(acp, "promote", side_effect=self._fake_promote(calls)), mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("NXT_COMPANY_BOOKS_KEY", None)
-            self.assertEqual(self.run_acp("--test-origin", "https://test.invalid", "--production-origin", "https://prod.invalid"), 2)
+            self.assertEqual(self.run_acp(*self.PROD, *self._approve()), 2)
             self.assertEqual(self.codes(), ["NXT_COMPANY_BOOKS_KEY_REQUIRED"])
             os.environ["NXT_COMPANY_BOOKS_KEY"] = "k"
-            self.assertEqual(self.run_acp("--test-origin", "https://test.invalid", "--production-origin", "https://prod.invalid"), 0)
+            self.assertEqual(self.run_acp(*self.PROD, *self._approve()), 0)
         self.assertEqual([c[0] for c in calls], ["test", "production"])
-        self.assertEqual(self.ledger()["state"], "production_verified")
+        prod = calls[-1][3]
+        self.assertTrue(prod.startswith("Orville Davis (approved source "), prod)
+        self.assertIn("G5 checks passed", prod)
+        self.assertNotIn("autonomous", prod.lower())
+        self.assertEqual(calls[0][3], acp.TEST_REVIEWER)
+        led = self.ledger()
+        self.assertEqual(led["state"], "production_verified")
+        self.assertEqual(led["production_approval"]["approved_by"], "Orville Davis")
+        self.assertEqual(led["production_approval"]["source_key"], led["source_key"])
+
+    def test_no_approver_stops_after_test_verify_with_no_production_call(self):
+        self._real_evidence()
+        calls = []
+        with mock.patch.object(acp, "promote", side_effect=self._fake_promote(calls)), mock.patch.dict(os.environ, {"NXT_COMPANY_BOOKS_KEY": "k"}):
+            self.assertEqual(self.run_acp(*self.PROD), 0)
+            self.assertEqual(self.run_acp(*self.PROD, "--approved-by", "   "), 0)
+        self.assertEqual([c[0] for c in calls], ["test"])
+        led = self.ledger()
+        self.assertEqual(led["state"], acp.AWAITING_APPROVAL)
+        self.assertEqual(led["awaiting_approval"]["source_key"], led["source_key"])
+        self.assertNotIn("production_verify", led["steps"])
+
+    def test_agent_like_approvers_are_refused(self):
+        self._real_evidence()
+        calls = []
+        bad = ["autonomous-client-path:G5-zero-blockers", "Nixon Finance", "agent:sync", "QA Bot", "G5", "AutoApprover",
+               "Grok Bot", "ci", "deploy-bot-7", "system"]
+        with mock.patch.object(acp, "promote", side_effect=self._fake_promote(calls)), mock.patch.dict(os.environ, {"NXT_COMPANY_BOOKS_KEY": "k"}):
+            for name in bad:
+                self.assertEqual(self.run_acp(*self.PROD, *self._approve(name)), 2, name)
+                self.assertEqual(self.ledger()["state"], acp.AWAITING_APPROVAL, name)
+                self.assertTrue(self.codes()[0].startswith("APPROVER_"), (name, self.codes()))
+        self.assertEqual([c[0] for c in calls], ["test"])
+        for good in ("Orville Davis", "Mary-Anne O'Neil", "J. Abbott", "Zoë Talbot"):
+            self.assertIsNone(acp.approver_problem(good), good)
+
+    def test_approval_is_bound_to_the_exact_source(self):
+        self._real_evidence()
+        calls = []
+        with mock.patch.object(acp, "promote", side_effect=self._fake_promote(calls)), mock.patch.dict(os.environ, {"NXT_COMPANY_BOOKS_KEY": "k"}):
+            self.assertEqual(self.run_acp(*self.PROD, "--approved-by", "Orville Davis"), 2)
+            self.assertEqual(self.codes(), ["APPROVAL_SOURCE_KEY_MISSING"])
+            self.assertEqual(self.run_acp(*self.PROD, "--approved-by", "Orville Davis", "--approve-source-key", "0" * 64), 2)
+            self.assertEqual(self.codes(), ["APPROVAL_SOURCE_KEY_MISMATCH"])
+        self.assertEqual([c[0] for c in calls], ["test"])
+
+    def test_real_promote_refuses_production_without_named_reviewer(self):
+        self._real_evidence()
+        run = acp.Run(acp.argparse.Namespace(work=str(self.work), client="synthetic-qbo"))
+        with mock.patch.object(acp, "operator") as op:
+            self.assertEqual(acp.promote(run, "production", "https://prod.invalid", "k", self.tmp), 2)
+            op.assert_not_called()
+        self.assertIn("PRODUCTION_APPROVER_REQUIRED", self.codes())
 
     def test_test_copy_failure_stops_before_production(self):
         self._real_evidence()

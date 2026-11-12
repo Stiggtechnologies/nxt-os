@@ -5,7 +5,10 @@ One idempotent, resumable orchestrator per client. It reads a client source fold
 or ZIP, detects the export format, runs the matching repository importer, loads and
 verifies the staged books on a TEST origin, and promotes to production ONLY under
 gate G5: zero blockers AND real (non-synthetic) evidence.json AND a passing test-copy
-verify AND an explicit --production-origin with NXT_COMPANY_BOOKS_KEY present.
+verify AND an explicit --production-origin with NXT_COMPANY_BOOKS_KEY present AND a
+NAMED HUMAN approver (--approved-by) bound to this exact source (--approve-source-key).
+Without a valid approval the run stops at state test_verified_awaiting_approval and
+makes no production call. G5 never approves itself.
 
 Never deletes or modifies source files (sources are hashed before and after), never
 signs in to cloud services, never files or sends anything externally. Unknown or
@@ -19,7 +22,28 @@ HERE = Path(__file__).resolve().parent
 PY = sys.executable
 LEDGER_FORMAT = "nxt-autonomous-client-path/v1"
 QBXML_TO_REPORTS = os.environ.get("NXT_QBXML_TO_REPORTS", "/workspace/nxt-migration/qbxml_to_reports.py")
-REVIEWER = "autonomous-client-path:G5-zero-blockers"
+# Test-copy commits only. Production commits carry the named human approver instead.
+TEST_REVIEWER = "autonomous-client-path:test-copy-only"
+AWAITING_APPROVAL = "test_verified_awaiting_approval"
+# Machine / agent labels are never a production approver. Substrings are refused
+# anywhere in the name; words are refused as whole words (so "Abbott" is fine, "QA bot" is not).
+MACHINE_SUBSTRINGS = ("autonomous", "agent", "nixon", "g5", "auto", "grok", "cursor", "claude",
+                      "openai", "gpt", "deepseek", "nvidia", "robot", "pipeline", "workflow")
+MACHINE_WORDS = {"bot", "ai", "llm", "system", "script", "service", "cron", "ci", "daemon", "job", "test"}
+APPROVER_NAME = re.compile(r"[^\W\d_][^\W\d_ .'\-]*(?:[ .'\-]+[^\W\d_]+)*\.?")
+
+
+def approver_problem(name):
+    """None if `name` looks like a named person; otherwise a reason code."""
+    if name is None or not str(name).strip():
+        return "APPROVER_MISSING"
+    n = " ".join(str(name).split())
+    if len(n) > 80 or not APPROVER_NAME.fullmatch(n):
+        return "APPROVER_NOT_A_PERSON_NAME"
+    low = n.lower()
+    if any(t in low for t in MACHINE_SUBSTRINGS) or MACHINE_WORDS & set(re.split(r"[ .'\-]+", low)):
+        return "APPROVER_MACHINE_LABEL_REFUSED"
+    return None
 
 
 def sha_file(p):
@@ -132,8 +156,10 @@ def operator(run, origin, key, out, mode, extra):
     return run.sh(mode, cmd, e)
 
 
-def promote(run, label, origin, key, st):
+def promote(run, label, origin, key, st, reviewer=TEST_REVIEWER):
     """preview -> commit -> verify against one origin. Each sub-step resumable by receipt."""
+    if label == "production" and reviewer == TEST_REVIEWER:
+        return run.block("PRODUCTION_APPROVER_REQUIRED")
     rid = f"acp-{label}-{run.s['source_key'][:16]}"
     pre, com, ver = f"{label}-preview.json", f"{label}-commit.json", f"{label}-verify.json"
     if not (st / pre).exists():
@@ -144,7 +170,7 @@ def promote(run, label, origin, key, st):
     if not (st / com).exists():
         rc, _, t = operator(run, origin, key, st, "commit", ["--receipt", com, "--request-id", rid,
             "--preview-receipt", pre, "--preview-receipt-sha256", sha_file(st / pre),
-            "--approve-preview-id", pid, "--reviewer-label", REVIEWER])
+            "--approve-preview-id", pid, "--reviewer-label", reviewer])
         if rc:
             return run.block(f"{label.upper()}_COMMIT_FAILED", detail=t, note="rerun resumes with the same request id")
     n = sum(1 for p in st.glob(f"{label}-verify*.json")) + 1
@@ -191,6 +217,8 @@ def main(argv=None):
     p.add_argument("--evidence", help="real evidence.json + its artifacts dir to copy into stage")
     p.add_argument("--test-origin", help="TEST copy origin (key: NXT_TEST_COMPANY_BOOKS_KEY)")
     p.add_argument("--production-origin", help="production origin (key: NXT_COMPANY_BOOKS_KEY)")
+    p.add_argument("--approved-by", help="named human approving the production commit (required for production)")
+    p.add_argument("--approve-source-key", help="the exact source_key from status.json that the approver reviewed")
     p.add_argument("--date-order", default="auto", choices=["auto", "dmy", "mdy"])
     a = p.parse_args(argv)
     run = Run(a)
@@ -301,12 +329,35 @@ def pipeline(run, src, key, a):
         run.s["state"] = "test_verified_awaiting_production_origin"
         run.save()
         return 0
+    if run.done("production_verify", key):
+        run.s["state"] = "production_verified"  # already approved and verified for this exact source
+        run.save()
+        return 0
+    # Named human approval, bound to this exact source. No approval => no production call.
+    why = approver_problem(a.approved_by)
+    if not why and a.approve_source_key != key:
+        why = "APPROVAL_SOURCE_KEY_MISMATCH" if a.approve_source_key else "APPROVAL_SOURCE_KEY_MISSING"
+    if why:
+        run.s["state"] = AWAITING_APPROVAL
+        run.s["awaiting_approval"] = {"source_key": key, "test_verify": run.s["steps"].get("test_verify", {}).get("receipt"),
+                                      "reason": why, "how": "rerun with --approved-by '<person>' --approve-source-key <source_key>"}
+        if why == "APPROVER_MISSING":
+            run.save()
+            return 0
+        run.s["blockers"].append({"code": why})
+        run.save()
+        return 2
+    approver = " ".join(a.approved_by.split())
     if not os.environ.get("NXT_COMPANY_BOOKS_KEY"):
         return run.block("NXT_COMPANY_BOOKS_KEY_REQUIRED")
-    if not run.done("production_verify", key):
-        rc = promote(run, "production", a.production_origin, os.environ["NXT_COMPANY_BOOKS_KEY"], st)
-        if rc:
-            return rc
+    run.s.pop("awaiting_approval", None)
+    run.s["production_approval"] = {"approved_by": approver, "source_key": key, "g5_checks": "passed",
+                                    "at": datetime.now(timezone.utc).isoformat()}
+    run.save()
+    reviewer = f"{approver} (approved source {key[:16]}; G5 checks passed)"
+    rc = promote(run, "production", a.production_origin, os.environ["NXT_COMPANY_BOOKS_KEY"], st, reviewer=reviewer)
+    if rc:
+        return rc
     run.s["state"] = "production_verified"
     run.save()
     return 0
