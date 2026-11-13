@@ -7,7 +7,7 @@ fn field(key:&str,label:&str,kind:&str,default:Value,help:&str)->Value {
 }
 fn money(key:&str,label:&str,help:&str)->Value {field(key,label,"money",json!(0),help)}
 fn yes(key:&str,label:&str,help:&str)->Value {field(key,label,"boolean",json!(false),help)}
-pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/7";
+pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/8";
 fn optional(key:&str,label:&str,kind:&str,verify:&str,form:&str,help:&str)->Value {
     let mut f=json!({"key":key,"label":label,"kind":kind,"optional":true,"default_policy":"omit","blank_policy":"delete_property","tax_years":[2025],"jurisdictions":super::coverage::entry_jurisdictions("T1",2025),"verification_key":verify,"source_form":form,"help":help});
     if kind=="money"{f["min"]=json!(0);f["max"]=json!(100_000_000_000_000_i64);}f
@@ -16,9 +16,9 @@ fn cpp_period() -> Value {
     let mut field = optional(
         super::schedule8::MONTHS, "CPP contribution months", "number",
         super::schedule8::MONTHS, "Schedule 8 Part 2",
-        "Leave blank for 12 months. Enter the verified number of months from Part 2, line A, for a supported proration case. Use this for turning 18 or a period of CPP disability. Deceased taxpayers, elections, and retirement proration require separate preparation.",
+        "Leave blank for 12 months. Enter the verified number from Part 2, line A, for a supported case such as turning 18 or receiving a CPP disability pension. Enter zero explicitly if no months qualify. Death, elections and retirement proration require separate preparation.",
     );
-    field["min"] = json!(1);
+    field["min"] = json!(0);
     field["max"] = json!(12);
     field
 }

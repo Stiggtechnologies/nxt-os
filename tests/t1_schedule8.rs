@@ -102,6 +102,7 @@ fn t2125_opening_cca_computes_maximum_claim_and_closing_ucc() {
 #[test]
 fn prorated_cpp_transfers_use_the_part2_limits_and_keep_full_business_income() {
     for (months, gross, payable, credit, deduction) in [
+        (0, 9_000_000, 0, 0, 0),
         (1, 9_000_000, 73_835, 27_968, 45_868),
         (6, 5_000_000, 276_675, 115_088, 161_588),
         (6, 9_000_000, 443_010, 167_805, 275_205),
@@ -122,7 +123,7 @@ fn prorated_cpp_transfers_use_the_part2_limits_and_keep_full_business_income() {
 
 #[test]
 fn cpp_months_are_bounded_and_require_a_confirmed_schedule8_path() {
-    for invalid in [json!(0), json!(13), json!(5.5), json!("6"), Value::Null] {
+    for invalid in [json!(-1), json!(13), json!(5.5), json!("6"), Value::Null] {
         let mut inputs = business(5_000_000);
         inputs["schedule8_contribution_months"] = invalid;
         assert!(calculate("T1", 2025, "AB", &inputs).is_err());
