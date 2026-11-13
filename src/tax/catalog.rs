@@ -7,10 +7,20 @@ fn field(key:&str,label:&str,kind:&str,default:Value,help:&str)->Value {
 }
 fn money(key:&str,label:&str,help:&str)->Value {field(key,label,"money",json!(0),help)}
 fn yes(key:&str,label:&str,help:&str)->Value {field(key,label,"boolean",json!(false),help)}
-pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/4";
+pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/5";
 fn optional(key:&str,label:&str,kind:&str,verify:&str,form:&str,help:&str)->Value {
     let mut f=json!({"key":key,"label":label,"kind":kind,"optional":true,"default_policy":"omit","blank_policy":"delete_property","tax_years":[2025],"jurisdictions":super::coverage::entry_jurisdictions("T1",2025),"verification_key":verify,"source_form":form,"help":help});
     if kind=="money"{f["min"]=json!(0);f["max"]=json!(100_000_000_000_000_i64);}f
+}
+fn cpp_period() -> Value {
+    let mut field = optional(
+        super::schedule8::MONTHS, "CPP contribution months", "number",
+        super::schedule8::MONTHS, "Schedule 8 Part 2",
+        "Leave blank for 12 months. Enter the verified number of months from Part 2, line A, for a supported proration case. Use this for turning 18 or a period of CPP disability. Deceased taxpayers, elections, and retirement proration require separate preparation.",
+    );
+    field["min"] = json!(1);
+    field["max"] = json!(12);
+    field
 }
 fn section(id:&str,label:&str,fields:Vec<Value>)->Value {json!({"id":id,"label":label,"fields":fields})}
 fn scope_fields(scope:&str)->Value {section("scope","Calculation scope",vec![
@@ -22,7 +32,7 @@ fn program(id:&str,label:&str,description:&str,jurisdiction:&str,scope:&str,sect
     for section in &sections {for field in section["fields"].as_array().expect("static catalog fields") {
         let key=field["key"].as_str().expect("static catalog key");if field["optional"]!=true{defaults.insert(key.into(),field["default"].clone());}
         let kind=field["kind"].as_str().expect("static catalog kind");
-        let schema=match kind {"money"=>json!({"type":"integer","minimum":0,"maximum":100_000_000_000_000_i64,"unit":"CAD cents"}),"number"=>json!({"type":"integer"}),"boolean"=>json!({"type":"boolean"}),"json"=>json!({"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","name","share_bps"],"properties":{"id":{"type":"string"},"name":{"type":"string"},"share_bps":{"type":"integer","minimum":0,"maximum":10000}}}}),_=>json!({"type":"string"})};
+        let schema=match kind {"money"=>json!({"type":"integer","minimum":0,"maximum":100_000_000_000_000_i64,"unit":"CAD cents"}),"number" if field["optional"]==true=>json!({"type":"integer","minimum":field["min"],"maximum":field["max"]}),"number"=>json!({"type":"integer"}),"boolean"=>json!({"type":"boolean"}),"json"=>json!({"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","name","share_bps"],"properties":{"id":{"type":"string"},"name":{"type":"string"},"share_bps":{"type":"integer","minimum":0,"maximum":10000}}}}),_=>json!({"type":"string"})};
         properties.insert(key.into(),schema);
     }}
     json!({"id":id,"label":label,"description":description,"years":super::coverage::entry_years(id),"jurisdictions":super::coverage::entry_jurisdictions(id,2025),"default_jurisdiction":jurisdiction,"entry_schema_id":super::coverage::entry_schema_id(id),"entry_schema_year":2025,"scope":scope,"ruleset":RULESET,"filing_supported":false,"sections":sections,"defaults":defaults,"input_schema":{"type":"object","additionalProperties":false,"properties":properties},"sources":sources(id)})
@@ -47,7 +57,7 @@ fn t2125_expense_fields() -> Vec<Value> {
 pub fn catalog()->Value {
     let mut t1=program("T1","T1 — Personal","Selected 2025 workpapers, including optional verified business, rental and current-year credit totals. Read each section's limits; these are not complete schedules or a filing return.","AB",T1_SCOPE,vec![
         scope_fields(T1_SCOPE),
-        section("residence","Residency",vec![yes("full_year_resident","Full-year Canadian resident; resident of the selected province at year-end","Adult age 18–64 in this scope. Newcomer, emigrant, deemed resident, deceased, bankruptcy, spouse/dependant and age-credit cases require additional rules."),yes("provincial_adjustments_not_applicable","Provincial reductions/credits not calculated do not apply (BC, SK, MB, NB, NS, PE, NL, YT, NT, NU only)","Required for the generic provincial engine; the calculation diagnostics list what is not calculated for the chosen province. Ignored for AB and ON.")]),
+        section("residence","Residency",vec![yes("full_year_resident","Full-year Canadian resident; resident of the selected province at year-end","Age 18–64 at year-end in this scope. Newcomer, emigrant, deemed resident, deceased, bankruptcy, spouse/dependant and age-credit cases require additional rules."),yes("provincial_adjustments_not_applicable","Provincial reductions/credits not calculated do not apply (BC, SK, MB, NB, NS, PE, NL, YT, NT, NU only)","Required for the generic provincial engine; the calculation diagnostics list what is not calculated for the chosen province. Ignored for AB and ON.")]),
         section("income","Income",vec![money("employment_income_cents","T4 employment income","Ordinary Canadian employment; dollars in the editor, integer cents in the API. Standard insurable employment only; foreign employment and self-employment are excluded."),money("interest_income_cents","Canadian interest income","Ordinary Canadian-source interest only. Dividends, capital gains and foreign income are excluded.")]),
         section("deductions","Verified deductions",vec![money("rrsp_deduction_cents","RRSP deduction claimed","A deductible amount verified against receipts and the available CRA deduction limit; contribution room and carryforwards are not calculated."),money("rrsp_deduction_limit_cents","Verified available RRSP deduction limit","This is the verified available limit, not an automatic 18% contribution-room calculation."),yes("rrsp_verified","RRSP deduction and available limit verified","Required whenever an RRSP deduction is claimed."),money("cpp_enhanced_deduction_cents","Verified enhanced CPP deduction — line 22215","Schedule 8/RC381 amount, maximum $1,074.00 for 2025. Do not enter the entire T4 box 16 amount.")]),
         section("payroll","Verified payroll credits",vec![money("cpp_base_credit_cents","Verified base CPP credit amount — line 30800","Schedule 8 amount, maximum $3,356.10. Enhanced contributions are deductions, not part of this credit."),money("ei_credit_cents","Verified eligible EI credit — line 31200","Maximum $1,077.48; standard insurable earnings must exceed $2,000. Overpayments and Quebec employment are outside scope."),yes("payroll_verified","CPP/EI amounts verified against Schedule 8 and source documents","Required for any CPP/EI credit or enhanced CPP deduction. This engine does not infer contributions or refunds from wages.")]),
@@ -60,11 +70,12 @@ pub fn catalog()->Value {
             optional("se_cpp_deduction_cents","Verified self-employed CPP deduction — line 22200","money","se_cpp_verified","Schedule 8","Externally calculated Schedule 8 deduction. Contributions, overpayments and elections are not computed here."),
             optional("se_cpp_credit_cents","Verified self-employed CPP credit — line 31000","money","se_cpp_verified","Schedule 8","Externally calculated Schedule 8 eligible credit amount, not the entire CPP payment. Verify separately from employee CPP."),
             optional("se_cpp_verified","Externally prepared CPP amounts verified","boolean","se_cpp_verified","Schedule 8","Applies to manually entered deduction and credit on a partial workpaper."),
-            optional(super::schedule8::CONFIRMATION,"Calculate full-year self-employed CPP (Schedule 8 Part 4)","boolean",super::schedule8::CONFIRMATION,"Schedule 8","Confirm you were subject to CPP for all 12 months, had only self-employment earnings for CPP purposes, no employment or Québec earnings, no QPP contributions, no proration, disability pension, election or special adjustments. Leave manually entered CPP amounts blank.")]),
+            optional(super::schedule8::CONFIRMATION,"Calculate self-employed CPP (Schedule 8 Part 4)","boolean",super::schedule8::CONFIRMATION,"Schedule 8","Confirm only self-employment earnings for CPP, no Québec earnings or QPP contributions, and no election, death, or special adjustment. For a supported proration case, verify and enter the months in CPP contribution period. Leave manually entered CPP amounts blank.")]),
         section("cpp-payroll","CPP from saved T4s",vec![
-            optional(super::schedule8_payroll::CONFIRMATION,"Calculate full-year payroll and mixed-income CPP","boolean",super::schedule8_payroll::CONFIRMATION,"Schedule 8",
-                "Save all T4s first, then confirm the employment and CPP boxes are complete and CPP applied for all 12 months. This covers ordinary Canadian T4 employment with optional nonnegative business income. Québec earnings, QPP, elections, proration and disability pensions require separate preparation. Leave the manually entered CPP amounts blank."),
+            optional(super::schedule8_payroll::CONFIRMATION,"Calculate payroll and mixed-income CPP","boolean",super::schedule8_payroll::CONFIRMATION,"Schedule 8",
+                "Save all T4s first, then confirm the employment and CPP boxes are complete. Enter the verified CPP months for a supported proration case. Québec earnings, QPP, elections, death and special adjustments require separate preparation. Leave the manually entered CPP amounts blank."),
         ]),
+        section("cpp-period","CPP contribution period",vec![cpp_period()]),
         section("business-expenses","Itemized T2125 business expenses",t2125_expense_fields()),
         section("rental-totals","Optional verified rental totals",vec![
             optional("rental_gross_cents","Verified T776 gross rental income","money","t776_verified","T776","Aggregate verified rental totals; no property schedule, co-ownership allocation or personal-use adjustment is computed."),
