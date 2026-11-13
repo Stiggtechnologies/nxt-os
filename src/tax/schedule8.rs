@@ -1,4 +1,4 @@
-//! 2025 federal Schedule 8, Part 4 for a full year of CPP contributions.
+//! 2025 federal Schedule 8 contribution periods and Part 4.
 
 use super::{TResult, conflict, models::TaxReturn, reports};
 use lopdf::{Document, Object, dictionary};
@@ -10,13 +10,50 @@ pub(super) const FIRST_CEILING: i64 = 7_130_000;
 pub(super) const SECOND_CEILING: i64 = 8_120_000;
 
 pub(super) const CONFIRMATION: &str = "schedule8_part4_verified";
+pub(super) const MONTHS: &str = "schedule8_contribution_months";
 pub(super) const FORM: &str =
     "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s8/5000-s8-25e.pdf";
+
+#[derive(Clone, Copy)]
+pub(super) struct Period {
+    months: i64,
+    pub first_ceiling: i64,
+    pub second_ceiling: i64,
+    pub exemption: i64,
+    pub second_band: i64,
+}
+
+impl Period {
+    pub(super) fn from_inputs(inputs: &serde_json::Map<String, serde_json::Value>) -> Result<Self, String> {
+        let months = match inputs.get(MONTHS) {
+            None => 12,
+            Some(value) => value.as_i64().filter(|n| (1..=12).contains(n))
+                .ok_or("Schedule 8 contribution months must be a whole number from 1 to 12.")?,
+        };
+        Ok(Self::new(months))
+    }
+
+    fn new(months: i64) -> Self {
+        let prorate = |annual: i64| (annual * months + 6) / 12;
+        Self {
+            months,
+            first_ceiling: prorate(FIRST_CEILING),
+            second_ceiling: prorate(SECOND_CEILING),
+            exemption: prorate(BASIC_EXEMPTION),
+            second_band: prorate(SECOND_CEILING - FIRST_CEILING),
+        }
+    }
+
+    pub(super) fn business_earnings(self, annual: i64) -> i64 {
+        (annual * self.months + 6) / 12
+    }
+}
 
 pub(super) struct Part4 {
     pub payable: i64,
     pub credit_amount: i64,
     pub deduction: i64,
+    earnings: i64,
     capped: i64,
     first_band: i64,
     second_band: i64,
@@ -26,10 +63,11 @@ pub(super) struct Part4 {
 }
 
 /// Compute the three T1 transfers using the form's cent rounding at each line.
-pub(super) fn full_year_part4(net_business: i64) -> Part4 {
-    let capped = net_business.clamp(0, SECOND_CEILING);
-    let second_band = (capped - FIRST_CEILING).max(0);
-    let first_band = (capped - second_band - BASIC_EXEMPTION).max(0);
+pub(super) fn part4(net_business: i64, period: Period) -> Part4 {
+    let earnings = period.business_earnings(net_business);
+    let capped = earnings.clamp(0, period.second_ceiling);
+    let second_band = (capped - period.first_ceiling).max(0);
+    let first_band = (capped - second_band - period.exemption).max(0);
     let base = (first_band * 990 + 5_000) / 10_000;
     let first_additional = (first_band * 200 + 5_000) / 10_000;
     let second_additional = (second_band * 800 + 5_000) / 10_000;
@@ -38,6 +76,7 @@ pub(super) fn full_year_part4(net_business: i64) -> Part4 {
         payable: base + first_additional + second_additional,
         credit_amount,
         deduction: credit_amount + first_additional + second_additional,
+        earnings,
         capped,
         first_band,
         second_band,
@@ -50,13 +89,13 @@ pub(super) fn full_year_part4(net_business: i64) -> Part4 {
 const TEMPLATE_SHA256: &str = "92a9584952b820f2215b7f959f12c1afe044a226b76b1151f35f83127b87a28c";
 
 pub(super) async fn print(record: &TaxReturn) -> TResult<Vec<u8>> {
-    let net = print_net(record)?;
+    let (part, period) = print_values(record)?;
     static TEMPLATE: tokio::sync::OnceCell<Vec<u8>> = tokio::sync::OnceCell::const_new();
     let template = TEMPLATE.get_or_try_init(fetch_template).await?;
-    render(template, net).map_err(|_| conflict("The CRA Schedule 8 PDF could not be populated."))
+    render(template, part, period).map_err(|_| conflict("The CRA Schedule 8 PDF could not be populated."))
 }
 
-fn print_net(record: &TaxReturn) -> TResult<i64> {
+fn print_values(record: &TaxReturn) -> TResult<(Part4, Period)> {
     let unavailable = || conflict("Calculate a supported 2025 Schedule 8 Part 4 workpaper before printing.");
     if record.program != "T1" || record.tax_year != 2025
         || record.inputs[CONFIRMATION] != true
@@ -71,7 +110,9 @@ fn print_net(record: &TaxReturn) -> TResult<i64> {
         lines.iter().find(|line| line["code"] == code).and_then(|line| line["amount"].as_i64())
     };
     let net = amount("13500").filter(|net| *net >= 0).ok_or_else(unavailable)?;
-    let part = full_year_part4(net);
+    let inputs = record.inputs.as_object().ok_or_else(unavailable)?;
+    let period = Period::from_inputs(inputs).map_err(|_| unavailable())?;
+    let part = part4(net, period);
     for (code, expected) in [
         ("42100", part.payable), ("31000", part.credit_amount), ("22200", part.deduction),
     ] {
@@ -79,7 +120,7 @@ fn print_net(record: &TaxReturn) -> TResult<i64> {
             return Err(unavailable());
         }
     }
-    Ok(net)
+    Ok((part, period))
 }
 
 async fn fetch_template() -> TResult<Vec<u8>> {
@@ -135,27 +176,26 @@ impl FormText {
     }
 }
 
-fn render(template: &[u8], net: i64) -> lopdf::Result<Vec<u8>> {
-    let part = full_year_part4(net);
+fn render(template: &[u8], part: Part4, period: Period) -> lopdf::Result<Vec<u8>> {
     let additional = part.first_additional + part.second_additional;
     const MAIN: u16 = 733;
     const MIDDLE: u16 = 588;
 
     let mut part2 = FormText::new();
-    part2.right_aligned(676, 464, "12");
+    part2.right_aligned(676, 464, &period.months.to_string());
     for (y, cents) in [
-        (836, FIRST_CEILING), (864, SECOND_CEILING - FIRST_CEILING),
-        (892, SECOND_CEILING), (920, BASIC_EXEMPTION),
+        (836, period.first_ceiling), (864, period.second_band),
+        (892, period.second_ceiling), (920, period.exemption),
     ] {
         part2.amount(MAIN, y, cents);
     }
 
     let mut part4_first = FormText::new();
     for (x, y, cents) in [
-        (MAIN, 604, net), (MAIN, 640, 0), (MAIN, 675, net),
-        (MIDDLE, 704, part.capped), (MAIN, 704, part.capped), (MIDDLE, 724, FIRST_CEILING),
+        (MAIN, 604, part.earnings), (MAIN, 640, 0), (MAIN, 675, part.earnings),
+        (MIDDLE, 704, part.capped), (MAIN, 704, part.capped), (MIDDLE, 724, period.first_ceiling),
         (MIDDLE, 760, part.second_band), (MAIN, 760, part.second_band),
-        (MAIN, 780, part.capped - part.second_band), (MAIN, 800, BASIC_EXEMPTION),
+        (MAIN, 780, part.capped - part.second_band), (MAIN, 800, period.exemption),
         (MAIN, 836, part.first_band),
     ] {
         part4_first.amount(x, y, cents);
@@ -208,13 +248,13 @@ mod tests {
             }
         })).unwrap();
         let draft = tax.save(None, input).await.unwrap_or_else(|err| panic!("{}", err.1));
-        assert!(print_net(&draft).is_err());
+        assert!(print_values(&draft).is_err());
         let mut calculated = tax.calculate(&draft.id, RevisionInput {
             expected_revision: draft.revision, idempotency_key: None,
         }).await.unwrap_or_else(|err| panic!("{}", err.1));
-        assert_eq!(print_net(&calculated).unwrap_or_else(|err| panic!("{}", err.1)), 5_000_000);
+        assert_eq!(print_values(&calculated).unwrap_or_else(|err| panic!("{}", err.1)).0.earnings, 5_000_000);
         calculated.inputs["self_employment_gross_cents"] = json!(5_500_000);
-        assert!(print_net(&calculated).is_err());
+        assert!(print_values(&calculated).is_err());
     }
 
     #[test]
@@ -222,12 +262,13 @@ mod tests {
         let Some(path) = std::env::var_os("NXT_SCHEDULE8_TEMPLATE_PATH") else { return };
         let template = std::fs::read(path).unwrap();
         assert!(verified_template(&template));
-        let bytes = render(&template, 5_000_000).unwrap();
+        let period = Period::new(6);
+        let bytes = render(&template, part4(5_000_000, period), period).unwrap();
         let document = Document::load_mem(&bytes).unwrap();
         let pages = document.get_pages();
         assert_eq!(pages.len(), 11);
         let contents = String::from_utf8_lossy(&document.get_page_content(pages[&7]).unwrap()).into_owned();
-        for digits in ["(5533) Tj", "(50) Tj", "(2301) Tj", "(75) Tj", "(3231) Tj"] {
+        for digits in ["(2766) Tj", "(75) Tj", "(1150) Tj", "(88) Tj", "(1615) Tj"] {
             assert!(contents.contains(digits), "{digits}");
         }
         if let Some(path) = std::env::var_os("NXT_SCHEDULE8_FIXTURE_PDF") {

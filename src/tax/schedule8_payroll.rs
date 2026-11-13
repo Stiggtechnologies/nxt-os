@@ -1,15 +1,9 @@
-//! 2025 Schedule 8, Parts 3 and 5, for full-year contributors using Canadian T4s.
+//! 2025 Schedule 8, Parts 3 and 5, using Canadian T4s.
 
-use super::{
-    schedule8::{BASIC_EXEMPTION, FIRST_CEILING, SECOND_CEILING},
-    slips::Slip,
-};
+use super::{schedule8::{Period, SECOND_CEILING}, slips::Slip};
 
 pub(super) const CONFIRMATION: &str = "schedule8_payroll_verified";
 pub(super) const SOURCE_BOXES: &[&str] = &["T4 16", "T4 16A", "T4 26"];
-
-const FIRST_BAND: i64 = FIRST_CEILING - BASIC_EXEMPTION;
-const SECOND_BAND: i64 = SECOND_CEILING - FIRST_CEILING;
 
 #[derive(Default)]
 pub(super) struct Payroll {
@@ -78,10 +72,10 @@ struct Employment {
 }
 
 impl Employment {
-    fn new(payroll: &Payroll) -> Self {
-        let pensionable = payroll.pensionable.min(SECOND_CEILING);
-        let second_band = (pensionable - FIRST_CEILING).max(0);
-        let first_band = (pensionable - second_band - BASIC_EXEMPTION).max(0);
+    fn new(payroll: &Payroll, period: Period) -> Self {
+        let pensionable = payroll.pensionable.min(period.second_ceiling);
+        let second_band = (pensionable - period.first_ceiling).max(0);
+        let first_band = (pensionable - second_band - period.exemption).max(0);
         let base = ratio(first_band, 495, 10_000);
         let first = ratio(first_band, 1, 100);
         let second = ratio(second_band, 4, 100);
@@ -119,8 +113,10 @@ impl Employment {
     }
 }
 
-pub(super) fn full_year(payroll: &Payroll, net_business: i64) -> Transfers {
-    let employment = Employment::new(payroll);
+pub(super) fn calculate(payroll: &Payroll, net_business: i64, period: Period) -> Transfers {
+    let employment = Employment::new(payroll, period);
+    let net_business = period.business_earnings(net_business);
+    let first_band = period.first_ceiling - period.exemption;
     let first_delta = employment.first_delta();
     let second_delta = employment.second_delta;
 
@@ -129,13 +125,13 @@ pub(super) fn full_year(payroll: &Payroll, net_business: i64) -> Transfers {
         + (-first_delta).max(0).min(second_delta.max(0));
     let second_paid = payroll.second - second_delta.max(0)
         + (-second_delta).max(0).min(first_delta.max(0));
-    let first_remaining = (FIRST_BAND - ratio(first_paid, 1_680_672, 100_000)).max(0);
-    let exemption_left = (BASIC_EXEMPTION - employment.pensionable).max(0);
-    let business_above_first_band = (net_business - FIRST_BAND).max(0);
+    let first_remaining = (first_band - ratio(first_paid, 1_680_672, 100_000)).max(0);
+    let exemption_left = (period.exemption - payroll.pensionable).max(0);
+    let business_above_first_band = (net_business - first_band).max(0);
     let first_exemption = (exemption_left - business_above_first_band).max(0);
     let first_earnings = (net_business.min(first_remaining) - first_exemption).max(0);
-    let second_earnings = if net_business + employment.pensionable > FIRST_CEILING {
-        let remaining = SECOND_BAND - ratio(second_paid, 100, 4);
+    let second_earnings = if net_business + employment.pensionable > period.first_ceiling {
+        let remaining = period.second_band - ratio(second_paid, 100, 4);
         remaining.min(net_business - exemption_left - first_earnings).max(0)
     } else {
         0

@@ -4,6 +4,14 @@ const keys=['self_employment_gross_cents','self_employment_expenses_cents','self
 const fields=keys.map(key=>({key,label:key,help:'Synthetic verified workpaper limit',kind:key.endsWith('_verified')?'boolean':'money',optional:true,default_policy:'omit',tax_years:[2025],jurisdictions:['AB','ON','BC']}));
 function catalog(){const p={id:'T1',label:'T1',years:[2025],jurisdictions:['AB','ON','BC'],default_jurisdiction:'AB',entry_schema_id:'nxt-tax-entry/T1/2025/v1',entry_schema_year:2025,field_catalog_version:'nxt-tax-fields/T1/2025/2',defaults:{scope_confirmed:false,employment_income_cents:0},sections:[{id:'base',fields:[{key:'scope_confirmed',label:'Scope',kind:'boolean',default:false},{key:'employment_income_cents',label:'Employment',kind:'money',default:0}]},{id:'business-totals',label:'Business totals',fields:fields.slice(0,7)},{id:'rental-totals',label:'Rental totals',fields:fields.slice(7,11)},{id:'current-credits',label:'Current credits',fields:fields.slice(11)}]};return{programs:[p],coverage:{schema:'nxt-tax-coverage/v1',version:'2026-11-09.1',scopes:['AB','ON','BC'].map(j=>({program:'T1',tax_year:2025,jurisdiction:j,engine_scope_available:true,browser_entry_available:true,entry_state:'verified_baseline_schema',entry_schema_id:p.entry_schema_id,entry_schema_year:2025}))}};}
 function core(){const c=vm.createContext({structuredClone});vm.runInContext(read('public/apps/tax/tt-core.js'),c);return c.NXTTurboCore;}
+test('optional CPP months preserve whole numbers and reject unsupported periods',()=>{
+ const C=core(), key='schedule8_contribution_months';
+ const field={key,kind:'number',min:1,max:12,optional:true,default_policy:'omit'};
+ const inputs={};
+ C.applyOptionalInput(inputs,field,'6');assert.equal(inputs[key],6);
+ for(const invalid of ['0','13','6.0','5.5','1e1','-1']){assert.throws(()=>C.applyOptionalInput(inputs,field,invalid));assert.equal(inputs[key],6);}
+ C.applyOptionalInput(inputs,field,'');assert.ok(!Object.hasOwn(inputs,key));
+});
 test('optional input helper preserves absent, explicit zero/false and exact cents; blank deletes only explicit optional keys',()=>{
  const C=core(),money=fields[0],flag=fields[3],out={manual:77};C.applyOptionalInput(out,flag,false);assert.deepEqual(out,{manual:77});C.applyOptionalInput(out,money,'0');assert.equal(out[money.key],0);C.applyOptionalInput(out,money,'0.29');assert.equal(out[money.key],29);C.applyOptionalInput(out,money,' ');assert.ok(!Object.hasOwn(out,money.key));C.applyOptionalInput(out,flag,false,{changed:true});assert.equal(out[flag.key],false);C.applyOptionalInput(out,flag,null,{clear:true});assert.ok(!Object.hasOwn(out,flag.key));
  for(const bad of ['1.001','1e3','-1','NaN','1000000000000.01']){assert.throws(()=>C.applyOptionalInput(out,money,bad));assert.deepEqual(out,{manual:77});}

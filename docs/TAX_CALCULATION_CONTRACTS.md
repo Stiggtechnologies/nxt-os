@@ -34,6 +34,8 @@ The three 2025 T1 scope descriptions now explain optional verified supplemental 
 
 ## Deployment and rollback
 
+The 2025 Schedule 8 workpaper accepts an optional confirmed period of 1–12 months for cases such as turning 18 or receiving a CPP disability pension for part of the year. It uses the Part 2 limits and exemption, applies the month ratio to self-employment earnings for CPP only, and keeps T4 earnings and the T1 business income at their full values. With a supported Part 4 calculation, the PDF shows the matching months, limits and prorated contributions. Death, elections, Québec and retirement proration are excluded from the period input. A blank period keeps the existing 12-month path.
+
 The full-year 2025 Schedule 8 route for saved Canadian T4s uses boxes 16, 16A and 26 (box 14 if box 26 is blank). With eligible business income it applies Part 5, including offsets from excess payroll CPP, and transfers credits, deductions, payable and overpayment to the T1. With employment only it uses Part 3. The separate Part 4 path still handles self-employment only and retains its printable CRA form. The new Parts 3 and 5 route requires a fresh confirmation after T4 edits and a supported saved result before review. This opt-in path retains ruleset .4 so previously supported calculations keep their review eligibility. QPP, Québec earnings, proration, elections, business losses and Part 3/5 PDF output remain separate work.
 
 Keep version-aware readers and authorization guards when rolling back any later UI change. Rolling back to software that ignores result versions can remove the historical-result boundary. Preserve all snapshots and use a reviewed version-aware release; do not erase old results or silently restore their approval eligibility.

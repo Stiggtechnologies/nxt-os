@@ -131,6 +131,26 @@ async fn blank_pensionable_box_uses_box_14_but_explicit_zero_is_preserved() {
 }
 
 #[tokio::test]
+async fn prorated_mixed_cpp_leaves_actual_t4_earnings_unscaled() {
+    let tax = Tax::new(Store::memory());
+    let mut annual = input("AB", 4_000_000, json!([
+        {"kind": "T4", "boxes": {"14": 2000000, "16": 108588, "26": 2000000}}
+    ]));
+    annual.inputs["schedule8_contribution_months"] = json!(6);
+    let draft = tax.save(None, annual).await.unwrap_or_else(|err| panic!("{}", err.1));
+    let confirmed = confirm(&tax, &draft).await;
+    let calculated = tax.calculate(&confirmed.id, revision(&confirmed)).await.unwrap_or_else(|err| panic!("{}", err.1));
+    let result = &calculated.calculation.as_ref().unwrap().result;
+    assert_eq!(result["supported"], true);
+    // $20,000 of pensionable T4 earnings and $20,000 of prorated business income.
+    assert_eq!(line(result, "10100"), 2_000_000);
+    assert_eq!(line(result, "13500"), 4_000_000);
+    assert_eq!(line(result, "30800"), 90_338);
+    assert_eq!(line(result, "22215"), 18_250);
+    assert_eq!(line(result, "42100"), 221_035);
+}
+
+#[tokio::test]
 async fn edited_t4_requires_new_confirmation_and_qpp_remains_blocked() {
     let tax = Tax::new(Store::memory());
     let draft = tax.save(None, input("AB", 100_000, json!([

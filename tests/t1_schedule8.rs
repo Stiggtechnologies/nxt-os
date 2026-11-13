@@ -65,6 +65,42 @@ fn itemized_t2125_transfers_verified_expenses_and_cca_once() {
 }
 
 #[test]
+fn prorated_cpp_transfers_use_the_part2_limits_and_keep_full_business_income() {
+    for (months, gross, payable, credit, deduction) in [
+        (1, 9_000_000, 73_835, 27_968, 45_868),
+        (6, 5_000_000, 276_675, 115_088, 161_588),
+        (6, 9_000_000, 443_010, 167_805, 275_205),
+        (11, 9_000_000, 812_185, 307_643, 504_543),
+        (12, 5_000_000, 553_350, 230_175, 323_175),
+    ] {
+        let mut inputs = business(gross);
+        inputs["schedule8_contribution_months"] = json!(months);
+        let result = calculate("T1", 2025, "AB", &inputs).unwrap();
+        assert!(result.supported);
+        assert_eq!(line(&result, "13500"), gross);
+        assert_eq!(line(&result, "42100"), payable, "{months} months");
+        assert_eq!(line(&result, "31000"), credit);
+        assert_eq!(line(&result, "22200"), deduction);
+        assert_eq!(line(&result, "23600"), gross - deduction);
+    }
+}
+
+#[test]
+fn cpp_months_are_bounded_and_require_a_confirmed_schedule8_path() {
+    for invalid in [json!(0), json!(13), json!(5.5), json!("6"), Value::Null] {
+        let mut inputs = business(5_000_000);
+        inputs["schedule8_contribution_months"] = invalid;
+        assert!(calculate("T1", 2025, "AB", &inputs).is_err());
+    }
+    let mut inputs = business(5_000_000);
+    inputs["schedule8_contribution_months"] = json!(6);
+    inputs["schedule8_part4_verified"] = json!(false);
+    let result = calculate("T1", 2025, "AB", &inputs).unwrap();
+    assert!(!result.supported);
+    assert!(result.diagnostics.iter().any(|d| d.code == "schedule8_period_unverified"));
+}
+
+#[test]
 fn unverified_or_conflicting_cpp_inputs_cannot_unlock_review() {
     for (key, value) in [
         ("employment_income_cents", json!(100)),

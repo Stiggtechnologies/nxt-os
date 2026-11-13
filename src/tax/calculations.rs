@@ -8,9 +8,9 @@ use super::{schedule8_payroll, slips::Slip};
 pub const RULESET: &str = "nxt-ca-2025.4";
 /// Version equality only; input/output hashes, scope and diagnostics still require checks.
 pub fn uses_current_ruleset(result:&Value)->bool {result.get("ruleset").and_then(Value::as_str)==Some(RULESET)}
-pub const T1_SCOPE: &str = "2025 federal and Alberta income-tax workpaper for a full-year Alberta resident, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP and payroll amounts, and optional externally verified rental, ordinary receipted donation, eligible medical and current-year tuition totals use limited existing paths subject to diagnostics. Verified full-year Schedule 8 paths calculate CPP for saved T4 employment, self-employment only, and mixed employment and business income. No complete T2125, T776, Schedule 8, 9 or 11; no automatic eligibility, CCA, benefits, overpayments, carryforwards, transfers or elections. Not a complete or certified filing return.";
-pub const T1_ON_SCOPE: &str = "2025 federal and Ontario income-tax workpaper for a full-year Ontario resident, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP/payroll amounts and optional externally verified rental, eligible medical, ordinary receipted donation and current-year federal tuition totals use limited existing paths subject to diagnostics; Ontario has no current-year tuition credit. Published ON428 brackets, basic personal amount, optional supplied-net-income spouse amount, surtax, basic tax reduction and health premium remain bounded workpaper paths. Age, dependant, dividend, LIFT, split-income, minimum-tax and special-gift cases remain outside this stated scope. Verified full-year Schedule 8 paths calculate CPP for saved T4 employment, self-employment only, and mixed employment and business income. No complete T2125/T776/Schedules 8/9/11, benefits, overpayments, carryforwards, transfers or elections; not a certified ON428 or filing return.";
-pub const T1_PROV_SCOPE: &str = "2025 federal and provincial/territorial income-tax workpaper for a full-year resident of BC, SK, MB, NB, NS, PE, NL, YT, NT or NU, age 18–64. Ordinary Canadian T4 employment/interest, verified RRSP/payroll amounts and optional externally verified rental, eligible medical, ordinary receipted donation and current-year tuition totals use limited existing paths subject to each province’s diagnostics and tuition limits. Published brackets and basic/verified credit amounts apply; provincial reductions, surtaxes and other unimplemented adjustments flagged by diagnostics must still be confirmed not to apply. Verified full-year Schedule 8 paths calculate CPP for saved T4 employment, self-employment only, and mixed employment and business income. No complete T2125/T776/Schedules 8/9/11, benefits, overpayments, carryforwards, transfers or elections. Quebec TP-1 is not supported for 2025; not a certified provincial428 or filing return.";
+pub const T1_SCOPE: &str = "2025 federal and Alberta income-tax workpaper for a full-year Alberta resident, age 18–64 at year-end. Ordinary Canadian T4 employment/interest, verified RRSP and payroll amounts, and optional externally verified rental, ordinary receipted donation, eligible medical and current-year tuition totals use limited existing paths subject to diagnostics. Verified Schedule 8 paths calculate full-year or eligible prorated CPP for saved T4 employment, self-employment only, and mixed employment and business income. No complete T2125, T776, Schedule 8, 9 or 11; no automatic eligibility, CCA, benefits, overpayments, carryforwards, transfers or elections. Not a complete or certified filing return.";
+pub const T1_ON_SCOPE: &str = "2025 federal and Ontario income-tax workpaper for a full-year Ontario resident, age 18–64 at year-end. Ordinary Canadian T4 employment/interest, verified RRSP/payroll amounts and optional externally verified rental, eligible medical, ordinary receipted donation and current-year federal tuition totals use limited existing paths subject to diagnostics; Ontario has no current-year tuition credit. Published ON428 brackets, basic personal amount, optional supplied-net-income spouse amount, surtax, basic tax reduction and health premium remain bounded workpaper paths. Age, dependant, dividend, LIFT, split-income, minimum-tax and special-gift cases remain outside this stated scope. Verified Schedule 8 paths calculate full-year or eligible prorated CPP for saved T4 employment, self-employment only, and mixed employment and business income. No complete T2125/T776/Schedules 8/9/11, benefits, overpayments, carryforwards, transfers or elections; not a certified ON428 or filing return.";
+pub const T1_PROV_SCOPE: &str = "2025 federal and provincial/territorial income-tax workpaper for a full-year resident of BC, SK, MB, NB, NS, PE, NL, YT, NT or NU, age 18–64 at year-end. Ordinary Canadian T4 employment/interest, verified RRSP/payroll amounts and optional externally verified rental, eligible medical, ordinary receipted donation and current-year tuition totals use limited existing paths subject to each province’s diagnostics and tuition limits. Published brackets and basic/verified credit amounts apply; provincial reductions, surtaxes and other unimplemented adjustments flagged by diagnostics must still be confirmed not to apply. Verified Schedule 8 paths calculate full-year or eligible prorated CPP for saved T4 employment, self-employment only, and mixed employment and business income. No complete T2125/T776/Schedules 8/9/11, benefits, overpayments, carryforwards, transfers or elections. Quebec TP-1 is not supported for 2025; not a certified provincial428 or filing return.";
 pub const T2_SCOPE: &str = "2025 federal and Alberta ordinary active-business tax workpaper, permanent establishments only in Alberta, equal federal/Alberta taxable income, no associations, investment/foreign/partnership income, personal-services business, special industry/rate, credits, refundable taxes or other adjustments. SBD requires verified CCPC eligibility, prior-year taxable capital at most $10 million and adjusted aggregate investment income at most $50,000.";
 pub const T3_SCOPE: &str = "2025 federal-only ordinary-income trust workpaper: income less verified deductible expenses and deductible ordinary-income allocations. Ordinary trust rate or verified GRE/QDT graduated rates; no basic personal credit. Provincial tax, capital gains, dividends, AMT, QDT recovery tax, special trusts and other credits/elections are outside scope.";
 pub const T5013_SCOPE: &str = "2025 ordinary domestic general-partnership income reconciliation and contractual partner allocation workpaper. Verified general partners and fixed shares only; no limited/at-risk, non-resident, SIFT, multi-tier, special income categories, ACB, CCA, credits or filing XML. Allocation rounding reconciles exactly to net income/loss.";
@@ -555,6 +555,7 @@ fn check_t1_2025_fields(obj: &Map<String, Value>, baseline: &[&str]) -> Result<(
     let mut keys = baseline.to_vec();
     keys.push(super::t2125::CONFIRMATION);
     keys.push(schedule8_payroll::CONFIRMATION);
+    keys.push(super::schedule8::MONTHS);
     keys.extend(super::t2125::EXPENSES.iter().map(|expense| expense.key));
     check_fields(obj, &keys)
 }
@@ -735,6 +736,15 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     let entered_credit = money(obj, "se_cpp_credit_cents")?;
     let confirmed = boolean(obj, super::schedule8::CONFIRMATION)?;
     let calculate_payroll = boolean(obj, schedule8_payroll::CONFIRMATION)?;
+    let cpp_period = super::schedule8::Period::from_inputs(obj)?;
+    if obj.contains_key(super::schedule8::MONTHS) && !confirmed && !calculate_payroll {
+        c.diagnostic(
+            "schedule8_period_unverified",
+            "Confirm the applicable Schedule 8 calculation before using the entered contribution months.",
+            Some(super::schedule8::MONTHS),
+            true,
+        );
+    }
     let has_business = gross > 0 || expenses > 0 || cca > 0;
     if itemized && !has_business {
         return Err("Itemized expenses require business income, expenses or CCA.".into());
@@ -745,7 +755,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     let mut se_cpp_payable = None;
     let payroll_cpp = if calculate_payroll {
         if confirmed || employment == 0 || boolean(obj, "born_1960_or_earlier")? || gross - expenses - cca < 0 {
-            return Err("Payroll CPP requires full-year eligibility, positive employment income, nonnegative business income and an unselected Part 4 confirmation.".into());
+            return Err("Payroll CPP requires confirmed eligibility, positive employment income, nonnegative business income and an unselected Part 4 confirmation.".into());
         }
         if entered_deduction > 0 || entered_credit > 0
             || money(obj, "cpp_base_credit_cents")? > 0 || money(obj, "cpp_enhanced_deduction_cents")? > 0
@@ -753,7 +763,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
             return Err("Clear the manually entered CPP amounts before calculating from saved T4s.".into());
         }
         let payroll = schedule8_payroll::Payroll::from_slips(slips, employment)?;
-        let transfers = schedule8_payroll::full_year(&payroll, gross - expenses - cca);
+        let transfers = schedule8_payroll::calculate(&payroll, gross - expenses - cca, cpp_period);
         c.sources.push(source("CRA 2025 Schedule 8, Parts 3 and 5", super::schedule8::FORM));
         lines.push(("44800".into(), "Schedule 8 CPP overpayment".into(), transfers.overpayment));
         Some(transfers)
@@ -790,12 +800,12 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
                 || boolean(obj, "born_1960_or_earlier")?
                 || se_net < 0
             {
-                return Err("Schedule 8 Part 4 requires the confirmed full-year CPP scope, no employment or payroll amounts, and nonnegative net business income.".into());
+                return Err("Schedule 8 Part 4 requires confirmed CPP eligibility, no employment or payroll amounts, and nonnegative net business income.".into());
             }
             if entered_deduction > 0 || entered_credit > 0 {
                 return Err("Clear the manually entered CPP deduction and credit before using Schedule 8 Part 4.".into());
             }
-            let schedule = super::schedule8::full_year_part4(se_net);
+            let schedule = super::schedule8::part4(se_net, cpp_period);
             se_ded = schedule.deduction;
             se_credit = schedule.credit_amount;
             se_cpp_payable = Some(schedule.payable);
