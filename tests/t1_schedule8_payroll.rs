@@ -151,6 +151,26 @@ async fn prorated_mixed_cpp_leaves_actual_t4_earnings_unscaled() {
 }
 
 #[tokio::test]
+async fn business_loss_reduces_income_without_reducing_employment_cpp() {
+    let tax = Tax::new(Store::memory());
+    let mut annual = input("AB", 100_000, json!([
+        {"kind": "T4", "boxes": {"14": 5000000, "16": 280000, "26": 5000000}}
+    ]));
+    annual.inputs["self_employment_expenses_cents"] = json!(150_000);
+    let draft = tax.save(None, annual).await.unwrap_or_else(|err| panic!("{}", err.1));
+    let confirmed = confirm(&tax, &draft).await;
+    let calculated = tax.calculate(&confirmed.id, revision(&confirmed)).await.unwrap_or_else(|err| panic!("{}", err.1));
+    let result = &calculated.calculation.as_ref().unwrap().result;
+    assert_eq!(result["supported"], true);
+    assert_eq!(line(result, "13500"), -50_000);
+    assert_eq!(line(result, "15000"), 4_950_000);
+    assert_eq!(line(result, "30800"), 230_175);
+    assert_eq!(line(result, "22215"), 46_500);
+    assert_eq!(line(result, "42100"), 0);
+    assert_eq!(line(result, "44800"), 3_325);
+}
+
+#[tokio::test]
 async fn edited_t4_requires_new_confirmation_and_qpp_remains_blocked() {
     let tax = Tax::new(Store::memory());
     let draft = tax.save(None, input("AB", 100_000, json!([

@@ -41,6 +41,10 @@ pub fn columns()->Vec<Column> {
  for (code,label) in [("9945","T2125 home expense claim"),("9946","T2125 net business income"),("7O","T2125 home expenses available to carry forward")] {
   out.push(column(&format!("line:T2125:{code}"),label,"money","calculation"));
  }
+ out.push(column("line:T2125:9936","T2125 capital cost allowance","money","calculation"));
+ for class in super::t2125::CCA_CLASSES {
+  out.push(column(&format!("line:T2125:A:{}:22",class.class),&format!("T2125 class {} closing UCC",class.class),"money","calculation"));
+ }
  for key in ["taxable_income","net_income","federal_tax","provincial_tax","income_tax","cpp_payable","total_payable","payments","balance","federal_balance","beneficiary_allocations","sbd_income"]{out.push(column(&format!("total:{key}"),&format!("Saved total · {}",key.replace('_'," ")),"money","calculation"));}
  out
 }
