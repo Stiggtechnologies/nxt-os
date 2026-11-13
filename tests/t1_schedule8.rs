@@ -101,6 +101,53 @@ fn cpp_months_are_bounded_and_require_a_confirmed_schedule8_path() {
 }
 
 #[test]
+fn t2125_part7_matches_cra_example_and_caps_claim_without_creating_a_loss() {
+    let mut inputs = business(710_000);
+    for (key, amount) in [
+        ("heat", 120_000), ("electricity", 100_000), ("insurance", 65_000),
+        ("maintenance", 35_000), ("mortgage_interest", 800_000), ("property_taxes", 180_000),
+        ("other", 30_000), ("personal_use", 1_197_000), ("expenses_opening", 15_000),
+    ] {
+        inputs[format!("t2125_home_{key}_cents")] = json!(amount);
+    }
+    inputs["t2125_home_expenses_verified"] = json!(true);
+    let result = calculate("T1", 2025, "AB", &inputs).unwrap();
+    assert!(result.supported);
+    for (code, expected) in [
+        ("T2125:7H", 1_330_000), ("T2125:7J", 133_000), ("T2125:7M", 148_000),
+        ("T2125:7O", 0), ("T2125:7P", 148_000), ("T2125:9945", 148_000),
+        ("T2125:9946", 562_000), ("13500", 562_000), ("42100", 25_228),
+    ] {
+        assert_eq!(line(&result, code), expected, "{code}");
+    }
+    inputs["self_employment_gross_cents"] = json!(100_000);
+    let capped = calculate("T1", 2025, "AB", &inputs).unwrap();
+    assert_eq!(line(&capped, "13500"), 0);
+    assert_eq!(line(&capped, "T2125:7O"), 48_000);
+    assert_eq!(line(&capped, "T2125:9945"), 100_000);
+    inputs["self_employment_expenses_cents"] = json!(110_000);
+    inputs["schedule8_part4_verified"] = json!(false);
+    inputs["interest_income_cents"] = json!(50_000);
+    let loss = calculate("T1", 2025, "AB", &inputs).unwrap();
+    assert_eq!(line(&loss, "13500"), -10_000);
+    assert_eq!(line(&loss, "T2125:7O"), 148_000);
+    assert_eq!(line(&loss, "T2125:9945"), 0);
+}
+
+#[test]
+fn unverified_home_expenses_hold_review_and_keep_the_cpp_base_unadjusted() {
+    let mut inputs = business(1_000_000);
+    inputs["t2125_home_other_cents"] = json!(100_000);
+    let result = calculate("T1", 2025, "AB", &inputs).unwrap();
+    assert!(!result.supported);
+    assert_eq!(line(&result, "13500"), 1_000_000);
+    inputs["t2125_home_expenses_verified"] = json!(true);
+    assert!(calculate("T1", 2025, "AB", &inputs).is_err());
+    inputs["t2125_home_personal_use_cents"] = json!(100_001);
+    assert!(calculate("T1", 2025, "AB", &inputs).is_err());
+}
+
+#[test]
 fn unverified_or_conflicting_cpp_inputs_cannot_unlock_review() {
     for (key, value) in [
         ("employment_income_cents", json!(100)),
