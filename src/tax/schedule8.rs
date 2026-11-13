@@ -27,8 +27,8 @@ impl Period {
     pub(super) fn from_inputs(inputs: &serde_json::Map<String, serde_json::Value>) -> Result<Self, String> {
         let months = match inputs.get(MONTHS) {
             None => 12,
-            Some(value) => value.as_i64().filter(|n| (1..=12).contains(n))
-                .ok_or("Schedule 8 contribution months must be a whole number from 1 to 12.")?,
+            Some(value) => value.as_i64().filter(|n| (0..=12).contains(n))
+                .ok_or("Schedule 8 contribution months must be a whole number from 0 to 12.")?,
         };
         Ok(Self::new(months))
     }

@@ -6,10 +6,11 @@ function catalog(){const p={id:'T1',label:'T1',years:[2025],jurisdictions:['AB',
 function core(){const c=vm.createContext({structuredClone});vm.runInContext(read('public/apps/tax/tt-core.js'),c);return c.NXTTurboCore;}
 test('optional CPP months preserve whole numbers and reject unsupported periods',()=>{
  const C=core(), key='schedule8_contribution_months';
- const field={key,kind:'number',min:1,max:12,optional:true,default_policy:'omit'};
+ const field={key,kind:'number',min:0,max:12,optional:true,default_policy:'omit'};
  const inputs={};
  C.applyOptionalInput(inputs,field,'6');assert.equal(inputs[key],6);
- for(const invalid of ['0','13','6.0','5.5','1e1','-1']){assert.throws(()=>C.applyOptionalInput(inputs,field,invalid));assert.equal(inputs[key],6);}
+ for(const invalid of ['13','6.0','5.5','1e1','-1']){assert.throws(()=>C.applyOptionalInput(inputs,field,invalid));assert.equal(inputs[key],6);}
+ C.applyOptionalInput(inputs,field,'0');assert.equal(inputs[key],0);
  C.applyOptionalInput(inputs,field,'');assert.ok(!Object.hasOwn(inputs,key));
 });
 test('optional input helper preserves absent, explicit zero/false and exact cents; blank deletes only explicit optional keys',()=>{

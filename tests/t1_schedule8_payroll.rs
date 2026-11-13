@@ -171,6 +171,25 @@ async fn business_loss_reduces_income_without_reducing_employment_cpp() {
 }
 
 #[tokio::test]
+async fn no_contribution_months_reconcile_erroneous_t4_cpp_as_an_overpayment() {
+    let tax = Tax::new(Store::memory());
+    let mut annual = input("AB", 500_000, json!([
+        {"kind": "T4", "boxes": {"14": 5000000, "16": 100000, "16A": 5000}}
+    ]));
+    annual.inputs["schedule8_contribution_months"] = json!(0);
+    let draft = tax.save(None, annual).await.unwrap_or_else(|err| panic!("{}", err.1));
+    let confirmed = confirm(&tax, &draft).await;
+    let calculated = tax.calculate(&confirmed.id, revision(&confirmed)).await.unwrap_or_else(|err| panic!("{}", err.1));
+    let result = &calculated.calculation.as_ref().unwrap().result;
+    assert_eq!(result["supported"], true);
+    assert_eq!(line(result, "13500"), 500_000);
+    for code in ["22200", "22215", "30800", "31000", "42100"] {
+        assert_eq!(line(result, code), 0, "{code}");
+    }
+    assert_eq!(line(result, "44800"), 105_000);
+}
+
+#[tokio::test]
 async fn edited_t4_requires_new_confirmation_and_qpp_remains_blocked() {
     let tax = Tax::new(Store::memory());
     let draft = tax.save(None, input("AB", 100_000, json!([
