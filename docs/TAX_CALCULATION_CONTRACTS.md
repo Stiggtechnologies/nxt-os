@@ -34,6 +34,8 @@ The three 2025 T1 scope descriptions now explain optional verified supplemental 
 
 ## Deployment and rollback
 
+T2125 Area A calculates CCA and closing UCC for verified opening balances in ordinary Classes 8, 10 and 50 for a full fiscal period with no asset movements or adjustments. A blank class claim selects its calculated maximum. Enter a lower claim when needed, and use the existing separate verified CCA entry for other scenarios. Payroll CPP treats a verified business loss as zero pensionable business income while preserving the loss in the T1 income calculation.
+
 The T2125 Part 7 workpaper totals verified household expenses, subtracts the verified personal share, adds the verified same-business opening carryforward and limits the claim to positive net business income before home expenses. It reports line 9945, adjusted line 9946 and the closing amount available to carry forward. The adjusted income drives the T1 and CPP calculation. Home CCA and eligibility calculations remain separate. Enter the next year's carryforward from verified source evidence.
 
 The 2025 Schedule 8 workpaper accepts an optional confirmed period of 1–12 months for cases such as turning 18 or receiving a CPP disability pension for part of the year. It uses the Part 2 limits and exemption, applies the month ratio to self-employment earnings for CPP only, and keeps T4 earnings and the T1 business income at their full values. With a supported Part 4 calculation, the PDF shows the matching months, limits and prorated contributions. Death, elections, Québec and retirement proration are excluded from the period input. A blank period keeps the existing 12-month path.

@@ -65,6 +65,41 @@ fn itemized_t2125_transfers_verified_expenses_and_cca_once() {
 }
 
 #[test]
+fn t2125_opening_cca_computes_maximum_claim_and_closing_ucc() {
+    let mut inputs = business(5_000_000);
+    inputs["t2125_opening_cca_verified"] = json!(true);
+    inputs["t2125_cca_8_opening_cents"] = json!(1_000_000);
+    inputs["t2125_cca_10_opening_cents"] = json!(500_000);
+    inputs["t2125_cca_10_claim_cents"] = json!(0);
+    inputs["t2125_cca_50_opening_cents"] = json!(200_000);
+    inputs["t2125_cca_50_claim_cents"] = json!(50_000);
+    let result = calculate("T1", 2025, "AB", &inputs).unwrap();
+    assert!(result.supported);
+    for (code, expected) in [
+        ("T2125:A:8:21", 200_000), ("T2125:A:8:22", 800_000),
+        ("T2125:A:10:max", 150_000), ("T2125:A:10:22", 500_000),
+        ("T2125:A:50:max", 110_000), ("T2125:A:50:22", 150_000),
+        ("T2125:9936", 250_000), ("T2125:9946", 4_750_000),
+        ("13500", 4_750_000), ("42100", 523_600),
+    ] {
+        assert_eq!(line(&result, code), expected, "{code}");
+    }
+    inputs["t2125_cca_50_claim_cents"] = json!(110_001);
+    assert!(calculate("T1", 2025, "AB", &inputs).is_err());
+    inputs["t2125_cca_50_claim_cents"] = json!(50_000);
+    inputs["self_employment_gross_cents"] = json!(240_000);
+    assert!(calculate("T1", 2025, "AB", &inputs).is_err());
+    inputs["self_employment_gross_cents"] = json!(5_000_000);
+    inputs["self_employment_cca_cents"] = json!(10_000);
+    assert!(calculate("T1", 2025, "AB", &inputs).is_err());
+    inputs["self_employment_cca_cents"] = json!(0);
+    inputs["t2125_opening_cca_verified"] = json!(false);
+    let held = calculate("T1", 2025, "AB", &inputs).unwrap();
+    assert!(!held.supported);
+    assert_eq!(line(&held, "13500"), 5_000_000);
+}
+
+#[test]
 fn prorated_cpp_transfers_use_the_part2_limits_and_keep_full_business_income() {
     for (months, gross, payable, credit, deduction) in [
         (1, 9_000_000, 73_835, 27_968, 45_868),

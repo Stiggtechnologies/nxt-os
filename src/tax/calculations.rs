@@ -554,6 +554,8 @@ pub(super) fn calculate_with_slips(
 fn check_t1_2025_fields(obj: &Map<String, Value>, baseline: &[&str]) -> Result<(), String> {
     let mut keys = baseline.to_vec();
     keys.push(super::t2125::CONFIRMATION);
+    keys.push(super::t2125::CCA_VERIFIED);
+    keys.extend(super::t2125::CCA_CLASSES.iter().flat_map(|class| [class.opening, class.claim]));
     keys.extend([super::t2125::HOME_VERIFIED, super::t2125::HOME_PERSONAL, super::t2125::HOME_OPENING]);
     keys.extend(super::t2125::HOME_FIELDS.iter().map(|(key, _, _)| *key));
     keys.push(schedule8_payroll::CONFIRMATION);
@@ -733,7 +735,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     } else {
         aggregate_expenses
     };
-    let cca = money(obj, "self_employment_cca_cents")?;
+    let (cca, calculated_cca) = t2125_opening_cca(c, obj, gross - expenses, &mut lines)?;
     let entered_deduction = money(obj, "se_cpp_deduction_cents")?;
     let entered_credit = money(obj, "se_cpp_credit_cents")?;
     let confirmed = boolean(obj, super::schedule8::CONFIRMATION)?;
@@ -759,8 +761,8 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     let mut se_credit = 0;
     let mut se_cpp_payable = None;
     let payroll_cpp = if calculate_payroll {
-        if confirmed || employment == 0 || boolean(obj, "born_1960_or_earlier")? || net_business < 0 {
-            return Err("Payroll CPP requires confirmed eligibility, positive employment income, nonnegative business income and an unselected Part 4 confirmation.".into());
+        if confirmed || employment == 0 || boolean(obj, "born_1960_or_earlier")? {
+            return Err("Payroll CPP requires confirmed eligibility, positive employment income and an unselected Part 4 confirmation.".into());
         }
         if entered_deduction > 0 || entered_credit > 0
             || money(obj, "cpp_base_credit_cents")? > 0 || money(obj, "cpp_enhanced_deduction_cents")? > 0
@@ -768,7 +770,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
             return Err("Clear the manually entered CPP amounts before calculating from saved T4s.".into());
         }
         let payroll = schedule8_payroll::Payroll::from_slips(slips, employment)?;
-        let transfers = schedule8_payroll::calculate(&payroll, net_business, cpp_period);
+        let transfers = schedule8_payroll::calculate(&payroll, net_business.max(0), cpp_period);
         c.sources.push(source("CRA 2025 Schedule 8, Parts 3 and 5", super::schedule8::FORM));
         lines.push(("44800".into(), "Schedule 8 CPP overpayment".into(), transfers.overpayment));
         Some(transfers)
@@ -783,15 +785,15 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
         }
         lines.push(("13499".into(), "T2125 gross business income".into(), gross));
         lines.push(("13500".into(), "T2125 net business income (loss)".into(), se_net));
-        if itemized {
+        if itemized || calculated_cca {
             lines.extend([
                 ("T2125:8299".into(), "Gross business income".into(), gross),
-                ("T2125:9936".into(), "Verified capital cost allowance".into(), cca),
+                ("T2125:9936".into(), if calculated_cca { "Capital cost allowance from Area A" } else { "Verified capital cost allowance" }.into(), cca),
                 ("T2125:9368".into(), "Total expenses including CCA".into(), sum(&[expenses, cca])?),
                 ("T2125:9369".into(), "Net income before adjustments".into(), pre_home_income),
             ]);
         }
-        if itemized || obj.contains_key(super::t2125::HOME_VERIFIED) && boolean(obj, super::t2125::HOME_VERIFIED)? {
+        if itemized || calculated_cca || boolean(obj, super::t2125::HOME_VERIFIED)? {
             lines.push(("T2125:9946".into(), "Net business income under the confirmed scope".into(), se_net));
         }
         if let Some(transfers) = &payroll_cpp {
@@ -873,6 +875,59 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     if oas>0 { require(c,obj,"oas_verified","Verify T4A(OAS) box 18 OAS pension; recovery tax already withheld (box 22) must be entered as tax withheld. Net federal supplements and EI benefit repayments are not handled.")?; lines.push(("11300".into(),"Old age security pension".into(),oas)); }
     let income=sum(&[se_net,taxable_gain,rental,pen,in_split,elig_div,other_div,oas])?;
     Ok(T1Extra{income,deductions:sum(&[out_split,se_ded])?,pension_for_credit:(pen-out_split).max(0)+in_split,se_cpp_credit:se_credit,se_cpp_payable,payroll_cpp,elig_div,other_div,oas,lines})
+}
+
+fn t2125_opening_cca(
+    c: &mut Calculation, obj: &Map<String, Value>, pre_cca_income: i64,
+    lines: &mut Vec<(String, String, i64)>,
+) -> Result<(i64, bool), String> {
+    use super::t2125::{CCA_CLASSES, CCA_VERIFIED, FORM};
+    let entered = money(obj, "self_employment_cca_cents")?;
+    let verified = boolean(obj, CCA_VERIFIED)?;
+    let has_rows = CCA_CLASSES.iter().any(|class| obj.contains_key(class.opening) || obj.contains_key(class.claim));
+    if !has_rows && !verified {
+        return Ok((entered, false));
+    }
+    if entered > 0 {
+        return Err("Use either the entered CCA total or the Area A opening-balance calculation.".into());
+    }
+    if !has_rows {
+        return Err("Enter an opening balance for at least one CCA class.".into());
+    }
+    if !verified {
+        c.diagnostic("t2125_opening_cca_unverified", "Verify the class balances, unchanged asset pool and fiscal period before calculating Area A.", Some(CCA_VERIFIED), true);
+        return Ok((0, false));
+    }
+    let mut total = 0;
+    let mut rows = Vec::new();
+    for class in CCA_CLASSES {
+        if !obj.contains_key(class.opening) && !obj.contains_key(class.claim) {
+            continue;
+        }
+        let opening = optional_money(obj, class.opening)?
+            .ok_or_else(|| format!("Enter the opening UCC for class {}.", class.class))?;
+        let rate = super::t2_schedules::rate(class.class).ok_or("Unknown CCA class rate.")?;
+        let maximum = rounded_ratio(opening, i64::from(rate), 100)?;
+        let claim = optional_money(obj, class.claim)?.unwrap_or(maximum);
+        if claim > maximum {
+            return Err(format!("The CCA claim for class {} exceeds its Area A maximum.", class.class));
+        }
+        total = sum(&[total, claim])?;
+        for (field, label, amount) in [
+            ("2", "opening UCC", opening),
+            ("max", "maximum CCA", maximum),
+            ("21", "CCA claim", claim),
+            ("22", "closing UCC", opening - claim),
+        ] {
+            rows.push((format!("T2125:A:{}:{field}", class.class), format!("Class {} {label}", class.class), amount));
+        }
+    }
+    if total > pre_cca_income.max(0) {
+        return Err("Enter lower class claims so CCA fits the business income limit for this workpaper.".into());
+    }
+    c.sources.push(source("CRA 2025 T2125, Area A", FORM));
+    lines.extend(rows);
+    Ok((total, true))
 }
 
 fn t2125_home_expenses(

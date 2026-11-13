@@ -7,7 +7,7 @@ fn field(key:&str,label:&str,kind:&str,default:Value,help:&str)->Value {
 }
 fn money(key:&str,label:&str,help:&str)->Value {field(key,label,"money",json!(0),help)}
 fn yes(key:&str,label:&str,help:&str)->Value {field(key,label,"boolean",json!(false),help)}
-pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/6";
+pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/7";
 fn optional(key:&str,label:&str,kind:&str,verify:&str,form:&str,help:&str)->Value {
     let mut f=json!({"key":key,"label":label,"kind":kind,"optional":true,"default_policy":"omit","blank_policy":"delete_property","tax_years":[2025],"jurisdictions":super::coverage::entry_jurisdictions("T1",2025),"verification_key":verify,"source_form":form,"help":help});
     if kind=="money"{f["min"]=json!(0);f["max"]=json!(100_000_000_000_000_i64);}f
@@ -71,6 +71,20 @@ fn t2125_home_fields() -> Vec<Value> {
     fields
 }
 
+fn t2125_cca_fields() -> Vec<Value> {
+    use super::t2125::{CCA_CLASSES, CCA_VERIFIED};
+    let mut fields = vec![optional(CCA_VERIFIED, "Verify the fiscal period and CCA classes", "boolean",
+        CCA_VERIFIED, "T2125 Area A",
+        "Confirm a full fiscal year and ordinary business-only assets still held at year-end, with no additions, disposals, adjustments, special class rules or home CCA. Leave the separately entered CCA total blank.")];
+    for class in CCA_CLASSES {
+        fields.push(optional(class.opening, &format!("Class {} opening UCC", class.class), "money",
+            CCA_VERIFIED, "T2125 Area A", "Enter the verified opening undepreciated capital cost."));
+        fields.push(optional(class.claim, &format!("Class {} claim", class.class), "money",
+            CCA_VERIFIED, "T2125 Area A", "Leave blank for the class maximum or enter a smaller amount, including zero."));
+    }
+    fields
+}
+
 pub fn catalog()->Value {
     let mut t1=program("T1","T1 — Personal","Selected 2025 workpapers, including optional verified business, rental and current-year credit totals. Read each section's limits; these are not complete schedules or a filing return.","AB",T1_SCOPE,vec![
         scope_fields(T1_SCOPE),
@@ -82,7 +96,7 @@ pub fn catalog()->Value {
         section("business-totals","Optional verified business totals",vec![
             optional("self_employment_gross_cents","Verified T2125 gross business income","money","t2125_verified","T2125","Verified gross business income after any applicable sales tax adjustments. Use Schedule 8 Part 4 below for qualifying self-employed-only CPP cases."),
             optional("self_employment_expenses_cents","Verified T2125 deductible current expenses","money","t2125_verified","T2125","Enter deductible current expenses here when using verified aggregate totals. Leave this blank when entering itemized expenses. Enter CCA separately."),
-            optional("self_employment_cca_cents","Verified T2125 CCA claim","money","t2125_verified","T2125","Externally computed CCA claim; NXT does not compute CCA classes or dispositions. This NXT workpaper rejects CCA that creates or increases a business loss; other cases are outside this calculation scope."),
+            optional("self_employment_cca_cents","Verified T2125 CCA claim","money","t2125_verified","T2125","Enter an externally computed CCA claim here, or leave blank and use T2125 capital cost allowance for eligible opening balances. The workpaper holds claims above net business income before CCA."),
             optional("t2125_verified","T2125 totals and claim eligibility verified","boolean","t2125_verified","T2125","Confirm only after checking the source totals and deductions. This is not automatic verification or a complete T2125."),
             optional("se_cpp_deduction_cents","Verified self-employed CPP deduction — line 22200","money","se_cpp_verified","Schedule 8","Externally calculated Schedule 8 deduction. Contributions, overpayments and elections are not computed here."),
             optional("se_cpp_credit_cents","Verified self-employed CPP credit — line 31000","money","se_cpp_verified","Schedule 8","Externally calculated Schedule 8 eligible credit amount, not the entire CPP payment. Verify separately from employee CPP."),
@@ -94,6 +108,7 @@ pub fn catalog()->Value {
         ]),
         section("cpp-period","CPP contribution period",vec![cpp_period()]),
         section("business-expenses","Itemized T2125 business expenses",t2125_expense_fields()),
+        section("business-cca","T2125 capital cost allowance",t2125_cca_fields()),
         section("business-use-of-home","T2125 business-use-of-home expenses",t2125_home_fields()),
         section("rental-totals","Optional verified rental totals",vec![
             optional("rental_gross_cents","Verified T776 gross rental income","money","t776_verified","T776","Aggregate verified rental totals; no property schedule, co-ownership allocation or personal-use adjustment is computed."),

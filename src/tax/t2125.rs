@@ -6,6 +6,18 @@ pub(super) const FORM: &str =
 pub(super) const HOME_VERIFIED: &str = "t2125_home_expenses_verified";
 pub(super) const HOME_PERSONAL: &str = "t2125_home_personal_use_cents";
 pub(super) const HOME_OPENING: &str = "t2125_home_expenses_opening_cents";
+pub(super) const CCA_VERIFIED: &str = "t2125_opening_cca_verified";
+pub(super) const CCA_CLASSES: &[OpeningCcaClass] = &[
+    OpeningCcaClass { class: "8", opening: "t2125_cca_8_opening_cents", claim: "t2125_cca_8_claim_cents" },
+    OpeningCcaClass { class: "10", opening: "t2125_cca_10_opening_cents", claim: "t2125_cca_10_claim_cents" },
+    OpeningCcaClass { class: "50", opening: "t2125_cca_50_opening_cents", claim: "t2125_cca_50_claim_cents" },
+];
+
+pub(super) struct OpeningCcaClass {
+    pub class: &'static str,
+    pub opening: &'static str,
+    pub claim: &'static str,
+}
 pub(super) const HOME_FIELDS: &[(&str, &str, &str)] = &[
     ("t2125_home_heat_cents", "7A", "Heat"),
     ("t2125_home_electricity_cents", "7B", "Electricity"),
