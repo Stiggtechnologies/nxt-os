@@ -3,6 +3,18 @@
 pub(super) const CONFIRMATION: &str = "t2125_itemized_verified";
 pub(super) const FORM: &str =
     "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2125/t2125-25e.pdf";
+pub(super) const HOME_VERIFIED: &str = "t2125_home_expenses_verified";
+pub(super) const HOME_PERSONAL: &str = "t2125_home_personal_use_cents";
+pub(super) const HOME_OPENING: &str = "t2125_home_expenses_opening_cents";
+pub(super) const HOME_FIELDS: &[(&str, &str, &str)] = &[
+    ("t2125_home_heat_cents", "7A", "Heat"),
+    ("t2125_home_electricity_cents", "7B", "Electricity"),
+    ("t2125_home_insurance_cents", "7C", "Insurance"),
+    ("t2125_home_maintenance_cents", "7D", "Maintenance"),
+    ("t2125_home_mortgage_interest_cents", "7E", "Mortgage interest"),
+    ("t2125_home_property_taxes_cents", "7F", "Property taxes"),
+    ("t2125_home_other_cents", "7G", "Other eligible costs, such as rent"),
+];
 
 pub(super) struct Expense {
     pub key: &'static str,

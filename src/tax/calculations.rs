@@ -554,6 +554,8 @@ pub(super) fn calculate_with_slips(
 fn check_t1_2025_fields(obj: &Map<String, Value>, baseline: &[&str]) -> Result<(), String> {
     let mut keys = baseline.to_vec();
     keys.push(super::t2125::CONFIRMATION);
+    keys.extend([super::t2125::HOME_VERIFIED, super::t2125::HOME_PERSONAL, super::t2125::HOME_OPENING]);
+    keys.extend(super::t2125::HOME_FIELDS.iter().map(|(key, _, _)| *key));
     keys.push(schedule8_payroll::CONFIRMATION);
     keys.push(super::schedule8::MONTHS);
     keys.extend(super::t2125::EXPENSES.iter().map(|expense| expense.key));
@@ -745,7 +747,10 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
             true,
         );
     }
-    let has_business = gross > 0 || expenses > 0 || cca > 0;
+    let pre_home_income = gross - expenses - cca;
+    let home = t2125_home_expenses(c, obj, pre_home_income, &mut lines)?;
+    let net_business = pre_home_income - home;
+    let has_business = gross > 0 || expenses > 0 || cca > 0 || home > 0;
     if itemized && !has_business {
         return Err("Itemized expenses require business income, expenses or CCA.".into());
     }
@@ -754,7 +759,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     let mut se_credit = 0;
     let mut se_cpp_payable = None;
     let payroll_cpp = if calculate_payroll {
-        if confirmed || employment == 0 || boolean(obj, "born_1960_or_earlier")? || gross - expenses - cca < 0 {
+        if confirmed || employment == 0 || boolean(obj, "born_1960_or_earlier")? || net_business < 0 {
             return Err("Payroll CPP requires confirmed eligibility, positive employment income, nonnegative business income and an unselected Part 4 confirmation.".into());
         }
         if entered_deduction > 0 || entered_credit > 0
@@ -763,7 +768,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
             return Err("Clear the manually entered CPP amounts before calculating from saved T4s.".into());
         }
         let payroll = schedule8_payroll::Payroll::from_slips(slips, employment)?;
-        let transfers = schedule8_payroll::calculate(&payroll, gross - expenses - cca, cpp_period);
+        let transfers = schedule8_payroll::calculate(&payroll, net_business, cpp_period);
         c.sources.push(source("CRA 2025 Schedule 8, Parts 3 and 5", super::schedule8::FORM));
         lines.push(("44800".into(), "Schedule 8 CPP overpayment".into(), transfers.overpayment));
         Some(transfers)
@@ -772,8 +777,8 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     };
     if has_business {
         require(c, obj, "t2125_verified", "Verify the T2125 totals and claim eligibility against the business records.")?;
-        se_net = gross - expenses - cca;
-        if cca > 0 && se_net < 0 {
+        se_net = net_business;
+        if cca > 0 && pre_home_income < 0 {
             return Err("CCA cannot create or increase a business loss".into());
         }
         lines.push(("13499".into(), "T2125 gross business income".into(), gross));
@@ -783,9 +788,11 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
                 ("T2125:8299".into(), "Gross business income".into(), gross),
                 ("T2125:9936".into(), "Verified capital cost allowance".into(), cca),
                 ("T2125:9368".into(), "Total expenses including CCA".into(), sum(&[expenses, cca])?),
-                ("T2125:9369".into(), "Net income before adjustments".into(), se_net),
-                ("T2125:9946".into(), "Net business income under the confirmed scope".into(), se_net),
+                ("T2125:9369".into(), "Net income before adjustments".into(), pre_home_income),
             ]);
+        }
+        if itemized || obj.contains_key(super::t2125::HOME_VERIFIED) && boolean(obj, super::t2125::HOME_VERIFIED)? {
+            lines.push(("T2125:9946".into(), "Net business income under the confirmed scope".into(), se_net));
         }
         if let Some(transfers) = &payroll_cpp {
             se_ded = transfers.business_deduction;
@@ -866,6 +873,59 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     if oas>0 { require(c,obj,"oas_verified","Verify T4A(OAS) box 18 OAS pension; recovery tax already withheld (box 22) must be entered as tax withheld. Net federal supplements and EI benefit repayments are not handled.")?; lines.push(("11300".into(),"Old age security pension".into(),oas)); }
     let income=sum(&[se_net,taxable_gain,rental,pen,in_split,elig_div,other_div,oas])?;
     Ok(T1Extra{income,deductions:sum(&[out_split,se_ded])?,pension_for_credit:(pen-out_split).max(0)+in_split,se_cpp_credit:se_credit,se_cpp_payable,payroll_cpp,elig_div,other_div,oas,lines})
+}
+
+fn t2125_home_expenses(
+    c: &mut Calculation, obj: &Map<String, Value>, pre_home_income: i64,
+    lines: &mut Vec<(String, String, i64)>,
+) -> Result<i64, String> {
+    use super::t2125::{FORM, HOME_FIELDS, HOME_OPENING, HOME_PERSONAL, HOME_VERIFIED};
+    let verified = boolean(obj, HOME_VERIFIED)?;
+    let supplied = [HOME_PERSONAL, HOME_OPENING].iter().any(|key| obj.contains_key(*key))
+        || HOME_FIELDS.iter().any(|(key, _, _)| obj.contains_key(*key));
+    if !supplied && !verified {
+        return Ok(0);
+    }
+    if !verified {
+        c.diagnostic("t2125_home_unverified", "Verify the workspace eligibility, allocation and expenses before calculating the T2125 Part 7 claim.", Some(HOME_VERIFIED), true);
+        return Ok(0);
+    }
+    c.sources.push(source("CRA 2025 T2125, Part 7", FORM));
+    let mut subtotal = 0;
+    for &(key, code, label) in HOME_FIELDS {
+        let amount = money(obj, key)?;
+        subtotal = sum(&[subtotal, amount])?;
+        if obj.contains_key(key) {
+            lines.push((format!("T2125:{code}"), label.into(), amount));
+        }
+    }
+    let personal = if subtotal > 0 {
+        optional_money(obj, HOME_PERSONAL)?.ok_or("Enter the personal-use portion, or enter zero if none applies.")?
+    } else {
+        money(obj, HOME_PERSONAL)?
+    };
+    if personal > subtotal {
+        return Err("The personal-use portion exceeds total home expenses.".into());
+    }
+    let opening = money(obj, HOME_OPENING)?;
+    let eligible_current = subtotal - personal;
+    let available = sum(&[eligible_current, opening])?;
+    let income_limit = pre_home_income.max(0);
+    let claim = available.min(income_limit);
+    for (code, label, amount) in [
+        ("7H", "Home expense subtotal", subtotal),
+        ("7I", "Personal-use portion", personal),
+        ("7J", "Current business-use portion", eligible_current),
+        ("7L", "Verified prior-year carryforward", opening),
+        ("7M", "Available home expenses", available),
+        ("7N", "Net business income limit", income_limit),
+        ("7O", "Home expenses available to carry forward", available - claim),
+        ("7P", "Allowed home expense claim", claim),
+        ("9945", "Business-use-of-home expenses", claim),
+    ] {
+        lines.push((format!("T2125:{code}"), label.into(), amount));
+    }
+    Ok(claim)
 }
 /// Federal credits: gross medical 33099, allowable medical 33200, donation credit 34900, pension 31400, tuition 32300.
 /// 2025 low-income tax reductions from the BC, NL, PE, NS and NB 428 forms. Family income is

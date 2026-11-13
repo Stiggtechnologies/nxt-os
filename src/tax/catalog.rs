@@ -7,7 +7,7 @@ fn field(key:&str,label:&str,kind:&str,default:Value,help:&str)->Value {
 }
 fn money(key:&str,label:&str,help:&str)->Value {field(key,label,"money",json!(0),help)}
 fn yes(key:&str,label:&str,help:&str)->Value {field(key,label,"boolean",json!(false),help)}
-pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/5";
+pub const T1_FIELD_CATALOG_VERSION:&str="nxt-tax-fields/T1/2025/6";
 fn optional(key:&str,label:&str,kind:&str,verify:&str,form:&str,help:&str)->Value {
     let mut f=json!({"key":key,"label":label,"kind":kind,"optional":true,"default_policy":"omit","blank_policy":"delete_property","tax_years":[2025],"jurisdictions":super::coverage::entry_jurisdictions("T1",2025),"verification_key":verify,"source_form":form,"help":help});
     if kind=="money"{f["min"]=json!(0);f["max"]=json!(100_000_000_000_000_i64);}f
@@ -42,7 +42,7 @@ fn t2125_expense_fields() -> Vec<Value> {
     let mut fields = vec![optional(
         super::t2125::CONFIRMATION, "Verify sole-proprietor business and expense breakdown", "boolean",
         super::t2125::CONFIRMATION, "T2125",
-        "Confirm a single ordinary sole proprietorship with verified adjusted gross revenue and deductible expenses. Inventory, partnership, professional or commission reporting, rebates, reserves and business-use-of-home adjustments are outside this itemized path.",
+        "Confirm a single ordinary sole proprietorship with verified adjusted gross revenue and deductible expenses. Inventory, partnership, professional or commission reporting, rebates and reserves are outside this path. Enter business-use-of-home amounts in their own section.",
     )];
     for expense in super::t2125::EXPENSES {
         fields.push(optional(
@@ -51,6 +51,23 @@ fn t2125_expense_fields() -> Vec<Value> {
             "Enter the verified deductible business portion. Apply applicable limits or adjustments before entering the amount.",
         ));
     }
+    fields
+}
+
+fn t2125_home_fields() -> Vec<Value> {
+    use super::t2125::{HOME_FIELDS, HOME_OPENING, HOME_PERSONAL, HOME_VERIFIED};
+    let mut fields = vec![optional(
+        HOME_VERIFIED, "Verify the home workspace and expense allocation", "boolean", HOME_VERIFIED, "T2125 Part 7",
+        "Confirm eligibility for this sole proprietorship and that the amounts are excluded from other business deductions. Verify the personal-use allocation and any carryforward for this same business. Home CCA requires separate preparation.",
+    )];
+    for &(key, line, label) in HOME_FIELDS {
+        fields.push(optional(key, &format!("{label} ({line})"), "money", HOME_VERIFIED, "T2125 Part 7",
+            "Enter the verified eligible expense before deducting its personal-use portion."));
+    }
+    fields.push(optional(HOME_PERSONAL, "Personal-use portion (7I)", "money", HOME_VERIFIED, "T2125 Part 7",
+        "Enter the verified total personal portion for all costs above, including any applicable space and time allocations. Enter zero explicitly if there is no personal portion."));
+    fields.push(optional(HOME_OPENING, "Prior-year carryforward (7L)", "money", HOME_VERIFIED, "T2125 Part 7",
+        "Enter the verified unused home expenses for this same business from the previous year."));
     fields
 }
 
@@ -77,6 +94,7 @@ pub fn catalog()->Value {
         ]),
         section("cpp-period","CPP contribution period",vec![cpp_period()]),
         section("business-expenses","Itemized T2125 business expenses",t2125_expense_fields()),
+        section("business-use-of-home","T2125 business-use-of-home expenses",t2125_home_fields()),
         section("rental-totals","Optional verified rental totals",vec![
             optional("rental_gross_cents","Verified T776 gross rental income","money","t776_verified","T776","Aggregate verified rental totals; no property schedule, co-ownership allocation or personal-use adjustment is computed."),
             optional("rental_expenses_cents","Verified T776 deductible current expenses","money","t776_verified","T776","Current deductible rental expenses from records, excluding separately entered CCA. Capital expenses need separate review."),
