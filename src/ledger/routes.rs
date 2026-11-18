@@ -379,6 +379,11 @@ pub async fn run_report(l: &Ledger, name: &str, q: &Range) -> LResult<Value> {
         "ar-aging" => l.aging(DocKind::Invoice, &q.to()).await,
         "ap-aging" => l.aging(DocKind::Bill, &q.to()).await,
         "sales-tax" => l.sales_tax(&q.from(), &q.to()).await,
+        "cash-flow" => l.cash_flow(&q.from(), &q.to()).await,
+        "profit-loss-by-month" => l.profit_loss_by_month(&q.from(), &q.to()).await,
+        "profit-loss-comparison" => l.profit_loss_comparison(&q.from(), &q.to()).await,
+        "customer-balances" => l.contact_balances(DocKind::Invoice, &q.to()).await,
+        "vendor-balances" => l.contact_balances(DocKind::Bill, &q.to()).await,
         "general-ledger" => l.general_ledger(q.account_id.as_deref().filter(|s| !s.is_empty()), &q.from(), &q.to()).await,
         _ => Err(LedgerError::NotFound(format!("unknown report '{name}'"))),
     }
