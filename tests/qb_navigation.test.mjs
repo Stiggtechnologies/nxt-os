@@ -44,7 +44,7 @@ test('public menu catalog contains generic navigation with unique IDs and no sou
   const nodes = flatten(catalog.groups);
   assert.ok(nodes.length > 100);
   assert.equal(new Set(nodes.map(n => n.id)).size, nodes.length);
-  const allowed = new Set(['id', 'label', 'observation', 'children', 'observed_path', 'native_route', 'native_scope', 'next_step', 'related', 'kind']);
+  const allowed = new Set(['id', 'label', 'observation', 'children', 'observed_path', 'native_route', 'native_scope', 'next_step', 'related', 'kind', 'scope', 'scope_reason']);
   for (const node of nodes) {
     assert.match(node.id, /^[a-z0-9][a-z0-9-]*$/);
     assert.ok(['observed', 'grouping', 'unverified'].includes(node.observation));
