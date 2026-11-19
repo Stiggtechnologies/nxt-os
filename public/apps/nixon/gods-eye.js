@@ -81,5 +81,9 @@
     const refresh = el("#geRefresh");
     if (refresh) refresh.onclick = load;
     load();
+    // #gods-eye (voice, Ask NXT, open_nixon_page) brings the card into view and refreshes it.
+    const focus = () => { if (location.hash === "#gods-eye") { el("#godsEyeCard")?.scrollIntoView({ behavior: "smooth", block: "start" }); load(); } };
+    window.addEventListener("hashchange", focus);
+    if (location.hash === "#gods-eye") el("#godsEyeCard")?.scrollIntoView({ block: "start" });
   });
 })();

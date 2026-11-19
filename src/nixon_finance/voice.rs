@@ -80,6 +80,8 @@ pub enum VoiceIntent {
     RefusePost,
     RefuseFile,
     StartTaxReturn,
+    /// God's Eye: the firm-wide watch list (`gods_eye::view`), spoken. Read-only.
+    GodsEye,
     Navigate,
     Help,
 }
@@ -174,6 +176,9 @@ pub fn classify(transcript: &str, channel: &str) -> Result<VoiceIntent, String> 
     }
     if is_social(&heard) {
         return Ok(VoiceIntent::Social);
+    }
+    if is_gods_eye(&heard) {
+        return Ok(VoiceIntent::GodsEye);
     }
     if is_run_review(&heard) {
         return Ok(VoiceIntent::RunReview);
@@ -324,6 +329,15 @@ fn is_run_review(heard: &str) -> bool {
         || heard.contains("finance review")
 }
 
+/// "God's Eye" as speech recognizers write it, plus "God's View" (the name Orville also uses
+/// for the SyncAI God's Eye voice) and plain firm-wide asks. Input is already `normalize_heard`.
+pub fn is_gods_eye(heard: &str) -> bool {
+    let padded = format!(" {heard} ");
+    [" god s eye ", " gods eye ", " godseye ", " god eye ", " gods eyes ", " god s eyes ", " god s view ", " gods view ", " god view ", " godsview ", " firm wide view ", " firm wide watch "]
+        .iter()
+        .any(|n| padded.contains(n))
+}
+
 fn is_explain(heard: &str) -> bool {
     heard.contains("explain")
 }
@@ -442,10 +456,11 @@ pub async fn handle_as(scope: &Scope, staff: &crate::firm::staff::Identity, turn
             "none",
         ),
         VoiceIntent::StartTaxReturn => start_tax_return(scope, staff, &turn.transcript).await?,
+        VoiceIntent::GodsEye => gods_eye(scope, staff).await?,
         VoiceIntent::Navigate => open_records(scope, &heard).await?,
         VoiceIntent::Help => answer_shell(
             "help",
-            "I can run a review, start or open a T1 for a named client, explain a finding, show reconciliation gaps, give the cash position, or open a module, account, invoice, client, or engagement. I can't post, file, or approve.".into(),
+            "I can give you God's Eye across every company, run a review, start or open a T1 for a named client, explain a finding, show reconciliation gaps, give the cash position, or open a module, account, invoice, client, or engagement. I can't post, file, or approve.".into(),
             None,
             "none",
         ),
@@ -468,6 +483,46 @@ pub async fn handle_as(scope: &Scope, staff: &crate::firm::staff::Identity, turn
     };
     audit(ledger, &turn, &answer).await?;
     Ok(answer)
+}
+
+/// Thin adapter from the God's Eye view to one spoken line. Same firm-wide rule as
+/// `/api/nixon/gods-eye`: client-scoped staff get 403. Reads only; writes no proposal.
+async fn gods_eye(scope: &Scope, staff: &crate::firm::staff::Identity) -> Result<VoiceAnswer, NixonError> {
+    if !staff.all_clients() {
+        return Err(NixonError::new(403, "God's Eye is firm-wide and needs firm-wide staff access."));
+    }
+    let view = super::gods_eye::view(scope, super::gods_eye::ViewQuery::default(), None).await?;
+    let mut answer = answer_shell("gods_eye", gods_eye_line(&view), None, "none");
+    answer.open = Some(navigate::OpenTarget { app: "nixon".into(), view: "gods-eye".into() });
+    Ok(answer)
+}
+
+/// The spoken God's Eye summary. `answer_shell` caps it at [`SPEECH_MAX_CHARS`].
+pub fn gods_eye_line(view: &serde_json::Value) -> String {
+    let findings = view["findings"].as_array().cloned().unwrap_or_default();
+    let companies = view["companies"].as_array().map(|c| c.len()).unwrap_or(0);
+    let gaps = view["gaps"].as_array().map(|g| g.len()).unwrap_or(0);
+    let as_of = view["as_of"].as_str().unwrap_or("today");
+    let gap_line = match gaps { 0 => String::new(), 1 => " One gap is shown on screen.".into(), n => format!(" {n} gaps are shown on screen.") };
+    if findings.is_empty() {
+        return format!("God's Eye as of {as_of}: no findings across {companies} compan{}. I did not invent any.{gap_line}", if companies == 1 { "y" } else { "ies" });
+    }
+    let count = |r: &str| findings.iter().filter(|f| f["finding"]["risk_level"] == r).count();
+    let mut levels = vec![];
+    for r in ["critical", "high", "medium", "low"] {
+        let n = count(r);
+        if n > 0 { levels.push(format!("{n} {r}")); }
+    }
+    let top = &findings[0];
+    let company_id = top["company_id"].as_str().unwrap_or("");
+    let company = view["companies"].as_array().into_iter().flatten()
+        .find(|c| c["company_id"] == company_id)
+        .and_then(|c| c["name"].as_str()).filter(|n| !n.is_empty()).unwrap_or(company_id);
+    let title = top["finding"]["title"].as_str().unwrap_or("a finding");
+    format!(
+        "God's Eye as of {as_of}: {} finding{} across {companies} compan{}, {}. Top: {company}, {title}. Drafted fixes wait for a named person on screen; voice does not approve.{gap_line}",
+        findings.len(), if findings.len() == 1 { "" } else { "s" }, if companies == 1 { "y" } else { "ies" }, levels.join(", ")
+    )
 }
 
 async fn explain(ledger: &Ledger, heard: &str) -> Result<VoiceAnswer, NixonError> {

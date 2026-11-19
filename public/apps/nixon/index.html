@@ -57,12 +57,14 @@
   </details>
   <div class="card" id="voiceCard" style="margin-top:16px">
     <div class="card-head"><h2 style="font-size:18px">Voice</h2><span class="pill" id="voiceState">Push to talk</span></div>
-    <p class="muted">Nixon can run a review, explain a finding, show reconciliation gaps, or give the cash position. Speaking does not approve, post, or file. Open microphone is off until you turn it on.</p>
+    <div id="nixonWelcome" class="row" style="margin-top:4px;align-items:center"><p id="welcomeText" style="flex:1;margin:0"></p><button class="btn" id="welcomePlay" type="button" aria-label="Play welcome">Play</button><button class="btn" id="welcomeMute" type="button">Mute welcome</button></div>
+    <p class="muted">Nixon can give you God's Eye across every company, run a review, explain a finding, show reconciliation gaps, or give the cash position. Speaking does not approve, post, or file. Open microphone is off until you turn it on. Play welcome uses no microphone.</p>
     <div class="row" style="margin-top:12px">
       <button class="btn primary" id="talk" type="button">Hold to talk</button>
       <button class="btn" id="liveVoice" type="button">Live voice</button>
       <button class="btn" id="stopTalk" type="button">Stop</button>
       <label class="check"><input type="checkbox" id="openMic"> Open microphone</label>
+      <label class="check"><input type="checkbox" id="meetingMode"> Meeting mode</label>
     </div>
     <p class="meta" id="voiceHint"></p>
     <form id="voiceType" class="row" style="margin-top:10px">
@@ -88,6 +90,7 @@
 </main>
 <script src="/nxt/ui.js"></script>
 <script src="/nxt/company-switcher.js"></script>
+<script src="realtime.js"></script>
 <script src="nixon.js"></script>
 <script src="gods-eye.js"></script>
 </body>
