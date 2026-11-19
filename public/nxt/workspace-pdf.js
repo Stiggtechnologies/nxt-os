@@ -107,7 +107,7 @@
         return {ok:true,document_id:record.id,title:record.title,total_pages:document.numPages,pages,next_page:start+count<=document.numPages?start+count:null,_images:images,say:"Read "+pages.length+" PDF page(s)."};
       }catch(e){return {ok:false,error:e.name==="PasswordException"?"This PDF is password protected. Ask its owner to unlock it; Nixon cannot bypass encryption.":clean(e.message||"PDF reading failed.").slice(0,300)};}
     }
-    function permitsBlob(el){return el.tagName==='A' && safeUrl(el.href)?.protocol==='blob:' && [...handles.values()].some(r=>r.url===el.href.split('#')[0]);}
+    function permitsBlob(el){return el.tagName==='A' && /\.pdf$/i.test(el.download||'') && safeUrl(el.href)?.protocol==='blob:' && [...handles.values()].some(r=>r.url===el.href.split('#')[0]);}
     async function stage(id){
       const rows=list(),record=selected(id||(rows.length===1?rows[0].id:''));
       if(!record)return {ok:false,error:'Choose an open PDF from inspection first.',documents:rows};
