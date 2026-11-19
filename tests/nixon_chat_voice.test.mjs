@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import {TextEncoder} from "node:util";
 const read = (p) => fs.readFileSync(new URL("../" + p, import.meta.url), "utf8");
 const REALTIME = read("public/apps/nixon/realtime.js");
 const CHAT = read("public/nxt/nixon-chat.js");
@@ -40,7 +41,7 @@ function sandbox({ identity = { role: "admin", clients: ["*"] }, aiEnabled = tru
     createElement: () => el(), getElementById: () => null, querySelector: () => null, addEventListener() {},
   };
   const sb = {
-    document: doc, console, setTimeout, clearTimeout, JSON, Promise, Map, Set, Object, Array, String, Number, Boolean, Error,
+    document: doc, console, setTimeout, clearTimeout, JSON, Promise, Map, Set, Object, Array, String, Number, Boolean, Error, TextEncoder,
     localStorage: { store: {}, getItem(k) { return this.store[k] ?? null; }, setItem(k, v) { this.store[k] = String(v); } },
     sessionStorage: { store: {}, getItem(k) { return this.store[k] ?? null; }, setItem(k, v) { this.store[k] = String(v); }, removeItem(k) { delete this.store[k]; } },
     URLSearchParams,
