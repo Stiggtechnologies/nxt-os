@@ -1,0 +1,81 @@
+{
+  "format": "nxt-evidence-qbo-firm-hub/v1",
+  "observed_at": "2026-11-18",
+  "product": "QuickBooks Online Accountant (firm hub)",
+  "url": "https://qbo.intuit.com/app/firm/homepage",
+  "url_note": "Session and tracking query parameters were stripped before saving; the captured URL contained a per-session slot token that is deliberately not recorded here.",
+  "rea_evidence": "ev_aea0514468a8c934dc2935d1f21ed26caebc0b5ea28be84edc9700c7d139e116",
+  "method": "REA passive CDP page inspection of one authenticated page. No click, navigation, save or modification was performed by the tool.",
+  "client_data_included": false,
+  "client_data_withheld": "The page lists client company names, connected bank accounts and certification counts. Those values are not recorded in this repository. Only generic interface labels are retained below.",
+  "labels": {
+    "primary_navigation": [
+      "Firm hub",
+      "Clients",
+      "Work",
+      "Create",
+      "Bookmarks",
+      "Inbox",
+      "Tasks",
+      "Settings",
+      "Help",
+      "ProAdvisor",
+      "Integrations",
+      "Subscriptions and billing",
+      "My menu",
+      "More",
+      "Customize",
+      "Refresh"
+    ],
+    "actions": [
+      "Add client",
+      "View all client apps",
+      "Go to Books Close",
+      "Workflow automation",
+      "Firm Books"
+    ],
+    "insight_cards": [
+      "CLIENT WITH APP ISSUES",
+      "CLIENTS WITH DISCONNECTED BANK ACCOUNTS",
+      "PROADVISOR"
+    ],
+    "bank_aggregators": [
+      "RBC Bank (CAN)",
+      "TD Canada Trust (EasyWeb)"
+    ]
+  },
+  "what_this_establishes": "The firm-level area exists as a distinct navigation layer from a company workspace, exposing clients, work, tasks, close tracking, workflow automation, integrations and a firm-owned book.",
+  "what_this_does_not_establish": [
+    "Any client workspace menu, report catalogue or control state.",
+    "That the existing company-level menu map is still current; that map was captured 2026-10-26 and is not re-verified here.",
+    "That NXT implements any of these areas at source-equivalent depth."
+  ],
+  "selector_observation": {
+    "method": "Same authenticated session, read through CDP Runtime.evaluate with a DOM selector (not an REA inspection). Recorded for completeness; it carries no client values.",
+    "firm_scope_left_rail": [
+      "My menu",
+      "Create",
+      "Bookmarks",
+      "Home",
+      "Clients",
+      "Work",
+      "Firm hub",
+      "Firm Books",
+      "More",
+      "Customize"
+    ],
+    "note": "The left rail is the same in the firm-scoped reports view, which confirms the reports page was rendering firm scope, not a client company."
+  },
+  "company_workspace_attempt": {
+    "goal": "Open one client company to re-verify the 176-entry company-level menu map.",
+    "attempts": [
+      "Direct /app/homepage and /app/homepage?companyId=<visible realm id> — both redirected to /app/firm/homepage.",
+      "localStorage/sessionStorage realm-id scan — three plausible ids found, none granted access.",
+      "Firm clients page — rendered no navigable anchors and no client rows in the DOM at observation time, behind a consent overlay.",
+      "Clicking the Clients left-rail item — routed to the clients page but still exposed no row links.",
+      "clicking the first client row — no candidate row element existed to click."
+    ],
+    "outcome": "No client workspace opened. The company-level menu map could not be re-verified in this session and remains as captured 2026-10-26.",
+    "boundary": "No client name, amount or period was read into this file. Only interface labels and the failure modes above are recorded."
+  }
+}

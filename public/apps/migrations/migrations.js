@@ -20,6 +20,7 @@
       const from=params.get('from')||'',to=params.get('to')||'';if([from,to].some(d=>d&&!/^\d{4}-\d{2}-\d{2}$/.test(d)))throw Error('Invalid ledger date filter.');
       return {view:'company',id,section,reference:decodeURIComponent(parts[3]||''),offset,from,to};
     }
+    if(parts[0]==='parity')return {view:'parity'};
     if(parts[0]!=='snapshot'&&parts[0]!=='snapshots')return {view:'companies'};
     if(parts[0]!=='snapshot')return {view:'worklist'};
     const rowText=new URLSearchParams(query).get('row')||'1';
@@ -258,8 +259,19 @@
     try{const receipt=await bookCommand(ctx,'commit','/imports/commit',{preview_id:ctx.preview.preview_id,expected_head:ctx.detail.head_sha256,reviewer_label:reviewer});if(currentCompany(ctx)){toast(receipt.idempotent_replay?'Existing import receipt recovered.':'Reviewed parallel company journal published. Source remains authoritative.');await route();}}
     catch(e){if(currentCompany(ctx))error.textContent=e.message;}finally{delete event.target.dataset.pending;button.disabled=false;}
   }
-  async function route(){const version=++S.version;S.companyContext?.coverage?.destroy();S.companyContext=null;loading();try{const info=routeInfo();if(info.view==='snapshot')await snapshot(info,version);else if(info.view==='companies')await companies(version);else if(info.view==='company')await company(info,version);else await worklist(version);if(version===S.version&&window.parent!==window)window.parent.postMessage({nxt:'view',view:location.hash.replace(/^#/,'')||'worklist'},location.origin);}catch(error){if(version===S.version)errorView(error);}}
-  document.addEventListener('click',event=>{if(event.target.closest('.skip-link')){event.preventDefault();main.focus();return;}const book=event.target.closest('[data-book-action]');if(book){nativeDialog(S.companyContext,book.dataset.bookAction,book.dataset.entry).catch(e=>toast(e.message,true));return;}const control=event.target.closest('[data-action],[data-os]');if(!control)return;if(control.dataset.os)return openApp(control.dataset.os);if(control.dataset.action==='refresh')route();if(control.dataset.action==='download')downloadArchive();});
+  async function parity(version){
+    const load=async url=>{try{const response=await fetch(url,{cache:'no-cache'});if(!response.ok)return null;return await response.json();}catch{return null;}};
+    const [tax,qb,coverage]=await Promise.all([load('/apps/tax/source-map.json'),load('/apps/ledger/qb-navigation.json'),load('qbo-report-coverage.json')]);
+    if(version!==S.version)return;
+    if(!window.NXTMigrationParity) throw Error('Parity module unavailable.');
+    const summary=window.NXTMigrationParity.summarize(tax,qb,coverage);
+    if(!summary.products.length) throw Error('No source catalogues were available.');
+    S.parity = summary;
+    page('Source parity',`${summary.totals.routed} of ${summary.totals.total} observed source entries have a native destination.`,window.NXTMigrationParity.render(summary,esc),'<button class="btn" data-action="export-parity">Export CSV</button><button class="btn" data-action="refresh">Refresh</button>');
+  }
+
+  async function route(){const version=++S.version;S.companyContext?.coverage?.destroy();S.companyContext=null;loading();try{const info=routeInfo();if(info.view==='snapshot')await snapshot(info,version);else if(info.view==='companies')await companies(version);else if(info.view==='company')await company(info,version);else if(info.view==='parity')await parity(version);else await worklist(version);if(version===S.version&&window.parent!==window)window.parent.postMessage({nxt:'view',view:location.hash.replace(/^#/,'')||'worklist'},location.origin);}catch(error){if(version===S.version)errorView(error);}}
+  document.addEventListener('click',event=>{if(event.target.closest('.skip-link')){event.preventDefault();main.focus();return;}const book=event.target.closest('[data-book-action]');if(book){nativeDialog(S.companyContext,book.dataset.bookAction,book.dataset.entry).catch(e=>toast(e.message,true));return;}const control=event.target.closest('[data-action],[data-os]');if(!control)return;if(control.dataset.os)return openApp(control.dataset.os);if(control.dataset.action==='export-parity'){if(S.parity&&window.NXTMigrationParity){const out=NXTMigrationParity.toCsv(S.parity);NXT.csvDownload(out.fileName,out.rows);}return;}if(control.dataset.action==='refresh')route();if(control.dataset.action==='download')downloadArchive();});
   document.addEventListener('input',event=>{if(event.target.id==='snapshot-search'){S.search=event.target.value;worklistMarkup();}if(event.target.id==='company-search'){S.search=event.target.value;companiesMarkup();}});
   document.addEventListener('submit',event=>{if(event.target.matches?.('[data-book-commit]')){commitForm(event);return;}if(event.target.matches?.('[data-gl-range]')){event.preventDefault();const f=new FormData(event.target),r=routeInfo(),q=new URLSearchParams();for(const k of ['from','to']){const v=String(f.get(k)||'');if(v)q.set(k,v);}location.hash=`#company/${enc(r.id)}/general-ledger${q.toString()?'?'+q:''}`;return;}if(event.target.id==='jump-form'){event.preventDefault();const row=String(new FormData(event.target).get('row')||'');if(!/^[1-9]\d{0,6}$/.test(row)||Number(row)>1048576)return toast('Enter a worksheet row between 1 and 1,048,576.',true);location.hash=viewLink(S.detail.manifest.id,S.report.id,Number(row));}if(event.target.id==='signin-form'){event.preventDefault();const key=String(new FormData(event.target).get('workspace_key')||'').trim();if(key){NXT.key.set(key);event.target.reset();route();}}});
   window.addEventListener('hashchange',route);route();

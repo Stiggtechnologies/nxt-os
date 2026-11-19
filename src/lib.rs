@@ -10,6 +10,7 @@ pub mod ledger;
 pub mod nixon;
 pub mod firm;
 pub mod nixon_finance;
+pub mod payroll;
 pub mod os;
 pub mod referral;
 pub mod store;

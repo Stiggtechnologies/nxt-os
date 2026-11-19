@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 
-const source=fs.readFileSync(new URL('../public/apps/migrations/migrations.js',import.meta.url),'utf8');
+const source=fs.readFileSync(new URL('../public/apps/migrations/migrations.js',import.meta.url),'utf8').replace(/\r\n/g,'\n');
 const hsh='a'.repeat(64),previewId='b'.repeat(64),controls={source_authoritative:true,parallel_test:true,live_cutover_allowed:false};
 const boundary={shadow_only:true,source_authoritative:true,live_cutover_allowed:false};
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};

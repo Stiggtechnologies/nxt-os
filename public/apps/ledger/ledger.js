@@ -51,7 +51,7 @@ function page(title, sub, actions, body) {
 }
 function table(cols, rows, { onClick, empty = "Nothing here yet.", foot } = {}) {
   if (!rows.length) return `<div class="empty">${empty}</div>`;
-  const html = `<div class="table-wrap"><table><thead><tr>${cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.h}</th>`).join("")}</tr></thead>
+  const html = `<div class="table-wrap"><table><thead><tr>${cols.map((c) => c.sort ? `<th scope="col" class="${c.num ? "num" : ""}" aria-sort="${c.sortDir === "asc" ? "ascending" : c.sortDir === "desc" ? "descending" : "none"}"><button type="button" class="th-sort" data-sort="${esc(c.sort)}">${c.h}${c.sortDir === "asc" ? " \u2191" : c.sortDir === "desc" ? " \u2193" : ""}</button></th>` : `<th scope="col" class="${c.num ? "num" : ""}">${c.h}</th>`).join("")}</tr></thead>
     <tbody>${rows.map((r, i) => `<tr${onClick ? ` class="click" data-row="${i}"` : ""}>${cols.map((c) => `<td class="${c.num ? "num" : ""}">${c.f(r)}</td>`).join("")}</tr>`).join("")}</tbody>
     ${foot ? `<tfoot><tr>${foot.map((f, i) => `<td class="${cols[i]?.num ? "num" : ""}">${f}</td>`).join("")}</tr></tfoot>` : ""}</table></div>`;
   if (onClick) setTimeout(() => $$("tr[data-row]", main).forEach((tr) => (tr.onclick = (e) => { if (!e.target.closest("button, a, input, select")) onClick(rows[tr.dataset.row]); })));
@@ -89,6 +89,7 @@ views.dashboard = async () => {
   const d = await api("/api/ledger/reports/dashboard");
   const max = Math.max(1, ...d.months.flatMap((m) => [m.income, m.expenses]));
   const inv = (await api("/api/ledger/invoices")).filter((x) => x.status === "overdue").slice(0, 6);
+  const billsDue = (await api("/api/ledger/bills")).filter((x) => ["open", "partial", "overdue"].includes(x.status)).sort((a, b) => String(a.doc.due_date).localeCompare(String(b.doc.due_date))).slice(0, 6);
   page(S.company.name, `Fiscal year from ${fmtDate(d.fiscal_year_start)} · ${S.company.currency}`,
     `<a class="btn" href="#bills/new">New bill</a><a class="btn primary" href="#invoices/new">New invoice</a>`,
     `<div class="grid kpis">
@@ -100,6 +101,8 @@ views.dashboard = async () => {
         <div class="bars">${d.months.map((m) => `<div class="m" title="${m.month}: ${money(m.income)} in, ${money(m.expenses)} out"><div class="pair"><div class="b in" style="height:${(m.income / max) * 100}%"></div><div class="b out" style="height:${(m.expenses / max) * 100}%"></div></div><div class="lbl">${new Date(m.month + "-01T00:00:00").toLocaleDateString("en-CA", { month: "short" })}</div></div>`).join("")}</div></div>
       <div class="card"><div class="card-head"><h3>Overdue invoices</h3><a href="#invoices">View all</a></div>
         ${table([{ h: "Invoice", f: (r) => esc(r.doc.number) }, { h: "Customer", f: (r) => esc(r.contact_name) }, { h: "Due", f: (r) => fmtDate(r.doc.due_date) }, { h: "Balance", num: 1, f: (r) => money(r.balance) }], inv, { onClick: (r) => go("invoices/" + r.doc.id), empty: "No overdue invoices." })}
+        <div class="card"><div class="card-head"><h3>Bills due</h3><a href="#bills">View all</a></div>
+        ${table([{ h: "Bill", f: (r) => esc(r.doc.number) }, { h: "Vendor", f: (r) => esc(r.contact_name) }, { h: "Due", f: (r) => fmtDate(r.doc.due_date) }, { h: "Balance", num: 1, f: (r) => money(r.balance) }], billsDue, { onClick: (r) => go("bills/" + r.doc.id), empty: "No bills due." })}</div>
         <div class="row" style="margin-top:12px">${d.pending_bank_transactions ? `<a class="btn sm" href="#banking">${d.pending_bank_transactions} bank transactions to review</a>` : ""}<a class="btn sm" href="#reports/sales-tax">GST/HST owing: ${money(d.gst_hst_owing)}</a></div>
       </div>
     </div>`);
@@ -115,18 +118,34 @@ function docViews(kind) {
     if (sub) return docView(kind, sub);
     const rows = await api("/api/ledger/" + plural);
     let filter = "all";
+    let sortKey = ""; let sortDir = "asc";
+    const docValue = (r, key) => key === "number" ? r.doc.number : key === "date" ? r.doc.date : key === "due" ? r.doc.due_date : key === "status" ? r.status : key === "total" ? r.doc.total : r.balance;
     const render = () => {
-      const list = rows.filter((r) => filter === "all" || (filter === "open" ? ["open", "partial", "overdue"].includes(r.status) : r.status === filter));
+      const filtered = rows.filter((r) => filter === "all" || (filter === "open" ? ["open", "partial", "overdue"].includes(r.status) : r.status === filter));
+      const list = window.NXTLedgerSort ? NXTLedgerSort.sortBy(filtered, sortKey, sortDir, docValue) : filtered;
       const open = rows.reduce((s, r) => s + r.balance, 0), overdue = rows.filter((r) => r.status === "overdue").reduce((s, r) => s + r.balance, 0);
-      page(Title + "s", kind === "invoice" ? "Money your customers owe you." : "Money you owe your vendors.", `<a class="btn primary" href="#${plural}/new">New ${kind}</a>`,
+      page(Title + "s", kind === "invoice" ? "Money your customers owe you." : "Money you owe your vendors.", `<button class="btn" type="button" id="creditMemo">${kind === "invoice" ? "Credit memo" : "Supplier credit"}</button><button class="btn" type="button" id="csv">Export</button><a class="btn primary" href="#${plural}/new">New ${kind}</a>`,
         `<div class="grid kpis" style="margin-bottom:14px"><div class="kpi"><div class="k">Open</div><div class="v">${money(open)}</div></div><div class="kpi"><div class="k">Overdue</div><div class="v">${money(overdue)}</div></div></div>
         <div class="card"><div class="tabs">${["all", "open", "overdue", "paid", "void"].map((t) => `<button data-f="${t}" aria-selected="${t === filter}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</div>
         ${table([
-          { h: "Number", f: (r) => `<b>${esc(r.doc.number)}</b>` }, { h: Title === "Invoice" ? "Customer" : "Vendor", f: (r) => esc(r.contact_name) },
-          { h: "Date", f: (r) => fmtDate(r.doc.date) }, { h: "Due", f: (r) => fmtDate(r.doc.due_date) }, { h: "Status", f: (r) => pill(r.status) },
-          { h: "Total", num: 1, f: (r) => money(r.doc.total) }, { h: "Balance", num: 1, f: (r) => money(r.balance) },
+          { h: "Number", sort: "number", sortDir: sortKey === "number" ? sortDir : null, f: (r) => `<b>${esc(r.doc.number)}</b>` }, { h: Title === "Invoice" ? "Customer" : "Vendor", f: (r) => esc(r.contact_name) },
+          { h: "Date", sort: "date", sortDir: sortKey === "date" ? sortDir : null, f: (r) => fmtDate(r.doc.date) }, { h: "Due", sort: "due", sortDir: sortKey === "due" ? sortDir : null, f: (r) => fmtDate(r.doc.due_date) }, { h: "Status", sort: "status", sortDir: sortKey === "status" ? sortDir : null, f: (r) => pill(r.status) },
+          { h: "Total", num: 1, sort: "total", sortDir: sortKey === "total" ? sortDir : null, f: (r) => money(r.doc.total) }, { h: "Balance", num: 1, sort: "balance", sortDir: sortKey === "balance" ? sortDir : null, f: (r) => money(r.balance) },
         ], list, { onClick: (r) => go(plural + "/" + r.doc.id), empty: `No ${plural} yet. <a href="#${plural}/new">Create one</a>.` })}</div>`);
-      $$(".tabs button", main).forEach((b) => (b.onclick = () => { filter = b.dataset.f; render(); }));
+      const creditAction = $("#creditMemo");
+  if (creditAction) creditAction.onclick = () => creditMemoModal(kind);
+  $$(".tabs button", main).forEach((b) => (b.onclick = () => { filter = b.dataset.f; render(); }));
+      $$("[data-sort]", main).forEach((b) => (b.onclick = () => {
+        const key = b.dataset.sort;
+        sortDir = sortKey === key && sortDir === "asc" ? "desc" : "asc";
+        sortKey = key;
+        render();
+      }));
+      const exportButton = $("#csv");
+      if (exportButton) exportButton.onclick = () => {
+        if (!window.NXTLedgerDocExport) { toast("Export is unavailable.", true); return; }
+        csvDownload(window.NXTLedgerDocExport.fileName(kind, filter), window.NXTLedgerDocExport.rows(list, kind));
+      };
     };
     render();
   };
@@ -264,7 +283,7 @@ async function paymentModal(kind, contactId, docs) {
     el.innerHTML = `<form class="form"><label class="f">Date<input name="date" type="date" value="${today()}"></label>
       <label class="f">${kind === "invoice" ? "Deposit to" : "Paid from"}<select name="account_id">${acctOptions(isMoney, "acc_1000")}</select></label>
       <label class="f">Memo<input name="memo" placeholder="Cheque #, e-transfer ref…"></label></form>
-      <div style="margin-top:14px">${open.length ? `<table><thead><tr><th>Document</th><th>Due</th><th class="num">Open</th><th class="num" style="width:130px">Payment</th></tr></thead><tbody>${open.map((d) => `<tr><td>${esc(d.number)}</td><td>${fmtDate(d.due_date)}</td><td class="num">${money(bal(d))}</td><td><input data-doc="${d.id}" inputmode="decimal" value="${(bal(d) / 100).toFixed(2)}" style="width:100%;text-align:right"></td></tr>`).join("")}</tbody></table>` : `<div class="empty">Nothing open.</div>`}</div>
+      <div style="margin-top:14px">${open.length ? `<table><thead><tr><th>Document</th><th>Due</th><th class="num">Open</th><th class="num" style="width:130px">Payment</th></tr></thead><tbody>${open.map((d) => `<tr><td>${esc(d.number)}</td><td>${fmtDate(d.due_date)}</td><td class="num">${money(bal(d))}</td><td><input data-doc="${d.id}" inputmode="decimal" value="${NXTLedgerFormat.cents(bal(d))}" style="width:100%;text-align:right"></td></tr>`).join("")}</tbody></table>` : `<div class="empty">Nothing open.</div>`}</div>
       <div class="totals"><div class="grand"><span>Total</span><span class="num" id="ptot"></span></div></div>
       <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok ${open.length ? "" : "disabled"}>Record payment</button></div>`;
     const sum = () => $$("[data-doc]", el).reduce((s, i) => s + (toCents(i.value) || 0), 0);
@@ -307,6 +326,198 @@ function contactViews(kind) {
 views.customers = contactViews("customer");
 views.vendors = contactViews("vendor");
 
+// ---------------------------------------------------------------- lists
+views.lists = async () => {
+  const L = window.NXTLedgerLists;
+  if (!L) { page("Lists", "", "", `<div class="card err-text">The lists module did not load. Reload the page.</div>`); return; }
+  let parallel = null, subledger = null, payroll = null, recurring = null, schedules = null, inventory = null, crm = null, salesDocs = null, parallelNote = "";
+  if (company) {
+    try {
+      parallel = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/daily`);
+      try { subledger = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/subledger`); } catch { subledger = null; }
+    try { payroll = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/payroll/history`); } catch { payroll = null; }
+    try { recurring = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/recurring`); } catch { recurring = null; }
+    try { schedules = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/schedules?as_of=${today()}`); } catch { schedules = null; }
+    try { inventory = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/inventory`); } catch { inventory = null; }
+    try { crm = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/crm`); } catch { crm = null; }
+    try { salesDocs = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/sales-documents`); } catch { salesDocs = null; }
+    }
+    catch (e) { parallelNote = e.status === 404 ? "This company book has no parallel lists yet." : e.message; }
+  }
+  const lanes = L.lanes({ contacts: S.contacts, accounts: S.accounts, parallel, subledger, payroll, recurring, schedules, inventory, crm, salesDocs });
+  const scope = company || "firm-workspace";
+  const head = L.summary(lanes);
+  page("Lists", `${head.lanes} lists · ${head.rows} rows · ${head.native} from this ledger, ${head.parallel} from parallel lists.`,
+    `<button class="btn" id="exportAll">Export all lists</button>${company ? '<button class="btn" id="addSalesDoc">Sales document</button><button class="btn" id="addPipeline">Pipeline entry</button><button class="btn" id="addMovement">Stock movement</button><button class="btn" id="addSchedule">Add schedule</button><button class="btn" id="addRecurring">Add recurring</button><button class="btn primary" id="runPayroll">Run payroll</button>' : ''}`,
+    `<div class="card"><input id="q" placeholder="Search every list by name, number, email…" style="width:100%">
+      <p class="form-note" style="margin:10px 0 0">Lists show what this book holds. Exports carry exactly the rows shown. Parallel lists accept new entries here, and nothing on this screen posts a journal, syncs or writes back to QuickBooks.</p></div>
+     <div id="lanes"></div>${parallelNote ? `<p class="form-note" role="status">${esc(parallelNote)}</p>` : ""}`);
+  let listSort = { key: "", dir: "asc" };
+  const render = () => {
+    const q = $("#q").value;
+    $("#lanes").innerHTML = L.renderLanes(lanes, { table, esc, query: q, sort: listSort, onRow: (lane, row) => settleDocument(row) });
+    $$("[data-export-lane]", main).forEach((b) => b.onclick = () => {
+      const lane = lanes.find((x) => x.id === b.dataset.exportLane);
+      csvDownload(L.fileName(scope, lane.id), L.laneCsv(lane));
+    });
+    $$("[data-add-lane]", main).forEach((b) => b.onclick = () => addEntry(b.dataset.addLane));
+    $$("[data-sort]", main).forEach((b) => b.onclick = () => {
+      const key = b.dataset.sort;
+      listSort = listSort.key === key ? { key, dir: listSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" };
+      render();
+    });
+  };
+  // Settling a parallel document posts a journal against its control account.
+  const settleDocument = async (row) => {
+    if (!company || !row || !row.id || !(row.openCents > 0)) return;
+    let head = "";
+    try { head = (await NXT.api(`/api/company-books/${encodeURIComponent(company)}`)).head || ""; }
+    catch (e) { toast(e.message, true); return; }
+    if (!head) { toast("This book has no committed head yet.", true); return; }
+    const cashAccounts = S.accounts.filter((a) => a.kind === "asset" && !a.archived);
+    const cashOptions = cashAccounts.map((a) => `<option value="${esc(a.id)}">${esc(a.code)} · ${esc(a.name)}</option>`).join("");
+    return modal(`Settle ${row.kind}`, (el, close) => {
+      el.innerHTML = `<form class="form">
+        <label class="f">Date<input name="payDate" type="date" value="${today()}" required></label>
+        <label class="f">Amount<input name="payAmount" inputmode="decimal" value="${esc(row.open)}" required></label>
+        <label class="f full">Cash account<select name="payCash">${cashOptions}</select></label>
+        <label class="f full">Operator<input name="payOperator" maxlength="120" placeholder="Your name" required></label>
+        <p class="form-note" style="grid-column:1/-1">This posts a journal entry against the document's control account and the cash account you choose. It cannot be undone from this screen.</p></form>
+        <div class="actions"><button class="btn" type="button" data-x>Cancel</button><button class="btn primary" type="button" data-ok>Post payment</button></div>`;
+      let requestId = "";
+      el.querySelector("[data-x]").onclick = () => close();
+      el.querySelector("[data-ok]").onclick = async () => {
+        const cents = toCents(el.querySelector('input[name="payAmount"]').value);
+        if (Number.isNaN(cents)) { toast("Enter an amount with at most two decimals.", true); return; }
+        let built;
+        try {
+          built = L.createPaymentRequest({
+            documentId: row.id,
+            expectedHead: head,
+            operatorLabel: el.querySelector('input[name="payOperator"]').value,
+            cashAccountId: el.querySelector('select[name="payCash"]').value,
+            date: el.querySelector('input[name="payDate"]').value,
+            amountCents: cents,
+            openCents: row.openCents,
+            requestId
+          });
+        } catch (e) { toast(e.message, true); return; }
+        requestId = built.body.request_id;
+        try {
+          await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/payments`, { body: built.body });
+          toast("Payment posted"); close(); route();
+        } catch (e) {
+          toast(e.status === 409 ? "The book changed; refreshed." : e.message, true);
+          if (e.status === 409) { close(); route(); }
+        }
+      };
+      return el;
+    });
+  };
+
+  // Adding a parallel list entry posts to the company book only. It never posts a journal,
+  // never runs payroll and never reaches QuickBooks; the server states the same flags back.
+  const addEntry = (laneId) => {
+    const lane = lanes.find((x) => x.id === laneId);
+    if (!lane || !L.canAdd(lane) || !company) return;
+    const isTime = laneId === "time";
+    const needsAccount = laneId === "items";
+    const isBudget = laneId === "budgets";
+    const isDocument = laneId === "estimates" || laneId === "purchase-orders";
+    const staff = (parallel && Array.isArray(parallel.employees) ? parallel.employees : []).filter((row) => row && row.active !== false);
+    const employeeOptions = staff.map((row) => `<option value="${esc(row.id)}">${esc(row.name)}</option>`).join("");
+    return modal(`Add ${isTime ? "time entry" : lane.label.replace(/s$/, "")}`, (el, close) => {
+      const contactKind = laneId === "estimates" ? "customer" : "vendor";
+      const contactOptions = S.contacts.filter((c) => c.kind === contactKind && !c.archived).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+      const itemOptions = (parallel && Array.isArray(parallel.items) ? parallel.items : []).map((i) => `<option value="${esc(i.id)}">${esc(i.name)}</option>`).join("");
+      const fields = isTime
+        ? `<label class="f">Employee<select name="entryEmployee">${employeeOptions}</select></label>
+           <label class="f">Date<input name="entryDate" type="date" value="${today()}" required></label>
+           <label class="f">Minutes<input name="entryMinutes" type="number" min="1" max="1440" step="1" value="60" required></label>`
+        : isBudget
+        ? `<label class="f">Account<select name="entryAccount">${acctOptions(null, null)}</select></label>
+           <label class="f">Period<input name="entryPeriod" type="month" value="${today().slice(0,7)}" required></label>
+           <label class="f">Amount<input name="entryAmount" inputmode="decimal" placeholder="0.00" required></label>`
+        : isDocument
+        ? `<label class="f">${laneId === "estimates" ? "Customer" : "Supplier"}<select name="entryContact">${contactOptions}</select></label>
+           <label class="f">Number<input name="entryNumber" maxlength="40" placeholder="Optional"></label>
+           <label class="f">Item<select name="entryItem">${itemOptions}</select></label>
+           <label class="f">Amount<input name="entryAmount" inputmode="decimal" placeholder="0.00" required></label>`
+        : `<label class="f">Name<input name="entryName" required maxlength="80" autocomplete="off"></label>
+           ${needsAccount ? `<label class="f">Income account<select name="entryAccount">${acctOptions((a) => a.kind === "income", null)}</select></label>` : ""}`;
+      el.innerHTML = `<form class="form">${fields}
+        <p class="form-note" style="grid-column:1/-1">Adds to this company book's parallel list. It does not post to the ledger, does not run payroll and never syncs to QuickBooks.</p></form>
+        <div class="actions"><button class="btn" type="button" data-x>Cancel</button><button class="btn primary" type="button" data-ok>Add</button></div>`;
+      if (isTime && !employeeOptions) {
+        el.querySelector("[data-ok]").disabled = true;
+        el.querySelector("form").insertAdjacentHTML("beforeend", '<p class="form-error" style="grid-column:1/-1">Add an active employee first.</p>');
+      }
+      let requestId = "";
+      el.querySelector("[data-x]").onclick = () => close();
+      el.querySelector("[data-ok]").onclick = async () => {
+        let built;
+        try {
+          if (isTime) {
+            built = L.createTimeRequest({
+              employeeId: el.querySelector('select[name="entryEmployee"]').value,
+              date: el.querySelector('input[name="entryDate"]').value,
+              minutes: Number(el.querySelector('input[name="entryMinutes"]').value),
+              requestId
+            });
+          } else if (isBudget) {
+            const amountInput = el.querySelector('input[name="entryAmount"]').value;
+            const cents = toCents(amountInput);
+            if (Number.isNaN(cents)) throw Error("Enter an amount with at most two decimals.");
+            built = L.createBudgetRequest({
+              accountId: el.querySelector('select[name="entryAccount"]').value,
+              period: el.querySelector('input[name="entryPeriod"]').value,
+              amountCents: cents,
+              requestId
+            });
+          } else if (isDocument) {
+            const docCents = toCents(el.querySelector('input[name="entryAmount"]').value);
+            if (Number.isNaN(docCents)) throw Error("Enter an amount with at most two decimals.");
+            built = L.createDocumentRequest(laneId, {
+              contactId: el.querySelector('select[name="entryContact"]').value,
+              documentNumber: el.querySelector('input[name="entryNumber"]').value,
+              itemId: el.querySelector('select[name="entryItem"]').value,
+              amountCents: docCents,
+              requestId
+            });
+          } else {
+            built = L.createRequest(laneId, {
+              name: el.querySelector('input[name="entryName"]').value,
+              incomeAccount: needsAccount ? el.querySelector('select[name="entryAccount"]').value : "",
+              requestId
+            });
+          }
+        } catch (e) { toast(e.message, true); return; }
+        requestId = built.body.request_id;
+        try {
+          await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/${built.kind}`, { body: built.body });
+          toast("Added"); close(); route();
+        } catch (e) { toast(e.message, true); }
+      };
+      return el;
+    });
+  };
+  $("#q").oninput = render; render();
+  const addSalesDoc = $("#addSalesDoc");
+  if (addSalesDoc) addSalesDoc.onclick = () => salesDocModal();
+  const addPipeline = $("#addPipeline");
+  if (addPipeline) addPipeline.onclick = () => pipelineModal();
+  const addMovement = $("#addMovement");
+  if (addMovement) addMovement.onclick = () => movementModal();
+  const addSchedule = $("#addSchedule");
+  if (addSchedule) addSchedule.onclick = () => scheduleModal();
+  const addRecurring = $("#addRecurring");
+  if (addRecurring) addRecurring.onclick = () => recurringModal();
+  const runPayroll = $("#runPayroll");
+  if (runPayroll) runPayroll.onclick = () => payrollModal();
+  $("#exportAll").onclick = () => csvDownload(L.fileName(scope), L.combinedCsv(lanes));
+};
+
+
 function contactModal(kind, c) {
   return modal(c ? `Edit ${c.name}` : `New ${kind}`, (el, close) => {
     el.innerHTML = `<form class="form"><label class="f">Name<input name="name" required value="${esc(c?.name)}"></label><label class="f">Email<input name="email" type="email" value="${esc(c?.email)}"></label>
@@ -328,11 +539,18 @@ async function contactDetail(kind, id) {
   const r = await api("/api/ledger/contacts/" + id);
   const c = r.contact, dkind = kind === "customer" ? "invoice" : "bill";
   page(c.name, `${kind === "customer" ? "Customer" : "Vendor"} · Net ${c.terms_days}${c.email ? " · " + esc(c.email) : ""}`,
-    `<a class="btn" href="#${kind}s">Back</a><button class="btn" id="edit">Edit</button>${r.open_balance > 0 ? `<button class="btn" id="pay">${kind === "customer" ? "Receive payment" : "Pay bills"}</button>` : ""}<a class="btn primary" href="#${dkind}s/new">New ${dkind}</a>`,
+    `<a class="btn" href="#${kind}s">Back</a><button class="btn" id="edit">Edit</button>${r.open_balance > 0 ? `<button class="btn" id="statement">Statement</button><button class="btn" id="pay">${kind === "customer" ? "Receive payment" : "Pay bills"}</button>` : ""}<a class="btn primary" href="#${dkind}s/new">New ${dkind}</a>`,
     `<div class="grid kpis" style="margin-bottom:14px"><div class="kpi"><div class="k">Open balance</div><div class="v">${money(r.open_balance)}</div></div></div>
     <div class="card">${table([{ h: "Number", f: (x) => esc(x.doc.number) }, { h: "Date", f: (x) => fmtDate(x.doc.date) }, { h: "Due", f: (x) => fmtDate(x.doc.due_date) }, { h: "Status", f: (x) => pill(x.status) }, { h: "Total", num: 1, f: (x) => money(x.doc.total) }, { h: "Balance", num: 1, f: (x) => money(x.balance) }],
       r.documents.sort((a, b) => b.doc.date.localeCompare(a.doc.date)), { onClick: (x) => go(dkind + "s/" + x.doc.id), empty: `No ${dkind}s yet.` })}</div>`);
   $("#edit").onclick = () => contactModal(kind, c);
+  const statementButton = $("#statement");
+  if (statementButton) statementButton.onclick = () => {
+    if (!window.NXTLedgerStatement) { toast("Statements are unavailable.", true); return; }
+    const built = window.NXTLedgerStatement.rows(r.documents);
+    if (built.length <= 2) { toast("Nothing is open on this account.", true); return; }
+    NXT.csvDownload(window.NXTLedgerStatement.fileName(kind, c.name), built);
+  };
   $("#pay")?.addEventListener("click", () => paymentModal(dkind, c.id));
 }
 
@@ -480,14 +698,316 @@ views.accounts = async () => {
   await loadRefs();
   const tb = await api("/api/ledger/reports/trial-balance?to=" + today());
   const bal = (a) => { const r = tb.rows.find((x) => x.account_id === a.id); if (!r) return 0; return ["asset", "expense"].includes(a.kind) ? r.debit - r.credit : r.credit - r.debit; };
-  page("Chart of accounts", "The structure of your books. Balances are as of today.", `<button class="btn primary" id="add">New account</button>`,
-    Object.keys(KIND_LABEL).map((k) => `<div class="card"><h3 style="margin-bottom:8px">${KIND_LABEL[k]}</h3>${table([
-      { h: "Code", f: (a) => `<span class="mono">${esc(a.code)}</span>` }, { h: "Name", f: (a) => `${esc(a.name)}${a.archived ? " " + pill("archived") : ""}${a.role !== "none" ? ` <span class="faint" style="font-size:12px">· ${a.role.replace(/_/g, " ")}</span>` : ""}` },
-      { h: "Balance", num: 1, f: (a) => money(bal(a)) }, { h: "", f: (a) => `<button class="btn sm ghost" data-edit="${a.id}">Edit</button>` },
-    ], S.accounts.filter((a) => a.kind === k), { onClick: (a) => go("reports/general-ledger?account_id=" + a.id) })}</div>`).join(""));
-  $("#add").onclick = () => accountModal();
-  $$("[data-edit]", main).forEach((b) => (b.onclick = () => accountModal(acct(b.dataset.edit))));
+  let search = ""; let sortKey = ""; let sortDir = "asc";
+  const accountValue = (a, key) => key === "code" ? a.code : key === "name" ? a.name : bal(a);
+  const render = () => {
+    const query = search.toLowerCase().trim();
+    const matches = S.accounts.filter((a) => !query || `${a.code} ${a.name}`.toLowerCase().includes(query));
+    page("Chart of accounts", "The structure of your books. Balances are as of today.", `<button class="btn primary" id="add">New account</button>`,
+      `<div class="card"><input id="acct-search" type="search" placeholder="Search by number or name…" style="width:100%" value="${esc(search)}"></div>` +
+      Object.keys(KIND_LABEL).map((k) => {
+        const rows = window.NXTLedgerSort ? NXTLedgerSort.sortBy(matches.filter((a) => a.kind === k), sortKey, sortDir, accountValue) : matches.filter((a) => a.kind === k);
+        return `<div class="card"><h3 style="margin-bottom:8px">${KIND_LABEL[k]}</h3>${table([
+          { h: "Code", sort: "code", sortDir: sortKey === "code" ? sortDir : null, f: (a) => `<span class="mono">${esc(a.code)}</span>` }, { h: "Name", sort: "name", sortDir: sortKey === "name" ? sortDir : null, f: (a) => `${esc(a.name)}${a.archived ? " " + pill("archived") : ""}${a.role !== "none" ? ` <span class="faint" style="font-size:12px">· ${a.role.replace(/_/g, " ")}</span>` : ""}` },
+          { h: "Balance", num: 1, sort: "balance", sortDir: sortKey === "balance" ? sortDir : null, f: (a) => money(bal(a)) }, { h: "", f: (a) => `<button class="btn sm ghost" data-edit="${a.id}">Edit</button>` },
+        ], rows, { onClick: (a) => go("reports/general-ledger?account_id=" + a.id), empty: query ? "No account matches this search." : "No accounts of this kind." })}</div>`;
+      }).join(""));
+    $("#add").onclick = () => accountModal();
+    const searchBox = $("#acct-search");
+    if (searchBox) {
+      searchBox.oninput = (event) => { search = event.target.value; const caret = event.target; render(); const next = $("#acct-search"); if (next) { next.value = search; next.focus(); } };
+      if (search) searchBox.focus();
+    }
+    $$("[data-edit]", main).forEach((b) => (b.onclick = () => accountModal(acct(b.dataset.edit))));
+    $$("[data-sort]", main).forEach((b) => (b.onclick = () => {
+      const key = b.dataset.sort;
+      sortDir = sortKey === key && sortDir === "asc" ? "desc" : "asc";
+      sortKey = key;
+      render();
+    }));
+  };
+  render();
 };
+
+function recurringModal() {
+  return modal("Add recurring transaction", (el, close) => {
+    el.innerHTML = `<form class="form">
+      <label class="f">Kind<select name="kind"><option value="invoice">Invoice</option><option value="bill">Bill</option></select></label>
+      <label class="f">Cadence<select name="cadence"><option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option></select></label>
+      <label class="f" style="grid-column:1/-1">Contact<select name="contact" required></select></label>
+      <label class="f">Document number<input name="document_number" placeholder="optional"></label>
+      <label class="f">Amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0.00"></label>
+      <label class="f">Next date<input name="next_date" type="date" required value="${today()}"></label>
+      <p class="form-note" style="grid-column:1/-1">The template is stored in this book with its cadence and next date. NXT never posts it automatically and nothing is written back to QuickBooks.</p>
+    </form>
+    <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Save template</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("[data-ok]").onclick = async () => {
+      const fd = new FormData(el.querySelector("form")), f = Object.fromEntries(fd);
+      const requestId = "rec-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+      try {
+        await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/recurring`, {
+          body: {
+            request_id: requestId,
+            kind: f.kind,
+            contact: f.contact,
+            document_number: f.document_number || "",
+            amount_cents: NXT.toCents(f.amount),
+            cadence: f.cadence,
+            next_date: f.next_date,
+            active: true
+          }
+        });
+        close();
+        toast("Recurring template saved.");
+        route();
+      } catch (e) { toast(e.message, true); }
+    };
+    const select = el.querySelector("select[name=contact]");
+    select.innerHTML = (S.contacts || []).filter((row) => !row.archived).map((row) => `<option value="${esc(row.id)}">${esc(row.name)}</option>`).join("");
+    if (!select.innerHTML) select.innerHTML = '<option value="">No contacts</option>';
+  });
+}
+
+function salesDocModal() {
+  return modal("Add sales document", (el, close) => {
+    const items = (parallel && Array.isArray(parallel.items) ? parallel.items : []).filter((item) => !item.archived);
+    el.innerHTML = `<form class="form">
+      <label class="f">Kind<select name="kind">
+        <option value="sales_order">Sales order</option><option value="sales_receipt">Sales receipt</option>
+        <option value="refund_receipt">Refund receipt</option><option value="delayed_charge">Delayed charge</option>
+        <option value="delayed_credit">Delayed credit</option></select></label>
+      <label class="f">Contact<select name="contact" required></select></label>
+      <label class="f">Number<input name="document_number" placeholder="optional"></label>
+      <label class="f">Amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0.00"></label>
+      <label class="f" style="grid-column:1/-1">Item<select name="item_id" required></select></label>
+      <p class="form-note" style="grid-column:1/-1">Non-posting: the document is recorded with one line. It does not create an invoice, move stock or post a journal.</p>
+    </form>
+    <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Save document</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("select[name=contact]").innerHTML = (S.contacts || []).filter((c) => !c.archived).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+    el.querySelector("select[name=item_id]").innerHTML = items.map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join("");
+    if (!items.length) { toast("Add an item in Lists first.", true); }
+    el.querySelector("[data-ok]").onclick = async () => {
+      const form = new FormData(el.querySelector("form")), f = Object.fromEntries(form);
+      try {
+        const path = f.kind === "sales_order" ? "sales-documents" : "sales-documents/" + f.kind.replace(/_/g, "-");
+        await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/${path}`, { body: {
+          request_id: "sdoc-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+          contact: f.contact, document_number: f.document_number || "",
+          lines: [{ item_id: f.item_id, amount_cents: NXT.toCents(f.amount) }]
+        } });
+        close(); toast("Sales document saved."); route();
+      } catch (e) { toast(e.message, true); }
+    };
+  });
+}
+
+function pipelineModal() {
+  return modal("Add pipeline entry", (el, close) => {
+    el.innerHTML = `<form class="form">
+      <label class="f">Kind<select name="kind"><option value="opportunity">Opportunity</option><option value="proposal">Proposal</option><option value="contract">Contract</option></select></label>
+      <label class="f">Status<select name="status"><option value="open">Open</option><option value="won">Won</option><option value="lost">Lost</option><option value="sent">Sent</option><option value="accepted">Accepted</option><option value="declined">Declined</option><option value="draft">Draft</option><option value="active">Active</option><option value="ended">Ended</option></select></label>
+      <label class="f" style="grid-column:1/-1">Title<input name="title" required placeholder="Annual advisory retainer"></label>
+      <label class="f">Contact<select name="contact"></select></label>
+      <label class="f">Value<input name="value" type="number" min="0" step="0.01" value="0"></label>
+      <label class="f">Date<input name="date" type="date" required value="${today()}"></label>
+      <label class="f">Note<input name="note" placeholder="Optional"></label>
+      <p class="form-note" style="grid-column:1/-1">Recorded in this book only. NXT does not send proposals, take signatures or book revenue.</p>
+    </form>
+    <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Save entry</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("select[name=contact]").innerHTML = (S.contacts || []).filter((contact) => !contact.archived).map((contact) => `<option value="${esc(contact.id)}">${esc(contact.name)}</option>`).join("");
+    el.querySelector("[data-ok]").onclick = async () => {
+      const form = new FormData(el.querySelector("form")), f = Object.fromEntries(form);
+      try {
+        await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/crm`, {
+          body: {
+            request_id: "crm-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+            kind: f.kind,
+            title: f.title,
+            contact: f.contact,
+            value_cents: NXT.toCents(f.value || 0),
+            status: f.status,
+            date: f.date,
+            note: f.note || ""
+          }
+        });
+        close();
+        toast("Pipeline entry saved.");
+        route();
+      } catch (e) { toast(e.message, true); }
+    };
+  });
+}
+
+function movementModal() {
+  return modal("Record a stock movement", (el, close) => {
+    const items = (parallel && Array.isArray(parallel.items) ? parallel.items : []);
+    el.innerHTML = `<form class="form">
+      <label class="f" style="grid-column:1/-1">Item<select name="item_id" required></select></label>
+      <label class="f">Movement<select name="kind"><option value="receipt">Receipt</option><option value="issue">Issue</option><option value="adjustment">Adjustment</option></select></label>
+      <label class="f">Quantity<input name="quantity" type="number" step="0.001" required placeholder="0.000"></label>
+      <label class="f">Unit cost<input name="unit_cost" type="number" min="0" step="0.01" value="0"></label>
+      <label class="f">Date<input name="date" type="date" required value="${today()}"></label>
+      <label class="f" style="grid-column:1/-1">Memo<input name="memo" placeholder="Optional"></label>
+      <p class="form-note" style="grid-column:1/-1">Quantities are stored to three decimals. An issue cannot take an item below zero on hand. Valuations use the latest unit cost; nothing posts to the ledger.</p>
+    </form>
+    <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Save movement</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    const itemSelect = el.querySelector("select[name=item_id]");
+    itemSelect.innerHTML = items.filter((item) => !item.archived).map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join("");
+    if (!itemSelect.innerHTML) { itemSelect.innerHTML = '<option value="">No items yet</option>'; toast("Add an item in Lists first.", true); }
+    el.querySelector("[data-ok]").onclick = async () => {
+      const form = new FormData(el.querySelector("form")), f = Object.fromEntries(form);
+      try {
+        await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/inventory`, {
+          body: {
+            request_id: "move-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+            item_id: f.item_id,
+            kind: f.kind,
+            quantity_milli: Math.round(Number(f.quantity) * 1000),
+            unit_cost_cents: NXT.toCents(f.unit_cost || 0),
+            date: f.date,
+            memo: f.memo || ""
+          }
+        });
+        close();
+        toast("Stock movement recorded.");
+        route();
+      } catch (e) { toast(e.message, true); }
+    };
+  });
+}
+
+function scheduleModal() {
+  return modal("Add fixed asset or prepaid schedule", (el, close) => {
+    const accounts = (S.accounts || []).filter((account) => !account.archived);
+    el.innerHTML = `<form class="form">
+      <label class="f">Type<select name="kind"><option value="fixed_asset">Fixed asset</option><option value="prepaid">Prepaid expense</option></select></label>
+      <label class="f">Name<input name="name" required placeholder="Delivery van"></label>
+      <label class="f">Total<input name="total" type="number" min="0.01" step="0.01" required placeholder="0.00"></label>
+      <label class="f">Months<input name="months" type="number" min="1" max="600" step="1" required value="12"></label>
+      <label class="f">Start date<input name="start_date" type="date" required value="${today()}"></label>
+      <label class="f" style="grid-column:1/-1">Account<select name="account_id" required>${accounts.map((account) => `<option value="${esc(account.id)}">${esc(account.code)} · ${esc(account.name)}</option>`).join("")}</select></label>
+      <p class="form-note" style="grid-column:1/-1">Straight-line only. NXT stores the schedule and reports what is amortised; it never posts depreciation and nothing writes back to QuickBooks.</p>
+    </form>
+    <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Save schedule</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("[data-ok]").onclick = async () => {
+      const form = new FormData(el.querySelector("form")), f = Object.fromEntries(form);
+      try {
+        await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/schedules`, {
+          body: {
+            request_id: "sched-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+            name: f.name,
+            kind: f.kind,
+            total_cents: NXT.toCents(f.total),
+            months: Number(f.months),
+            start_date: f.start_date,
+            account_id: f.account_id
+          }
+        });
+        close();
+        toast("Schedule saved.");
+        route();
+      } catch (e) { toast(e.message, true); }
+    };
+  });
+}
+
+function creditMemoModal(kind) {
+  const creditKind = kind === "invoice" ? "credit_memo" : "supplier_credit";
+  const controlRole = kind === "invoice" ? "receivable" : "payable";
+  const lineKinds = kind === "invoice" ? ["income", "revenue"] : ["expense", "cogs"];
+  return modal(kind === "invoice" ? "New credit memo" : "New supplier credit", (el, close) => {
+    const control = (S.accounts || []).find((account) => account.role === controlRole && !account.archived);
+    const lineAccounts = (S.accounts || []).filter((account) => lineKinds.includes(account.kind) && !account.archived);
+    const contacts = (S.contacts || []).filter((contact) => contact.kind === (kind === "invoice" ? "customer" : "vendor") && !contact.archived);
+    el.innerHTML = `<form class="form">
+      <label class="f" style="grid-column:1/-1">${kind === "invoice" ? "Customer" : "Supplier"}<select name="contact" required></select></label>
+      <label class="f">Date<input name="date" type="date" required value="${today()}"></label>
+      <label class="f">Amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0.00"></label>
+      <label class="f" style="grid-column:1/-1">${kind === "invoice" ? "Income" : "Expense"} account<select name="account" required>${lineAccounts.map((account) => `<option value="${esc(account.id)}">${esc(account.code)} · ${esc(account.name)}</option>`).join("")}</select></label>
+      <label class="f" style="grid-column:1/-1">Memo<input name="memo" placeholder="Why the credit was issued"></label>
+      <p class="form-note" style="grid-column:1/-1">${control ? `Posts the reversal against ${esc(control.name)}.` : "This book has no " + controlRole + " account, so the credit cannot be posted."} Nothing is written back to QuickBooks.</p>
+    </form>
+    <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok ${control ? "" : "disabled"}>Post credit</button></div>`;
+    el.querySelector("select[name=contact]").innerHTML = contacts.map((contact) => `<option value="${esc(contact.id)}">${esc(contact.name)}</option>`).join("");
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("[data-ok]").onclick = async () => {
+      const form = new FormData(el.querySelector("form")), f = Object.fromEntries(form);
+      try {
+        const book = await NXT.api(`/api/company-books/${encodeURIComponent(company)}`);
+        const head = book && (book.head_sha256 || book.head);
+        if (!head) { toast("This book has no committed head to post against.", true); return; }
+        await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/documents`, {
+          body: {
+            request_id: "credit-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+            expected_head: head,
+            operator_label: "NXT credit memo",
+            kind: creditKind,
+            contact: f.contact,
+            date: f.date,
+            memo: f.memo || "",
+            control_account: control.id,
+            lines: [{ account_id: f.account, amount_cents: NXT.toCents(f.amount) }],
+            document_number: ""
+          }
+        });
+        close();
+        toast(kind === "invoice" ? "Credit memo posted." : "Supplier credit posted.");
+        route();
+      } catch (e) { toast(e.message, true); }
+    };
+  });
+}
+
+function payrollModal() {
+  return modal("Run payroll", (el, close) => {
+    el.innerHTML = `<form class="form">
+      <label class="f" style="grid-column:1/-1">Employee<select name="employee_id" required></select></label>
+      <label class="f">Pay date<input name="pay_date" type="date" required value="${today()}"></label>
+      <label class="f">Annual gross<input name="annual_gross" type="number" min="0" step="0.01" required placeholder="0.00"></label>
+      <label class="f">Pay periods<select name="periods"><option value="26">26 (biweekly)</option><option value="24">24 (semi-monthly)</option><option value="12">12 (monthly)</option><option value="52">52 (weekly)</option></select></label>
+      <label class="f">Federal TD1 claim<input name="federal_claim" type="number" min="0" step="0.01" value="0"></label>
+      <label class="f">Alberta TD1 claim<input name="provincial_claim" type="number" min="0" step="0.01" value="0"></label>
+      <p class="form-note" style="grid-column:1/-1">Alberta employees, 2026 rates. The run is stored in this book only: nothing is remitted, filed, or posted to the ledger.</p>
+    </form>
+    <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Run payroll</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("[data-ok]").onclick = async () => {
+      const fd = new FormData(el.querySelector("form")), f = Object.fromEntries(fd);
+      const requestId = "pay-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+      try {
+        const out = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/payroll`, {
+          body: {
+            request_id: requestId,
+            employee_id: f.employee_id,
+            pay_date: f.pay_date,
+            annual_gross_cents: NXT.toCents(f.annual_gross),
+            periods: Number(f.periods),
+            province: "AB",
+            federal_claim_cents: NXT.toCents(f.federal_claim || 0),
+            provincial_claim_cents: NXT.toCents(f.provincial_claim || 0)
+          }
+        });
+        close();
+        toast(`Paystub recorded for ${out.employee}: net ${money(out.per_period.net_cents)} this period.`);
+        route();
+      } catch (e) { toast(e.message, true); }
+    };
+    (async () => {
+      try {
+        const daily = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/daily`);
+        const select = el.querySelector("select[name=employee_id]");
+        const active = (daily.employees || []).filter((row) => row.active);
+        select.innerHTML = active.map((row) => `<option value="${esc(row.id)}">${esc(row.name)}</option>`).join("");
+        if (!active.length) { select.innerHTML = '<option value="">No active employees</option>'; toast("Add an employee in Lists first.", true); }
+      } catch (e) { toast(e.message, true); }
+    })();
+  });
+}
 
 function accountModal(a) {
   const roles = ["none", "bank", "credit_card", "receivable", "payable", "tax_payable", "tax_recoverable", "retained_earnings"];
@@ -565,6 +1085,8 @@ const REPORTS = {
   "ap-aging": ["Accounts payable aging", "Who you owe, and when it's due.", "asof"],
   "sales-tax": ["GST/HST return", "Working paper for CRA lines 101, 105, 108 and 109.", "range"],
   "general-ledger": ["General ledger", "Every line, by account, with running balances.", "range"],
+  time: ["Time by employee", "Minutes recorded in this book, per employee and date.", "range"],
+  payroll: ["Payroll summary", "Journal lines on payroll-named accounts, by year. Derived from the committed journal, not from pay runs.", "asof"],
 };
 
 function presets() {
@@ -593,16 +1115,20 @@ views.reports = async (name) => {
   const st = { from: params.get("from") || `${y}-01-01`, to: params.get("to") || today(), account_id: params.get("account_id") || "" };
   const run = async () => {
     const q = new URLSearchParams({ from: st.from, to: st.to, ...(st.account_id ? { account_id: st.account_id } : {}) });
-    const data = await api(`/api/ledger/reports/${key}?${q}`);
+    const data = key === "payroll"
+      ? await NXT.api(`/api/company-books/${encodeURIComponent(company)}/payroll`)
+      : key === "time"
+        ? await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/daily`)
+        : await api(`/api/ledger/reports/${key}?${q}`);
     page(meta[0], `${esc(S.company.name)} · ${meta[2] === "range" ? `${fmtDate(st.from)} to ${fmtDate(st.to)}` : `As of ${fmtDate(st.to)}`}`,
       `${meta[2] === "range" ? `<select id="preset"><option value="">Custom</option>${Object.keys(presets()).map((p) => `<option>${p}</option>`).join("")}</select><input type="date" id="from" value="${st.from}">` : ""}<input type="date" id="to" value="${st.to}">
        ${key === "general-ledger" ? `<select id="acctF">${acctOptions(null, st.account_id, { blank: "All accounts" })}</select>` : ""}
        <button class="btn" onclick="print()">Print</button><button class="btn" id="csv">Export</button>`,
-      `<div class="card report">${renderReport(key, data)}</div>`);
+      `<div class="card report">${renderReport(key, data, st)}</div>`);
     const upd = () => { st.from = $("#from")?.value || st.from; st.to = $("#to").value; st.account_id = $("#acctF")?.value || ""; history.replaceState(null, "", `#reports/${key}?${new URLSearchParams(st)}`); run().catch(err); };
     $("#to").onchange = upd; if ($("#from")) $("#from").onchange = upd; if ($("#acctF")) $("#acctF").onchange = upd;
     if ($("#preset")) $("#preset").onchange = (e) => { const p = presets()[e.target.value]; if (p) { [st.from, st.to] = p; $("#from").value = p[0]; $("#to").value = p[1]; upd(); } };
-    $("#csv").onclick = () => csvDownload(`${key}-${st.to}.csv`, reportCsv(key, data));
+    $("#csv").onclick = () => csvDownload(`${key}-${st.to}.csv`, reportCsv(key, data, st));
     $("#remit")?.addEventListener("click", () => transferModal(true));
   };
   await run();
@@ -611,7 +1137,40 @@ views.reports = async (name) => {
 function sectionRows(rows) { return rows.map((r) => `<tr class="click" onclick="location.hash='reports/general-ledger?account_id=${r.account_id}'"><td class="indent">${esc(r.code ? r.code + " · " : "")}${esc(r.name)}</td><td class="num">${money(r.amount)}</td></tr>`).join(""); }
 function plain(rows) { return rows.map((r) => `<tr><td class="indent">${esc(r.code ? r.code + " · " : "")}${esc(r.name)}</td><td class="num">${money(r.amount)}</td></tr>`).join(""); }
 
-function renderReport(key, d) {
+function renderReport(key, d, st = { from: "", to: "" }) {
+  if (key === "time") {
+    const employees = Array.isArray(d.employees) ? d.employees : [];
+    const entries = (Array.isArray(d.time) ? d.time : []).filter((row) => row.date >= st.from && row.date <= st.to);
+    const byEmployee = new Map();
+    for (const row of entries) {
+      const key2 = row.employee_id;
+      const current = byEmployee.get(key2) || { minutes: 0, entries: 0, last: "" };
+      current.minutes += Number(row.minutes) || 0;
+      current.entries += 1;
+      if (row.date > current.last) current.last = row.date;
+      byEmployee.set(key2, current);
+    }
+    const rows = employees
+      .map((employee) => {
+        const total = byEmployee.get(employee.id) || { minutes: 0, entries: 0, last: "" };
+        return { name: employee.name, minutes: total.minutes, entries: total.entries, last: total.last };
+      })
+      .filter((row) => row.entries > 0)
+      .sort((a, b) => b.minutes - a.minutes);
+    const totalMinutes = rows.reduce((sum, row) => sum + row.minutes, 0);
+    const body = rows.map((row) => `<tr><td>${esc(row.name)}</td><td class="num">${row.entries}</td><td class="num">${(row.minutes / 60).toFixed(2)}</td><td class="num">${esc(row.last)}</td></tr>`).join("");
+    return `<table><thead><tr><th>Employee</th><th class="num">Entries</th><th class="num">Hours</th><th class="num">Last entry</th></tr></thead><tbody>${body || '<tr><td colspan="4">No time recorded in this period.</td></tr>'}</tbody>
+      <tr class="grand"><td>Total</td><td class="num">${entries.length}</td><td class="num">${(totalMinutes / 60).toFixed(2)}</td><td></td></tr></table>
+      <p class="form-note">Minutes come from the time entries stored in this book. They are not billed, costed or posted to the ledger.</p>`;
+  }
+  if (key === "payroll") {
+    const years = (Array.isArray(d.by_year) ? d.by_year : []).map((r) => `<tr><td>${esc(r.year)}</td><td class="num">${esc(r.transactions)}</td><td class="num">${money(r.debit_cents)}</td><td class="num">${money(r.credit_cents)}</td></tr>`).join("");
+    const accounts = (Array.isArray(d.payroll_accounts) ? d.payroll_accounts : []).map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${esc(r.lines)}</td><td class="num">${money(r.debit_cents)}</td><td class="num">${money(r.credit_cents)}</td></tr>`).join("");
+    return `<table><thead><tr><th>Year</th><th class="num">Entries</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>${years || '<tr><td colspan="4">No payroll-named accounts in this book yet.</td></tr>'}</tbody></table>
+      <h2 style="margin-top:18px">Payroll accounts</h2>
+      <table><thead><tr><th>Account</th><th class="num">Lines</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>${accounts || '<tr><td colspan="4">None.</td></tr>'}</tbody></table>
+      <p class="form-note">${esc(d.note || "")}</p>`;
+  }
   if (key === "profit-loss") return `<table>
     <tr><td colspan="2"><h2>Income</h2></td></tr>${sectionRows(d.income)}<tr class="total"><td>Total income</td><td class="num">${money(d.total_income)}</td></tr>
     ${d.cogs.length ? `<tr><td colspan="2"><h2>Cost of goods sold</h2></td></tr>${sectionRows(d.cogs)}<tr class="total"><td>Gross profit</td><td class="num">${money(d.gross_profit)}</td></tr>` : ""}
@@ -641,8 +1200,20 @@ function renderReport(key, d) {
   return "";
 }
 
-function reportCsv(key, d) {
-  const $c = (v) => (v / 100).toFixed(2);
+function reportCsv(key, d, st = { from: "", to: "" }) {
+  const $c = (v) => window.NXTLedgerFormat.cents(v);
+  if (key === "time") {
+    const employees = Array.isArray(d.employees) ? d.employees : [];
+    const entries = (Array.isArray(d.time) ? d.time : []).filter((row) => row.date >= st.from && row.date <= st.to);
+    const totals = new Map();
+    for (const row of entries) totals.set(row.employee_id, (totals.get(row.employee_id) || 0) + (Number(row.minutes) || 0));
+    return [["Employee", "Entries", "Minutes", "Hours"], ...employees.map((employee) => {
+      const entryCount = entries.filter((row) => row.employee_id === employee.id).length;
+      const minutes = totals.get(employee.id) || 0;
+      return [employee.name, entryCount, minutes, (minutes / 60).toFixed(2)];
+    }).filter((row) => row[1] > 0)];
+  }
+  if (key === "payroll") return [["Year", "Entries", "Debit", "Credit"], ...(d.by_year || []).map((r) => [r.year, r.transactions, $c(r.debit_cents), $c(r.credit_cents)])];
   if (key === "profit-loss") return [["Section", "Account", "Amount"], ...d.income.map((r) => ["Income", r.name, $c(r.amount)]), ...d.cogs.map((r) => ["COGS", r.name, $c(r.amount)]), ...d.expenses.map((r) => ["Expense", r.name, $c(r.amount)]), ["", "Net income", $c(d.net_income)]];
   if (key === "balance-sheet") return [["Section", "Account", "Amount"], ...d.assets.map((r) => ["Assets", r.name, $c(r.amount)]), ...d.liabilities.map((r) => ["Liabilities", r.name, $c(r.amount)]), ...d.equity.map((r) => ["Equity", r.name, $c(r.amount)])];
   if (key === "trial-balance") return [["Code", "Account", "Debit", "Credit"], ...d.rows.map((r) => [r.code, r.name, $c(r.debit), $c(r.credit)])];
