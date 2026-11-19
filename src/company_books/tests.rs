@@ -39,6 +39,16 @@ async fn each_financial_read_loads_source_chunks_once() {
     s.source_loads.store(0, Ordering::Relaxed);
     s.detail("test").await.ok().unwrap();
     assert_eq!(s.source_loads.load(Ordering::Relaxed), 1);
+    let as_of = NaiveDate::from_ymd_opt(2026, 3, 31).unwrap();
+    let before = s.store.memory_snapshot().unwrap();
+    s.source_loads.store(0, Ordering::Relaxed);
+    let (tb, gl) = s.watcher_snapshot("test", as_of, 120, 5000).await.ok().unwrap();
+    assert_eq!(s.source_loads.load(Ordering::Relaxed), 1, "a watcher validates its source once, not once per report/page");
+    assert_eq!(s.store.memory_snapshot().unwrap(), before, "watching writes nothing");
+    assert_eq!(tb, s.trial_balance("test").await.ok().unwrap());
+    let from = (as_of - chrono::Duration::days(120)).to_string();
+    let expected = s.general_ledger_range("test", 0, 1000, Some(&from), Some(&as_of.to_string())).await.ok().unwrap();
+    for key in ["rows", "head", "lines_total", "debit_total_cents", "credit_total_cents", "has_more"] { assert_eq!(gl[key], expected[key], "{key}"); }
 }
 #[tokio::test]
 async fn interrupted_local_staging_never_publishes_dangling_global_inventory() {

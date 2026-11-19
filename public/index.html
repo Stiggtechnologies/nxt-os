@@ -230,6 +230,7 @@
 <script src="/nxt/company-switcher.js"></script>
 <script src="/nxt/staff-signin.js"></script>
 <script src="/apps/nixon/realtime.js"></script>
+<script src="/nxt/workspace-control.js"></script>
 <script src="/nxt/nixon-chat.js"></script>
 <script>
 const { api, esc, money, moneyShort, toast } = NXT;
@@ -313,6 +314,7 @@ async function loadHome() {
   const hour = new Date().getHours();
   $("#greet").textContent = (hour < 12 ? "Good morning." : hour < 18 ? "Good afternoon." : "Good evening.") + " Here's what's next.";
   $("#today").textContent = new Date().toLocaleDateString("en-CA", { weekday: "long", month: "long", day: "numeric" });
+  const guard = api("/api/guardvoice/summary").then(value => ({ value }), error => ({ error }));
   try {
     const d = await api("/api/os/insights");
     const dash = d.dashboard, ref = d.referrals.totals;
@@ -330,8 +332,12 @@ async function loadHome() {
       ? d.insights.map((i, n) => `<button class="insight ${i.level}" data-i="${n}"><span class="dot"></span><div><b>${esc(i.title)}</b><span>${esc(i.body)}</span></div><span class="go">→</span></button>`).join("")
       : `<div class="card muted">You're all caught up. Nothing needs your attention right now.</div>`;
     $("#insights").querySelectorAll("[data-i]").forEach((b) => (b.onclick = () => { const i = d.insights[b.dataset.i]; go(i.app, i.view); }));
+    const max = Math.max(1, ...dash.months.flatMap((m) => [m.income, m.expenses]));
+    $("#bars").innerHTML = dash.months.map((m) => `<div class="m" title="${m.month}: income ${money(m.income)}, expenses ${money(m.expenses)}"><div class="pair"><div class="b in" style="height:${(m.income / max) * 100}%"></div><div class="b out" style="height:${(m.expenses / max) * 100}%"></div></div><div class="lbl">${new Date(m.month + "-01T00:00:00").toLocaleDateString("en-CA", { month: "short" })}</div></div>`).join("");
     try {
-      const g = await api("/api/guardvoice/summary");
+      const result = await guard;
+      if (result.error) throw result.error;
+      const g = result.value;
       const extra = [];
       if (g.pending_approvals) extra.push(["warn", `${g.pending_approvals} GuardVoice approval${g.pending_approvals === 1 ? "" : "s"} waiting`, "Payments, voids, and outbound messages stay queued until you decide.", "approvals"]);
       if (g.unread_notifications) extra.push(["", `${g.unread_notifications} unread GuardVoice note${g.unread_notifications === 1 ? "" : "s"}`, "Call summaries, messages, and handoffs.", "notifications"]);
@@ -347,8 +353,6 @@ async function loadHome() {
         });
       }
     } catch (e) { if (e.status && e.status !== 401) toast(e.message, true); }
-    const max = Math.max(1, ...dash.months.flatMap((m) => [m.income, m.expenses]));
-    $("#bars").innerHTML = dash.months.map((m) => `<div class="m" title="${m.month}: income ${money(m.income)}, expenses ${money(m.expenses)}"><div class="pair"><div class="b in" style="height:${(m.income / max) * 100}%"></div><div class="b out" style="height:${(m.expenses / max) * 100}%"></div></div><div class="lbl">${new Date(m.month + "-01T00:00:00").toLocaleDateString("en-CA", { month: "short" })}</div></div>`).join("");
   } catch (e) { if (e.status !== 401) toast(e.message, true); }
 }
 
@@ -429,14 +433,17 @@ $("#signinForm").onsubmit = (e) => { e.preventDefault(); NXT.key.set($("#key").v
 $("#signOut").onclick = signOut;
 
 // ---- Ask NXT (with Nixon voice: mic in the composer, voice mode, floating launcher) ----
-const askChat = NXTChat.create($("#chat"), { placeholder: "Message Nixon", onOpen: (app, view) => { if (APPS[app] || app === "home") go(app, view); }, route: () => location.hash.replace(/^#/, "") || "/home" });
+let workspace = null, workspaceAllowed = false;
+const askChat = NXTChat.create($("#chat"), { placeholder: "Message Nixon", onOpen: (app, view) => { if (APPS[app] || app === "home") go(app, view); }, route: () => location.hash.replace(/^#/, "") || "/home", workspace: () => workspace });
 let launcher = null;
 function renderChat() { askChat.render(); }
-function openDrawer() { $("#drawer").classList.add("open"); askChat.render(); launcher?.sync(); setTimeout(() => askChat.focus(), 150); }
+function openDrawer({ focus = true } = {}) { $("#drawer").classList.add("open"); askChat.render(); launcher?.sync(); if (focus) askChat.focus(); }
 function closeDrawer() { $("#drawer").classList.remove("open"); askChat.stop(); launcher?.sync(); }
 // Floating Nixon launcher: bottom right on every page of the shell (home and every app frame).
 launcher = NXTChat.launcher({ enabled: false, open: openDrawer, close: closeDrawer, isOpen: () => $("#drawer").classList.contains("open") });
 function showLauncher(show) {
+  workspaceAllowed = show;
+  if (!show) workspace?.reset();
   launcher?.enable(show);
   const request = NixonRealtime.takeHandoff();
   if (show) {
@@ -451,7 +458,7 @@ window.NXTAssistant = {
     const request = ++assistantRequest, token = NXT.key.get();
     if (action === "stop") { askChat.stop(); return; }
     if (!["open", "voice", "dictate", "send"].includes(action)) return;
-    openDrawer();
+    openDrawer({ focus: action === "open" });
     await askChat.refresh();
     if (request !== assistantRequest || token !== NXT.key.get() || !$("#drawer").classList.contains("open")) return;
     if (action === "voice") await askChat.startVoice();
@@ -518,6 +525,10 @@ const COMMANDS = [
   ["GuardVoice · Handoffs", () => go("guardvoice", "handoffs")],
   ["GuardVoice · Simulator", () => go("guardvoice", "simulator")],
 ];
+workspace = NXTWorkspace.create({
+  allowed: () => workspaceAllowed && !!NXT.key.get() && !$("#os").hidden,
+  destinations: () => [...COMMANDS.map(([label, run]) => ({ label, run })), ...Object.entries(APPS).map(([app, info]) => ({ label: info.name, aliases: [app, info.name.replace(/([a-z])([A-Z])/g, "$1 $2")], run: () => go(app) }))],
+});
 function openPalette() {
   if (document.querySelector(".palette") || $("#os").hidden) return;
   const p = document.createElement("div");

@@ -5,6 +5,19 @@ import vm from "node:vm";
 const src = fs.readFileSync(new URL("../public/apps/nixon/realtime.js", import.meta.url), "utf8");
 const load = () => { const sb = {}; vm.runInNewContext(src, sb); return sb.NixonRealtime; };
 
+test("workspace tools dispatch structured arguments without pretending to call the finance gate", async () => {
+  const R = load(), calls = [];
+  const workspace = async (name, args) => { calls.push({name,args}); return {ok:true,controls:[{id:"control-1",label:"Company"}]}; };
+  const ask = () => { throw new Error("not a finance request"); };
+  const result = await R.runTool({name:"inspect_workspace",arguments:'{"query":"Company"}'}, ask, workspace);
+  assert.equal(result.controls[0].label,"Company");
+  await R.runTool({name:"control_workspace",arguments:'{"action":"select","target":"control-1","value":"synthetic"}'}, ask, workspace);
+  assert.equal(calls[1].args.target,"control-1");
+  assert.equal((await R.runTool({name:"inspect_workspace"},ask)).ok,false);
+  assert.equal((await R.runTool({name:"control_workspace",arguments:"invalid"},ask,workspace)).ok,false);
+  assert.equal((await R.runTool({name:"run_script",arguments:'{"code":"alert(1)"}'},ask,workspace)).ok,false);
+});
+
 test("open_nixon_page only accepts the allow-listed NXT OS paths", () => {
   const RT = load();
   assert.equal(RT.pagePath("/nixon/gods-eye/"), "/nixon/gods-eye");

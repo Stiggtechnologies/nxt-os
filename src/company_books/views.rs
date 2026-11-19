@@ -39,6 +39,9 @@ impl CompanyBooks {
             return Err(bad("Page limit must be 1-1000"));
         }
         let (h, p, accounts, entries) = self.book(company).await?;
+        Self::general_ledger_view(company, &h, &p, &accounts, &entries, offset, limit, from, to)
+    }
+    fn general_ledger_view(company: &str, h: &Head, p: &Preview, accounts: &[Account], entries: &[Entry], offset: usize, limit: usize, from: Option<&str>, to: Option<&str>) -> Result<Value> {
         let names: BTreeMap<&str, &str> = accounts.iter().map(|a| (a.id.as_str(), a.name.as_str())).collect();
         let (mut total_lines, mut dr, mut cr) = (0usize, 0i128, 0i128);
         let mut rows = vec![];
@@ -76,6 +79,20 @@ impl CompanyBooks {
             "has_more": next < total_lines, "next_offset": (next < total_lines).then_some(next),
             "controls": controls(),
         }))
+    }
+
+    /// A watcher uses one fully validated, coherent snapshot for both its trial
+    /// balance and bounded GL window, rather than loading that book for every page.
+    pub(crate) async fn watcher_snapshot(&self, company: &str, as_of: NaiveDate, window_days: i64, max_lines: usize) -> Result<(Value, Value)> {
+        if !(1..=5000).contains(&max_lines) || !(1..=366).contains(&window_days) { return Err(bad("Invalid watcher window")); }
+        let (h, p, accounts, entries) = self.book(company).await?;
+        let tb = self.trial_balance_view(company, &h, &p, &entries, 0, 100, DEFAULT_PAGE_BYTES)?;
+        if matches!(h.operation, Some(Operation::Archive { .. })) { return Ok((tb, json!({"rows":[],"has_more":false}))); }
+        let end = NaiveDate::parse_from_str(&p.input.source.period_end, "%Y-%m-%d").ok().map(|d| d.min(as_of)).unwrap_or(as_of);
+        let from = (end - chrono::Duration::days(window_days)).to_string();
+        let end = end.to_string();
+        let gl = Self::general_ledger_view(company, &h, &p, &accounts, &entries, 0, max_lines, Some(&from), Some(&end))?;
+        Ok((tb, gl))
     }
 
     pub async fn payroll_view(&self, company: &str) -> Result<Value> {

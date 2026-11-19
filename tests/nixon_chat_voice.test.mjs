@@ -77,6 +77,22 @@ const GODS_EYE = { intent: "gods_eye", action: "speak", say: "God's Eye as of 20
 const REFUSE = { intent: "refuse_approve", action: "speak", say: "I can't approve by voice. A named person approves on screen." };
 const HOLD = { intent: "hold", action: "hold", say: "Listening. Say Nixon when you want an answer." };
 
+test("typed workspace commands use the same controller locally without an AI request", async () => {
+  const {sb,calls} = sandbox(), commands=[];
+  const chat=sb.NXTChat.create(el(),{workspace:()=>({command:async text=>{commands.push(text);return {ok:true,say:"Selected Synthetic."};}})});
+  await tick(); await chat.send("Nixon, switch company to Synthetic");
+  assert.deepEqual(commands,["Nixon, switch company to Synthetic"]);
+  assert.equal(chat.messages.at(-1).content,"Selected Synthetic.");
+  assert.ok(!calls.some(([path])=>path==="/api/os/ask"||path==="/api/nixon/voice"));
+});
+test("scoped identities cannot invoke the workspace controller through chat", async () => {
+  const {sb} = sandbox({identity:{role:"staff",clients:["assigned"]}});
+  let actions=0;
+  const chat=sb.NXTChat.create(el(),{workspace:()=>({command:async()=>{actions++;return {ok:true};}})});
+  await tick(); await chat.send("click Company");
+  assert.equal(actions,0);
+});
+
 test("mic sits in the composer next to Send; nothing touches the microphone until it is tapped", async () => {
   const { sb, recognitions } = sandbox();
   const host = el();

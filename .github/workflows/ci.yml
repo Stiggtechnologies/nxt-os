@@ -26,6 +26,8 @@ jobs:
         run: cargo test --locked
       - name: Verify browser and operational scripts
         run: |
+          node --test tests/shared_api_reads.test.mjs tests/nixon_chat_voice.test.mjs tests/nixon_realtime.test.mjs
+          node --check public/nxt/workspace-control.js
           python3 scripts/build-dtmax-native-financial-profiles.py --check
           node --test tests/t1_optional_workpapers.test.mjs
           node --check public/apps/tax/slip-groups.js

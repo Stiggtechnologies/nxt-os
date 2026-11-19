@@ -35,6 +35,8 @@ use std::collections::BTreeMap;
 pub const SCOPE: &str = "gods_eye";
 pub const PREPARED_BY: &str = "God's Eye watcher";
 const MAX_COMPANIES: usize = 200;
+// Bound remote-store load while avoiding a full serial wait for every company.
+const WATCH_PARALLELISM: usize = 4;
 /// `CompanyBooks::list_summaries` page size (its maximum).
 const SUMMARY_PAGE: usize = 500;
 const GL_PAGE: usize = 1000;
@@ -170,10 +172,8 @@ fn month_end(d: NaiveDate) -> NaiveDate {
 // ---- ledgers (firm book and each client's company ledger) ---------------------
 
 async fn ledger_watch(ledger: &Ledger, company: &str, as_of: NaiveDate, out: &mut Vec<Hit>) -> Result<String, NixonError> {
-    let profile = ledger.company().await?;
     // accounts_read never seeds a chart, so the view stays a pure read.
-    let accounts = ledger.accounts_read().await?;
-    let entries = ledger.entries().await?;
+    let (profile, accounts, entries) = tokio::try_join!(ledger.company(), ledger.accounts_read(), ledger.entries())?;
     let as_of_s = as_of.to_string();
 
     // Books integrity, unreconciled and unusual: Nixon's own screens, reused as-is.
@@ -272,7 +272,7 @@ fn liability_payroll(name: &str) -> bool {
 
 async fn book_watch(scope: &Scope, company: &str, as_of: NaiveDate, out: &mut Vec<Hit>, gaps: &mut Vec<Value>) -> Result<Option<String>, NixonError> {
     let books = &scope.company_books;
-    let tb = books.trial_balance(company).await.map_err(|e| err500(e.1))?;
+    let (tb, gl) = books.watcher_snapshot(company, as_of, WINDOW_DAYS, GL_PAGE * GL_MAX_PAGES).await.map_err(|e| err500(e.1))?;
     if tb["head"]["operation"]["kind"] == "archive" {
         return Ok(None); // Archived books (e.g. retired QuickBooks Desktop files) are not watched.
     }
@@ -309,17 +309,8 @@ async fn book_watch(scope: &Scope, company: &str, as_of: NaiveDate, out: &mut Ve
     // Window at the book's period end, never later than as_of.
     let end = tb["source"]["period_end"].as_str().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()).map(|d| d.min(as_of)).unwrap_or(as_of);
     let from = end - Duration::days(WINDOW_DAYS);
-    let mut rows: Vec<Value> = vec![];
-    let mut offset = 0;
-    for _ in 0..GL_MAX_PAGES {
-        let page = books.general_ledger_range(company, offset, GL_PAGE, Some(&from.to_string()), Some(&end.to_string())).await.map_err(|e| err500(e.1))?;
-        rows.extend(page["rows"].as_array().cloned().unwrap_or_default());
-        match page["next_offset"].as_u64() {
-            Some(n) => offset = n as usize,
-            None => { offset = 0; break; }
-        }
-    }
-    if offset != 0 {
+    let rows: Vec<Value> = gl["rows"].as_array().cloned().unwrap_or_default();
+    if gl["has_more"] == true {
         gaps.push(json!({"company_id": company, "note": format!("Only the first {} general-ledger lines from {from} to {end} were screened.", GL_PAGE * GL_MAX_PAGES)}));
     }
 
@@ -441,12 +432,23 @@ async fn collect(scope: &Scope, as_of: NaiveDate) -> Result<(Vec<Company>, Vec<H
     if opened.len() > MAX_COMPANIES {
         gaps.push(json!({"company_id": "firm", "note": format!("{} company ledgers are open; only the first {MAX_COMPANIES} were screened.", opened.len())}));
     }
-    for id in opened.into_iter().take(MAX_COMPANIES) {
-        let l = Ledger::for_company(scope.ledger.store.clone(), &id);
-        let mut mine = vec![];
-        let r = ledger_watch(&l, &id, as_of, &mut mine).await;
-        let Some(name) = watch(&id, r, mine, &mut hits, &mut gaps) else { continue };
-        companies.entry(id.clone()).or_insert(Company { id: id.clone(), name, sources: vec![] }).sources.push("company_ledger");
+    let opened: Vec<_> = opened.into_iter().take(MAX_COMPANIES).collect();
+    for batch in opened.chunks(WATCH_PARALLELISM) {
+        let tasks: Vec<_> = batch.iter().map(|id| {
+            let id = id.clone();
+            let ledger = Ledger::for_company(scope.ledger.store.clone(), &id);
+            tokio::spawn(async move {
+                let mut mine = vec![];
+                let result = ledger_watch(&ledger, &id, as_of, &mut mine).await;
+                (id, result, mine)
+            })
+        }).collect();
+        // Await and merge in source order, independent of network completion order.
+        for task in tasks {
+            let (id, result, mine) = task.await.map_err(|_| err500("Ledger watcher task failed"))?;
+            let Some(name) = watch(&id, result, mine, &mut hits, &mut gaps) else { continue };
+            companies.entry(id.clone()).or_insert(Company { id: id.clone(), name, sources: vec![] }).sources.push("company_ledger");
+        }
     }
     let page = scope.company_books.list_summaries(0, SUMMARY_PAGE).await.map_err(|e| err500(e.1))?;
     if page["has_more"] == true {
@@ -459,8 +461,19 @@ async fn collect(scope: &Scope, as_of: NaiveDate) -> Result<(Vec<Company>, Vec<H
         gaps.push(json!({"company_id": "firm", "note": format!("{} imported company books are committed; only the first {MAX_COMPANIES} were screened.", committed.len())}));
     }
     let committed: Vec<String> = committed.into_iter().take(MAX_COMPANIES).collect();
-    for id in committed {
-        match book_watch(scope, &id, as_of, &mut hits, &mut gaps).await {
+    for batch in committed.chunks(WATCH_PARALLELISM) {
+      let tasks: Vec<_> = batch.iter().map(|id| {
+        let id = id.clone(); let scope = scope.clone();
+        tokio::spawn(async move {
+            let (mut mine, mut missing) = (vec![], vec![]);
+            let result = book_watch(&scope, &id, as_of, &mut mine, &mut missing).await;
+            (id, result, mine, missing)
+        })
+      }).collect();
+      for task in tasks {
+        let (id, result, mine, missing) = task.await.map_err(|_| err500("Books watcher task failed"))?;
+        hits.extend(mine); gaps.extend(missing);
+        match result {
             Ok(Some(name)) => {
                 let c = companies.entry(id.clone()).or_insert(Company { id: id.clone(), name: name.clone(), sources: vec![] });
                 if c.name.is_empty() || c.name == id { c.name = name; }
@@ -469,6 +482,7 @@ async fn collect(scope: &Scope, as_of: NaiveDate) -> Result<(Vec<Company>, Vec<H
             Ok(None) => {}
             Err(e) => gaps.push(json!({"company_id": id, "note": format!("Books could not be read: {}", e.message)})),
         }
+      }
     }
     tax_watch(scope, as_of, &mut hits).await?;
     for h in &hits {

@@ -1226,12 +1226,18 @@ impl CompanyBooks {
         }
         let refs = preview_refs.into_iter().collect::<Vec<_>>();
         let mut previews = BTreeMap::new();
-        for batch in refs.chunks(2) {
-            let keys = batch
-                .iter()
-                .map(|(c, p)| Self::key(c, "preview", p))
-                .collect::<Result<Vec<_>>>()?;
-            let values = self.store.mget(&keys).await.map_err(storage)?;
+        // Four bounded MGETs overlap remote latency. Each still contains at most
+        // two previews and every returned blob receives the same integrity checks.
+        for group in refs.chunks(8) {
+          let tasks = group.chunks(2).map(|batch| {
+            let batch = batch.to_vec();
+            let keys = batch.iter().map(|(c, p)| Self::key(c, "preview", p)).collect::<Result<Vec<_>>>()?;
+            let store = self.store.clone();
+            Ok(tokio::spawn(async move { let values = store.mget(&keys).await; (batch, values) }))
+          }).collect::<Result<Vec<_>>>()?;
+          for task in tasks {
+            let (batch, values) = task.await.map_err(|_| corrupt())?;
+            let values = values.map_err(storage)?;
             if values.len() != batch.len() {
                 return Err(corrupt());
             }
@@ -1253,6 +1259,7 @@ impl CompanyBooks {
                 }
                 previews.insert(company.clone(), (pid.clone(), p));
             }
+          }
         }
         let mut companies = vec![];
         for id in selected {
@@ -1339,6 +1346,9 @@ impl CompanyBooks {
         max_bytes: usize,
     ) -> Result<Value> {
         let (h, p, _, entries) = self.book(company).await?;
+        self.trial_balance_view(company, &h, &p, &entries, offset, limit, max_bytes)
+    }
+    fn trial_balance_view(&self, company: &str, h: &Head, p: &Preview, entries: &[Entry], offset: usize, limit: usize, max_bytes: usize) -> Result<Value> {
         let source = p.analysis.clone();
         let mut combined = source.clone();
         let native = &entries[source.entries..];

@@ -260,33 +260,50 @@ impl SourceImport {
         if page.limit==0 || page.limit>100 || page.search.chars().count()>100 || page.year.is_some_and(|y| !year(y)) || !["client_number","name","processing_status"].contains(&sort) || !["asc","desc"].contains(&direction) || page.status.as_ref().is_some_and(|s|s.len()>80) || page.province.as_ref().is_some_and(|s|s.len()>40) { return Err(bad("Invalid source client filter")) }
         let mut years: BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
         let mut pending_at_import: BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
-        for (index,target) in [("historical_lines",&mut years),("historical_lines_pending",&mut pending_at_import)] {
-            for identity in self.store.smembers(&k(company,index)).await.map_err(|e| storage(&e))? {
+        // These qualified source lanes are independent reads. Keep the exact
+        // validation and union rules, but overlap their remote-store latency.
+        let recovered_inputs=async {
+            if effective {self.effective_recovered_client_inputs(company).await.map(|(y,n,p)|(y,Some(n),p))}
+            else {self.recovered_native_source_years(company).await.map(|y|(y,None,BTreeMap::new()))}
+        };
+        let historical_key=k(company,"historical_lines");let pending_key=k(company,"historical_lines_pending");
+        let (historical,at_import,mapping,paper,archives,recovered)=tokio::join!(
+            self.store.smembers(&historical_key),self.store.smembers(&pending_key),
+            self.review_pending_mapping_records(company),self.preserved_pdf_figure_years(company),
+            self.identification_source_archive_years(company),recovered_inputs,
+        );
+        for (identities,target) in [(historical,&mut years),(at_import,&mut pending_at_import)] {
+            for identity in identities.map_err(|e|storage(&e))? {
                 let mut parts=identity.split(':');
                 let client=parts.next().ok_or_else(|| storage("invalid historical index"))?;
                 let tax_year=parts.next().and_then(|x| x.parse::<u16>().ok()).ok_or_else(|| storage("invalid historical index year"))?;
                 target.entry(client.into()).or_default().insert(tax_year);
             }
         }
-        let (_,unresolved)=self.review_pending_mapping_records(company).await?;
+        let (_,unresolved)=mapping?;
         let mut pending:BTreeMap<String,BTreeSet<u16>>=BTreeMap::new();
         for v in unresolved {pending.entry(v.client_number).or_default().insert(v.tax_year);}
-        let paper_years=self.preserved_pdf_figure_years(company).await?;
-        let archive_years=self.identification_source_archive_years(company).await?;
-        let (recovered_years,effective_numbers,effective_profiles)=if effective {
-            let (years,numbers,profiles)=self.effective_recovered_client_inputs(company).await?;(years,Some(numbers),profiles)
-        }else{(self.recovered_native_source_years(company).await?,None,BTreeMap::new())};
+        let paper_years=paper?;
+        let archive_years=archives?;
+        let (recovered_years,effective_numbers,effective_profiles)=recovered?;
         let available: BTreeSet<u16>=years.values().chain(paper_years.values()).chain(archive_years.values()).chain(recovered_years.values()).flat_map(|v|v.iter().copied()).collect();
         let mut numbers=if let Some(numbers)=effective_numbers{numbers}else{self.store.smembers(&k(company,"clients")).await.map_err(|e| storage(&e))?};
         numbers.sort_by(|a,b|(a.len(),a).cmp(&(b.len(),b)));
         let needle=page.search.trim().to_lowercase();let mut clients=Vec::new();let mut statuses=BTreeSet::new();let mut provinces=BTreeSet::new();
-        for chunk in numbers.chunks(500) {
+        for group in numbers.chunks(2000) {
+          let reads=group.chunks(500).map(|chunk| {
+            let chunk=chunk.to_vec();
             let uncached:Vec<_>=chunk.iter().filter(|n|!effective_profiles.contains_key(*n)).cloned().collect();
             let keys:Vec<_>=uncached.iter().map(|n|k(company,&format!("client:{n}"))).collect();
-            let fetched=self.store.mget(&keys).await.map_err(|e|storage(&e))?;
+            let store=self.store.clone();
+            tokio::spawn(async move {let fetched=store.mget(&keys).await;(chunk,uncached,fetched)})
+          }).collect::<Vec<_>>();
+          for read in reads {
+            let (chunk,uncached,fetched)=read.await.map_err(|_|storage("Client profile read task failed"))?;
+            let fetched=fetched.map_err(|e|storage(&e))?;
             if fetched.len()!=uncached.len(){return Err(storage("Client profile read cardinality differs"));}
             let fetched:BTreeMap<_,_>=uncached.into_iter().zip(fetched).collect();
-            for number in chunk {
+            for number in &chunk {
                 let client:Value=if let Some(v)=effective_profiles.get(number){v.clone()}else{let raw=fetched.get(number).and_then(|v|v.as_ref()).ok_or_else(||storage("client index points to missing record"))?;serde_json::from_str(raw).map_err(|_|storage("stored client unreadable"))?};
                 let name=client["name"].as_str().ok_or_else(||storage("stored client name missing"))?;
                 let status=client["processing_status"].as_str().unwrap_or("");let province=client["province"].as_str().unwrap_or("");
@@ -315,6 +332,7 @@ impl SourceImport {
                 }
                 clients.push(row);
             }
+          }
         }
         clients.sort_by(|a,b|{
             let id=|v:&Value|v["client_number"].as_str().unwrap_or("").to_string();let ai=id(a);let bi=id(b);let tie=(ai.len(),&ai).cmp(&(bi.len(),&bi));

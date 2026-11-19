@@ -2,18 +2,64 @@
 (function () {
   "use strict";
   const KEY = "nxt_key";
+  const localReads = { token: null, epoch: 0, pending: new Map(), metadata: new Map(), request };
+  // Same-origin app frames share in-flight GETs with the shell. Each caller retains
+  // its own cancellation and response object. Financial results are never cached.
+  function reads() {
+    try { if (window.parent !== window && window.parent.location.origin === location.origin && window.parent.NXT?._reads) return window.parent.NXT._reads; } catch {}
+    return localReads;
+  }
+  function invalidate() {
+    const state = reads(); state.epoch++; state.metadata.clear(); state.pending.clear();
+  }
   const store = {
     get() { try { return sessionStorage.getItem(KEY) || ""; } catch { return ""; } },
-    set(v) { try { sessionStorage.setItem(KEY, v); } catch {} },
-    clear() { try { sessionStorage.removeItem(KEY); } catch {} },
+    set(v) { invalidate(); try { sessionStorage.setItem(KEY, v); } catch {} },
+    clear() { invalidate(); try { sessionStorage.removeItem(KEY); } catch {} },
   };
 
   async function api(path, opts = {}) {
     const init = { method: opts.method || (opts.body ? "POST" : "GET"), headers: { authorization: "Bearer " + store.get() } };
     if (opts.body !== undefined) { init.headers["content-type"] = "application/json"; init.body = JSON.stringify(opts.body); }
-    if (opts.signal !== undefined) init.signal = opts.signal;
-    const r = await fetch(path, init);
-    const j = await r.json().catch(() => ({}));
+    const state = reads(), token = store.get();
+    if (state.token !== token) { invalidate(); state.token = token; }
+    const read = init.method.toUpperCase() === "GET" && /^\/api\//.test(path) && opts.body === undefined;
+    if (!read) {
+      invalidate();
+      if (opts.signal !== undefined) init.signal = opts.signal;
+      try { return await request(path, init); } finally { invalidate(); }
+    }
+    const clone = (v) => typeof structuredClone === "function" ? structuredClone(v) : JSON.parse(JSON.stringify(v));
+    const aborted = () => Object.assign(new Error("The request was aborted."), { name: "AbortError" });
+    if (opts.signal?.aborted) throw aborted();
+    const cached = state.metadata.get(path);
+    if (cached && cached.until > Date.now()) return clone(cached.value);
+    let entry = state.pending.get(path);
+    if (!entry) {
+      const epoch = state.epoch, controller = new AbortController();
+      entry = { controller, users: 0, done: false };
+      entry.promise = state.request(path, { ...init, signal: controller.signal }).then(value => {
+        if (state.epoch === epoch && state.token === token && (path === "/api/tax/catalog" || /\/(?:company-ledger\/[^/]+|ledger)\/meta$/.test(path))) state.metadata.set(path, { value, until: Date.now() + 60000 });
+        return value;
+      }).finally(() => { entry.done = true; if (state.pending.get(path) === entry) state.pending.delete(path); });
+      state.pending.set(path, entry);
+    }
+    return new Promise((resolve, reject) => {
+      entry.users++;
+      let finished = false;
+      const finish = () => { if (finished) return false; finished = true; opts.signal?.removeEventListener("abort", cancel); entry.users--; return true; };
+      const cancel = () => { if (!finish()) return; reject(aborted()); if (!entry.users && !entry.done) { if (state.pending.get(path) === entry) state.pending.delete(path); entry.controller.abort(); } };
+      opts.signal?.addEventListener("abort", cancel, { once: true });
+      entry.promise.then(value => { if (finish()) { if (store.get() !== token) reject(aborted()); else resolve(clone(value)); } }, error => {
+        if (finish()) {
+          if (error.status === 401 && window.parent !== window) window.parent.postMessage({ nxt: "signed-out" }, location.origin);
+          reject(error);
+        }
+      });
+    });
+  }
+  async function request(path, init) {
+    const r = await fetch(path, init), j = await r.json().catch(() => ({}));
     if (r.status === 401 && window.parent !== window) window.parent.postMessage({ nxt: "signed-out" }, location.origin);
     if (!r.ok) { const e = new Error(j.error || "Request failed (" + r.status + ")"); e.status = r.status; throw e; }
     return j;
@@ -88,7 +134,7 @@
 
   const MARK = `<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--ink)"/><path d="M9 22V10l8 12V10" stroke="var(--bg)" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 16h4m-2-2.5L24.5 16 22 18.5" stroke="var(--accent)" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
-  window.NXT = { api, esc, money, moneyShort, toCents, today, fmtDate, toast, modal, confirm, csvDownload, key: store, MARK };
+  window.NXT = { api, esc, money, moneyShort, toCents, today, fmtDate, toast, modal, confirm, csvDownload, key: store, MARK, _reads: localReads };
   // Nixon voice chat and its floating launcher on every NXT OS page (the shell loads it itself;
   // pages inside the shell's frame use the shell's launcher). It shows for signed-in staff only.
   // Inside the shell's frame, phones keep the last row of an app clear of the shell's launcher.
