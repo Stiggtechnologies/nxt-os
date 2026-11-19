@@ -59,6 +59,7 @@ pub fn router(state: Arc<CompanyBooks>) -> Router {
     .route("/api/company-books/{company}/parallel/schedules", get(schedule_list).post(add_schedule))
     .route("/api/company-books/{company}/parallel/inventory", get(inventory_list).post(add_movement))
     .route("/api/company-books/{company}/parallel/crm", get(crm_list).post(add_crm))
+    .route("/api/company-books/{company}/parallel/mileage", get(mileage_list).post(add_mileage))
     .route("/api/company-books/{company}/parallel/sales-documents", get(sales_docs_list).post(add_sales_order))
     .route("/api/company-books/{company}/parallel/sales-documents/sales-receipt", post(add_sales_receipt))
     .route("/api/company-books/{company}/parallel/sales-documents/refund-receipt", post(add_refund_receipt))
@@ -260,6 +261,8 @@ async fn add_movement(State(s): S, Path(c): Path<String>, Json(v): Json<super::i
 async fn inventory_list(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.inventory_list(&c).await?)) }
 async fn add_crm(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::CrmInput>) -> R { Ok(Json(s.add_crm(&c, v).await?)) }
 async fn crm_list(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.crm_list(&c).await?)) }
+async fn add_mileage(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::MileageInput>) -> R { Ok(Json(s.add_mileage(&c, v).await?)) }
+async fn mileage_list(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.mileage_list(&c).await?)) }
 async fn sales_docs_list(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.sales_docs_list(&c).await?)) }
 async fn add_sales_order(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NonPostingInput>) -> R { Ok(Json(s.add_sales_doc(&c, "sales_order", v).await?)) }
 async fn add_sales_receipt(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NonPostingInput>) -> R { Ok(Json(s.add_sales_doc(&c, "sales_receipt", v).await?)) }

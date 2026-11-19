@@ -43,7 +43,8 @@ The request body is built to match the endpoint's `deny_unknown_fields` contract
 | Parallel documents | Company book subledger | none | Open invoices and bills with balances; a row click posts a payment; **Nothing is written back** |
 | Attachments | Company book subledger | none | Files already stored against parallel documents, with size and owner; no upload or download control |
 | Recurring transactions | Company book parallel lists | none | Invoice and bill templates with cadence and next date; **no scheduler, nothing posts automatically** |
-| Fixed assets and prepaid | Company book parallel lists | none | Straight-line schedules with amortised and remaining amounts to the as-of date; **depreciation is not posted** |
+| Schedules | Company book parallel lists | none | Straight-line schedules for fixed assets, prepaid expenses and revenue recognition, with amortised and remaining amounts to the as-of date; **nothing is posted** |
+| Mileage | Company book parallel lists | none | Trips with distance, purpose and a firm-supplied rate; NXT computes distance times rate and claims no statutory rate |
 | Inventory | Company book parallel lists | none | On-hand quantity from stock movements, latest unit cost and value; not weighted average or FIFO |
 | Sales pipeline | Company book parallel lists | none | Opportunities, proposals and contracts with stage and value; NXT does not send or sign anything |
 | Sales documents | Company book parallel lists | none | Sales orders, sales receipts, refund receipts, delayed charges and credits; **non-posting** |

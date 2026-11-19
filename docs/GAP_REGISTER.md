@@ -9,24 +9,24 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 221 |
-| Routed | 132 |
+| Routed | 134 |
 | Linked | 24 |
-| External | 14 |
-| **Open** | **51** |
-| Routed coverage | 60% |
+| External | 13 |
+| **Open** | **50** |
+| Routed coverage | 61% |
 | Source chrome excluded | 21 |
 
 ## By product
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 144 | 92 | 24 | 2 | 26 | 64% |
+| QuickBooks | 144 | 94 | 24 | 1 | 25 | 65% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (26)
+### Open to build (25)
 
 | Group | Gap | Next step |
 | --- | --- | --- |
@@ -42,7 +42,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Financial planning | Cash flow planner | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Financial planning | Forecasts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Accounting | Receipts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Expenses & Bills | Mileage | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Sales & Get Paid | Payment links | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Sales & Get Paid | QuickBooks payouts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Customer Hub | Appointments | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
@@ -57,11 +56,10 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Company navigation (observed 2026-11-18) | Time off | Out of scope unless requested. |
 | Company navigation (observed 2026-11-18) | Assignments | Out of scope unless requested. |
 
-### Blocked outside this codebase (2)
+### Blocked outside this codebase (1)
 
 | Group | Gap | Why |
 | --- | --- | --- |
-| Accounting | Revenue recognition | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Company navigation (observed 2026-11-18) | Business Tax | Tax filing is an external certification gate. |
 
 ## DT Max

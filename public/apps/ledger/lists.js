@@ -316,7 +316,7 @@
       if (schedules.length) {
         built.push({
           id: "schedules",
-          label: "Fixed assets and prepaid",
+          label: "Schedules",
           kind: "parallel",
           source: "Company book parallel list",
           description: "Straight-line schedules computed to the as-of date. NXT shows what has been amortised and what remains; nothing is posted to the ledger.",
@@ -324,7 +324,7 @@
           columns: [{ key: "name", label: "Item" }, { key: "kind", label: "Kind" }, { key: "total", label: "Total", num: 1 }, { key: "monthly", label: "Monthly", num: 1 }, { key: "amortised", label: "Amortised", num: 1 }, { key: "remaining", label: "Remaining", num: 1 }],
           rows: schedules.map(row => ({
             name: text(row.name),
-            kind: row.kind === "fixed_asset" ? "Fixed asset" : "Prepaid",
+            kind: row.kind === "fixed_asset" ? "Fixed asset" : row.kind === "revenue_recognition" ? "Revenue recognition" : "Prepaid",
             total: amount(row.total_cents),
             monthly: amount(row.monthly_cents),
             amortised: amount(row.amortised_cents),
@@ -349,6 +349,19 @@
             value: amount(row.value_cents),
             moves: text(row.movements)
           }))
+        });
+      }
+      const trips = list(input.mileage && input.mileage.trips);
+      if (trips.length) {
+        built.push({
+          id: "mileage",
+          label: "Mileage",
+          kind: "parallel",
+          source: "Company book parallel list",
+          description: "Trips recorded with a firm-supplied rate. NXT multiplies distance by the rate you enter; it does not claim a statutory rate.",
+          boundary: PARALLEL_BOUNDARY,
+          columns: [{ key: "date", label: "Date" }, { key: "purpose", label: "Purpose" }, { key: "km", label: "Km", num: 1 }, { key: "rate", label: "Rate/km", num: 1 }, { key: "amount", label: "Amount", num: 1 }],
+          rows: trips.map(row => ({ date: text(row.date), purpose: text(row.purpose), km: (Number(row.kilometres_milli) / 1000).toFixed(3), rate: amount(row.rate_cents_per_km), amount: amount(row.amount_cents) }))
         });
       }
       const pipeline = list(input.crm && input.crm.records);

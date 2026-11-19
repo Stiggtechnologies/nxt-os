@@ -6,21 +6,21 @@
   ],
   "total": {
     "capabilities": 221,
-    "routed": 132,
+    "routed": 134,
     "linked": 24,
-    "external": 14,
-    "open": 51,
+    "external": 13,
+    "open": 50,
     "chrome": 21,
-    "percent": 60
+    "percent": 61
   },
   "products": [
     {
       "product": "QuickBooks",
       "capabilities": 144,
-      "routed": 92,
+      "routed": 94,
       "linked": 24,
-      "external": 2,
-      "open": 26
+      "external": 1,
+      "open": 25
     },
     {
       "product": "DT Max",
@@ -43,7 +43,6 @@
     "all-apps--accounting--receipts",
     "all-apps--customer-hub--appointments",
     "all-apps--customer-hub--reviews",
-    "all-apps--expenses-bills--mileage",
     "all-apps--payroll--compliance",
     "all-apps--payroll--payroll-taxes",
     "all-apps--sales-get-paid--payment-links",
@@ -93,7 +92,6 @@
     "webtax4b.vehicle-expense"
   ],
   "external_ids": [
-    "all-apps--accounting--revenue-recognition",
     "dtmax.efile-defaults",
     "dtmax.efile-quebec",
     "dtmax.efile-status",

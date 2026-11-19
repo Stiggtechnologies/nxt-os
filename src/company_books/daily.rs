@@ -18,7 +18,29 @@ struct DailyState {
     #[serde(default)] schedules: Vec<super::schedules::StoredSchedule>,
     #[serde(default)] stock_movements: Vec<super::inventory::Movement>,
     #[serde(default)] crm: Vec<CrmRecord>,
+    #[serde(default)] mileage: Vec<MileageTrip>,
     #[serde(default)] sales_docs: Vec<SalesDoc>,
+}
+
+/// A mileage trip. The rate is supplied by the firm; NXT does not claim a statutory rate.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MileageTrip {
+    id: String,
+    date: String,
+    purpose: String,
+    kilometres_milli: i64,
+    rate_cents_per_km: i64,
+    amount_cents: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MileageInput {
+    pub request_id: String,
+    pub date: String,
+    pub purpose: String,
+    pub kilometres_milli: i64,
+    pub rate_cents_per_km: i64,
 }
 
 /// A non-posting sales document: sales order, sales receipt, refund receipt, delayed charge
@@ -252,6 +274,42 @@ impl CompanyBooks {
         Ok(json!({"id": input.request_id, "posts_to_ledger": false, "write_back": false, "authoritative_system": "quickbooks"}))
     }
     /// Stores a fixed-asset or prepaid schedule. The schedule is a record: nothing posts.
+    /// Records a mileage trip. The deduction is kilometres times the supplied rate.
+    pub async fn add_mileage(&self, company: &str, input: MileageInput) -> Result<Value> {
+        if !valid_id(&input.request_id) { return Err(bad("A mileage trip needs a request id")); }
+        if !date(&input.date) { return Err(bad("A mileage trip needs a valid date")); }
+        if input.kilometres_milli <= 0 { return Err(bad("A mileage trip needs a positive distance")); }
+        if input.rate_cents_per_km < 0 { return Err(bad("A mileage rate cannot be negative")); }
+        if !text(&input.purpose, 200) { return Err(bad("Mileage purpose is too long")); }
+        let (raw, mut state) = self.daily_load(company).await?;
+        if state.mileage.iter().any(|row| row.id == input.request_id) {
+            return Ok(json!({"id": input.request_id, "idempotent_replay": true, "posts_to_ledger": false, "write_back": false}));
+        }
+        if state.mileage.len() >= 2000 { return Err(bad("Mileage history is full")); }
+        let raw_amount = (input.kilometres_milli as i128) * (input.rate_cents_per_km as i128);
+        let amount = ((raw_amount + 500) / 1000) as i64;
+        state.mileage.push(MileageTrip {
+            id: input.request_id.clone(),
+            date: input.date,
+            purpose: input.purpose.trim().into(),
+            kilometres_milli: input.kilometres_milli,
+            rate_cents_per_km: input.rate_cents_per_km,
+            amount_cents: amount,
+        });
+        self.daily_save(company, raw.as_deref(), &state).await?;
+        Ok(json!({"id": input.request_id, "amount_cents": amount, "posts_to_ledger": false, "write_back": false, "authoritative_system": "quickbooks"}))
+    }
+
+    /// Mileage trips with a total.
+    pub async fn mileage_list(&self, company: &str) -> Result<Value> {
+        let (_, state) = self.daily_load(company).await?;
+        let mut rows = state.mileage.clone();
+        rows.sort_by(|a, b| b.date.cmp(&a.date));
+        let total: i64 = rows.iter().map(|row| row.amount_cents).sum();
+        let kilometres: i64 = rows.iter().map(|row| row.kilometres_milli).sum();
+        Ok(json!({"trips": rows, "total_amount_cents": total, "total_kilometres_milli": kilometres, "rate_supplied_by_firm": true, "posts_to_ledger": false, "write_back": false, "authoritative_system": "quickbooks"}))
+    }
+
     /// Records a non-posting sales document.
     pub async fn add_sales_doc(&self, company: &str, kind: &str, input: NonPostingInput) -> Result<Value> {
         if !matches!(kind, "sales_order" | "sales_receipt" | "refund_receipt" | "delayed_charge" | "delayed_credit") {
@@ -391,7 +449,7 @@ impl CompanyBooks {
     pub async fn add_schedule(&self, company: &str, input: super::schedules::ScheduleInput) -> Result<Value> {
         use super::schedules::ScheduleError;
         if !valid_id(&input.request_id) { return Err(bad("A schedule needs a request id")); }
-        if !matches!(input.kind.as_str(), "fixed_asset" | "prepaid") { return Err(bad("Schedule kind must be fixed_asset or prepaid")); }
+        if !matches!(input.kind.as_str(), "fixed_asset" | "prepaid" | "revenue_recognition") { return Err(bad("Schedule kind must be fixed_asset, prepaid or revenue_recognition")); }
         if input.name.trim().is_empty() || !text(&input.name, 120) { return Err(bad("A schedule needs a name")); }
         if input.total_cents <= 0 { return Err(bad("A schedule total must be positive")); }
         if !(1..=600).contains(&input.months) { return Err(bad("A schedule needs between 1 and 600 months")); }
