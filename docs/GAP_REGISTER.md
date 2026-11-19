@@ -9,24 +9,24 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 221 |
-| Routed | 140 |
+| Routed | 141 |
 | Linked | 24 |
 | External | 13 |
-| **Open** | **44** |
-| Routed coverage | 63% |
+| **Open** | **43** |
+| Routed coverage | 64% |
 | Source chrome excluded | 21 |
 
 ## By product
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 144 | 100 | 24 | 1 | 19 | 69% |
+| QuickBooks | 144 | 101 | 24 | 1 | 18 | 70% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (19)
+### Open to build (18)
 
 | Group | Gap | Next step |
 | --- | --- | --- |
@@ -47,7 +47,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | LISTS | Custom fields | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | TOOLS | Backup company | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Company navigation (observed 2026-11-18) | Schedule | Out of scope unless requested. |
-| Company navigation (observed 2026-11-18) | Time off | Out of scope unless requested. |
 | Company navigation (observed 2026-11-18) | Assignments | Out of scope unless requested. |
 
 ### Blocked outside this codebase (1)

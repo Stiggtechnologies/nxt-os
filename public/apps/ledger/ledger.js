@@ -330,7 +330,7 @@ views.vendors = contactViews("vendor");
 views.lists = async () => {
   const L = window.NXTLedgerLists;
   if (!L) { page("Lists", "", "", `<div class="card err-text">The lists module did not load. Reload the page.</div>`); return; }
-  let parallel = null, subledger = null, payroll = null, recurring = null, schedules = null, inventory = null, crm = null, salesDocs = null, mileage = null, parallelNote = "";
+  let parallel = null, subledger = null, payroll = null, recurring = null, schedules = null, inventory = null, crm = null, salesDocs = null, mileage = null, timeOff = null, parallelNote = "";
   if (company) {
     try {
       parallel = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/daily`);
@@ -341,15 +341,16 @@ views.lists = async () => {
     try { inventory = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/inventory`); } catch { inventory = null; }
     try { crm = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/crm`); } catch { crm = null; }
     try { mileage = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/mileage`); } catch { mileage = null; }
+    try { timeOff = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/time-off`); } catch { timeOff = null; }
     try { salesDocs = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/sales-documents`); } catch { salesDocs = null; }
     }
     catch (e) { parallelNote = e.status === 404 ? "This company book has no parallel lists yet." : e.message; }
   }
-  const lanes = L.lanes({ contacts: S.contacts, accounts: S.accounts, parallel, subledger, payroll, recurring, schedules, inventory, crm, salesDocs, mileage });
+  const lanes = L.lanes({ contacts: S.contacts, accounts: S.accounts, parallel, subledger, payroll, recurring, schedules, inventory, crm, salesDocs, mileage, timeOff });
   const scope = company || "firm-workspace";
   const head = L.summary(lanes);
   page("Lists", `${head.lanes} lists · ${head.rows} rows · ${head.native} from this ledger, ${head.parallel} from parallel lists.`,
-    `<button class="btn" id="exportAll">Export all lists</button>${company ? '<button class="btn" id="addTrip">Mileage trip</button><button class="btn" id="addSalesDoc">Sales document</button><button class="btn" id="addPipeline">Pipeline entry</button><button class="btn" id="addMovement">Stock movement</button><button class="btn" id="addSchedule">Add schedule</button><button class="btn" id="addRecurring">Add recurring</button><button class="btn primary" id="runPayroll">Run payroll</button>' : ''}`,
+    `<button class="btn" id="exportAll">Export all lists</button>${company ? '<button class="btn" id="addLeave">Leave request</button><button class="btn" id="addTrip">Mileage trip</button><button class="btn" id="addSalesDoc">Sales document</button><button class="btn" id="addPipeline">Pipeline entry</button><button class="btn" id="addMovement">Stock movement</button><button class="btn" id="addSchedule">Add schedule</button><button class="btn" id="addRecurring">Add recurring</button><button class="btn primary" id="runPayroll">Run payroll</button>' : ''}`,
     `<div class="card"><input id="q" placeholder="Search every list by name, number, email…" style="width:100%">
       <p class="form-note" style="margin:10px 0 0">Lists show what this book holds. Exports carry exactly the rows shown. Parallel lists accept new entries here, and nothing on this screen posts a journal, syncs or writes back to QuickBooks.</p></div>
      <div id="lanes"></div>${parallelNote ? `<p class="form-note" role="status">${esc(parallelNote)}</p>` : ""}`);
@@ -503,6 +504,8 @@ views.lists = async () => {
     });
   };
   $("#q").oninput = render; render();
+  const addLeave = $("#addLeave");
+  if (addLeave) addLeave.onclick = () => leaveModal();
   const addTrip = $("#addTrip");
   if (addTrip) addTrip.onclick = () => mileageModal();
   const addSalesDoc = $("#addSalesDoc");
@@ -769,6 +772,42 @@ function recurringModal() {
     const select = el.querySelector("select[name=contact]");
     select.innerHTML = (S.contacts || []).filter((row) => !row.archived).map((row) => `<option value="${esc(row.id)}">${esc(row.name)}</option>`).join("");
     if (!select.innerHTML) select.innerHTML = '<option value="">No contacts</option>';
+  });
+}
+
+function leaveModal() {
+  return modal("Record a leave request", (el, close) => {
+    const employees = (parallel && Array.isArray(parallel.employees) ? parallel.employees : []).filter((row) => row.active);
+    el.innerHTML = `<form class="form">
+      <label class="f" style="grid-column:1/-1">Employee<select name="employee_id" required></select></label>
+      <label class="f">Kind<select name="kind"><option value="vacation">Vacation</option><option value="sick">Sick</option><option value="unpaid">Unpaid</option><option value="other">Other</option></select></label>
+      <label class="f">Status<select name="status"><option value="requested">Requested</option><option value="approved">Approved</option><option value="declined">Declined</option><option value="cancelled">Cancelled</option></select></label>
+      <label class="f">From<input name="from_date" type="date" required value="${today()}"></label>
+      <label class="f">To<input name="to_date" type="date" required value="${today()}"></label>
+      <label class="f">Days<input name="days" type="number" min="0.5" step="0.5" required value="1"></label>
+      <label class="f">Note<input name="note" placeholder="Optional"></label>
+      <p class="form-note" style="grid-column:1/-1">NXT records the leave and its decision. It does not schedule work, run an approval workflow or feed payroll.</p>
+    </form>
+    <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Save request</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("select[name=employee_id]").innerHTML = employees.map((row) => `<option value="${esc(row.id)}">${esc(row.name)}</option>`).join("");
+    if (!employees.length) toast("Add an employee in Lists first.", true);
+    el.querySelector("[data-ok]").onclick = async () => {
+      const form = new FormData(el.querySelector("form")), f = Object.fromEntries(form);
+      try {
+        await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/time-off`, { body: {
+          request_id: "leave-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+          employee_id: f.employee_id,
+          kind: f.kind,
+          from_date: f.from_date,
+          to_date: f.to_date,
+          days_milli: Math.round(Number(f.days) * 1000),
+          status: f.status,
+          note: f.note || ""
+        } });
+        close(); toast("Leave request saved."); route();
+      } catch (e) { toast(e.message, true); }
+    };
   });
 }
 

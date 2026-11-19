@@ -6,21 +6,21 @@
   ],
   "total": {
     "capabilities": 221,
-    "routed": 140,
+    "routed": 141,
     "linked": 24,
     "external": 13,
-    "open": 44,
+    "open": 43,
     "chrome": 21,
-    "percent": 63
+    "percent": 64
   },
   "products": [
     {
       "product": "QuickBooks",
       "capabilities": 144,
-      "routed": 100,
+      "routed": 101,
       "linked": 24,
       "external": 1,
-      "open": 19
+      "open": 18
     },
     {
       "product": "DT Max",
@@ -63,7 +63,6 @@
     "dtmax.ui-options",
     "observed-1118--assignments",
     "observed-1118--schedule",
-    "observed-1118--time-off",
     "reports--custom-reports",
     "reports--financial-planning--cash-flow-planner",
     "reports--financial-planning--forecasts",
