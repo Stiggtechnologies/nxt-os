@@ -108,9 +108,12 @@
   }
   // nixon_command (SyncAI ask_sync) and open_nixon_page (SyncAI open_sync_page). Both go through
   // `ask`, which posts to /api/nixon/voice; no tool reaches a decision or approval route.
-  async function runTool(call, ask) {
+  async function runTool(call, ask, workspace) {
     let args = {};
     try { args = JSON.parse(call.arguments || "{}"); } catch { return { ok: false, error: "Invalid command arguments." }; }
+    if (call.name === "inspect_workspace" || call.name === "control_workspace") {
+      return workspace ? workspace(call.name, args) : { ok: false, error: "Open NXT OS to use workspace controls." };
+    }
     if (call.name === "nixon_command") {
       const transcript = typeof args.transcript === "string" ? args.transcript.trim().slice(0, 2000) : "";
       if (!transcript) return { ok: false, error: "A complete request for Nixon is required." };
@@ -286,7 +289,7 @@
           for (const call of calls) {
             handled.add(call.call_id);
             let result;
-            try { result = await runTool(call, opts.ask); } catch (e) { result = { ok: false, error: e.message || "The Nixon voice command failed." }; }
+            try { result = await runTool(call, opts.ask, opts.workspace); } catch (e) { result = { ok: false, error: e.message || "The Nixon voice command failed." }; }
             if (connection !== pc || events.readyState !== "open") return;
             updateContext();
             events.send(JSON.stringify({ type: "conversation.item.create", item: { type: "function_call_output", call_id: call.call_id, output: boundedToolOutput(result) } }));

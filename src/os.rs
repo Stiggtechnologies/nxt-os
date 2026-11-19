@@ -83,8 +83,9 @@ fn plural(n: i64, one: &str, many: &str) -> String {
 }
 
 async fn insights(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
-    let d = os.ledger.dashboard().await.map_err(ApiError::from)?;
-    let r = os.referrals.analytics().await.map_err(ApiError::from)?;
+    let (d, r) = tokio::join!(os.ledger.dashboard(), os.referrals.analytics());
+    let d = d.map_err(ApiError::from)?;
+    let r = r.map_err(ApiError::from)?;
     let n = |k: &str| d[k].as_i64().unwrap_or(0);
     let mut out = Vec::new();
     let mut push = |level: &str, title: String, body: String, app: &str, view: &str| {

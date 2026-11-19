@@ -162,12 +162,26 @@ html.nxl-shown body{padding-bottom:84px}
       const turn = generation;
       input.value = "";
       chat.push({ role: "user", content: text });
-      await runAsk(voiceOn);
+      const controller = allowed ? opts.workspace?.() : null;
+      const control = controller ? await controller.command(text) : null;
+      if (turn !== generation) return;
+      if (control) {
+        chat.push({ role: "assistant", content: workspaceText(control), local: true, meta: "Nixon · workspace" });
+        render(); if (voiceOn) say(workspaceText(control));
+      } else await runAsk(voiceOn);
       if (turn === generation) busy = false;
+    }
+    function workspaceText(result) {
+      const items = result.options || result.controls || result.choices || [];
+      const labels = items.slice(0, 12).map((c, i) => (i + 1) + ". " + (typeof c === "string" ? c : c.label));
+      return [result.say || result.error || "Done.", ...labels, result.next_offset != null ? "More results are available." : ""].filter(Boolean).join("\n");
     }
     // Spoken turn: the audited voice gate first, Ask NXT only for speech Nixon has no command for.
     async function nixonVoice(transcript, channel) {
       const turn = generation;
+      const controller = channel !== "open_mic" || /^(?:(?:hey|okay|ok)\s+)?nixon\b/i.test(transcript.trim()) ? opts.workspace?.() : null;
+      const control = controller ? await controller.command(transcript) : null;
+      if (control) return { ...control, intent: "workspace", action: "speak", say: workspaceText(control) };
       const v = await api("/api/nixon/voice", { body: { transcript, channel, last_spoken: lastSpoken, choices } });
       if (turn === generation) choices = v.choices || [];
       return v;
@@ -192,7 +206,7 @@ html.nxl-shown body{padding-bottom:84px}
       if (route === "hold") { busy = false; setStatus(voiceOn ? statusFor() : ""); return; }
       chat.push({ role: "user", content: text, meta: "Spoken" });
       if (route === "answer") {
-        chat.push({ role: "assistant", content: v.say || "Done.", meta: "Nixon · voice never approves, posts or files" });
+        chat.push({ role: "assistant", content: v.say || "Done.", meta: v.intent === "workspace" ? "Nixon · workspace" : "Nixon · governed finance" });
         render();
         say(v.say);
         opened(v.open);
@@ -249,6 +263,12 @@ html.nxl-shown body{padding-bottom:84px}
         token: () => window.NXT.key.get(),
         context: () => ({ route: opts.route ? opts.route() : "/ask", pageTitle: document.title || "NXT OS", mode: "conversation" }),
         ask: async (t) => { const turn = generation; try { const v = await nixonVoice(t, "push_to_talk"); if (turn !== generation) return; opened(v.open); return v; } catch { return undefined; } },
+        workspace: async (name, args) => {
+          if (!allowed) return { ok: false, error: "Sign in with access to this workspace first." };
+          const controller = opts.workspace?.();
+          if (!controller) return { ok: false, error: "Open NXT OS to use workspace controls." };
+          return name === "inspect_workspace" ? controller.inspect(args) : controller.act(args);
+        },
         onUserText: (t) => { chat.push({ role: "user", content: t, meta: "Spoken · voice mode", local: true }); render(); },
         onAssistantText: (t) => { chat.push({ role: "assistant", content: t, meta: "Nixon · live voice", local: true }); render(); },
         onEnd: (state, was) => { if (was && voiceOn && !loop) { voiceOn = false; paintButtons(); setStatus(state || "Voice mode ended."); } },

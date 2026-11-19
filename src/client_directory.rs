@@ -230,8 +230,14 @@ impl Directory {
             },
             Err(_) => unavailable.push("source roster"),
         }
-        if self.book_rows(&mut rows).await.is_none() { unavailable.push("company books"); }
-        match self.migrations.list().await {
+        // Independent sources can be read together; merge them in the original order
+        // so aliases, counts and unavailable-source reporting remain deterministic.
+        let (books, migrations, tax, engagements, signatures, firm) = tokio::join!(
+            self.book_rows(&mut rows), self.migrations.list(), self.tax.list(None),
+            self.engagements.list(), self.signatures.list(), self.firm.snapshot(),
+        );
+        if books.is_none() { unavailable.push("company books"); }
+        match migrations {
             Ok(v) => for s in v["snapshots"].as_array().into_iter().flatten() {
                 if let Some(row) = rows.get(s["cohort_ref"].as_str().unwrap_or("")) {
                     row.source_snapshots += 1;
@@ -240,21 +246,21 @@ impl Directory {
             },
             Err(_) => unavailable.push("source reports"),
         }
-        match self.tax.list(None).await {
+        match tax {
             Ok(v) => for r in &v { if let Some(row) = rows.get(r["client_ref"].as_str().unwrap_or("")) { row.tax_returns += 1; } },
             Err(_) => unavailable.push("tax returns"),
         }
-        match self.engagements.list().await {
+        match engagements {
             Ok(v) => for e in &v { if let Some(row) = rows.get(e["client_ref"].as_str().unwrap_or("")) { row.engagements += 1; } },
             Err(_) => unavailable.push("engagements"),
         }
-        match self.signatures.list().await {
+        match signatures {
             Ok(v) => for e in v["envelopes"].as_array().into_iter().flatten() {
                 if let Some(row) = rows.get(e["client_ref"].as_str().unwrap_or("")) { row.signature_envelopes += 1; }
             },
             Err(_) => unavailable.push("e-sign envelopes"),
         }
-        match self.firm.snapshot().await {
+        match firm {
             Ok(s) => {
                 for p in &s.projects { if let Some(row) = rows.get(&p.client_ref) { row.projects += 1; } }
                 for c in &s.closes { if let Some(row) = rows.get(&c.client_ref) { row.closes += 1; } }
