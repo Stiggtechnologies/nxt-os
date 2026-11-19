@@ -55,7 +55,13 @@ async fn parallel_daily_lists_and_sales_tax_preference_do_not_write_back() {
     let budget = books.add_budget("co", serde_json::from_value(json!({"request_id":"bud-1","account_id":"revenue","period":"2026-02","amount_cents":8000})).unwrap()).await.ok().unwrap();
     assert_eq!(budget["posts_to_ledger"], false);
     assert_eq!(books.entries("co", 0, 50, None).await.ok().unwrap()["rows"].as_array().unwrap().len(), before);
-    assert_eq!(books.payroll_run("co").await.unwrap_err().0, 409);
+    // The new payroll preview accepts an input; unsupported provinces still fail
+    // before any paystub or ledger mutation.
+    assert_eq!(books.payroll_run("co", serde_json::from_value(json!({
+        "request_id":"unsupported-payroll","employee_id":"emp-1","pay_date":"2026-02-02",
+        "annual_gross_cents":6000000,"province":"ON"
+    })).unwrap()).await.unwrap_err().0, 400);
+    assert_eq!(books.entries("co", 0, 50, None).await.ok().unwrap()["rows"].as_array().unwrap().len(), before);
 
     let ignored = books.open_document("co", serde_json::from_value(json!({
         "request_id":"inv-off","expected_head":head,"operator_label":"Synthetic operator","kind":"invoice","contact":"Maple",
