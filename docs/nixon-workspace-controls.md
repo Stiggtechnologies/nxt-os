@@ -35,6 +35,10 @@ visible result before claiming completion.
 Performance changes share concurrent GETs across the shell and app frames, with
 independent cancellation and response objects. Only catalog metadata is briefly
 reused; financial reads remain fresh. Writes and sign-in changes invalidate reuse.
+The directory uses a compact identity lookup, synchronised transactionally with
+the sealed preview bytes. It does not transfer journal blobs merely to build a
+company menu. The private lookup retains source hashes and access auditing and
+does not change source/client/tax records or financial read validation.
 The directory and imported T1 client list read independent sources concurrently;
 T1 profile batches overlap in bounded groups while preserving identity validation,
 filtering, ordering and export coverage. Company inventory overlaps

@@ -7,8 +7,8 @@ use axum::{Json, Router, extract::{Path, State}, http::{HeaderValue, StatusCode,
 use serde_json::{Value, json};
 use std::{collections::{BTreeMap, BTreeSet, HashMap}, sync::Arc};
 
-const BOOK_PAGE: usize = 50;
-const BOOK_PAGES: usize = 11;
+const BOOK_PAGE: usize = 500;
+const BOOK_PAGES: usize = 2;
 
 pub struct Directory {
     pub company_books: Arc<CompanyBooks>,
@@ -194,7 +194,7 @@ impl Directory {
         let mut pages = Vec::new();
         let mut offset = 0;
         for _ in 0..BOOK_PAGES {
-            let page = self.company_books.list_page(offset, BOOK_PAGE).await.ok()?;
+            let page = self.company_books.list_identity_page(offset, BOOK_PAGE).await.ok()?;
             let n = page["companies"].as_array().map_or(0, Vec::len);
             let more = page["has_more"] == json!(true);
             pages.push(page);
@@ -339,7 +339,7 @@ impl Directory {
         let mut pages = vec![];
         let mut offset = 0;
         for _ in 0..BOOK_PAGES {
-            let Ok(page) = self.company_books.list_page(offset, BOOK_PAGE).await else { break };
+            let Ok(page) = self.company_books.list_identity_page(offset, BOOK_PAGE).await else { break };
             let n = page["companies"].as_array().map_or(0, Vec::len);
             let more = page["has_more"] == json!(true);
             pages.push(page);
