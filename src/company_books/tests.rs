@@ -46,7 +46,7 @@ async fn each_financial_read_loads_source_chunks_once() {
     for key in ["company_id","stage"]{assert_eq!(light["companies"][0][key],full["companies"][0][key]);}
     assert_eq!(light["companies"][0]["previews"][0]["company"],full["companies"][0]["previews"][0]["company"]);
     assert_eq!(s.store.memory_snapshot().unwrap(),before,"identity lookup changes no source records");
-    let preview_key=CompanyBooks::key("test","preview",p["preview_id"].as_str().unwrap()).unwrap();
+    let preview_key=CompanyBooks::key("test","preview",p["preview_id"].as_str().unwrap()).ok().unwrap();
     let sealed=s.store.get(&preview_key).await.unwrap().unwrap();
     s.store.set(&preview_key,"{}").await.unwrap();
     assert!(s.list_identity_page(0,500).await.is_err(),"identity lookup cannot disguise corrupt source bytes");
