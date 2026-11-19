@@ -159,7 +159,7 @@
       if (action === "wait") return wait();
       if (action === "navigate") {
         const destinations = opts.destinations?.() || [];
-        const found = matches(destinations, args.target, d => [d.label]);
+        const found = matches(destinations, args.target, d => [d.label, ...(d.aliases || [])]);
         if (found.length !== 1) return fail(found.length ? "Which destination?" : "Inspect the workspace for available destinations, or open its navigation control.", { choices: found.slice(0, 15).map(d => d.label) });
         found[0].run(); closePicker();
         const state = await wait();
@@ -271,10 +271,14 @@
         return act({ action: "click", target: m[1] });
       }
       if ((m = t.match(/^(?:open|show|go to|navigate to)(?: the)? (.+)$/i))) {
+        // A module name ("Tax") opens that module; it must not become ambiguous
+        // with every deep destination whose label also contains that name.
+        const direct = (opts.destinations?.() || []).filter(d => (d.aliases || []).some(a => norm(a) === norm(m[1])));
+        if (direct.length === 1) return act({ action: "navigate", target: direct[0].label });
         const rows = collect();
         const found = matches(rows, m[1]);
         if (found.length) return act({ action: "click", target: found.length === 1 ? found[0].row.id : m[1] });
-        const dest = matches(opts.destinations?.() || [], m[1], d => [d.label]);
+        const dest = matches(opts.destinations?.() || [], m[1], d => [d.label, ...(d.aliases || [])]);
         if (dest.length) return act({ action: "navigate", target: m[1] });
       }
       return null;

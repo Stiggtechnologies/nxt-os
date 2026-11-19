@@ -140,6 +140,10 @@ try {
   await page.locator("#chat textarea").fill("Nixon, switch company to Synthetic Alpha");
   await page.locator("#chat .nxc-composer").evaluate(form=>form.requestSubmit());
   await page.waitForFunction(()=>new URL(location.href).searchParams.get("company")==="synthetic-alpha");
+  await page.locator("#chat textarea").fill("Nixon, go to Tax");
+  await page.locator("#chat .nxc-composer").evaluate(form=>form.requestSubmit());
+  await page.waitForFunction(()=>location.hash==="#/tax");
+  await page.frameLocator("#frame").getByRole("heading",{name:"App fixture"}).waitFor();
   await page.evaluate(() => { location.hash="/nixon"; });
   await page.waitForFunction(()=>location.hash==="#/nixon");
   await page.frameLocator("#frame").locator("#liveVoice").click();

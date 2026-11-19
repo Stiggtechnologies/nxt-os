@@ -527,7 +527,7 @@ const COMMANDS = [
 ];
 workspace = NXTWorkspace.create({
   allowed: () => workspaceAllowed && !!NXT.key.get() && !$("#os").hidden,
-  destinations: () => [...COMMANDS.map(([label, run]) => ({ label, run })), ...Object.entries(APPS).map(([app, info]) => ({ label: info.name, run: () => go(app) }))],
+  destinations: () => [...COMMANDS.map(([label, run]) => ({ label, run })), ...Object.entries(APPS).map(([app, info]) => ({ label: info.name, aliases: [app, info.name.replace(/([a-z])([A-Z])/g, "$1 $2")], run: () => go(app) }))],
 });
 function openPalette() {
   if (document.querySelector(".palette") || $("#os").hidden) return;
