@@ -66,7 +66,7 @@ try {
         <form onsubmit="event.preventDefault();document.querySelector('#saved').textContent='Draft saved'">
         <label>Customer name<input name="customer"></label><label>Tax year<select name="year"><option value="2024">2024</option><option value="2025">2025</option><optgroup label="Locked years" disabled><option value="2030">2030</option></optgroup></select></label>
         <label><input type="checkbox" name="include">Include prior year</label><button>Save draft</button></form>
-        <button disabled>Disabled control</button><button hidden>Hidden control</button><input type="password" aria-label="Secret password"><button title="Duplicate">Duplicate</button><button title="Duplicate">Duplicate</button>
+        <button disabled>Disabled control</button><button hidden>Hidden control</button><input type="password" aria-label="Secret password"><input autocomplete="one-time-code" aria-label="Verification code" value="654321"><button title="Duplicate">Duplicate</button><button title="Duplicate">Duplicate</button>
         <a href="https://outside.invalid/">External link</a><p id="saved"></p>
         <button onclick="this.remove()">Remove this control</button>
         <table><tr><td>Record Alpha</td><td><button>Open</button></td></tr><tr><td>Record Beta</td><td><button>Open</button></td></tr></table>
@@ -107,7 +107,7 @@ try {
   await page.frameLocator("#frame").getByRole("heading",{name:"App fixture"}).waitFor();
   let controls=(await tool("inspect_workspace",{})).controls;
   assert.ok(controls.some(c=>c.label==="Tasks"));
-  assert.ok(!controls.some(c=>/Secret password|Hidden control/.test(c.label)));
+  assert.ok(!controls.some(c=>/Secret password|Verification code|Hidden control/.test(c.label)));
   const byLabel=label=>controls.find(c=>c.label===label)?.id;
   assert.equal((await tool("control_workspace",{action:"click",target:byLabel("Tasks")})).ok,true);
   assert.equal(await page.frameLocator("#frame").locator("h1").innerText(),"Tasks opened");

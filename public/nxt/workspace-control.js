@@ -58,7 +58,7 @@
       for (const entry of docs) {
        const modal = [...entry.doc.querySelectorAll('[aria-modal="true"],dialog[open]')].filter(visible).at(-1);
        for (const el of (modal || entry.doc).querySelectorAll(CONTROL)) {
-        if (!visible(el) || el.matches('input[type="hidden"],input[type="password"]') || /password|secret|api.?key|access.?token/i.test([el.name, el.id, el.autocomplete].join(" "))) continue;
+        if (!visible(el) || el.matches('input[type="hidden"],input[type="password"]') || /password|secret|api.?key|access.?token|one.?time.?code|verification.?code|\botp\b|\btotp\b/i.test([el.name, el.id, el.autocomplete].join(" "))) continue;
         const name = label(el);
         if (!name) continue;
         const row = { label: name, scope: entry.scope, kind: el.getAttribute("role") || (el.matches("input") ? el.type : el.tagName.toLowerCase()), disabled: el.matches(":disabled") || el.getAttribute("aria-disabled") === "true" };
