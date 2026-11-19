@@ -9,9 +9,12 @@ test('signer page keeps the token in the fragment and never needs a staff key', 
   assert.match(read('sign/index.html'), /no-referrer/);
   new Function(js);
 });
-test('staff e-sign page says test delivery and parses', () => {
+test('staff e-sign page checks delivery before describing test, outbox or connected mail', () => {
   const js = read('apps/signatures/esign.js');
-  assert.match(read('apps/signatures/esign.html'), /No email is sent/);
+  assert.match(read('apps/signatures/esign.html'), /Checking delivery connection/);
+  assert.match(js, /Test delivery: no email is sent/);
+  assert.match(js, /Outbox delivery:.*no email is transmitted/);
+  assert.match(js, /Mailbox connected\./);
   assert.match(read('apps/signatures/index.html'), /esign\.html/);
   new Function(js);
 });
