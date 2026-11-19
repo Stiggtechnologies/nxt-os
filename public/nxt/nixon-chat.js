@@ -159,10 +159,11 @@ html.nxl-shown body{padding-bottom:84px}
       text = String(text || "").trim();
       if (!text || busy) return;
       busy = true;
+      const turn = generation;
       input.value = "";
       chat.push({ role: "user", content: text });
       await runAsk(voiceOn);
-      busy = false;
+      if (turn === generation) busy = false;
     }
     // Spoken turn: the audited voice gate first, Ask NXT only for speech Nixon has no command for.
     async function nixonVoice(transcript, channel) {

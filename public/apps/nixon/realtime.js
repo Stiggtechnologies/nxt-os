@@ -249,8 +249,9 @@
       if (!root.RTCPeerConnection || (!welcome && !root.navigator?.mediaDevices?.getUserMedia)) return "unsupported";
       if (connection) end();
       opts.onState?.(welcome ? "Playing welcome" : "Connecting");
-      const pc = new root.RTCPeerConnection();
+      let pc;
       try {
+        pc = new root.RTCPeerConnection();
         connection = pc;
         welcomeOnly = !!welcome;
         audio = new root.Audio();
@@ -307,7 +308,7 @@
         opts.onState?.(welcome ? "Playing welcome. Microphone is off." : "Live voice");
         return "live";
       } catch {
-        if (connection !== pc) return "cancelled";
+        if (pc && connection !== pc) return "cancelled";
         end("Browser speech");
         return "error";
       }

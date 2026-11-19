@@ -444,13 +444,16 @@ function showLauncher(show) {
     if (request) window.NXTAssistant.handle(request.action, request.text);
   }
 }
+let assistantRequest = 0;
 window.NXTAssistant = {
   contextChanged() { askChat.contextChanged(); },
   async handle(action, text = "") {
+    const request = ++assistantRequest, token = NXT.key.get();
     if (action === "stop") { askChat.stop(); return; }
     if (!["open", "voice", "dictate", "send"].includes(action)) return;
     openDrawer();
     await askChat.refresh();
+    if (request !== assistantRequest || token !== NXT.key.get() || !$("#drawer").classList.contains("open")) return;
     if (action === "voice") await askChat.startVoice();
     if (action === "dictate") askChat.dictate();
     if (action === "send") await askChat.voiceTurn(String(text).slice(0, 2000));
