@@ -6,21 +6,21 @@
   ],
   "total": {
     "capabilities": 221,
-    "routed": 137,
+    "routed": 140,
     "linked": 24,
     "external": 13,
-    "open": 47,
+    "open": 44,
     "chrome": 21,
-    "percent": 62
+    "percent": 63
   },
   "products": [
     {
       "product": "QuickBooks",
       "capabilities": 144,
-      "routed": 97,
+      "routed": 100,
       "linked": 24,
       "external": 1,
-      "open": 22
+      "open": 19
     },
     {
       "product": "DT Max",
@@ -41,8 +41,6 @@
   ],
   "open_ids": [
     "all-apps--accounting--receipts",
-    "all-apps--payroll--compliance",
-    "all-apps--payroll--payroll-taxes",
     "all-apps--sales-get-paid--payment-links",
     "all-apps--sales-get-paid--quickbooks-payouts",
     "create--other--batch-transactions",
@@ -67,7 +65,6 @@
     "observed-1118--schedule",
     "observed-1118--time-off",
     "reports--custom-reports",
-    "reports--financial-planning--cash-flow-overview",
     "reports--financial-planning--cash-flow-planner",
     "reports--financial-planning--forecasts",
     "reports--performance-centre",

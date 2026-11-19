@@ -1119,6 +1119,8 @@ const REPORTS = {
   "ap-aging": ["Accounts payable aging", "Who you owe, and when it's due.", "asof"],
   "sales-tax": ["GST/HST return", "Working paper for CRA lines 101, 105, 108 and 109.", "range"],
   "general-ledger": ["General ledger", "Every line, by account, with running balances.", "range"],
+  "payroll-remittance": ["Payroll remittance", "CPP, EI and income tax withheld from recorded paystubs, by month.", "range"],
+  "cash-flow": ["Cash flow", "Money in and out of bank accounts, by month.", "range"],
   time: ["Time by employee", "Minutes recorded in this book, per employee and date.", "range"],
   payroll: ["Payroll summary", "Journal lines on payroll-named accounts, by year. Derived from the committed journal, not from pay runs.", "asof"],
 };
@@ -1151,7 +1153,9 @@ views.reports = async (name) => {
     const q = new URLSearchParams({ from: st.from, to: st.to, ...(st.account_id ? { account_id: st.account_id } : {}) });
     const data = key === "payroll"
       ? await NXT.api(`/api/company-books/${encodeURIComponent(company)}/payroll`)
-      : key === "time"
+      : key === "payroll-remittance"
+        ? await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/payroll/history`)
+        : key === "time"
         ? await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/daily`)
         : await api(`/api/ledger/reports/${key}?${q}`);
     page(meta[0], `${esc(S.company.name)} · ${meta[2] === "range" ? `${fmtDate(st.from)} to ${fmtDate(st.to)}` : `As of ${fmtDate(st.to)}`}`,
@@ -1172,6 +1176,34 @@ function sectionRows(rows) { return rows.map((r) => `<tr class="click" onclick="
 function plain(rows) { return rows.map((r) => `<tr><td class="indent">${esc(r.code ? r.code + " · " : "")}${esc(r.name)}</td><td class="num">${money(r.amount)}</td></tr>`).join(""); }
 
 function renderReport(key, d, st = { from: "", to: "" }) {
+  if (key === "payroll-remittance") {
+    const stubs = Array.isArray(d.paystubs) ? d.paystubs : [];
+    const groups = new Map();
+    for (const stub of stubs) {
+      const month = String(stub.pay_date || "").slice(0, 7);
+      if (!month) continue;
+      const current = groups.get(month) || { cpp: 0, cpp2: 0, ei: 0, federal: 0, provincial: 0, stubs: 0 };
+      current.cpp += Number(stub.cpp_cents) || 0;
+      current.cpp2 += Number(stub.cpp2_cents) || 0;
+      current.ei += Number(stub.ei_cents) || 0;
+      current.federal += Number(stub.federal_tax_cents) || 0;
+      current.provincial += Number(stub.provincial_tax_cents) || 0;
+      current.stubs += 1;
+      groups.set(month, current);
+    }
+    const months = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const totals = months.reduce((acc, entry) => ({ cpp: acc.cpp + entry[1].cpp, cpp2: acc.cpp2 + entry[1].cpp2, ei: acc.ei + entry[1].ei, federal: acc.federal + entry[1].federal, provincial: acc.provincial + entry[1].provincial }), { cpp: 0, cpp2: 0, ei: 0, federal: 0, provincial: 0 });
+    const body = months.map(entry => `<tr><td>${esc(entry[0])}</td><td class="num">${entry[1].stubs}</td><td class="num">${money(entry[1].cpp)}</td><td class="num">${money(entry[1].cpp2)}</td><td class="num">${money(entry[1].ei)}</td><td class="num">${money(entry[1].federal)}</td><td class="num">${money(entry[1].provincial)}</td></tr>`).join("");
+    return `<table><thead><tr><th>Month</th><th class="num">Paystubs</th><th class="num">CPP</th><th class="num">CPP2</th><th class="num">EI</th><th class="num">Federal tax</th><th class="num">Alberta tax</th></tr></thead><tbody>${body || '<tr><td colspan="7">No paystubs recorded yet.</td></tr>'}</tbody>
+      <tr class="grand"><td>Total withheld</td><td></td><td class="num">${money(totals.cpp)}</td><td class="num">${money(totals.cpp2)}</td><td class="num">${money(totals.ei)}</td><td class="num">${money(totals.federal)}</td><td class="num">${money(totals.provincial)}</td></tr></table>
+      <p class="form-note">Withheld amounts from paystubs recorded in this book. This is a worksheet: NXT does not remit, file a PD7A or issue T4 slips.</p>`;
+  }
+  if (key === "cash-flow") {
+    const rows = (Array.isArray(d.months) ? d.months : []).map((m) => `<tr><td>${esc(m.month)}</td><td class="num">${money(m.in_cents)}</td><td class="num">${money(m.out_cents)}</td><td class="num">${money(m.net_cents)}</td></tr>`).join("");
+    return `<table><thead><tr><th>Month</th><th class="num">In</th><th class="num">Out</th><th class="num">Net</th></tr></thead><tbody>${rows || '<tr><td colspan="4">No bank movements in this period.</td></tr>'}</tbody></table>
+      <table style="margin-top:12px"><tr><td>Opening bank balance</td><td class="num">${money(d.opening_balance_cents)}</td></tr><tr><td>Total in</td><td class="num">${money(d.total_in_cents)}</td></tr><tr><td>Total out</td><td class="num">${money(d.total_out_cents)}</td></tr><tr class="grand"><td>Closing bank balance</td><td class="num">${money(d.closing_balance_cents)}</td></tr></table>
+      <p class="form-note">Bank accounts only: ${esc((d.excludes || []).join(", "))}.</p>`;
+  }
   if (key === "time") {
     const employees = Array.isArray(d.employees) ? d.employees : [];
     const entries = (Array.isArray(d.time) ? d.time : []).filter((row) => row.date >= st.from && row.date <= st.to);
@@ -1236,6 +1268,22 @@ function renderReport(key, d, st = { from: "", to: "" }) {
 
 function reportCsv(key, d, st = { from: "", to: "" }) {
   const $c = (v) => window.NXTLedgerFormat.cents(v);
+  if (key === "payroll-remittance") {
+    const groups = new Map();
+    for (const stub of (Array.isArray(d.paystubs) ? d.paystubs : [])) {
+      const month = String(stub.pay_date || "").slice(0, 7);
+      if (!month) continue;
+      const row = groups.get(month) || { cpp: 0, cpp2: 0, ei: 0, federal: 0, provincial: 0 };
+      row.cpp += Number(stub.cpp_cents) || 0;
+      row.cpp2 += Number(stub.cpp2_cents) || 0;
+      row.ei += Number(stub.ei_cents) || 0;
+      row.federal += Number(stub.federal_tax_cents) || 0;
+      row.provincial += Number(stub.provincial_tax_cents) || 0;
+      groups.set(month, row);
+    }
+    return [["Month", "CPP", "CPP2", "EI", "Federal tax", "Alberta tax"], ...[...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(entry => [entry[0], $c(entry[1].cpp), $c(entry[1].cpp2), $c(entry[1].ei), $c(entry[1].federal), $c(entry[1].provincial)])];
+  }
+  if (key === "cash-flow") return [["Month", "In", "Out", "Net"], ...((d.months || []).map((m) => [m.month, $c(m.in_cents), $c(m.out_cents), $c(m.net_cents)]))];
   if (key === "time") {
     const employees = Array.isArray(d.employees) ? d.employees : [];
     const entries = (Array.isArray(d.time) ? d.time : []).filter((row) => row.date >= st.from && row.date <= st.to);
