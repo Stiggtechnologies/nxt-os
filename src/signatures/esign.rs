@@ -524,11 +524,21 @@ impl Signatures {
             "subject":format!("Please sign: {}", c.title),"body":format!("{origin_note}Open this private link to review and sign: {{ORIGIN}}{} . It expires {}.", l["url"].as_str().unwrap_or(""), s.expires_at)}))).collect();
         if c.delivery_mode=="outbox" {self.outbox_push(&c.envelope_id, msgs).await?;return Ok(json!({"email_sent":false,"receipts":[]}));}
         let mut receipts=vec![];
-        for m in msgs {
+        let attempt=|m:Value|async move {
             let identity=format!("link:{}:{}:{}",c.envelope_id,m["recipient_id"],m["token_hash"]);
             let body=m["body"].as_str().unwrap_or("").replace("{ORIGIN}","https://os.nxtcorporation.ca");
             let receipt=self.mail_acceptance(&identity,m["to_email"].as_str().unwrap_or(""),m["subject"].as_str().unwrap_or(""),&body).await;
-            receipts.push(json!({"recipient_id":m["recipient_id"],"receipt":receipt.unwrap_or(json!({"email_sent":false,"status":"delivery_unconfirmed"}))}));
+            json!({"recipient_id":m["recipient_id"],"receipt":receipt.unwrap_or(json!({"email_sent":false,"status":"delivery_unconfirmed"}))})
+        };
+        for (batch,chunk) in msgs.chunks(4).enumerate(){
+            let run=|index|{let candidate=chunk.get(index).cloned();let attempt=&attempt;async move{if let Some(m)=candidate{Some(attempt(m).await)}else{None}}};
+            let (a,b,c,d)=tokio::join!(run(0),run(1),run(2),run(3));
+            let group:Vec<Value>=[a,b,c,d].into_iter().flatten().collect();
+            let failed=group.iter().any(|r|r["receipt"]["email_sent"]!=true);receipts.extend(group);
+            if failed {
+                receipts.extend(msgs.iter().skip((batch+1)*4).map(|m|json!({"recipient_id":m["recipient_id"],"receipt":{"email_sent":false,"status":"not_attempted_after_delivery_failure"}})));
+                break;
+            }
         }
         let value=json!({"email_sent":!receipts.is_empty()&&receipts.iter().all(|r|r["receipt"]["email_sent"]==true),"receipts":receipts,"delivered_to_inbox":false});
         self.store.set(&format!("signatures:mail:envelope:{}",c.envelope_id),&value.to_string()).await.map_err(storage_error)?;
@@ -850,6 +860,7 @@ impl Signatures {
     }
     pub async fn bulk_send(&self, input: BulkIdsInput, meta: ClientMeta) -> SResult<Value> {
         delivery_mode()?;
+        if self.mail_delivery_mode().await?=="smtp"&&input.ids.len()>1{return Err(bad("Send live email requests one envelope at a time; rehearsal bulk sending remains available"));}
         if input.ids.is_empty() || input.ids.len() > BULK_MAX { return Err(bad(format!("send 1 to {BULK_MAX} ids per request"))); }
         let mut out = vec![];
         for id in &input.ids {
