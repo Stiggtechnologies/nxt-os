@@ -557,9 +557,9 @@
                       "label": "Revenue Recognition Report (Beta)",
                       "observation": "observed",
                       "observed_path": "Reports > Standard reports > Custom report builder > Revenue Recognition Report (Beta)",
-                      "native_route": null,
-                      "native_scope": "No complete working native equivalent has been established for this source capability.",
-                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                      "native_route": "lists",
+                      "native_scope": "Revenue-recognition schedules appear in the Lists Schedules lane with amortised and remaining amounts, which is the native view of deferred revenue.",
+                      "next_step": "No contract-level revenue report or split by performance obligation. Nothing writes back to QuickBooks.",
                       "kind": "capability"
                     },
                     {
@@ -1162,9 +1162,9 @@
                   "label": "Appointments",
                   "observation": "observed",
                   "observed_path": "All apps > Customer Hub > Appointments",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "native_route": "lists",
+                  "native_scope": "appointments are recorded as pipeline entries with kind appointment, a contact, a date and a scheduled/held/cancelled status.",
+                  "next_step": "No calendar integration, reminders or booking links. Nothing writes back to QuickBooks.",
                   "kind": "capability"
                 },
                 {
@@ -1172,9 +1172,9 @@
                   "label": "Reviews",
                   "observation": "observed",
                   "observed_path": "All apps > Customer Hub > Reviews",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "native_route": "lists",
+                  "native_scope": "A customer review is recorded as a pipeline entry with kind review and a received status; the note field carries the detail.",
+                  "next_step": "No review collection, rating scale or publishing. Nothing writes back to QuickBooks.",
                   "kind": "capability"
                 }
               ]

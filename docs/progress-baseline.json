@@ -6,21 +6,21 @@
   ],
   "total": {
     "capabilities": 221,
-    "routed": 134,
+    "routed": 137,
     "linked": 24,
     "external": 13,
-    "open": 50,
+    "open": 47,
     "chrome": 21,
-    "percent": 61
+    "percent": 62
   },
   "products": [
     {
       "product": "QuickBooks",
       "capabilities": 144,
-      "routed": 94,
+      "routed": 97,
       "linked": 24,
       "external": 1,
-      "open": 25
+      "open": 22
     },
     {
       "product": "DT Max",
@@ -41,8 +41,6 @@
   ],
   "open_ids": [
     "all-apps--accounting--receipts",
-    "all-apps--customer-hub--appointments",
-    "all-apps--customer-hub--reviews",
     "all-apps--payroll--compliance",
     "all-apps--payroll--payroll-taxes",
     "all-apps--sales-get-paid--payment-links",
@@ -74,7 +72,6 @@
     "reports--financial-planning--forecasts",
     "reports--performance-centre",
     "reports--standard-reports--custom-report-builder--product-item-profitability-by-customer",
-    "reports--standard-reports--custom-report-builder--revenue-recognition-report-beta",
     "settings--lists--custom-fields",
     "settings--tools--backup-company",
     "settings--your-company--custom-form-styles",
