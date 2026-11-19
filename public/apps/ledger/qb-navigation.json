@@ -261,9 +261,9 @@
                   "label": "Credit card credit",
                   "observation": "observed",
                   "observed_path": "Create > Suppliers > Credit card credit",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "native_route": "bills",
+                  "native_scope": "Post a credit against a credit card from the bill list: choose the supplier, the card, the expense account and the amount, and NXT posts the reversing journal against the card liability.",
+                  "next_step": "No card statement matching or interest allocation. Nothing writes back to QuickBooks.",
                   "kind": "capability"
                 },
                 {

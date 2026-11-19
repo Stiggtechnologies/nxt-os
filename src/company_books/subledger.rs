@@ -171,7 +171,7 @@ impl CompanyBooks {
         Ok(json!({"sales_tax_enabled": input.enabled, "write_back": false, "authoritative_system": "quickbooks"}))
     }
     pub async fn open_document(&self, company: &str, input: DocumentInput) -> Result<Value> {
-        if !matches!(input.kind.as_str(), "invoice" | "bill" | "credit_memo" | "supplier_credit") { return Err(bad("Document kind must be invoice, bill, credit_memo or supplier_credit")); }
+        if !matches!(input.kind.as_str(), "invoice" | "bill" | "credit_memo" | "supplier_credit" | "card_credit") { return Err(bad("Document kind must be invoice, bill, credit_memo, supplier_credit or card_credit")); }
         if !date(&input.date) || !text(&input.memo, 500) || !text(&input.contact, 120) || input.contact.trim().is_empty() { return Err(bad("Document contact, date, or memo is invalid")); }
         if input.lines.is_empty() || input.lines.len() > 40 { return Err(bad("A document needs 1–40 lines")); }
         let (raw, mut state) = self.parallel_load(company).await?;
@@ -228,7 +228,7 @@ impl CompanyBooks {
             }
             lines.push(NativeLine { account_id: input.control_account.clone(), debit_cents: "0".into(), credit_cents: cents(gross), memo: input.memo.clone() });
         }
-        if matches!(input.kind.as_str(), "credit_memo" | "supplier_credit") {
+        if matches!(input.kind.as_str(), "credit_memo" | "supplier_credit" | "card_credit") {
             for line in lines.iter_mut() {
                 std::mem::swap(&mut line.debit_cents, &mut line.credit_cents);
             }
@@ -295,7 +295,7 @@ impl CompanyBooks {
         let paid: i64 = state.payments.iter().filter(|p| p.document_id == doc.id).map(|p| p.amount_cents).sum();
         let open = doc.total_cents - paid;
         if input.amount_cents > open { return Err(bad("Payment exceeds the open AR/AP balance")); }
-        if matches!(doc.kind.as_str(), "credit_memo" | "supplier_credit") {
+        if matches!(doc.kind.as_str(), "credit_memo" | "supplier_credit" | "card_credit") {
             return Err(bad("A credit memo is applied to an invoice or bill, it is never paid directly"));
         }
         let (debit, credit) = if doc.kind == "invoice" {
@@ -325,7 +325,7 @@ impl CompanyBooks {
         let (_, state) = self.parallel_load(company).await?;
         let rows: Vec<Value> = state.documents.iter().map(|doc| {
             let paid: i64 = state.payments.iter().filter(|p| p.document_id == doc.id).map(|p| p.amount_cents).sum();
-            json!({"id": doc.id, "kind": doc.kind, "contact": doc.contact, "total_cents": doc.total_cents, "open_cents": if matches!(doc.kind.as_str(), "credit_memo" | "supplier_credit") { 0 } else { doc.total_cents - paid }, "credit": matches!(doc.kind.as_str(), "credit_memo" | "supplier_credit"), "approval": doc.approval, "journal_entry_id": doc.journal_entry_id, "classes": doc.lines.iter().filter_map(|l| l.class_id.clone()).collect::<Vec<_>>()})
+            json!({"id": doc.id, "kind": doc.kind, "contact": doc.contact, "total_cents": doc.total_cents, "open_cents": if matches!(doc.kind.as_str(), "credit_memo" | "supplier_credit" | "card_credit") { 0 } else { doc.total_cents - paid }, "credit": matches!(doc.kind.as_str(), "credit_memo" | "supplier_credit" | "card_credit"), "approval": doc.approval, "journal_entry_id": doc.journal_entry_id, "classes": doc.lines.iter().filter_map(|l| l.class_id.clone()).collect::<Vec<_>>()})
         }).collect();
         let files: Vec<Value> = state.attachments.iter().map(|file| json!({
         "id": file.id, "owner_id": file.owner_id, "filename": file.filename, "byte_len": file.byte_len

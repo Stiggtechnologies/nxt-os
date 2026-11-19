@@ -9,29 +9,28 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 221 |
-| Routed | 131 |
+| Routed | 132 |
 | Linked | 24 |
 | External | 14 |
-| **Open** | **52** |
-| Routed coverage | 59% |
+| **Open** | **51** |
+| Routed coverage | 60% |
 | Source chrome excluded | 21 |
 
 ## By product
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 144 | 91 | 24 | 2 | 27 | 63% |
+| QuickBooks | 144 | 92 | 24 | 2 | 26 | 64% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (27)
+### Open to build (26)
 
 | Group | Gap | Next step |
 | --- | --- | --- |
 | Suppliers | Item receipt | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Suppliers | Credit card credit | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Suppliers | Print cheques | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Other | Batch transactions | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Other | New chat | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
