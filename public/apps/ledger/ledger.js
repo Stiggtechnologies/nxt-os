@@ -934,6 +934,10 @@ function creditMemoModal(kind) {
     </form>
     <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok ${control ? "" : "disabled"}>Post credit</button></div>`;
     el.querySelector("select[name=contact]").innerHTML = contacts.map((contact) => `<option value="${esc(contact.id)}">${esc(contact.name)}</option>`).join("");
+    const target = el.querySelector("select[name=target]");
+    const cardAccount = (S.accounts || []).find((account) => account.role === "credit_card" && !account.archived);
+    const syncControl = () => { el.dataset.creditKind = target && target.value === "card" ? "card_credit" : creditKind; };
+    if (target) { target.onchange = syncControl; syncControl(); }
     el.querySelector("[data-x]").onclick = () => close();
     el.querySelector("[data-ok]").onclick = async () => {
       const form = new FormData(el.querySelector("form")), f = Object.fromEntries(form);
@@ -946,11 +950,11 @@ function creditMemoModal(kind) {
             request_id: "credit-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
             expected_head: head,
             operator_label: "NXT credit memo",
-            kind: creditKind,
+            kind: el.dataset.creditKind || creditKind,
             contact: f.contact,
             date: f.date,
             memo: f.memo || "",
-            control_account: control.id,
+            control_account: (el.dataset.creditKind === "card_credit" ? cardAccount : control)?.id || control?.id,
             lines: [{ account_id: f.account, amount_cents: NXT.toCents(f.amount) }],
             document_number: ""
           }
