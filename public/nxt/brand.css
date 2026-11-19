@@ -168,3 +168,6 @@ tfoot td { font-weight: 600; border-bottom: 0; border-top: 2px solid var(--line-
   body { background: #fff; color: #000; }
   .card { border: 0; padding: 0; }
 }
+
+/* Nixon launcher (shell, phones): keep each app's last row of buttons scrollable clear of it. */
+@media (max-width: 720px) { html.nxt-framed body { padding-bottom: 76px; } }
