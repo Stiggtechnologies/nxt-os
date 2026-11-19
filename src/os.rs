@@ -11,7 +11,6 @@ use axum::{Json, Router, extract::State, http::StatusCode, middleware, routing::
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
-use std::time::Duration;
 
 #[derive(Clone)]
 pub struct Os {
@@ -20,6 +19,8 @@ pub struct Os {
     pub tax: Arc<crate::tax::Tax>,
     pub engagements: Arc<crate::engagement::Engagements>,
     pub referrals: Arc<Referrals>,
+    /// Nixon's scope, for the read-only God's Eye tool. `None` reports God's Eye as unavailable.
+    pub nixon: Option<crate::nixon_finance::voice::Scope>,
 }
 
 const MAX_TOOL_ROUNDS: usize = 8;
@@ -57,9 +58,9 @@ pub fn router(os: Os) -> Router {
 
 async fn status(State(os): State<Os>) -> Json<Value> {
     Json(json!({
-        "ai_enabled": api_key().is_some(),
+        "ai_enabled": crate::agent::chain::primary_model().is_some() || api_key().is_some(),
         "auth_required": crate::referral::routes::auth_required(),
-        "model": model(),
+        "model": crate::agent::chain::primary_model().unwrap_or_else(model),
         "storage": os.ledger.store.backend_name(),
         "apps": [
             { "id": "ledger", "name": "NXT Ledger", "path": "/apps/ledger/" },
@@ -175,6 +176,9 @@ Never say a proposal was executed or approved. Open Firm Operations at approvals
 For accounting changes (send an invoice, record a payment, categorize a transaction), call open_app to take the user to the right screen.
 - Nixon reviews are also read-only. Use nixon_review to read the latest one. You cannot approve a Nixon proposal, \
 post a journal, or file a tax return. If the user wants to decide, call open_app for Nixon and say a named person has to do it there.
+- God's Eye is what Nixon does across the whole firm: one read-only view of every company's books, cash, filings and deadlines. \
+Use gods_eye to read it. Keep facts, drafted fixes and recommendations distinct; every drafted fix waits for a named person. \
+To show it, call open_app with app nixon and view gods-eye.
 - Dates are ISO (YYYY-MM-DD). If the user gives a relative period like \"last quarter\", resolve it against today's date from get_dashboard.
 - GST/HST figures are working papers, not filed returns; say so when asked about filing.
 - Tax calculations are scoped internal workpapers. Read their ruleset and diagnostics; never claim complete DT Max parity, CRA certification, approval or filing. Open the Tax workspace for editing or review. You cannot approve, calculate, import or transmit returns through assistant tools.
@@ -278,7 +282,7 @@ fn tools() -> Value {
         },
         {
             "name": "open_app",
-            "description": "Opens an NXT OS app at a screen so the user can act. Ledger views: dashboard, invoices, invoices/new, bills, bills/new, customers, vendors, banking, accounts, journal, reports/profit-loss, reports/balance-sheet, reports/trial-balance, reports/ar-aging, reports/ap-aging, reports/sales-tax, reports/general-ledger, settings. Referrals views: overview, advocates, conversions, rewards, loyalty, settings. Nixon views: review.",
+            "description": "Opens an NXT OS app at a screen so the user can act. Ledger views: dashboard, invoices, invoices/new, bills, bills/new, customers, vendors, banking, accounts, journal, reports/profit-loss, reports/balance-sheet, reports/trial-balance, reports/ar-aging, reports/ap-aging, reports/sales-tax, reports/general-ledger, settings. Referrals views: overview, advocates, conversions, rewards, loyalty, settings. Nixon views: review, gods-eye.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -287,6 +291,11 @@ fn tools() -> Value {
                 },
                 "required": ["app"]
             }
+        },
+        {
+            "name": "gods_eye",
+            "description": "Reads Nixon's God's Eye: the live firm-wide watch list across every company (GST/HST and payroll remittances, unusual transactions, books integrity, filing deadlines, AR aging). Returns companies with counts, the top findings with drafted fix and recommendation, and gaps. Reads only; saves nothing. Nothing is posted, filed, paid or sent. Do not invent findings.",
+            "input_schema": { "type": "object", "properties": { "as_of": { "type": "string", "description": "YYYY-MM-DD; defaults to today" } }, "additionalProperties": false }
         },
         {
             "name": "nixon_review",
@@ -437,6 +446,14 @@ async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) 
                 "note": "Read-only. You cannot approve, post, or file.",
             }))
         }
+        "gods_eye" => {
+            let Some(scope) = os.nixon.as_ref() else {
+                return Ok(json!({ "available": false, "note": "God's Eye is not connected to this assistant. Do not invent findings." }));
+            };
+            let q = crate::nixon_finance::gods_eye::ViewQuery { as_of: s(input, "as_of") };
+            let v = crate::nixon_finance::gods_eye::view(scope, q, None).await.map_err(|e| e.message)?;
+            Ok(gods_eye_brief(&v))
+        }
         "open_app" => {
             let app = s(input, "app").ok_or("app is required")?;
             if !["ledger","firm","tax","engagements","migrations","signatures","referrals","nixon","guardvoice"].contains(&app.as_str()) {
@@ -449,38 +466,29 @@ async fn run_tool(os: &Os, name: &str, input: &Value, actions: &mut Vec<Value>) 
     }
 }
 
-async fn call_claude(http: &reqwest::Client, key: &str, messages: &[Value]) -> Result<Value, String> {
-    let body = json!({
-        "model": model(),
-        "max_tokens": 16000,
-        "output_config": { "effort": "medium" },
-        "fallbacks": "default",
-        "system": SYSTEM_PROMPT,
-        "tools": tools(),
-        "messages": messages,
-    });
-    let resp = http
-        .post(api_url())
-        .timeout(Duration::from_secs(120))
-        .header("x-api-key", key)
-        .header("anthropic-version", "2026-10-21")
-        .header("anthropic-beta", "server-side-fallback-2026-07-01")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("couldn't reach the Claude API: {e}"))?;
-    let status = resp.status();
-    let v: Value = resp.json().await.map_err(|e| format!("invalid Claude API response: {e}"))?;
-    if !status.is_success() {
-        let msg = v["error"]["message"].as_str().unwrap_or("unknown error");
-        return Err(format!("Claude API error ({status}): {msg}"));
-    }
-    Ok(v)
+/// The God's Eye view trimmed for the model: counts, top 15 findings, gaps. Read-only.
+fn gods_eye_brief(v: &Value) -> Value {
+    let findings: Vec<Value> = v["findings"].as_array().into_iter().flatten().take(15).map(|f| json!({
+        "company_id": f["company_id"], "watcher": f["watcher"],
+        "risk_level": f["finding"]["risk_level"], "title": f["finding"]["title"], "summary": f["finding"]["summary"],
+        "draft_fix": f["draft_fix"], "recommendation": f["recommendation"],
+    })).collect();
+    json!({
+        "as_of": v["as_of"], "companies": v["companies"], "findings_total": v["findings"].as_array().map(|a| a.len()).unwrap_or(0),
+        "findings": findings, "gaps": v["gaps"], "guardrails": v["guardrails"],
+        "note": "Read-only God's Eye view. Drafted fixes wait for a named person on /apps/nixon/. You cannot approve, post, file, pay or send.",
+    })
 }
 
 async fn ask(State(os): State<Os>, Json(b): Json<AskBody>) -> Result<Json<Value>, ApiError> {
-    let Some(key) = api_key() else {
-        return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "Ask NXT needs an ANTHROPIC_API_KEY configured for this deployment.".into()));
+    // OpenAI, then DeepSeek, then NVIDIA via OpenRouter. Claude stays only as a last resort
+    // for a deployment that still sets ANTHROPIC_API_KEY and none of the chain keys.
+    let model: Box<dyn crate::agent::Model> = match crate::agent::chain::Chain::from_env() {
+        Some(chain) => Box::new(chain),
+        None => match crate::agent::Claude::from_env() {
+            Some(claude) => Box::new(claude),
+            None => return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "Ask NXT needs OPENAI_API_KEY or OPENROUTER_API_KEY configured for this deployment.".into())),
+        },
     };
     let mut messages: Vec<Value> = b
         .messages
@@ -497,11 +505,11 @@ async fn ask(State(os): State<Os>, Json(b): Json<AskBody>) -> Result<Json<Value>
     if messages.last().is_none_or(|m| m["role"] != "user") {
         return Err(ApiError(StatusCode::BAD_REQUEST, "the last message must be from the user".into()));
     }
-    let http = reqwest::Client::new();
     let mut actions = Vec::new();
     let mut tools_used = Vec::new();
     for _ in 0..MAX_TOOL_ROUNDS {
-        let resp = call_claude(&http, &key, &messages).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e))?;
+        let tool_defs: Vec<Value> = tools().as_array().cloned().unwrap_or_default();
+        let resp = model.respond(SYSTEM_PROMPT, &tool_defs, &messages).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.into_message()))?;
         let stop = resp["stop_reason"].as_str().unwrap_or("");
         if stop == "refusal" {
             return Ok(Json(json!({ "reply": "I can't help with that request.", "actions": actions, "tools_used": tools_used })));
@@ -659,7 +667,7 @@ mod firm_tool_tests {
         let firm=Arc::new(Firm::new(Store::memory(),ledger.clone()));
         let engagements=Arc::new(crate::engagement::Engagements::new(Store::memory(),ledger.clone(),tax.clone(),firm.clone()));
         engagements.save(None,serde_json::from_value(json!({"name":"SECRET ENGAGEMENT","client_ref":"SECRET ENG CLIENT","period_start":"2025-01-01","period_end":"2025-12-31","workpapers":[{"id":"wp","reference":"A","title":"SECRET PAPER TITLE","body":"SECRET PAPER BODY"}]})).unwrap()).await.map_err(|e|e.1).unwrap();
-        let os=Os{firm,ledger,tax,engagements,referrals:Arc::new(Referrals::new(Store::memory()))};
+        let os=Os{firm,ledger,tax,engagements,referrals:Arc::new(Referrals::new(Store::memory())),nixon:None};
         let mut actions=Vec::new();
         let result=run_tool(&os,"get_tax_calculation",&json!({"return_id":r.id}),&mut actions).await.unwrap();
         let encoded=result.to_string();
@@ -680,7 +688,7 @@ mod firm_tool_tests {
         let firm = Arc::new(Firm::new(Store::memory(), ledger.clone()));
         let tax=Arc::new(crate::tax::Tax::new(Store::memory()));
         let engagements=Arc::new(crate::engagement::Engagements::new(Store::memory(),ledger.clone(),tax.clone(),firm.clone()));
-        let os = Os { ledger, firm, tax, engagements, referrals: Arc::new(Referrals::new(Store::memory())) };
+        let os = Os { ledger, firm, tax, engagements, referrals: Arc::new(Referrals::new(Store::memory())), nixon: None };
         let mut actions = Vec::new();
         let input = json!({"name":"Prepare review checklist","idempotency_key":"assistant-test-once","action":{"kind":"create_task","title":"Review reporting package"}});
         let response = run_tool(&os, "propose_firm_action", &input, &mut actions).await.unwrap();
@@ -699,5 +707,45 @@ mod firm_tool_tests {
         assert_eq!(opened["opened"], true);
         assert_eq!(navigation, vec![json!({"type":"open_app","app":"signatures","view":"drafts"})]);
         assert!(run_tool(&os, "get_signature_draft", &json!({}), &mut navigation).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn assistant_reads_gods_eye_read_only_and_opens_it() {
+        let ledger = Arc::new(Ledger::new(Store::memory()));
+        let firm = Arc::new(Firm::new(Store::memory(), ledger.clone()));
+        let tax = Arc::new(crate::tax::Tax::new(Store::memory()));
+        let engagements = Arc::new(crate::engagement::Engagements::new(Store::memory(), ledger.clone(), tax.clone(), firm.clone()));
+        let referrals = Arc::new(Referrals::new(Store::memory()));
+        let scope = crate::nixon_finance::voice::Scope {
+            ledger: ledger.clone(), firm: firm.clone(), tax: tax.clone(), engagements: engagements.clone(),
+            signatures: Arc::new(crate::signatures::Signatures::new(Store::memory())),
+            migrations: Arc::new(crate::migrations::Migrations::new(Store::memory())),
+            company_books: Arc::new(crate::company_books::CompanyBooks::new(Store::memory())),
+            referrals: referrals.clone(),
+            journeys: Arc::new(crate::client_journey::service::Journeys::new(Store::memory(), crate::client_journey::capability::Capabilities::new())),
+        };
+        let reviews_before = crate::nixon_finance::service::list_reviews(&ledger).await.ok().unwrap().len();
+        let os = Os { ledger: ledger.clone(), firm, tax, engagements, referrals, nixon: Some(scope) };
+        let mut actions = Vec::new();
+        let v = run_tool(&os, "gods_eye", &json!({"as_of": "2026-11-18"}), &mut actions).await.unwrap();
+        assert_eq!(v["as_of"], "2026-11-18");
+        assert_eq!(v["guardrails"]["books"], "read_only");
+        assert_eq!(v["guardrails"]["posting"], "disabled");
+        assert_eq!(v["guardrails"]["filing"], "disabled");
+        assert!(v["findings"].is_array() && v["findings_total"].is_number(), "{v}");
+        assert!(v["note"].as_str().unwrap().contains("cannot approve"));
+        assert!(actions.is_empty(), "reading God's Eye navigates nowhere on its own");
+        assert_eq!(crate::nixon_finance::service::list_reviews(&ledger).await.ok().unwrap().len(), reviews_before, "the tool saves no review or proposal");
+        assert!(run_tool(&os, "gods_eye", &json!({"as_of": "not-a-date"}), &mut actions).await.is_err());
+        assert!(run_tool(&os, "approve_gods_eye", &json!({}), &mut actions).await.is_err());
+        let opened = run_tool(&os, "open_app", &json!({"app": "nixon", "view": "gods-eye"}), &mut actions).await.unwrap();
+        assert_eq!(opened["opened"], true);
+        assert_eq!(actions, vec![json!({"type": "open_app", "app": "nixon", "view": "gods-eye"})]);
+        assert!(tools().as_array().unwrap().iter().any(|t| t["name"] == "gods_eye"));
+        assert!(SYSTEM_PROMPT.contains("God's Eye is what Nixon does"));
+
+        let unwired = Os { nixon: None, ..os };
+        let v = run_tool(&unwired, "gods_eye", &json!({}), &mut Vec::new()).await.unwrap();
+        assert_eq!(v["available"], false);
     }
 }

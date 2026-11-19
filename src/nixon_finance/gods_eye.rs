@@ -491,6 +491,60 @@ fn guardrails() -> Value {
     })
 }
 
+// ---- source health (transferred from SyncAI src/lib/sync-context/contracts.ts) -----------
+
+/// SyncAI `SOURCE_HEALTH_STATES`, verbatim.
+pub const SOURCE_HEALTH_STATES: [&str; 12] = [
+    "connected", "live", "simulated", "not_connected", "stale", "unavailable",
+    "malformed", "throttled", "delayed", "conflicting", "partial_coverage", "clock_skew",
+];
+
+/// SyncAI `canDisplaySourceAsLive`: only a `live` source of a non-simulated class with the right
+/// rights may be shown as live. NXT reads books at request time and has no rights registry, so
+/// every God's Eye source answers false; the rule is kept so a later live feed must pass it.
+pub fn can_display_source_as_live(class: &str, state: &str, rights_state: &str, display_as_live: bool) -> bool {
+    if class == "simulated_industrial" || state != "live" {
+        return false;
+    }
+    display_as_live
+        && ((class == "live_external" && rights_state == "production_approved")
+            || (class == "customer_operational" && rights_state == "customer_authorized"))
+}
+
+/// SyncAI `ContextSource` for each God's Eye input, derived from what this view actually read.
+/// Counts are what was screened, not a claim about the books (SCX-SRC-014). `observed_at` is null:
+/// NXT does not record when a source last changed, and it is not invented.
+pub fn source_health(companies: &[Value], gaps: &[Value], checked_at: &str) -> Vec<Value> {
+    let with = |src: &str| companies.iter().filter(|c| c["sources"].as_array().is_some_and(|s| s.iter().any(|x| x == src))).count();
+    let notes = |pred: &dyn Fn(&str, &str) -> bool| gaps.iter().filter(|g| pred(g["company_id"].as_str().unwrap_or(""), g["note"].as_str().unwrap_or(""))).count();
+    let firm_failed = notes(&|c, n| c == "firm" && n.starts_with("Ledger could not be read")) > 0;
+    let ledger_failed = notes(&|c, n| c != "firm" && n.starts_with("Ledger could not be read"));
+    let ledger_cut = notes(&|_, n| n.contains("company ledgers are open; only the first")) > 0;
+    let books_failed = notes(&|_, n| n.starts_with("Books could not be read"));
+    let books_cut = notes(&|_, n| n.contains("imported company books")) > 0;
+    let state = |read: usize, failed: usize, cut: bool, none_detail: &str| -> (&'static str, String) {
+        if read == 0 && failed > 0 { ("unavailable", format!("{failed} could not be read; shown as gaps.")) }
+        else if failed > 0 || cut { ("partial_coverage", format!("{read} screened{}{}.", if failed > 0 { format!(", {failed} could not be read") } else { String::new() }, if cut { ", list truncated" } else { "" })) }
+        else if read == 0 { ("not_connected", none_detail.to_string()) }
+        else { ("connected", format!("{read} screened.")) }
+    };
+    let src = |key: &str, name: &str, authority: &str, purpose: &str, (st, detail): (&str, String), count: Option<usize>| json!({
+        "key": key, "name": name, "class": "customer_operational", "authority": authority, "purpose": purpose,
+        "state": st, "checked_at": checked_at, "observed_at": Value::Null, "detail": detail, "count": count,
+        "display_as_live": can_display_source_as_live("customer_operational", st, "unreviewed", false),
+    });
+    let firm = if firm_failed { ("unavailable", "The firm ledger could not be read; shown as a gap.".to_string()) } else { ("connected", "Read in full.".to_string()) };
+    vec![
+        src("firm_ledger", "Firm ledger (NXT Ledger)", "tenant_authorized", "GST/HST, AR aging, books integrity", firm, Some(usize::from(!firm_failed))),
+        src("company_ledgers", "Company ledgers (NXT Ledger)", "tenant_authorized", "GST/HST, AR aging, books integrity per company",
+            state(with("company_ledger"), ledger_failed, ledger_cut, "No company ledger is open."), Some(with("company_ledger"))),
+        src("imported_company_books", "Imported company books (QuickBooks, read-only)", "source_asserted", "Payroll remittances, large entries, trial-balance controls",
+            state(with("imported_company_books"), books_failed, books_cut, "No imported company book is committed."), Some(with("imported_company_books"))),
+        src("tax_workspace", "NXT Tax returns", "tenant_authorized", "T1/T2 filing deadlines", ("connected", "Read in full on every view.".to_string()), None),
+        src("cra_notices", "CRA notices", "context_only", "CRA notice watcher", ("not_connected", "NXT has no CRA notice source. The watcher reports no_source.".to_string()), Some(0)),
+    ]
+}
+
 /// The live view. Reads only; writes nothing, not even an audit row. `oidc_header` only
 /// changes how the AI status is reported (see [`ai_draft`]).
 pub async fn view(scope: &Scope, q: ViewQuery, oidc_header: Option<String>) -> Result<Value, NixonError> {
@@ -506,9 +560,10 @@ pub async fn view(scope: &Scope, q: ViewQuery, oidc_header: Option<String>) -> R
         "company_id": h.company, "watcher": h.watcher, "finding": h.finding,
         "draft_fix": h.draft_fix, "recommendation": h.recommendation,
     })).collect();
+    let sources = source_health(&companies, &gaps, &chrono::Utc::now().to_rfc3339());
     Ok(json!({
         "as_of": as_of.to_string(), "scope": SCOPE, "guardrails": guardrails(),
-        "watchers": watchers(), "companies": companies, "findings": findings, "gaps": gaps,
+        "watchers": watchers(), "companies": companies, "findings": findings, "gaps": gaps, "sources": sources,
         "ai": ai_gateway::describe(&ai_gateway::env_with_oidc(oidc_header)),
     }))
 }

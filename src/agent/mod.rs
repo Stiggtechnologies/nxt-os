@@ -11,6 +11,7 @@
 //! starts over on the backup; refusals and configuration errors never fail
 //! over. See `openai` for the switches, which are off by default.
 
+pub mod chain;
 pub mod openai;
 
 use crate::client_journey::capability::{BoxFut, Capability};
@@ -41,6 +42,10 @@ pub enum ModelError {
 }
 
 impl ModelError {
+    pub fn into_message(self) -> String {
+        self.message()
+    }
+
     fn message(self) -> String {
         match self {
             Self::Outage(m) | Self::Other(m) => m,

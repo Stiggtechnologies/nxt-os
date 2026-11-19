@@ -64,7 +64,10 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         .with(Arc::new(client_journey::ledger::LedgerClose::new(company_books.clone())));
     let journeys = Arc::new(client_journey::service::Journeys::new(journey_store, capabilities));
     let backup = agent::openai::OpenAi::from_env().map(|m| Arc::new(m) as Arc<dyn agent::Model>);
-    let agent = agent::Claude::from_env().map(|m| agent::Agent::new(journeys.clone(), Arc::new(m)).with_backup(backup));
+    // OpenAI, then DeepSeek, then NVIDIA via OpenRouter (agent::chain). Claude only if no chain key is set.
+    let primary: Option<Arc<dyn agent::Model>> = agent::chain::Chain::from_env().map(|m| Arc::new(m) as Arc<dyn agent::Model>)
+        .or_else(|| agent::Claude::from_env().map(|m| Arc::new(m) as Arc<dyn agent::Model>));
+    let agent = primary.map(|m| agent::Agent::new(journeys.clone(), m).with_backup(backup));
     let directory = Arc::new(client_directory::Directory {
         company_books: company_books.clone(),
         migrations: migrations.clone(),
@@ -74,6 +77,17 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         firm: firm.clone(),
     });
     let resolver = Arc::new(client_alias::Resolver::new(directory.clone(), journeys.clone(), ledger.store.clone()));
+    let nixon_scope = crate::nixon_finance::voice::Scope {
+        ledger: ledger.clone(),
+        firm: firm.clone(),
+        tax: tax.clone(),
+        engagements: engagements.clone(),
+        signatures: signatures.clone(),
+        migrations: migrations.clone(),
+        company_books: company_books.clone(),
+        referrals: referrals.clone(),
+        journeys: journeys.clone(),
+    };
     let inner = Router::new()
         .merge(ledger::routes::router(ledger.clone()))
         .merge(ledger::routes::company_router(ledger.store.clone(), company_books.clone()))
@@ -85,21 +99,11 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         .merge(company_books::router(company_books.clone()))
         .merge(company_books::source_lists::router(source_lists))
         .merge(client_directory::router(directory.clone()))
-        .merge(crate::nixon_finance::routes::router(crate::nixon_finance::voice::Scope {
-            ledger: ledger.clone(),
-            firm: firm.clone(),
-            tax: tax.clone(),
-            engagements: engagements.clone(),
-            signatures: signatures.clone(),
-            migrations: migrations.clone(),
-            company_books: company_books.clone(),
-            referrals: referrals.clone(),
-            journeys: journeys.clone(),
-        }))
+        .merge(crate::nixon_finance::routes::router(nixon_scope.clone()))
         // Autonomous execution of approved God's Eye / Nixon proposals. Off unless NXT_AUTONOMOUS_EXECUTION=on.
         .merge(autonomy::router(Arc::new(autonomy::Autonomy::new(ledger.clone(), autonomy::Config::from_env()))))
         .merge(tax::stripe::router(std::sync::Arc::new(tax::stripe::StripePay::new(tax.clone(), ledger.clone()))))
-        .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone() }))
+        .merge(os::router(os::Os { ledger, firm, tax, engagements, referrals: referrals.clone(), nixon: Some(nixon_scope) }))
         .merge(referral::routes::app(referrals))
         .merge(source_import::router(source_import))
         .merge(client_journey::router(journeys, agent));
