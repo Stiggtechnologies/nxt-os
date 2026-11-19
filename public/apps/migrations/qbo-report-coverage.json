@@ -1,0 +1,51 @@
+{
+  "format": "nxt-qbo-report-coverage/v1",
+  "observed_at": "2026-11-18",
+  "source": "QuickBooks Online Standard reports list",
+  "client_data_included": false,
+  "catalogued": 84,
+  "payroll_routes": 15,
+  "native_reports": [
+    "Profit and loss",
+    "Balance sheet",
+    "Trial balance",
+    "AR aging",
+    "AP aging",
+    "GST/HST working paper",
+    "General ledger"
+  ],
+  "close_match": [
+    {
+      "source": "PANDL",
+      "native": "Profit and loss",
+      "limit": "one period layout; no comparative, quarterly, by-customer, by-tag or % of income variants"
+    },
+    {
+      "source": "BAL_SHEET",
+      "native": "Balance sheet",
+      "limit": "one layout with retained-earnings roll-forward; no comparative, summary or detail variants"
+    },
+    {
+      "source": "TRIAL_BAL",
+      "native": "Trial balance",
+      "limit": "no adjusted trial balance variant"
+    },
+    {
+      "source": "AR_AGING",
+      "native": "AR aging",
+      "limit": "summary only; no detail variant"
+    },
+    {
+      "source": "AP_AGING",
+      "native": "AP aging",
+      "limit": "summary only; no detail variant"
+    },
+    {
+      "source": "GEN_LEDGER",
+      "native": "General ledger",
+      "limit": "one account at a time; TX_DET_BY_ACCT is not reproduced"
+    }
+  ],
+  "boundary": "A native report is original NXT output computed from this book. It is not a QuickBooks report, not a parity claim, and not an official government form.",
+  "no_native_equivalent": "All remaining report tokens, including every payroll report route, the inventory reports, the customer/vendor contact and phone lists, T4A and T5018, cash-flow detail, unbilled charges and time, and the custom/memorised report paths."
+}

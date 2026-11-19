@@ -44,7 +44,7 @@ test('public menu catalog contains generic navigation with unique IDs and no sou
   const nodes = flatten(catalog.groups);
   assert.ok(nodes.length > 100);
   assert.equal(new Set(nodes.map(n => n.id)).size, nodes.length);
-  const allowed = new Set(['id', 'label', 'observation', 'children', 'observed_path', 'native_route', 'native_scope', 'next_step', 'related']);
+  const allowed = new Set(['id', 'label', 'observation', 'children', 'observed_path', 'native_route', 'native_scope', 'next_step', 'related', 'kind']);
   for (const node of nodes) {
     assert.match(node.id, /^[a-z0-9][a-z0-9-]*$/);
     assert.ok(['observed', 'grouping', 'unverified'].includes(node.observation));
@@ -58,7 +58,7 @@ test('public menu catalog contains generic navigation with unique IDs and no sou
 test('every native and related mapping resolves to an existing bounded route', () => {
   const viewNames = new Set([...ledgerSource.matchAll(/views\.([a-z]+)\s*=/g)].map(match => match[1]));
   viewNames.add('native-create');
-  const reports = new Set(['profit-loss', 'balance-sheet', 'trial-balance', 'ar-aging', 'ap-aging', 'sales-tax', 'general-ledger']);
+  const reports = new Set(['profit-loss', 'balance-sheet', 'trial-balance', 'ar-aging', 'ap-aging', 'sales-tax', 'general-ledger', 'time']);
   const forms = new Set(['expense', 'deposit', 'transfer', 'journal', 'customer', 'supplier']);
   for (const entry of flatten(catalog.groups)) {
     if (entry.native_route) assert.ok(entry.native_scope && entry.observation === 'observed', entry.id);
@@ -137,4 +137,77 @@ test('native-create routes open existing forms after a stable route change and n
   await e.context.testViews['native-create']('__proto__');
   assert.equal(opened.length, count);
   assert.equal(e.location.hash, 'dashboard');
+});
+
+const viewNames = new Set([...ledgerSource.matchAll(/^views\.([A-Za-z]+)\s*=/gm)].map(m => m[1]));
+viewNames.add('native-create');
+
+test('every menu destination points at a screen the ledger actually defines', () => {
+  const routed = flatten(catalog.groups).filter(node => node.native_route);
+  assert.ok(routed.length >= 40, 'the map keeps the destinations it established');
+  const unknown = routed
+    .filter(node => !viewNames.has(String(node.native_route).split('/')[0]))
+    .map(node => node.id + ' -> ' + node.native_route);
+  assert.deepEqual(unknown, [], 'unknown native routes: ' + unknown.join(', '));
+});
+
+test('menus with a genuine native equivalent stay routed and describe their own scope', () => {
+  const byId = new Map(flatten(catalog.groups).map(node => [node.id, node]));
+  const expected = [
+    ['create--customers', 'customers'],
+    ['create--customers--receive-payment', 'invoices'],
+    ['create--suppliers--cheque', 'native-create/expense'],
+    ['create--suppliers--pay-bills', 'bills'],
+    ['all-apps--sales-get-paid--sales-transactions', 'invoices'],
+    ['all-apps--customer-hub--customers-leads', 'customers'],
+    ['all-apps--sales-get-paid--products-services', 'lists'],
+    ['more--accounting', 'accounts'],
+    ['more--expenses-bills', 'bills'],
+    ['more--sales-get-paid', 'invoices'],
+    ['reports--management-reports', 'reports'],
+    ['reports--dashboards', 'dashboard'],
+    ['reports--kpis', 'dashboard'],
+    ['settings--lists', 'lists'],
+    ['settings--lists--all-lists', 'lists'],
+    ['settings--lists--products-and-services', 'lists'],
+    ['settings--your-company--default-report-settings', 'settings'],
+    ['settings--your-company--additional-info', 'settings'],
+    ['settings--tools--import-data', 'banking'],
+    ['settings--tools--export-data', 'reports'],
+    ['all-apps--payroll--employees', 'lists'],
+    ['all-apps--team--employees', 'lists'],
+  ];
+  for (const [id, route] of expected) {
+    const entry = byId.get(id);
+    assert.ok(entry, id + ' exists in the catalog');
+    assert.equal(entry.native_route, route, id + ' routes to ' + route);
+    assert.doesNotMatch(entry.native_scope, /No complete working native equivalent/, id + ' describes its own scope');
+    assert.ok(entry.native_scope.length > 60, id + ' explains what the native screen does not do');
+  }
+});
+
+test('firm-scope rows are not dead ends and never pretend to be Ledger routes', () => {
+  const byId = new Map(flatten(catalog.groups).map(node => [node.id, node]));
+  for (const id of ['observed-1118--firm-clients', 'observed-1118--firm-work', 'observed-1118--firm-hub']) {
+    const entry = byId.get(id);
+    assert.ok(entry, id + ' exists');
+    assert.equal(entry.native_route, null, id + ' is not a Ledger route');
+    assert.ok((entry.related || []).some(link => link.app === 'firm'), id + ' opens Firm Operations');
+  }
+  const books = byId.get('observed-1118--firm-books');
+  assert.equal(books.native_route, null, 'firm books is not a Ledger route');
+  assert.equal((books.related || [])[0].route, 'dashboard', 'it links to the native ledger dashboard instead');
+});
+
+test('existing related links are never dropped when a row gains a new one', () => {
+  const byId = new Map(flatten(catalog.groups).map(node => [node.id, node]));
+  const workpapers = byId.get('all-apps--accounting--workpapers');
+  assert.ok((workpapers.related || []).some(link => link.app === 'engagements'), 'Workpapers still opens Engagements');
+  const overview = byId.get('all-apps--accounting--client-overview');
+  const routes = (overview.related || []).map(link => link.route || '');
+  assert.ok(routes.includes('dashboard'), 'Client overview keeps its native dashboard route');
+  assert.ok((overview.related || []).some(link => link.app === 'migrations'), 'and gains the migration coverage link');
+  const rules = byId.get('all-apps--accounting--rules');
+  assert.equal(rules.native_route, 'banking', 'Rules points at the bank feed that learns them');
+  assert.match(rules.native_scope, /no separate rules catalogue/);
 });

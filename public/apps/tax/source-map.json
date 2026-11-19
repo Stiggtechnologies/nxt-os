@@ -1,0 +1,883 @@
+{
+  "format": "nxt-source-map/v1",
+  "observed_at": "2026-11-18",
+  "client_data_included": false,
+  "money_unit": "none",
+  "purpose": "Read-only map from a migrating preparer's familiar commands to the native NXT Tax destination that actually exists today.",
+  "limitations": "This is a command and capability inventory, not a menu tree, a calculation claim or a filing claim. Source labels were recovered from installed resources, published pages and one read-only signed-in T2 workspace. No source calculation was executed, nothing was saved or filed, and no client value is retained. A native destination is a narrower NXT workflow and is not proof of source equivalence.",
+  "sources": [
+    {
+      "id": "dtmax",
+      "label": "DT Max",
+      "product": "DT Max 29.30.0000 (Thomson Reuters)",
+      "role": "T1 / T2 / T3 / T5013 preparation, review and EFILE",
+      "observation": "observed",
+      "observation_summary": "Observed in the installed source",
+      "observation_note": "Compiled UTF-16 command labels in the installed English interface library. Commands, dialogs and accelerators were not executed.",
+      "evidence": {
+        "kind": "installed-interface-library",
+        "artifact": "C:\\Program Files (x86)\\DT Max\\dtwres.dll",
+        "sha256": "8dd2aaddd40f629c50d771bc434e2127ecfa1f7e8c6ec526695004214563e671",
+        "rea_evidence": "ev_f5f875cc917ed2489135eb472f9b7160bae14cb605069114d5221c484c36d21b",
+        "provider": "ghidra",
+        "installed_version_source": "Windows uninstall registry, DT Max - System 29.30.0000"
+      },
+      "groups": [
+        {
+          "id": "client-returns",
+          "label": "Client and return lifecycle",
+          "entries": [
+            {
+              "id": "dtmax.client-list",
+              "label": "Client list",
+              "source_label": "Client list",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "The NXT Tax worklist is a searchable return list that filters by program, year, status and jurisdiction, and sorts by name, tax year, last updated or status. It is a return worklist, not a DT Max client database. F10 opens it from anywhere in the tax app.",
+              "next_step": "Map source client identity to the imported roster before treating a worklist row as a client."
+            },
+            {
+              "id": "dtmax.client-verification",
+              "label": "Client verification",
+              "source_label": "Client verification",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "Roster status and source-review cards show verified and pending contexts; there is no DT Max client-verification dialog.",
+              "next_step": "Define which source verification states must be reproduced before migration acceptance."
+            },
+            {
+              "id": "dtmax.client-renumbering",
+              "label": "Client renumbering",
+              "source_label": "Client renumbering failed for %d client(s)",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "NXT Tax has no client renumbering operation. Imported source client numbers are retained verbatim as provenance.",
+              "next_step": "Decide whether NXT needs its own client numbering or must always defer to the source number."
+            },
+            {
+              "id": "dtmax.client-restore",
+              "label": "Client restore",
+              "source_label": "Client restore",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No per-client restore. Rollback is the whole-store backup and recovery path, which is a different scope.",
+              "next_step": "Specify client-level restore requirements, or accept store-level recovery only."
+            },
+            {
+              "id": "dtmax.client-access-log",
+              "label": "Client accessed / allowed / denied",
+              "source_label": "Client %d - Allowed",
+              "observation": "observed",
+              "native_route": "#audit",
+              "native_scope": "The audit view records native tax events for this workspace. It does not reproduce DT Max per-client access decisions.",
+              "next_step": "Verified individual identity is a prerequisite for meaningful access records."
+            },
+            {
+              "id": "dtmax.return-verified",
+              "label": "Return verified",
+              "source_label": "Return verified",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "Native return statuses are draft, calculated, in review, approved, filed (recorded) and archived. There is no separate verified flag.",
+              "next_step": "Confirm how a source 'verified' return maps to a native review or approval status."
+            },
+            {
+              "id": "dtmax.return-archived",
+              "label": "Return archived",
+              "source_label": "Return archived",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "Archiving a native return keeps it readable and out of active work.",
+              "next_step": "None for the status itself; archive retention policy is a separate decision."
+            },
+            {
+              "id": "dtmax.review-required",
+              "label": "Review required",
+              "source_label": "Review required",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "Native returns carry an explicit in-review status and stale-review invalidation when inputs change.",
+              "next_step": "Confirm the source conditions that raised 'review required' so the native equivalent is not narrower."
+            }
+          ]
+        },
+        {
+          "id": "data-entry",
+          "label": "Data entry and keywords",
+          "entries": [
+            {
+              "id": "dtmax.keyword-entry",
+              "label": "Keyword input",
+              "source_label": "Print the keyword input data",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "NXT Tax entry is a typed keyword workpaper with declared fields per program and year. Fields are original NXT schemas, not the DT Max dictionary. Alt+F7 focuses the keyword search inside an open return.",
+              "next_step": "Complete keyword-group and dependency coverage before claiming data-entry equivalence."
+            },
+            {
+              "id": "dtmax.print-keywords",
+              "label": "Print keywords",
+              "source_label": "Print keywords",
+              "observation": "observed",
+              "native_route": "#reports",
+              "native_scope": "Native reports export workpapers from saved calculations only.",
+              "next_step": "Decide whether a keyword printout is a required migration artifact."
+            },
+            {
+              "id": "dtmax.keyword-labels",
+              "label": "Installed keyword dictionary labels",
+              "source_label": "installed English keyword names",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "NXT Tax retains label lookup from the installed dictionary for 19 exact years and 47,692 names. Labels only: no option meanings, dependencies or tax-line mapping.",
+              "next_step": "Recover enum option meanings and occurrence structure from the installed carriers before widening entry coverage."
+            }
+          ]
+        },
+        {
+          "id": "efile",
+          "label": "EFILE",
+          "entries": [
+            {
+              "id": "dtmax.efile-transmission",
+              "label": "EFILE transmission",
+              "source_label": "EFILE transmission",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "Electronic filing is disabled in NXT Tax. No transmission path is implemented or certified.",
+              "next_step": "Requires independent CRA EFILE registration, software certification and acceptance testing. External gate."
+            },
+            {
+              "id": "dtmax.efile-reports",
+              "label": "EFILE reports",
+              "source_label": "EFILE reports",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No EFILE reporting exists because no transmission exists.",
+              "next_step": "Blocked behind the filing gate."
+            },
+            {
+              "id": "dtmax.efile-errors",
+              "label": "EFILE errors",
+              "source_label": "EFILE errors",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "Native calculation diagnostics are not transmission diagnostics.",
+              "next_step": "Blocked behind the filing gate."
+            },
+            {
+              "id": "dtmax.efile-logs",
+              "label": "EFILE logs",
+              "source_label": "EFILE logs",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No transmission log exists.",
+              "next_step": "Blocked behind the filing gate."
+            },
+            {
+              "id": "dtmax.efile-defaults",
+              "label": "EFILE defaults",
+              "source_label": "EFILE defaults",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No filer credentials or transmitter configuration is stored.",
+              "next_step": "Blocked behind the filing gate; also a secret-custody decision."
+            },
+            {
+              "id": "dtmax.efile-queue",
+              "label": "EFILE queue (individual / numeric)",
+              "source_label": "EFILE queue - numeric",
+              "observation": "observed",
+              "native_route": "#batches",
+              "native_scope": "Batch workpapers group native returns for internal preparation and output. This is not a transmission queue.",
+              "next_step": "Keep the two concepts distinct in operator guidance."
+            },
+            {
+              "id": "dtmax.efile-status",
+              "label": "EFILE accepted / rejected / acknowledged",
+              "source_label": "EFILE acknowledged, waiting for NOA",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "Transmission outcome statuses do not exist. A native 'filed' status is a human record, not an authority acknowledgement.",
+              "next_step": "Do not model authority statuses until a real transmission path exists."
+            },
+            {
+              "id": "dtmax.efile-quebec",
+              "label": "EFILE - Quebec",
+              "source_label": "EFILE - Quebec - numeric",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "Quebec TP-1 is scoped only. No Quebec transmission or calculation path exists.",
+              "next_step": "Quebec authority requirements are a separate unresolved specification."
+            }
+          ]
+        },
+        {
+          "id": "printing",
+          "label": "Printing and output",
+          "entries": [
+            {
+              "id": "dtmax.print-page",
+              "label": "Print the current page",
+              "source_label": "Print the current page",
+              "observation": "observed",
+              "native_route": "#reports",
+              "native_scope": "Native printable HTML workpapers, with browser printing.",
+              "next_step": "Confirm which printed artifacts the firm must retain per return."
+            },
+            {
+              "id": "dtmax.print-selected",
+              "label": "Print selected pages",
+              "source_label": "Print selected pages to the printer",
+              "observation": "observed",
+              "native_route": "#reports",
+              "native_scope": "Native reports are generated per saved calculation revision, not as an arbitrary page selection.",
+              "next_step": "Decide whether page-range selection is required for acceptance."
+            },
+            {
+              "id": "dtmax.print-blank-forms",
+              "label": "Print blank forms",
+              "source_label": "Print blank forms",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "NXT ships no official forms and produces no certified form output.",
+              "next_step": "Acquire published form specifications independently before rendering official forms."
+            },
+            {
+              "id": "dtmax.print-client-list",
+              "label": "Print client list",
+              "source_label": "Print client list",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "The tax worklist exports exactly the filtered, sorted rows as CSV: name, client reference, program, tax year, jurisdiction, status, calculation state and last update. There is no printer layout and no label sheet.",
+              "next_step": "Add a print stylesheet for the worklist only if the firm needs paper."
+            },
+            {
+              "id": "dtmax.print-labels",
+              "label": "Print client labels",
+              "source_label": "Print client labels",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No label layout or label printer integration.",
+              "next_step": "Low priority; specify only if the firm depends on physical labels."
+            },
+            {
+              "id": "dtmax.print-queue",
+              "label": "Print queue (by name / individual / numeric)",
+              "source_label": "Print queue - by name",
+              "observation": "observed",
+              "native_route": "#batches",
+              "native_scope": "Batch workpapers order native returns for preparation; they do not queue printer output.",
+              "next_step": "Clarify whether an actual print queue is required or batch output is sufficient."
+            },
+            {
+              "id": "dtmax.filecabinet",
+              "label": "Print to DT FileCabinet",
+              "source_label": "Print to DT FileCabinet",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No NXT document cabinet export. Engagement opaque-file versions are a different module and scope.",
+              "next_step": "Decide whether archived PDF output is a migration requirement."
+            },
+            {
+              "id": "dtmax.ct23",
+              "label": "CT23 D-File packing slip",
+              "source_label": "Print CT23 D-File packing slip",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "Not implemented.",
+              "next_step": "Confirm whether the firm still uses CT23 packing slips."
+            }
+          ]
+        },
+        {
+          "id": "setup",
+          "label": "Setup and preferences",
+          "entries": [
+            {
+              "id": "dtmax.user-defaults",
+              "label": "User defaults",
+              "source_label": "User's defaults",
+              "observation": "observed",
+              "native_route": "#capabilities",
+              "native_scope": "NXT Tax declares its scope and limits per program and year instead of a user-defaults dialog.",
+              "next_step": "None unless per-preparer defaults become an acceptance requirement."
+            },
+            {
+              "id": "dtmax.forms-manager",
+              "label": "Forms manager",
+              "source_label": "Forms manager",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No form manager; no vendor form assets are used.",
+              "next_step": "Out of scope until official form specifications are independently obtained."
+            },
+            {
+              "id": "dtmax.printing-options",
+              "label": "Printing options",
+              "source_label": "Printing options",
+              "observation": "observed",
+              "native_route": "#reports",
+              "native_scope": "Report output options are limited to native report design and browser print.",
+              "next_step": "Widen only against a stated printing requirement."
+            },
+            {
+              "id": "dtmax.billing-setup",
+              "label": "Billing setup",
+              "source_label": "Billing setup",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "Tax billing is not implemented in NXT Tax.",
+              "next_step": "Firm Operations may be the right owner; confirm before building."
+            },
+            {
+              "id": "dtmax.text-macros",
+              "label": "Text macros setup",
+              "source_label": "Text macros setup",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No macro library for preparer text.",
+              "next_step": "Confirm demand with preparers before implementing."
+            },
+            {
+              "id": "dtmax.ui-options",
+              "label": "User interface options",
+              "source_label": "Setup of user interface options",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "NXT has no user-interface options dialog; it uses a single responsive theme with light and dark appearance.",
+              "next_step": "Not a parity requirement by itself."
+            },
+            {
+              "id": "dtmax.audit-trail-setup",
+              "label": "Audit trail setup",
+              "source_label": "Audit trail setup",
+              "observation": "observed",
+              "native_route": "#audit",
+              "native_scope": "Native audit events are recorded; the trail is not user-configurable.",
+              "next_step": "Confirm retention and review requirements."
+            }
+          ]
+        },
+        {
+          "id": "database-help",
+          "label": "Database and help",
+          "entries": [
+            {
+              "id": "dtmax.database-maintenance",
+              "label": "Database maintenance",
+              "source_label": "Database maintenance",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No client-facing database rebuild. Recovery is a provider-level backup and restore procedure.",
+              "next_step": "An independently verified backup and restore drill remains a cutover gate."
+            },
+            {
+              "id": "dtmax.database-in-use",
+              "label": "Database in use",
+              "source_label": "Database in use by %s",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No file-lock model; NXT is a hosted multi-request service.",
+              "next_step": "Replace with concurrency expectations on the same return, which are a native design question."
+            },
+            {
+              "id": "dtmax.help",
+              "label": "Help and knowledge base",
+              "source_label": "Help and knowledge base files not found.",
+              "observation": "observed",
+              "native_route": "#capabilities",
+              "native_scope": "NXT documents declared scope and limits in-module; it does not ship a vendor knowledge base.",
+              "next_step": "Preparer help content is an open authoring task."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "webtax4b",
+      "label": "WebTax4B",
+      "product": "WebTax4B.ca (MacroNT Inc.)",
+      "role": "Online T2 / AT1 / CO-17 corporate return preparation and filing",
+      "observation": "documented",
+      "observation_summary": "Observed in published assets, shipped client code and a signed-in workspace",
+      "observation_note": "Public product page, the uncredentialled client assets it links, and a signed-in T2 return workspace observed read-only. Only navigator topics, field labels and control names were retained; no corporation name, business number, address, amount or other client value is recorded here, and nothing was saved, calculated or filed.",
+      "evidence": {
+        "kind": "live-public-page",
+        "url": "https://secure.macront.com/WebTax4B.ca/home.jsp?v=4b.26.1",
+        "rea_evidence": "ev_fde261a5fe9293f34cd38595414d6c26148821c185244e86a541768f914a0a26",
+        "browser": "Chrome/158.0.8127.36 via REA CDP inspection",
+        "authenticated_capture": {
+          "rea_evidence": "ev_d27590db3cd30a3a5fd7c19deac2929a462551889d16264bb92a17e87891dbb4",
+          "target": "T2 Return (taxOnline.jsp) with input.jsp and a Navigator group frame",
+          "scope": "Read-only passive inspection of one open return. No navigation, no save, no calculation, no filing, no credential or storage value retained.",
+          "client_values_retained": false
+        },
+        "client_assets": [
+          {
+            "url": "https://webtax.macront.com/tol/t2/jsrc/util.js?v=t2.26.1",
+            "bytes": 29988,
+            "cdp_hash": "6467dd73ba0d156407283542571c46fcaaf10d712132ce46cfdd9d134c5ca38",
+            "note": "Uncredentialled helper script linked from the T2 sign-in page."
+          },
+          {
+            "url": "https://webtax.macront.com/tol/t2/jsrc/t2.css?v=t2.26.1",
+            "bytes": 12361,
+            "note": "Uncredentialled stylesheet linked from the T2 sign-in page."
+          }
+        ],
+        "release_pins": {
+          "t2": "MC43, released 2026-10-19",
+          "at1": "MC43, released 2026-10-19",
+          "co17": "CO17MC41.1.1, released 2025-12-19"
+        }
+      },
+      "groups": [
+        {
+          "id": "filing",
+          "label": "Filing and transmission",
+          "entries": [
+            {
+              "id": "webtax4b.corp-internet-filing",
+              "label": "Corporation Internet Filing",
+              "source_label": "Corporation Internet Filing",
+              "observation": "documented",
+              "native_route": null,
+              "native_scope": "NXT Tax does not transmit. Filing is disabled and no certification is claimed.",
+              "next_step": "Requires independent CRA certification and authority acceptance tests. External gate."
+            },
+            {
+              "id": "webtax4b.t2-barcode",
+              "label": "T2 barcode filing",
+              "source_label": "T2 barcode filing",
+              "observation": "documented",
+              "native_route": null,
+              "native_scope": "No official T2 form rendering or barcode generation.",
+              "next_step": "Acquire published form and barcode specifications independently."
+            },
+            {
+              "id": "webtax4b.t2-paper-pdf",
+              "label": "T2 paper return in PDF",
+              "source_label": "T2 paper return in pdf format",
+              "observation": "documented",
+              "native_route": "#reports",
+              "native_scope": "Native printable HTML workpapers are internal documents, explicitly not an official T2 return.",
+              "next_step": "Keep the distinction visible in every printed artifact."
+            },
+            {
+              "id": "webtax4b.prevalidate",
+              "label": "Pre-validate T2 filing",
+              "source_label": "Pre-validate T2 filing online",
+              "observation": "documented",
+              "native_route": null,
+              "native_scope": "No authority pre-validation. Native calculation diagnostics are local only.",
+              "next_step": "Blocked behind the filing gate."
+            },
+            {
+              "id": "webtax4b.attachments",
+              "label": "Submit attached documents online",
+              "source_label": "Submit attached documents online",
+              "observation": "documented",
+              "native_route": null,
+              "native_scope": "No authority attachment channel.",
+              "next_step": "Blocked behind the filing gate."
+            },
+            {
+              "id": "webtax4b.t1135",
+              "label": "E-File T1135 (foreign property)",
+              "source_label": "E-File T1135 (Foreign properties)",
+              "observation": "documented",
+              "native_route": null,
+              "native_scope": "T1135 is not modelled.",
+              "next_step": "Add only with a verified specification and a filing path."
+            }
+          ]
+        },
+        {
+          "id": "cra-services",
+          "label": "CRA online services",
+          "entries": [
+            {
+              "id": "webtax4b.afr",
+              "label": "Auto-fill return (AFR)",
+              "source_label": "Auto Fill Return (AFR)",
+              "observation": "documented",
+              "native_route": "#import",
+              "native_scope": "NXT has native AFR slip and tag import for supported slips, with source preservation. It is not a T2 return auto-fill and it does not contact CRA.",
+              "next_step": "State the exact AFR shapes that are imported and tested; keep unsupported ones blocked."
+            },
+            {
+              "id": "webtax4b.wac",
+              "label": "Request Web Access Code (WAC)",
+              "source_label": "Request Web Access Code (WAC) online",
+              "observation": "documented",
+              "native_route": null,
+              "native_scope": "No CRA credential broker.",
+              "next_step": "Out of scope without a certified service."
+            },
+            {
+              "id": "webtax4b.noa",
+              "label": "View NOA",
+              "source_label": "Auto-fill data from CRA, view NOA",
+              "observation": "documented",
+              "native_route": null,
+              "native_scope": "No notice-of-assessment intake. Prior-year figures come only from preserved source facts.",
+              "next_step": "Specify a NOA attachment lane if the firm needs it for preparation."
+            }
+          ]
+        },
+        {
+          "id": "provincial",
+          "label": "Provincial and Quebec returns",
+          "entries": [
+            {
+              "id": "webtax4b.at1",
+              "label": "AT1-NETFILE / AT1-RSI (Alberta)",
+              "source_label": "AT1-NETFILE, AT1-RSI",
+              "observation": "documented",
+              "native_route": "#capabilities",
+              "native_scope": "NXT computes bounded Alberta T2 arithmetic but does not produce or file an AT1.",
+              "next_step": "Independent Alberta form and transmission specifications are required."
+            },
+            {
+              "id": "webtax4b.co17",
+              "label": "CO-17 online / paper (Quebec)",
+              "source_label": "CO-17 online filing via NETFILE Québec or clicSEQUR",
+              "observation": "documented",
+              "native_route": "#capabilities",
+              "native_scope": "No CO-17 calculation, form or filing.",
+              "next_step": "Quebec authority requirements remain a separate unresolved specification."
+            },
+            {
+              "id": "webtax4b.ct23",
+              "label": "CT23 (Ontario, to tax year 2009)",
+              "source_label": "CT23 certified by Ontario Ministry of Finance to tax year 2009",
+              "observation": "documented",
+              "native_route": null,
+              "native_scope": "Not modelled; historical Ontario corporate returns are out of scope.",
+              "next_step": "Confirm no active client needs this before closing as out of scope."
+            }
+          ]
+        },
+        {
+          "id": "intake",
+          "label": "Data intake and continuity",
+          "entries": [
+            {
+              "id": "webtax4b.upload-statements",
+              "label": "Upload financial statements from accounting software",
+              "source_label": "Upload financial statements from accounting software",
+              "observation": "documented",
+              "native_route": "#import",
+              "native_scope": "Native import is a bounded, previewed import that creates a new draft; it does not silently absorb an accounting export.",
+              "next_step": "Verify the exact statement shapes accepted against real exports."
+            },
+            {
+              "id": "webtax4b.import-t2",
+              "label": "Import data from other T2 software",
+              "source_label": "Import data from other T2 software",
+              "observation": "documented",
+              "native_route": "#import",
+              "native_scope": "Native JSON package import is previewed before a draft is created. Vendor T2 formats are not supported.",
+              "next_step": "Declare unsupported vendor formats explicitly in the import screen."
+            },
+            {
+              "id": "webtax4b.carryforward",
+              "label": "Auto carry-forward across years",
+              "source_label": "Tax data will be auto-carry forward into subsequent tax years",
+              "observation": "documented",
+              "native_route": "#worklist",
+              "native_scope": "Native rollforward copies an exact prior source snapshot into a new draft; it is not an automatic year-over-year carry-forward of every field.",
+              "next_step": "Specify which lines must roll forward automatically before claiming this capability."
+            }
+          ]
+        },
+        {
+          "id": "in-product",
+          "label": "In-product actions (shipped client assets)",
+          "entries": [
+            {
+              "id": "webtax4b.csv-import",
+              "label": "Import data from CSV",
+              "source_label": "ImportCsvAction.do",
+              "observation": "observed",
+              "native_route": "#import",
+              "native_scope": "NXT import is previewed and creates a new draft. It never replaces existing data, and the source dialog's overwrite-all warning has no native equivalent.",
+              "next_step": "Confirm which CSV shapes the firm actually imports before widening native intake."
+            },
+            {
+              "id": "webtax4b.cca",
+              "label": "Capital cost allowance worksheet",
+              "source_label": "openCcaWin / CcaForm",
+              "observation": "observed",
+              "native_route": "#capabilities",
+              "native_scope": "Native T2 Schedule 8 computes CCA classes and the modelled allowances. There is no per-asset CCA popup keyed by class and taxpayer.",
+              "next_step": "Decide whether per-asset CCA detail is a migration requirement or the schedule total is sufficient."
+            },
+            {
+              "id": "webtax4b.home-expense",
+              "label": "Home office expense",
+              "source_label": "openHomeExpenseWin / ExHome",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No home-office worksheet is modelled.",
+              "next_step": "Specify the business-use-of-home rules only if clients in scope claim them."
+            },
+            {
+              "id": "webtax4b.vehicle-expense",
+              "label": "Motor vehicle expense",
+              "source_label": "openVehicleExpenseWin / ExVehicle",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "Motor vehicle capital limits are modelled in Schedule 8; there is no vehicle expense worksheet.",
+              "next_step": "Keep the distinction between CCA caps and operating-expense worksheets."
+            },
+            {
+              "id": "webtax4b.other-expense",
+              "label": "Other expenses",
+              "source_label": "openOtherExpenseWin / ExOther",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No other-expense worksheet.",
+              "next_step": "Low priority until a client needs it."
+            },
+            {
+              "id": "webtax4b.help-node",
+              "label": "Context help by field node",
+              "source_label": "HelpAction.do?action=Load&fileName=…&nodeId=…",
+              "observation": "observed",
+              "native_route": "#capabilities",
+              "native_scope": "NXT documents declared scope per program and year. It has no per-field help system, and its source page links out to CRA publications rather than shipping annotations.",
+              "next_step": "Per-field guidance is an authoring task; it is not required for calculation parity."
+            },
+            {
+              "id": "webtax4b.house-tabs",
+              "label": "Top-level topic tabs (house buttons)",
+              "source_label": "housebutton / housebuttonoff",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "NXT Tax uses its own rail and in-return keyword navigation. The source's house-tab model is a styling and layout pattern, not a tax capability.",
+              "next_step": "None for parity; the native navigation is deliberate."
+            },
+            {
+              "id": "webtax4b.logout",
+              "label": "Session log out",
+              "source_label": "logout.jsp",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "NXT uses its own workspace sign-in and session model; there is no per-source session to end.",
+              "next_step": "None. This entry exists so operators know the source session and the NXT session are separate.",
+              "kind": "chrome"
+            }
+          ]
+        },
+        {
+          "id": "t2-navigator",
+          "label": "T2 return navigator (authenticated workspace)",
+          "entries": [
+            {
+              "id": "webtax4b.nav-identification",
+              "label": "Identification",
+              "source_label": "Identification",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "In-workpaper: a T2 workpaper carries corporate identification fields. There is no standalone identification tab.",
+              "next_step": "Confirm the identification fields the firm must retain verbatim from source returns."
+            },
+            {
+              "id": "webtax4b.nav-corporate-info",
+              "label": "Corporate Info",
+              "source_label": "Corporate Info",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "In-workpaper: corporation name, business number and fiscal period are typed on the T2 corporate profile.",
+              "next_step": "Map source identity fields to the native profile before comparing figures."
+            },
+            {
+              "id": "webtax4b.nav-tax-information",
+              "label": "Tax information",
+              "source_label": "Tax information",
+              "observation": "observed",
+              "native_route": "#capabilities",
+              "native_scope": "NXT Tax declares its bounded 2025 Alberta scope instead of offering a tax-information tab.",
+              "next_step": "Widen declared scope only with published rules and test cases."
+            },
+            {
+              "id": "webtax4b.nav-additional-information",
+              "label": "Additional information",
+              "source_label": "Additional information",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No additional-information section exists in the native T2 workpaper.",
+              "next_step": "Specify which questions matter before modelling them."
+            },
+            {
+              "id": "webtax4b.nav-gifi-balance-sheet",
+              "label": "GIFI - Balance sheet",
+              "source_label": "GIFI - Balance sheet",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "In-workpaper: only selected GIFI closing and opening totals are typed; there is no statement-level GIFI screen.",
+              "next_step": "The full GIFI code catalogue and statement layout remain open."
+            },
+            {
+              "id": "webtax4b.nav-gifi-income",
+              "label": "GIFI - Income statements",
+              "source_label": "GIFI - Income statements",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "In-workpaper: ordinary income totals only. There is no income-statement GIFI detail screen.",
+              "next_step": "Decide whether statement detail is required for the migration cohort."
+            },
+            {
+              "id": "webtax4b.nav-gifi-opening",
+              "label": "GIFI - Open balance sheet",
+              "source_label": "GIFI - Open balance sheet",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "In-workpaper: opening GIFI totals are typed on the corporate workpaper; there is no separate opening-balance screen.",
+              "next_step": "Keep opening and closing values distinct; the native checks block imbalance."
+            },
+            {
+              "id": "webtax4b.nav-gifi-summary",
+              "label": "GIFI - Summary income statement",
+              "source_label": "GIFI - Summary income statement",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No summary income statement view is generated from the native T2 workpaper.",
+              "next_step": "Confirm whether a generated statement summary is a firm requirement."
+            },
+            {
+              "id": "webtax4b.nav-non-farming",
+              "label": "Non-farming income statement",
+              "source_label": "Non-farming income statement",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "Only ordinary active-business income is modelled; no non-farming income statement.",
+              "next_step": "Add only with a published specification for the affected lines."
+            },
+            {
+              "id": "webtax4b.nav-tax-credits",
+              "label": "Tax & Credits",
+              "source_label": "Tax & Credits",
+              "observation": "observed",
+              "native_route": "#capabilities",
+              "native_scope": "Bounded federal and Alberta arithmetic with the declared credits. There is no tax-and-credits tab.",
+              "next_step": "Expand credits only against sourced rules and boundary tests."
+            },
+            {
+              "id": "webtax4b.nav-calc-result",
+              "label": "Calc & Result",
+              "source_label": "Calc & Result",
+              "observation": "observed",
+              "native_route": "#worklist",
+              "native_scope": "In-workpaper: an explicit calculate action produces a versioned snapshot with diagnostics, not a Calc & Result tab.",
+              "next_step": "None for parity; the snapshot model is stronger than a tab result."
+            },
+            {
+              "id": "webtax4b.nav-output",
+              "label": "Output",
+              "source_label": "Output",
+              "observation": "observed",
+              "native_route": "#reports",
+              "native_scope": "Native printable HTML workpapers and JSON packages only; no certified T2 output or barcode.",
+              "next_step": "Official output requires published form and barcode specifications."
+            },
+            {
+              "id": "webtax4b.nav-provinces",
+              "label": "Provinces/Territories",
+              "source_label": "Provinces/Territories",
+              "observation": "observed",
+              "native_route": "#capabilities",
+              "native_scope": "Alberta only. Other provinces and Quebec are not modelled, and the source offers a full jurisdiction list.",
+              "next_step": "Each added jurisdiction needs its own ruleset and acceptance cases."
+            },
+            {
+              "id": "webtax4b.nav-amended",
+              "label": "Amended return",
+              "source_label": "Amended return",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No amended-return flag and no amendment workflow for a previously filed return.",
+              "next_step": "Specify amendment handling before any firm relies on it."
+            },
+            {
+              "id": "webtax4b.nav-certification",
+              "label": "Certification of signing officer",
+              "source_label": "Certification of signing officer",
+              "observation": "observed",
+              "native_route": null,
+              "native_scope": "No signing-officer certification inside the T2 workpaper; electronic signature is a separate NXT module.",
+              "next_step": "Keep signing separate from calculation; do not imply certification by computing a return."
+            }
+          ]
+        },
+        {
+          "id": "release-coverage",
+          "label": "Release coverage observed",
+          "entries": [
+            {
+              "id": "webtax4b.t2-schedules",
+              "label": "T2 MC43 schedule set",
+              "source_label": "schedules 200, 3, 5, 7, 16, 31, 49, 52, 53, 74, 77, 381, 387, 425, and 554",
+              "observation": "documented",
+              "native_route": "#capabilities",
+              "native_scope": "NXT computes a much smaller declared T2 set. The schedule-by-schedule difference is shown below, not implied.",
+              "next_step": "Use the coverage table as the T2 migration gate per client."
+            },
+            {
+              "id": "webtax4b.at1-schedules",
+              "label": "AT1 MC43 schedule set",
+              "source_label": "schedules AT1 and 29",
+              "observation": "documented",
+              "native_route": null,
+              "native_scope": "No AT1 schedules are produced.",
+              "next_step": "Blocked behind Alberta form specifications."
+            },
+            {
+              "id": "webtax4b.co17-schedules",
+              "label": "CO-17 MC41.1.1 schedule set",
+              "source_label": "CO-17, CO-130.A, CO-1029.8.21.22, RD-1029.7, RD-1029.8.6, RD-1029.8.16.1, RD-1029.8.9.03, and COZ-1027.P; TP-1079.8.BE, TP-21.4.39",
+              "observation": "documented",
+              "native_route": null,
+              "native_scope": "No CO-17 schedules are produced.",
+              "next_step": "Blocked behind Quebec form specifications."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "t2_schedule_coverage": {
+    "source": "webtax4b",
+    "source_release": "MC43 (2026-10-19)",
+    "source_schedules": [
+      "200",
+      "3",
+      "5",
+      "7",
+      "16",
+      "31",
+      "49",
+      "52",
+      "53",
+      "74",
+      "77",
+      "381",
+      "387",
+      "425",
+      "554"
+    ],
+    "source_note": "Schedules named in the current WebTax4B T2 release note. The list is what the release announcement names, not a complete inventory of every year or schedule.",
+    "native_program": "T2",
+    "native_schedules": [
+      "1",
+      "8",
+      "50",
+      "100",
+      "125"
+    ],
+    "native_note": "Schedules computed by the native T2 path for the declared 2025 Alberta scope, including Schedule 8 CCA detail. Filing and official forms are disabled.",
+    "native_evidence": "docs/REA_GAP_ANALYSIS_2026-10-29.md and docs/NXT_TAX.md"
+  }
+}

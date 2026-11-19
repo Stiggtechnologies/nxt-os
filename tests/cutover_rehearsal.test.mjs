@@ -11,7 +11,11 @@ import { compareManifests, formatMarkdown, parseStrictJson } from '../scripts/cu
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fixtures = join(root, 'tests', 'fixtures', 'cutover');
 const script = join(root, 'scripts', 'cutover-rehearsal.mjs');
-const load = name => parseStrictJson(readFileSync(join(fixtures, name)), name);
+// Evidence hashes are over the committed LF bytes. A Windows checkout may hand us CRLF,
+// so line endings are normalized before hashing; the content is otherwise untouched.
+const lf = value => Buffer.from(String(value).replace(/\r\n/g, '\n'), 'latin1');
+const readFixture = name => lf(readFileSync(join(fixtures, name), 'latin1'));
+const load = name => parseStrictJson(readFixture(name), name);
 const inputs = () => [load('source.json'), load('target.json'), load('mapping.json')];
 const has = (report, code) => report.blockers.some(b => b.code === code);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -161,13 +165,13 @@ test('retained synthetic evidence reproduces from the current fixture bytes', ()
     const artifacts = { source: 'source.json', target: targetName, mapping: 'mapping.json' };
     const values = {}, provenance = {};
     for (const [role, file] of Object.entries(artifacts)) {
-      const bytes = readFileSync(join(fixtures, file));
+      const bytes = readFixture(file);
       values[role] = parseStrictJson(bytes);
       provenance[role] = { sha256: digest(bytes), bytes: bytes.length, basis: 'raw-file-bytes', file };
     }
     const expected = compareManifests(values.source, values.target, values.mapping, provenance);
-    const retained = JSON.parse(readFileSync(join(fixtures, 'evidence', `${evidence}.json`), 'utf8'));
+    const retained = JSON.parse(lf(readFileSync(join(fixtures, 'evidence', `${evidence}.json`), 'latin1')).toString('utf8'));
     assert.deepEqual(retained, JSON.parse(JSON.stringify(expected)), 'Compare the serialized evidence contract, including every input and report hash');
-    assert.equal(readFileSync(join(fixtures, 'evidence', `${evidence}.md`), 'utf8'), formatMarkdown(expected));
+    assert.equal(lf(readFileSync(join(fixtures, 'evidence', `${evidence}.md`), 'latin1')).toString('utf8'), formatMarkdown(expected));
   }
 });

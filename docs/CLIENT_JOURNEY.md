@@ -71,5 +71,5 @@ Pricing on every rung is a placeholder: **pricing TBD by Orville**. Triggers are
 
 - Pricing for every rung: TBD by Orville.
 - Trigger thresholds are starting examples and need tuning against real client data.
-- Payroll, CFO/advisory and strategic executors are planned modules; the steps exist but the work is manual today.
+- Payroll pay runs are recorded in the company book (Alberta 2026 rates) with a T4 projection; remittance, PD7A filing and T4 slip filing remain manual and outside NXT. CFO/advisory and strategic executors are planned modules; the steps exist but the work is manual today.
 - Signals are passed in by the caller; wiring them from company_books / ledger metrics is not done yet.

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-const src=fs.readFileSync(new URL('../public/apps/migrations/migrations.js',import.meta.url),'utf8');
+const src=fs.readFileSync(new URL('../public/apps/migrations/migrations.js',import.meta.url),'utf8').replace(/\r\n/g,'\n');
 const ending="  window.addEventListener('hashchange',route);route();\n})();";
 function load(){const n=()=>({innerHTML:'',dataset:{},querySelector:()=>null,querySelectorAll:()=>[],focus(){}});const sb={NXT:{api:async()=>{throw Error('no')},esc:v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),toast(){},modal:async()=>{},key:{get:()=>'k'}},document:{querySelector:n,getElementById:n,addEventListener(){}},location:{hash:'#x',origin:'https://s.invalid'},window:{addEventListener(){},confirm:()=>true},URLSearchParams,console,setTimeout};sb.window.parent=sb.window;
   vm.runInNewContext(src.replace(ending,'globalThis.subject={generalLedgerMarkup,payrollMarkup,routeInfo};})();'),sb);return sb.subject;}

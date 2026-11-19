@@ -1,6 +1,8 @@
 //! Company-isolated, source-bound journal books. One CAS publishes the book and receipt.
 mod adjustments;
 mod daily;
+mod inventory;
+mod schedules;
 mod subledger;
 mod summaries;
 mod views;

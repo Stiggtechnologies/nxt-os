@@ -60,6 +60,28 @@ jobs:
           node --check public/apps/migrations/company-coverage.js
           node --check public/apps/signatures/signatures.js
           node --check public/apps/ledger/qb-navigation.js
+          node --check public/apps/ledger/lists.js
+          node --test tests/ledger_lists.test.mjs
+          node --check public/apps/tax/source-map.js
+          node --test tests/source_map.test.mjs
+          node --check public/nxt/shortcuts.js
+          node --test tests/shortcuts.test.mjs
+          node --test tests/public_assets.test.mjs
+          node --test tests/public_syntax.test.mjs
+          node --test tests/progress_control.test.mjs
+          node scripts/gap-register.mjs --check
+          node --check public/apps/tax/worklist-filter.js
+          node --test tests/worklist_filter.test.mjs
+          node --test tests/tax_worklist_export.test.mjs
+          node --check public/apps/migrations/parity.js
+          node --test tests/parity_dashboard.test.mjs
+          node --check public/apps/ledger/doc-export.js
+          node --test tests/doc_export.test.mjs
+          node --check public/apps/ledger/sort.js
+          node --test tests/ledger_sort.test.mjs
+          node --check public/apps/ledger/statement.js
+          node --test tests/statement.test.mjs
+          node --test tests/ledger_lists_ui.test.mjs
           node --check public/apps/nixon/nixon.js
           node --check scripts/publish-shadow-snapshot.mjs
           node --check scripts/backup-nxt-store.mjs

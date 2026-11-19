@@ -81,10 +81,28 @@
     return true;
   }
 
-  const api = { register, bindings: () => bindings.slice(), onKey, bindLedger, LEDGER, _combo: combo };
+  // DT Max-style keys, bound only inside the tax app. Faithful to the source where the
+  // native screen exists: F10 is the client list, Alt+F7 is keyword search. Nothing is
+  // bound that would hijack browser find, and no key is bound to an absent screen.
+  const TAX = [
+    { key: "F10", label: "Client list", hash: "worklist" },
+    { key: "F7", alt: true, label: "Keyword search", focus: ".keyword-search" },
+  ];
+  function bindTax(doc = document, loc = location) {
+    if (!/\/apps\/tax\//.test(loc.pathname || "")) return false;
+    for (const s of TAX) {
+      register({ key: s.key, alt: !!s.alt, label: s.label, group: "Tax", run: s.focus
+        ? () => doc.querySelector?.(s.focus)?.focus?.()
+        : () => { loc.hash = s.hash; } });
+    }
+    return true;
+  }
+
+  const api = { register, bindings: () => bindings.slice(), onKey, bindLedger, bindTax, LEDGER, TAX, _combo: combo };
   globalThis.NXTShortcuts = api;
   if (typeof document !== "undefined" && document.addEventListener) {
     bindLedger(document, location);
+    bindTax(document, location);
     document.addEventListener("keydown", (e) => onKey(e, document));
   }
 })();

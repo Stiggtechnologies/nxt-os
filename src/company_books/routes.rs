@@ -40,6 +40,7 @@ pub fn router(state: Arc<CompanyBooks>) -> Router {
         .route("/api/company-books/{company}/parallel/classes", post(add_class))
         .route("/api/company-books/{company}/parallel/documents", post(open_document))
         .route("/api/company-books/{company}/parallel/payments", post(apply_payment))
+    .route("/api/company-books/{company}/parallel/approvals", post(set_approval))
         .route("/api/company-books/{company}/parallel/subledger", get(subledger))
         .route("/api/company-books/{company}/parallel/journals/{entry}/sparse", post(sparse_native))
         .route("/api/company-books/{company}/parallel/journals/{entry}/delete", post(delete_native))
@@ -53,6 +54,16 @@ pub fn router(state: Arc<CompanyBooks>) -> Router {
         .route("/api/company-books/{company}/parallel/time", post(add_time))
         .route("/api/company-books/{company}/parallel/budgets", post(add_budget))
         .route("/api/company-books/{company}/parallel/payroll", post(payroll_run))
+    .route("/api/company-books/{company}/parallel/payroll/history", get(payroll_history))
+    .route("/api/company-books/{company}/parallel/recurring", get(recurring_list).post(add_recurring))
+    .route("/api/company-books/{company}/parallel/schedules", get(schedule_list).post(add_schedule))
+    .route("/api/company-books/{company}/parallel/inventory", get(inventory_list).post(add_movement))
+    .route("/api/company-books/{company}/parallel/crm", get(crm_list).post(add_crm))
+    .route("/api/company-books/{company}/parallel/sales-documents", get(sales_docs_list).post(add_sales_order))
+    .route("/api/company-books/{company}/parallel/sales-documents/sales-receipt", post(add_sales_receipt))
+    .route("/api/company-books/{company}/parallel/sales-documents/refund-receipt", post(add_refund_receipt))
+    .route("/api/company-books/{company}/parallel/sales-documents/delayed-charge", post(add_delayed_charge))
+    .route("/api/company-books/{company}/parallel/sales-documents/delayed-credit", post(add_delayed_credit))
         .route("/api/company-books/{company}/parallel/daily", get(daily))
         .route(
             "/api/company-books/{company}/register/{account}",
@@ -215,6 +226,7 @@ async fn add_class(State(s): S, Path(c): Path<String>, Json(v): Json<super::subl
 async fn open_document(State(s): S, Path(c): Path<String>, Json(v): Json<super::subledger::DocumentInput>) -> R {
     Ok(Json(s.open_document(&c, v).await?))
 }
+async fn set_approval(State(s): S, Path(c): Path<String>, Json(v): Json<super::subledger::ApprovalInput>) -> R { Ok(Json(s.set_approval(&c, v).await?)) }
 async fn apply_payment(State(s): S, Path(c): Path<String>, Json(v): Json<super::subledger::PaymentInput>) -> R {
     Ok(Json(s.apply_payment(&c, v).await?))
 }
@@ -238,5 +250,20 @@ async fn add_estimate(State(s): S, Path(c): Path<String>, Json(v): Json<super::d
 async fn add_purchase_order(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NonPostingInput>) -> R { Ok(Json(s.add_purchase_order(&c, v).await?)) }
 async fn add_time(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::TimeInput>) -> R { Ok(Json(s.add_time(&c, v).await?)) }
 async fn add_budget(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::BudgetInput>) -> R { Ok(Json(s.add_budget(&c, v).await?)) }
-async fn payroll_run(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.payroll_run(&c).await?)) }
+async fn payroll_run(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::PayRunInput>) -> R { Ok(Json(s.payroll_run(&c, v).await?)) }
+async fn payroll_history(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.payroll_history(&c).await?)) }
+async fn add_recurring(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::RecurringInput>) -> R { Ok(Json(s.add_recurring(&c, v).await?)) }
+async fn recurring_list(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.recurring_list(&c).await?)) }
+async fn add_schedule(State(s): S, Path(c): Path<String>, Json(v): Json<super::schedules::ScheduleInput>) -> R { Ok(Json(s.add_schedule(&c, v).await?)) }
+async fn schedule_list(State(s): S, Path(c): Path<String>, Query(q): Query<std::collections::HashMap<String, String>>) -> R { Ok(Json(s.schedule_list(&c, q.get("as_of").map(String::as_str).unwrap_or("2026-11-18")).await?)) }
+async fn add_movement(State(s): S, Path(c): Path<String>, Json(v): Json<super::inventory::MovementInput>) -> R { Ok(Json(s.add_movement(&c, v).await?)) }
+async fn inventory_list(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.inventory_list(&c).await?)) }
+async fn add_crm(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::CrmInput>) -> R { Ok(Json(s.add_crm(&c, v).await?)) }
+async fn crm_list(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.crm_list(&c).await?)) }
+async fn sales_docs_list(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.sales_docs_list(&c).await?)) }
+async fn add_sales_order(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NonPostingInput>) -> R { Ok(Json(s.add_sales_doc(&c, "sales_order", v).await?)) }
+async fn add_sales_receipt(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NonPostingInput>) -> R { Ok(Json(s.add_sales_doc(&c, "sales_receipt", v).await?)) }
+async fn add_refund_receipt(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NonPostingInput>) -> R { Ok(Json(s.add_sales_doc(&c, "refund_receipt", v).await?)) }
+async fn add_delayed_charge(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NonPostingInput>) -> R { Ok(Json(s.add_sales_doc(&c, "delayed_charge", v).await?)) }
+async fn add_delayed_credit(State(s): S, Path(c): Path<String>, Json(v): Json<super::daily::NonPostingInput>) -> R { Ok(Json(s.add_sales_doc(&c, "delayed_credit", v).await?)) }
 async fn daily(State(s): S, Path(c): Path<String>) -> R { Ok(Json(s.daily(&c).await?)) }

@@ -22,7 +22,8 @@
           "observed_path": "My menu",
           "native_route": null,
           "native_scope": "No complete working native equivalent has been established for this source capability.",
-          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+          "kind": "chrome"
         },
         {
           "id": "create",
@@ -38,8 +39,8 @@
               "label": "Customers",
               "observation": "observed",
               "observed_path": "Create > Customers",
-              "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
+              "native_route": "customers",
+              "native_scope": "Native customer list with search and CSV export over this book's own contacts. Source customer records, QuickBooks-specific fields and full customer workflows are not migrated by this screen.",
               "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
               "children": [
                 {
@@ -49,103 +50,114 @@
                   "observed_path": "Create > Customers > Invoice",
                   "native_route": "invoices/new",
                   "native_scope": "Existing native invoice editor; saving records only a NXT invoice. No QuickBooks write-back or customer message is sent by opening it.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--customers--receive-payment",
                   "label": "Receive payment",
                   "observation": "observed",
                   "observed_path": "Create > Customers > Receive payment",
-                  "native_route": null,
-                  "native_scope": "Native customer detail supports recording payment against that contact’s open NXT invoices. Choose a native customer first. This does not receive external funds or operate on source-company invoices.",
+                  "native_route": "invoices",
+                  "native_scope": "Customer payment is started from the native invoice or customer screen. Source payment forms, retainers and overpayment handling are not modelled.",
                   "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
                   "related": [
                     {
                       "label": "Choose native customer",
                       "route": "customers"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "create--customers--statement",
                   "label": "Statement",
                   "observation": "observed",
                   "observed_path": "Create > Customers > Statement",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "customers",
+                  "native_scope": "Open a customer and choose Statement to export a CSV of documents that are still open, oldest first, with a total line. It lists open balances only; it is not a formal statement of account.",
+                  "next_step": "A printable statement layout would be a separate piece of work.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--customers--estimate",
                   "label": "Estimate",
                   "observation": "observed",
                   "observed_path": "Create > Customers > Estimate",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Created from the Lists screen as a single-line, non-posting estimate: customer, optional number, item and amount. Nothing posts.",
+                  "next_step": "Multi-line documents and conversion to an invoice or bill have no native path.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--customers--sales-order",
                   "label": "Sales order",
                   "observation": "observed",
                   "observed_path": "Create > Customers > Sales order",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "A sales order is recorded as a non-posting document in the Lists sales documents lane.",
+                  "next_step": "It does not become an invoice and does not reserve stock. Nothing books, posts or moves stock, and nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--customers--credit-memo",
                   "label": "Credit memo",
                   "observation": "observed",
                   "observed_path": "Create > Customers > Credit memo",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "invoices",
+                  "native_scope": "A credit memo can be posted from the invoice list: choose the customer, income account and amount, and NXT posts the reversing journal against receivables.",
+                  "next_step": "Credits do not automatically apply to an open invoice, and there is no credit-balance report. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--customers--sales-receipt",
                   "label": "Sales receipt",
                   "observation": "observed",
                   "observed_path": "Create > Customers > Sales receipt",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "A sales receipt is recorded as a non-posting document in Lists.",
+                  "next_step": "It does not post a journal or settle an invoice. Nothing books, posts or moves stock, and nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--customers--refund-receipt",
                   "label": "Refund receipt",
                   "observation": "observed",
                   "observed_path": "Create > Customers > Refund receipt",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "A refund receipt is recorded as a non-posting document in Lists.",
+                  "next_step": "It does not post a refund journal. Nothing books, posts or moves stock, and nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--customers--delayed-credit",
                   "label": "Delayed credit",
                   "observation": "observed",
                   "observed_path": "Create > Customers > Delayed credit",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "A delayed credit is recorded as a non-posting document in Lists.",
+                  "next_step": "It does not create a credit memo or adjust AR. Nothing books, posts or moves stock, and nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--customers--delayed-charge",
                   "label": "Delayed charge",
                   "observation": "observed",
                   "observed_path": "Create > Customers > Delayed charge",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "A delayed charge is recorded as a non-posting document in Lists.",
+                  "next_step": "It does not create an invoice. Nothing books, posts or moves stock, and nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--customers--proposal",
                   "label": "Proposal",
                   "observation": "observed",
                   "observed_path": "Create > Customers > Proposal",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Add a pipeline entry from Lists to record a proposal against a customer.",
+                  "next_step": "The proposal document itself is not produced. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--customers--add-customer",
@@ -154,7 +166,8 @@
                   "observed_path": "Create > Customers > Add customer",
                   "native_route": "native-create/customer",
                   "native_scope": "Existing native customer contact editor, separate from source contacts and leads.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 }
               ]
             },
@@ -174,16 +187,18 @@
                   "observed_path": "Create > Suppliers > Expense",
                   "native_route": "native-create/expense",
                   "native_scope": "Existing native expense entry form. Saving affects only NXT test books, not the original source company.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--suppliers--cheque",
                   "label": "Cheque",
                   "observation": "observed",
                   "observed_path": "Create > Suppliers > Cheque",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "native-create/expense",
+                  "native_scope": "Money-out entry is the closest native form; there is no cheque-specific screen, cheque numbering or cheque printing.",
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--suppliers--bill",
@@ -192,31 +207,34 @@
                   "observed_path": "Create > Suppliers > Bill",
                   "native_route": "bills/new",
                   "native_scope": "Existing native bill editor over NXT records. No source bill or bank payment is created by opening it.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--suppliers--pay-bills",
                   "label": "Pay bills",
                   "observation": "observed",
                   "observed_path": "Create > Suppliers > Pay bills",
-                  "native_route": null,
-                  "native_scope": "Native supplier detail supports recording payment against that contact’s open NXT bills. Choose a native supplier first. This does not send funds or operate on source-company bills.",
+                  "native_route": "bills",
+                  "native_scope": "Bill payment is started from the native bills or supplier screen and applied to the oldest open document. Source payment-method detail is not modelled.",
                   "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
                   "related": [
                     {
                       "label": "Choose native supplier",
                       "route": "vendors"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "create--suppliers--purchase-order",
                   "label": "Purchase order",
                   "observation": "observed",
                   "observed_path": "Create > Suppliers > Purchase order",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Created from the Lists screen as a single-line, non-posting purchase order: supplier, optional number, item and amount. Nothing posts.",
+                  "next_step": "Multi-line documents and conversion to an invoice or bill have no native path.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--suppliers--item-receipt",
@@ -225,16 +243,18 @@
                   "observed_path": "Create > Suppliers > Item receipt",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--suppliers--supplier-credit",
                   "label": "Supplier credit",
                   "observation": "observed",
                   "observed_path": "Create > Suppliers > Supplier credit",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "bills",
+                  "native_scope": "A supplier credit can be posted from the bill list: choose the supplier, expense account and amount, and NXT posts the reversing journal against payables.",
+                  "next_step": "Credits do not automatically offset an open bill. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--suppliers--credit-card-credit",
@@ -243,7 +263,8 @@
                   "observed_path": "Create > Suppliers > Credit card credit",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--suppliers--print-cheques",
@@ -252,7 +273,8 @@
                   "observed_path": "Create > Suppliers > Print cheques",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--suppliers--add-supplier",
@@ -261,7 +283,8 @@
                   "observed_path": "Create > Suppliers > Add supplier",
                   "native_route": "native-create/supplier",
                   "native_scope": "Existing native supplier contact editor, separate from source supplier records.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 }
               ]
             },
@@ -279,18 +302,20 @@
                   "label": "Single time activity",
                   "observation": "observed",
                   "observed_path": "Create > Team > Single time activity",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Open Lists and add a time entry against an active employee: employee, date and minutes. It is stored in this book only and is not billed or posted.",
+                  "next_step": "No start/stop timer, no billable-rate conversion and no payroll link from a time entry. Nothing here writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--team--weekly-timesheet",
                   "label": "Weekly timesheet",
                   "observation": "observed",
                   "observed_path": "Create > Team > Weekly timesheet",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Time entries are stored per employee and date in Lists, one line at a time. There is no weekly grid, approval step or timesheet submission.",
+                  "next_step": "A weekly timesheet grid and its approval remain absent. Nothing here writes back to QuickBooks.",
+                  "kind": "capability"
                 }
               ]
             },
@@ -324,7 +349,8 @@
                       "app": "firm",
                       "view": "projects"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 }
               ]
             },
@@ -351,7 +377,8 @@
                       "app": "firm",
                       "view": "projects"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "create--other--bank-deposit",
@@ -360,7 +387,8 @@
                   "observed_path": "Create > Other > Bank deposit",
                   "native_route": "native-create/deposit",
                   "native_scope": "Existing native deposit entry form. This records NXT bookkeeping only; it does not deposit funds or modify source books.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--other--transfer",
@@ -369,7 +397,8 @@
                   "observed_path": "Create > Other > Transfer",
                   "native_route": "native-create/transfer",
                   "native_scope": "Existing native transfer entry form. This records NXT bookkeeping only; it does not initiate a bank transfer.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--other--journal-entry",
@@ -378,16 +407,18 @@
                   "observed_path": "Create > Other > Journal entry",
                   "native_route": "native-create/journal",
                   "native_scope": "Existing native balanced journal editor. Opening the editor posts no entry; saving affects only NXT test books.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--other--inventory-adjustment",
                   "label": "Inventory adjustment",
                   "observation": "observed",
                   "observed_path": "Create > Other > Inventory adjustment",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Record an adjustment movement in Lists with a signed quantity and a memo.",
+                  "next_step": "No cycle-count workflow or adjustment approval. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--other--batch-transactions",
@@ -396,25 +427,28 @@
                   "observed_path": "Create > Other > Batch transactions",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--other--pay-down-credit-card",
                   "label": "Pay down credit card",
                   "observation": "observed",
                   "observed_path": "Create > Other > Pay down credit card",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "native-create/transfer",
+                  "native_scope": "Record a transfer from a bank account into the credit card's liability account. That is what paying the card down is: one journal with no net income effect.",
+                  "next_step": "There is no card-balance wizard, no suggested payment amount and no interest split. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--other--add-product-service",
                   "label": "Add product/service",
                   "observation": "observed",
                   "observed_path": "Create > Other > Add product/service",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Open Lists and add an item with a name and an income account. Items are used on the parallel estimate and purchase-order lines.",
+                  "next_step": "No inventory quantities, cost of goods or per-item tax defaults. Nothing here writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "create--other--new-chat",
@@ -423,7 +457,8 @@
                   "observed_path": "Create > Other > New chat",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 }
               ]
             }
@@ -436,7 +471,8 @@
           "observed_path": "Bookmarks",
           "native_route": null,
           "native_scope": "No complete working native equivalent has been established for this source capability.",
-          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+          "kind": "chrome"
         },
         {
           "id": "home",
@@ -445,7 +481,8 @@
           "observed_path": "Home",
           "native_route": "dashboard",
           "native_scope": "Native NXT dashboard over NXT Ledger records; this is separate from the frozen source snapshots.",
-          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+          "kind": "capability"
         },
         {
           "id": "reports",
@@ -481,7 +518,8 @@
                       "observed_path": "Reports > Standard reports > Favourites > Accounts receivable aging summary",
                       "native_route": "reports/ar-aging",
                       "native_scope": "Native as-of receivable aging over NXT invoices; source fields, filters and expected results have not been paired.",
-                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                      "kind": "capability"
                     },
                     {
                       "id": "reports--standard-reports--favourites--balance-sheet",
@@ -490,7 +528,8 @@
                       "observed_path": "Reports > Standard reports > Favourites > Balance Sheet",
                       "native_route": "reports/balance-sheet",
                       "native_scope": "Native as-of NXT balance sheet, with print and CSV; source presentation and complete filter parity are unverified.",
-                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                      "kind": "capability"
                     },
                     {
                       "id": "reports--standard-reports--favourites--profit-and-loss",
@@ -499,7 +538,8 @@
                       "observed_path": "Reports > Standard reports > Favourites > Profit and Loss",
                       "native_route": "reports/profit-loss",
                       "native_scope": "Native accrual NXT income/expense statement with dates, print and CSV; source report-builder customization, cash basis and full source output parity are unverified.",
-                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                      "kind": "capability"
                     }
                   ]
                 },
@@ -519,25 +559,28 @@
                       "observed_path": "Reports > Standard reports > Custom report builder > Revenue Recognition Report (Beta)",
                       "native_route": null,
                       "native_scope": "No complete working native equivalent has been established for this source capability.",
-                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                      "kind": "capability"
                     },
                     {
                       "id": "reports--standard-reports--custom-report-builder--inventory-status",
                       "label": "Inventory Status",
                       "observation": "observed",
                       "observed_path": "Reports > Standard reports > Custom report builder > Inventory Status",
-                      "native_route": null,
-                      "native_scope": "No complete working native equivalent has been established for this source capability.",
-                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                      "native_route": "lists",
+                      "native_scope": "The Inventory lane in Lists is the inventory status view: on-hand quantity, latest unit cost and value per item.",
+                      "next_step": "No reorder points, ageing or costing-method comparison. Nothing writes back to QuickBooks.",
+                      "kind": "capability"
                     },
                     {
                       "id": "reports--standard-reports--custom-report-builder--bill-approval-status",
                       "label": "Bill Approval Status",
                       "observation": "observed",
                       "observed_path": "Reports > Standard reports > Custom report builder > Bill Approval Status",
-                      "native_route": null,
-                      "native_scope": "No complete working native equivalent has been established for this source capability.",
-                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                      "native_route": "lists",
+                      "native_scope": "The approval state of each parallel bill is a column in the Lists documents lane, set through the approval endpoint.",
+                      "next_step": "No approval inbox, comparison view or bulk approval. Nothing writes back to QuickBooks.",
+                      "kind": "capability"
                     },
                     {
                       "id": "reports--standard-reports--custom-report-builder--product-item-profitability-by-customer",
@@ -546,16 +589,18 @@
                       "observed_path": "Reports > Standard reports > Custom report builder > Product/Item Profitability by Customer",
                       "native_route": null,
                       "native_scope": "No complete working native equivalent has been established for this source capability.",
-                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                      "kind": "capability"
                     },
                     {
                       "id": "reports--standard-reports--custom-report-builder--invoice-approval-status",
                       "label": "Invoice Approval Status",
                       "observation": "observed",
                       "observed_path": "Reports > Standard reports > Custom report builder > Invoice Approval Status",
-                      "native_route": null,
-                      "native_scope": "No complete working native equivalent has been established for this source capability.",
-                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                      "native_route": "lists",
+                      "native_scope": "The approval state of each parallel invoice is a column in the Lists documents lane, set through the approval endpoint.",
+                      "next_step": "No approval inbox, comparison view or bulk approval. Nothing writes back to QuickBooks.",
+                      "kind": "capability"
                     }
                   ]
                 }
@@ -568,34 +613,38 @@
               "observed_path": "Reports > Custom reports",
               "native_route": null,
               "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "kind": "capability"
             },
             {
               "id": "reports--management-reports",
               "label": "Management reports",
               "observation": "observed",
               "observed_path": "Reports > Management reports",
-              "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+              "native_route": "reports",
+              "native_scope": "Native reports are a fixed set (profit and loss, balance sheet, trial balance, aging, GST/HST working paper, general ledger), each printable and CSV-exportable.",
+              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "kind": "capability"
             },
             {
               "id": "reports--kpis",
               "label": "KPIs",
               "observation": "observed",
               "observed_path": "Reports > KPIs",
-              "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+              "native_route": "dashboard",
+              "native_scope": "Key figures appear on the native dashboard. There is no user-defined KPI list.",
+              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "kind": "capability"
             },
             {
               "id": "reports--dashboards",
               "label": "Dashboards",
               "observation": "observed",
               "observed_path": "Reports > Dashboards",
-              "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+              "native_route": "dashboard",
+              "native_scope": "The native dashboard shows live KPIs and insights from this book only; it is not a configurable dashboard builder.",
+              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "kind": "capability"
             },
             {
               "id": "reports--spreadsheet-sync",
@@ -611,7 +660,8 @@
                   "app": "firm",
                   "view": "spreadsheet"
                 }
-              ]
+              ],
+              "kind": "capability"
             },
             {
               "id": "reports--performance-centre",
@@ -620,7 +670,8 @@
               "observed_path": "Reports > Performance centre",
               "native_route": null,
               "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "kind": "capability"
             },
             {
               "id": "reports--financial-planning",
@@ -638,7 +689,8 @@
                   "observed_path": "Reports > Financial planning > Cash flow overview",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "reports--financial-planning--cash-flow-planner",
@@ -647,16 +699,18 @@
                   "observed_path": "Reports > Financial planning > Cash flow planner",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "reports--financial-planning--budgets",
                   "label": "Budgets",
                   "observation": "observed",
                   "observed_path": "Reports > Financial planning > Budgets",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Monthly account budgets appear as a lane on the Lists screen and can be added there. They never change a posted figure or a report.",
+                  "next_step": "Budget-versus-actual reporting is not implemented.",
+                  "kind": "capability"
                 },
                 {
                   "id": "reports--financial-planning--forecasts",
@@ -665,7 +719,8 @@
                   "observed_path": "Reports > Financial planning > Forecasts",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 }
               ]
             }
@@ -695,8 +750,8 @@
                   "observation": "observed",
                   "observed_path": "All apps > Accounting > Client overview",
                   "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "native_scope": "Per-client source coverage lives in the Migrations module, which opens from here; there is no Ledger client-overview screen.",
+                  "next_step": "Keep client coverage in Migrations.",
                   "related": [
                     {
                       "label": "NXT dashboard",
@@ -706,8 +761,14 @@
                       "label": "Source snapshots",
                       "app": "migrations",
                       "view": "worklist"
+                    },
+                    {
+                      "label": "Open migration company coverage",
+                      "app": "migrations",
+                      "view": "companies"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--books-review",
@@ -723,7 +784,8 @@
                       "app": "firm",
                       "view": "close"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--workpapers",
@@ -731,15 +793,16 @@
                   "observation": "observed",
                   "observed_path": "All apps > Accounting > Workpapers",
                   "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "native_scope": "Workpapers live in NXT Engagements, which opens from here; they are not a Ledger screen.",
+                  "next_step": "Keep workpapers in the Engagements module.",
                   "related": [
                     {
                       "label": "NXT Engagements",
                       "app": "engagements",
                       "view": "worklist"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--bank-transactions",
@@ -748,7 +811,8 @@
                   "observed_path": "All apps > Accounting > Bank transactions",
                   "native_route": "banking",
                   "native_scope": "Native CSV bank-feed review and categorization only. No QuickBooks connection or live bank synchronization is configured.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--integration-transactions",
@@ -757,7 +821,15 @@
                   "observed_path": "All apps > Accounting > Integration transactions",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Work happens in the NXT Firm app; nothing is written back to QuickBooks.",
+                  "kind": "capability",
+                  "related": [
+                    {
+                      "label": "Firm integrations",
+                      "app": "firm",
+                      "view": "integrations"
+                    }
+                  ]
                 },
                 {
                   "id": "all-apps--accounting--receipts",
@@ -766,7 +838,8 @@
                   "observed_path": "All apps > Accounting > Receipts",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--reconcile",
@@ -775,16 +848,18 @@
                   "observed_path": "All apps > Accounting > Reconcile",
                   "native_route": "reconcile",
                   "native_scope": "Native bank reconciliation against NXT Ledger records; source company records have not been loaded into this Ledger by the menu map.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--rules",
                   "label": "Rules",
                   "observation": "observed",
                   "observed_path": "All apps > Accounting > Rules",
-                  "native_route": null,
-                  "native_scope": "Bank feed categorization includes a limited native rule suggestion. A complete source-style rules management interface and sync are not implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "banking",
+                  "native_scope": "Bank CSV intake learns categorization rules from the categories you choose; there is no separate rules catalogue to edit or reorder.",
+                  "next_step": "A rule manager needs a read API before it can be built.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--chart-of-accounts",
@@ -793,16 +868,18 @@
                   "observed_path": "All apps > Accounting > Chart of accounts",
                   "native_route": "accounts",
                   "native_scope": "Native account maintenance and classification. Complete source account-property and template parity is unverified.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--recurring-transactions",
                   "label": "Recurring transactions",
                   "observation": "observed",
                   "observed_path": "All apps > Accounting > Recurring transactions",
-                  "native_route": null,
-                  "native_scope": "No recurring financial transaction engine is implemented. Firm task automations do not create recurring invoices or bills.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Recurring invoice and bill templates are stored in Lists with a cadence and next date. NXT shows when one is next due.",
+                  "next_step": "Nothing posts automatically: there is no scheduler and no generated transaction. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--revenue-recognition",
@@ -811,25 +888,28 @@
                   "observed_path": "All apps > Accounting > Revenue recognition",
                   "native_route": null,
                   "native_scope": "Native statements use saved NXT ledger entries. A deferred-revenue schedule and automatic recognition engine are not implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--fixed-assets",
                   "label": "Fixed assets",
                   "observation": "observed",
                   "observed_path": "All apps > Accounting > Fixed assets",
-                  "native_route": null,
-                  "native_scope": "Native accounts can hold asset balances; a complete asset register, depreciation engine and disposal workflow are not implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Fixed-asset schedules are kept in Lists: straight-line, with the amortised and remaining amounts computed to today.",
+                  "next_step": "Depreciation is not posted to the ledger and there is no disposal, impairment or CCA link. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--prepaid-expenses",
                   "label": "Prepaid expenses",
                   "observation": "observed",
                   "observed_path": "All apps > Accounting > Prepaid expenses",
-                  "native_route": null,
-                  "native_scope": "Native accounts can hold prepaid balances; automated prepaid allocation schedules are not implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Prepaid schedules are kept in Lists with the same straight-line model and an as-of amortised amount.",
+                  "next_step": "Prepaid amortisation is not posted to the ledger. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--accounting--my-accountant",
@@ -845,7 +925,8 @@
                       "app": "firm",
                       "view": "overview"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 }
               ]
             },
@@ -875,7 +956,8 @@
                       "label": "Native journal",
                       "route": "journal"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--expenses-bills--suppliers",
@@ -884,7 +966,8 @@
                   "observed_path": "All apps > Expenses & Bills > Suppliers",
                   "native_route": "vendors",
                   "native_scope": "Native supplier contact records. Source contacts and full supplier workflows have not been migrated by this screen.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--expenses-bills--bills",
@@ -893,7 +976,8 @@
                   "observed_path": "All apps > Expenses & Bills > Bills",
                   "native_route": "bills",
                   "native_scope": "Native bill documents and payments over NXT records; no source payment or automatic import is implied.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--expenses-bills--mileage",
@@ -902,7 +986,8 @@
                   "observed_path": "All apps > Expenses & Bills > Mileage",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 }
               ]
             },
@@ -920,17 +1005,18 @@
                   "label": "Overview",
                   "observation": "observed",
                   "observed_path": "All apps > Sales & Get Paid > Overview",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "invoices",
+                  "native_scope": "Receivables live in the invoice list and the AR aging report; a payment settles the oldest open document.",
+                  "next_step": "No payment links, no QuickBooks payouts and no online card capture. Nothing here writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--sales-get-paid--sales-transactions",
                   "label": "Sales transactions",
                   "observation": "observed",
                   "observed_path": "All apps > Sales & Get Paid > Sales transactions",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
+                  "native_route": "invoices",
+                  "native_scope": "Native sales documents are invoices only. Sales receipts, credit memos, refund receipts and sales orders have no native screen.",
                   "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
                   "related": [
                     {
@@ -941,7 +1027,8 @@
                       "label": "Native journal",
                       "route": "journal"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--sales-get-paid--invoices",
@@ -950,7 +1037,8 @@
                   "observed_path": "All apps > Sales & Get Paid > Invoices",
                   "native_route": "invoices",
                   "native_scope": "Native invoice documents over NXT records; source invoicing and external sending are separate capabilities.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--sales-get-paid--payment-links",
@@ -959,16 +1047,18 @@
                   "observed_path": "All apps > Sales & Get Paid > Payment links",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--sales-get-paid--sales-orders",
                   "label": "Sales orders",
                   "observation": "observed",
                   "observed_path": "All apps > Sales & Get Paid > Sales orders",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Sales orders are listed in the Lists sales documents lane with contact, number and total.",
+                  "next_step": "No fulfilment or conversion to invoice. Nothing books, posts or moves stock, and nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--sales-get-paid--quickbooks-payouts",
@@ -977,16 +1067,18 @@
                   "observed_path": "All apps > Sales & Get Paid > QuickBooks payouts",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--sales-get-paid--products-services",
                   "label": "Products & services",
                   "observation": "observed",
                   "observed_path": "All apps > Sales & Get Paid > Products & services",
-                  "native_route": null,
-                  "native_scope": "Native invoice and bill lines are available; there is no complete product/service catalogue or inventory model.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Products and services appear only as a company book parallel list, which is read-only and holds no pricing, inventory or account mapping.",
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 }
               ]
             },
@@ -1004,60 +1096,66 @@
                   "label": "Overview",
                   "observation": "observed",
                   "observed_path": "All apps > Customer Hub > Overview",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "customers",
+                  "native_scope": "Customer records live in the customer list with contacts, terms, statements and open balances.",
+                  "next_step": "No CRM pipeline, appointments, reviews or marketing surfaces. Nothing here writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--customer-hub--customers-leads",
                   "label": "Customers & leads",
                   "observation": "observed",
                   "observed_path": "All apps > Customer Hub > Customers & leads",
-                  "native_route": null,
-                  "native_scope": "Native customer contacts are available. Leads, opportunity tracking and a complete customer relationship workflow are not implemented.",
+                  "native_route": "customers",
+                  "native_scope": "Native customer contacts with search and CSV export. Leads, opportunities and pipeline stages are not modelled.",
                   "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
                   "related": [
                     {
                       "label": "Native customers",
                       "route": "customers"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--customer-hub--opportunities",
                   "label": "Opportunities",
                   "observation": "observed",
                   "observed_path": "All apps > Customer Hub > Opportunities",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Opportunities are pipeline entries in Lists with a contact, value, stage and date.",
+                  "next_step": "No forecasting, conversion funnel or automation. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--customer-hub--estimates",
                   "label": "Estimates",
                   "observation": "observed",
                   "observed_path": "All apps > Customer Hub > Estimates",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Estimates appear as a read-only lane on the Lists screen, resolved against this book's contacts. They are not invoices and nothing posts.",
+                  "next_step": "Converting an estimate into an invoice has no native path.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--customer-hub--proposals",
                   "label": "Proposals",
                   "observation": "observed",
                   "observed_path": "All apps > Customer Hub > Proposals",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Proposals are recorded as pipeline entries with a sent/accepted/declined stage.",
+                  "next_step": "NXT does not generate, send or e-sign the proposal document. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--customer-hub--contracts",
                   "label": "Contracts",
                   "observation": "observed",
                   "observed_path": "All apps > Customer Hub > Contracts",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Contracts are recorded as pipeline entries with a draft/active/ended stage.",
+                  "next_step": "No contract document, renewal reminder or signature capture. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--customer-hub--appointments",
@@ -1066,7 +1164,8 @@
                   "observed_path": "All apps > Customer Hub > Appointments",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--customer-hub--reviews",
@@ -1075,7 +1174,8 @@
                   "observed_path": "All apps > Customer Hub > Reviews",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 }
               ]
             },
@@ -1084,27 +1184,29 @@
               "label": "Payroll",
               "observation": "observed",
               "observed_path": "All apps > Payroll",
-              "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "native_route": "lists",
+              "native_scope": "Open Lists and choose Run payroll to record a pay run and see stored paystubs. Alberta employees only, 2026 rates. Deductions and the T4 projection are computed in NXT; nothing is remitted or filed.",
+              "next_step": "Remittance, PD7A and T4 filing, other provinces, and posting the pay run to the ledger remain absent.",
               "children": [
                 {
                   "id": "all-apps--payroll--overview",
                   "label": "Overview",
                   "observation": "observed",
                   "observed_path": "All apps > Payroll > Overview",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Run Payroll records an Alberta 2026 pay run in the book: CPP, CPP2, EI and income tax withheld, with paystubs in Lists and a T4 projection.",
+                  "next_step": "No remittance, no PD7A or T4 filing and no ledger posting. Nothing here writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--payroll--employees",
                   "label": "Employees",
                   "observation": "observed",
                   "observed_path": "All apps > Payroll > Employees",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Parallel employee names kept inside NXT for parallel work. Payroll calculation, remittance, T4s and any QuickBooks write-back are not enabled; this is not payroll parity.",
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--payroll--payroll-taxes",
@@ -1113,7 +1215,8 @@
                   "observed_path": "All apps > Payroll > Payroll taxes",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--payroll--compliance",
@@ -1122,7 +1225,8 @@
                   "observed_path": "All apps > Payroll > Compliance",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 }
               ]
             },
@@ -1140,9 +1244,10 @@
                   "label": "Employees",
                   "observation": "observed",
                   "observed_path": "All apps > Team > Employees",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Parallel employee names kept inside NXT. NXT staff accounts and company access are a separate module; this list does not grant or represent QuickBooks user permissions.",
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 }
               ]
             },
@@ -1169,7 +1274,15 @@
                   "observed_path": "All apps > Projects > Overview",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "related": [
+                    {
+                      "app": "firm",
+                      "label": "Firm projects",
+                      "view": "projects"
+                    }
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--projects--projects",
@@ -1185,7 +1298,8 @@
                       "app": "firm",
                       "view": "projects"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 }
               ]
             },
@@ -1203,45 +1317,50 @@
                   "label": "Overview",
                   "observation": "observed",
                   "observed_path": "All apps > Inventory > Overview",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "The Inventory lane in Lists is the stock overview: on hand, unit cost and value per item.",
+                  "next_step": "No low-stock alerts, reorder points or inventory ageing. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--inventory--inventory",
                   "label": "Inventory",
                   "observation": "observed",
                   "observed_path": "All apps > Inventory > Inventory",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Stock movements recorded in Lists give each item an on-hand quantity, latest unit cost and value.",
+                  "next_step": "No weighted-average or FIFO costing, no purchase orders received against them. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--inventory--purchase-orders",
                   "label": "Purchase orders",
                   "observation": "observed",
                   "observed_path": "All apps > Inventory > Purchase orders",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Purchase orders appear as a read-only lane on the Lists screen, resolved against this book's suppliers. They are not bills and nothing posts.",
+                  "next_step": "Receiving against a purchase order has no native path.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--inventory--item-receipts",
                   "label": "Item receipts",
                   "observation": "observed",
                   "observed_path": "All apps > Inventory > Item receipts",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "An item receipt is recorded in Lists as a receipt movement against the item and date.",
+                  "next_step": "Receipts are not matched to purchase orders. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "all-apps--inventory--sales-orders",
                   "label": "Sales orders",
                   "observation": "observed",
                   "observed_path": "All apps > Inventory > Sales orders",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Sales orders appear in the same non-posting list; they do not reserve or move stock.",
+                  "next_step": "No stock reservation or fulfilment. Nothing books, posts or moves stock, and nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 }
               ]
             },
@@ -1265,9 +1384,10 @@
                   "label": "Overview",
                   "observation": "observed",
                   "observed_path": "All apps > Sales Tax > Overview",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "reports/sales-tax",
+                  "native_scope": "Open the GST/HST working paper: CRA lines 101, 105, 108 and 109 computed from the book, printable and exportable.",
+                  "next_step": "It is a working paper, not a net-file transmission or a filed return.",
+                  "kind": "capability"
                 }
               ]
             }
@@ -1287,27 +1407,30 @@
               "label": "Accounting",
               "observation": "observed",
               "observed_path": "More > Accounting",
-              "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+              "native_route": "accounts",
+              "native_scope": "The accounting area maps to the native chart of accounts and journal screens. Source sub-areas without a native equivalent stay absent.",
+              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "kind": "capability"
             },
             {
               "id": "more--expenses-bills",
               "label": "Expenses & Bills",
               "observation": "observed",
               "observed_path": "More > Expenses & Bills",
-              "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+              "native_route": "bills",
+              "native_scope": "Maps to the native bills and supplier screens. Expense claims, mileage and receipts have no native screen.",
+              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "kind": "capability"
             },
             {
               "id": "more--sales-get-paid",
               "label": "Sales & Get Paid",
               "observation": "observed",
               "observed_path": "More > Sales & Get Paid",
-              "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+              "native_route": "invoices",
+              "native_scope": "Maps to the native invoices and customer screens. Payment links, payouts and sales orders have no native screen.",
+              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "kind": "capability"
             }
           ]
         },
@@ -1318,7 +1441,8 @@
           "observed_path": "Customize",
           "native_route": null,
           "native_scope": "No complete working native equivalent has been established for this source capability.",
-          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+          "kind": "chrome"
         }
       ]
     },
@@ -1341,7 +1465,8 @@
               "app": "firm",
               "view": "projects"
             }
-          ]
+          ],
+          "kind": "capability"
         },
         {
           "id": "toolbar--workflow-automation",
@@ -1357,7 +1482,8 @@
               "app": "firm",
               "view": "automations"
             }
-          ]
+          ],
+          "kind": "capability"
         },
         {
           "id": "toolbar--integrations",
@@ -1366,7 +1492,8 @@
           "observed_path": "Toolbar > Integrations",
           "native_route": null,
           "native_scope": "No complete working native equivalent has been established for this source capability.",
-          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+          "kind": "chrome"
         },
         {
           "id": "toolbar--inbox",
@@ -1375,7 +1502,8 @@
           "observed_path": "Toolbar > Inbox",
           "native_route": null,
           "native_scope": "No complete working native equivalent has been established for this source capability.",
-          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+          "kind": "chrome"
         },
         {
           "id": "toolbar--help",
@@ -1384,7 +1512,8 @@
           "observed_path": "Toolbar > Help",
           "native_route": null,
           "native_scope": "No complete working native equivalent has been established for this source capability.",
-          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+          "kind": "chrome"
         },
         {
           "id": "settings",
@@ -1401,8 +1530,8 @@
               "observation": "observed",
               "observed_path": "Settings > YOUR COMPANY",
               "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "native_scope": "Captured 2026-10-26. On 2026-11-18 this section no longer exists as a grouped heading: settings are tabbed (Company, Notifications, Reports, Payments, Accounting, Sales, Inventory, Expenses, Time, Payroll, Advanced). No complete working native equivalent has been established for this source capability.",
+              "next_step": "Re-observe the matching settings tab before mapping individual settings.",
               "children": [
                 {
                   "id": "settings--your-company--account-and-settings",
@@ -1411,7 +1540,8 @@
                   "observed_path": "Settings > YOUR COMPANY > Account and settings",
                   "native_route": "settings",
                   "native_scope": "Native company profile, fiscal-year, tax defaults and document fields only. This does not reproduce all source account, billing or security settings.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--your-company--manage-users",
@@ -1420,7 +1550,15 @@
                   "observed_path": "Settings > YOUR COMPANY > Manage users",
                   "native_route": null,
                   "native_scope": "NXT currently uses a shared workspace key. Verified individual accounts, permissions and per-company authorization remain unimplemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Work happens in the NXT Firm app; nothing is written back to QuickBooks.",
+                  "kind": "capability",
+                  "related": [
+                    {
+                      "label": "Firm staff",
+                      "app": "firm",
+                      "view": "staff"
+                    }
+                  ]
                 },
                 {
                   "id": "settings--your-company--custom-form-styles",
@@ -1429,16 +1567,18 @@
                   "observed_path": "Settings > YOUR COMPANY > Custom form styles",
                   "native_route": null,
                   "native_scope": "Native invoices use an original NXT layout. A full visual form-style editor and source template import are not implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--your-company--default-report-settings",
                   "label": "Default report settings",
                   "observation": "observed",
                   "observed_path": "Settings > YOUR COMPANY > Default report settings",
-                  "native_route": null,
-                  "native_scope": "Native reports support bounded date/account controls. Source default report preferences, full columns and custom report definitions are not implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "settings",
+                  "native_scope": "Native report output options are limited to report design and browser print; there are no stored default report settings.",
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--your-company--chart-of-accounts",
@@ -1447,7 +1587,8 @@
                   "observed_path": "Settings > YOUR COMPANY > Chart of accounts",
                   "native_route": "accounts",
                   "native_scope": "Native account maintenance and classification. Complete source account-property and template parity is unverified.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--your-company--payroll-settings",
@@ -1456,7 +1597,8 @@
                   "observed_path": "Settings > YOUR COMPANY > Payroll settings",
                   "native_route": null,
                   "native_scope": "No native payroll processing or payroll settings equivalent is implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--your-company--get-desktop-app",
@@ -1465,7 +1607,8 @@
                   "observed_path": "Settings > YOUR COMPANY > Get desktop app",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 },
                 {
                   "id": "settings--your-company--get-mobile-app",
@@ -1474,16 +1617,18 @@
                   "observed_path": "Settings > YOUR COMPANY > Get mobile app",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 },
                 {
                   "id": "settings--your-company--additional-info",
                   "label": "Additional info",
                   "observation": "observed",
                   "observed_path": "Settings > YOUR COMPANY > Additional info",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "settings",
+                  "native_scope": "Company name and workspace settings live on the native settings screen. Source company-profile fields are not reproduced.",
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 }
               ]
             },
@@ -1492,45 +1637,49 @@
               "label": "LISTS",
               "observation": "observed",
               "observed_path": "Settings > LISTS",
-              "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "native_route": "lists",
+              "native_scope": "Captured 2026-10-26. On 2026-11-18 this section no longer exists as a grouped heading: settings are tabbed (Company, Notifications, Reports, Payments, Accounting, Sales, Inventory, Expenses, Time, Payroll, Advanced). Native list centre: customers, suppliers, chart of accounts and the company book's parallel employee, department and item lists, with per-list and combined CSV export. It is not the QuickBooks list model, holds no QuickBooks item/class/term metadata, and never syncs.",
+              "next_step": "Re-observe the matching settings tab before mapping individual settings.",
               "children": [
                 {
                   "id": "settings--lists--all-lists",
                   "label": "All lists",
                   "observation": "observed",
                   "observed_path": "Settings > LISTS > All lists",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Native list centre showing every list this book keeps, with search and combined CSV export. QuickBooks list types that have no native equivalent stay absent rather than being imitated.",
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--lists--products-and-services",
                   "label": "Products and services",
                   "observation": "observed",
                   "observed_path": "Settings > LISTS > Products and services",
-                  "native_route": null,
-                  "native_scope": "Native invoice and bill lines are available; there is no complete product/service catalogue or inventory model.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Products and services appear only as a company book parallel list, which is read-only and holds an income-account label only.",
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--lists--recurring-transactions",
                   "label": "Recurring transactions",
                   "observation": "observed",
                   "observed_path": "Settings > LISTS > Recurring transactions",
-                  "native_route": null,
-                  "native_scope": "No recurring financial transaction engine is implemented. Firm task automations do not create recurring invoices or bills.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "The same recurring template list is reachable from Lists, where a template can be added through Add recurring.",
+                  "next_step": "No automatic posting and no reminder delivery. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--lists--attachments",
                   "label": "Attachments",
                   "observation": "observed",
                   "observed_path": "Settings > LISTS > Attachments",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Files stored against parallel documents are listed in Lists with their size and the document they belong to.",
+                  "next_step": "There is no upload, preview or download control in this screen, and nothing is written back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--lists--custom-fields",
@@ -1539,16 +1688,18 @@
                   "observed_path": "Settings > LISTS > Custom fields",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--lists--rules",
                   "label": "Rules",
                   "observation": "observed",
                   "observed_path": "Settings > LISTS > Rules",
-                  "native_route": null,
-                  "native_scope": "Bank feed categorization includes a limited native rule suggestion. A complete source-style rules management interface and sync are not implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "banking",
+                  "native_scope": "Banking shows the categorisation rules applied to imported feed lines and lets a rule be corrected.",
+                  "next_step": "Rules cannot be created or exported in bulk from here. Nothing writes back to QuickBooks.",
+                  "kind": "capability"
                 }
               ]
             },
@@ -1558,8 +1709,8 @@
               "observation": "observed",
               "observed_path": "Settings > TOOLS",
               "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "native_scope": "Captured 2026-10-26. On 2026-11-18 this section no longer exists as a grouped heading: settings are tabbed (Company, Notifications, Reports, Payments, Accounting, Sales, Inventory, Expenses, Time, Payroll, Advanced). No complete working native equivalent has been established for this source capability.",
+              "next_step": "Re-observe the matching settings tab before mapping individual settings.",
               "children": [
                 {
                   "id": "settings--tools--manage-workflows",
@@ -1575,7 +1726,8 @@
                       "app": "firm",
                       "view": "automations"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--tools--reclassify-transactions",
@@ -1590,7 +1742,8 @@
                       "label": "Native journal",
                       "route": "journal"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--tools--order-cheques",
@@ -1599,15 +1752,16 @@
                   "observed_path": "Settings > TOOLS > Order cheques",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 },
                 {
                   "id": "settings--tools--import-data",
                   "label": "Import data",
                   "observation": "observed",
                   "observed_path": "Settings > TOOLS > Import data",
-                  "native_route": null,
-                  "native_scope": "Only explicitly supported native formats have previews. The source-specific financial importer, account mapping, replay and recovery gates remain open.",
+                  "native_route": "banking",
+                  "native_scope": "Native intake is a bank CSV feed import with learned categorisation under Bank feed. There is no general data import.",
                   "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
                   "related": [
                     {
@@ -1615,7 +1769,8 @@
                       "app": "migrations",
                       "view": "worklist"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--tools--import-outside-data",
@@ -1631,15 +1786,16 @@
                       "app": "migrations",
                       "view": "worklist"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--tools--export-data",
                   "label": "Export data",
                   "observation": "observed",
                   "observed_path": "Settings > TOOLS > Export data",
-                  "native_route": null,
-                  "native_scope": "Native CSV/XLSX report outputs and unchanged source snapshot ZIP downloads are available. They do not establish a complete source company export.",
+                  "native_route": "reports",
+                  "native_scope": "Native export is per report and per list, as CSV. There is no whole-company export.",
                   "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
                   "related": [
                     {
@@ -1652,7 +1808,8 @@
                       "app": "migrations",
                       "view": "worklist"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--tools--reconcile",
@@ -1661,16 +1818,18 @@
                   "observed_path": "Settings > TOOLS > Reconcile",
                   "native_route": "reconcile",
                   "native_scope": "Native bank reconciliation against NXT Ledger records; source company records have not been loaded into this Ledger by the menu map.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--tools--budgeting",
                   "label": "Budgeting",
                   "observation": "observed",
                   "observed_path": "Settings > TOOLS > Budgeting",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "native_route": "lists",
+                  "native_scope": "Budgets are kept per account and period in Lists. They are records only: there is no budget-versus-actual report or variance analysis.",
+                  "next_step": "Budget versus actual reporting remains absent. Nothing here writes back to QuickBooks.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--tools--spreadsheet-sync",
@@ -1686,7 +1845,8 @@
                       "app": "firm",
                       "view": "spreadsheet"
                     }
-                  ]
+                  ],
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--tools--audit-log",
@@ -1695,7 +1855,8 @@
                   "observed_path": "Settings > TOOLS > Audit log",
                   "native_route": "audit",
                   "native_scope": "Native NXT action log. Shared workspace credentials do not identify a verified individual actor.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--tools--backup-company",
@@ -1704,7 +1865,8 @@
                   "observed_path": "Settings > TOOLS > Backup company",
                   "native_route": null,
                   "native_scope": "Encrypted off-site NXT Store backups are configured. This is not a QuickBooks company backup, and independent key custody and recovery acceptance remain separate gates.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "capability"
                 },
                 {
                   "id": "settings--tools--share-screen",
@@ -1713,7 +1875,8 @@
                   "observed_path": "Settings > TOOLS > Share screen",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 },
                 {
                   "id": "settings--tools--resolution-centre",
@@ -1722,7 +1885,8 @@
                   "observed_path": "Settings > TOOLS > Resolution centre",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 }
               ]
             },
@@ -1732,8 +1896,8 @@
               "observation": "observed",
               "observed_path": "Settings > PROFILE",
               "native_route": null,
-              "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "native_scope": "Captured 2026-10-26. On 2026-11-18 this section no longer exists as a grouped heading: settings are tabbed (Company, Notifications, Reports, Payments, Accounting, Sales, Inventory, Expenses, Time, Payroll, Advanced). No complete working native equivalent has been established for this source capability.",
+              "next_step": "Re-observe the matching settings tab before mapping individual settings.",
               "children": [
                 {
                   "id": "settings--profile--subscriptions-and-billing",
@@ -1742,7 +1906,8 @@
                   "observed_path": "Settings > PROFILE > Subscriptions and billing",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 },
                 {
                   "id": "settings--profile--what-s-new",
@@ -1751,7 +1916,8 @@
                   "observed_path": "Settings > PROFILE > What's new",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 },
                 {
                   "id": "settings--profile--feedback",
@@ -1760,7 +1926,8 @@
                   "observed_path": "Settings > PROFILE > Feedback",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 },
                 {
                   "id": "settings--profile--privacy",
@@ -1769,7 +1936,8 @@
                   "observed_path": "Settings > PROFILE > Privacy",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 },
                 {
                   "id": "settings--profile--your-privacy-choices",
@@ -1778,7 +1946,8 @@
                   "observed_path": "Settings > PROFILE > Your Privacy Choices",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 },
                 {
                   "id": "settings--profile--switch-company",
@@ -1787,7 +1956,8 @@
                   "observed_path": "Settings > PROFILE > Switch company",
                   "native_route": null,
                   "native_scope": "Parallel source snapshots can be reviewed separately. Operational multi-company tenancy and switching have not been implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 },
                 {
                   "id": "settings--profile--switch-accountant-business-view",
@@ -1796,7 +1966,8 @@
                   "observed_path": "Settings > PROFILE > Switch Accountant/Business view",
                   "native_route": null,
                   "native_scope": "NXT provides original Ledger, Firm, Tax and Engagements views. Source-specific accountant/business view switching is not implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "kind": "chrome"
                 }
               ]
             }
@@ -1809,7 +1980,8 @@
           "observed_path": "Toolbar > Intuit account",
           "native_route": null,
           "native_scope": "No complete working native equivalent has been established for this source capability.",
-          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+          "kind": "chrome"
         },
         {
           "id": "toolbar--open-intuit-intelligence-chat",
@@ -1818,7 +1990,230 @@
           "observed_path": "Toolbar > Open Intuit Intelligence chat",
           "native_route": null,
           "native_scope": "No complete working native equivalent has been established for this source capability.",
-          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use."
+          "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+          "kind": "chrome"
+        }
+      ]
+    },
+    {
+      "id": "observed-2026-11-18",
+      "label": "Company navigation (observed 2026-11-18)",
+      "observation": "observed",
+      "observed_path": "Company left navigation",
+      "native_route": null,
+      "native_scope": "Groupings and apps visible in the current company navigation. Firm-scope items appear here because the rail renders them alongside company items; they belong to the Firm app, not the Ledger.",
+      "next_step": "Keep this group pinned to its capture date and re-observe before treating any entry as current.",
+      "children": [
+        {
+          "id": "observed-1118--reports-analytics",
+          "label": "Reports & Analytics",
+          "observation": "observed",
+          "observed_path": "Reports & Analytics",
+          "native_route": "reports",
+          "native_scope": "Open Reports for the native set: profit and loss, balance sheet, trial balance, AR and AP aging, sales tax working paper and the general ledger.",
+          "next_step": "No custom report builder, no benchmarking and no analytics dashboards. Nothing here writes back to QuickBooks.",
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--standard-reports",
+          "label": "Standard reports",
+          "observation": "observed",
+          "observed_path": "Reports & Analytics > Standard reports",
+          "native_route": "reports",
+          "native_scope": "Native reports are a fixed set: profit and loss, balance sheet, trial balance, AR aging, AP aging, GST/HST working paper and general ledger, each printable and CSV-exportable.",
+          "next_step": "Six of the 84 observed report identifiers have a close native equivalent; see docs/QBO_REPORT_COVERAGE.md.",
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--sales-group",
+          "label": "Sales",
+          "observation": "observed",
+          "observed_path": "Sales",
+          "native_route": "invoices",
+          "native_scope": "Sales transactions live in the invoice list, filterable by status and exportable to CSV.",
+          "next_step": "No sales orders or sales receipts; only invoices. Nothing here writes back to QuickBooks.",
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--time",
+          "label": "Time",
+          "observation": "observed",
+          "observed_path": "Time",
+          "native_route": "lists",
+          "native_scope": "The Time lane in Lists holds the recorded time entries for active employees.",
+          "next_step": "No timer, no timesheet approval and no payroll link. Nothing here writes back to QuickBooks.",
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--time-entries",
+          "label": "Time entries",
+          "observation": "observed",
+          "observed_path": "Time > Time entries",
+          "native_route": "lists",
+          "native_scope": "Shown as a lane on the Lists screen with per-entry add: employee, date and minutes. Nothing is billed, approved or posted to payroll.",
+          "next_step": "Approvals, scheduling, time off and time reports remain absent.",
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--approvals",
+          "label": "Approvals",
+          "observation": "observed",
+          "observed_path": "Time > Approvals",
+          "native_route": null,
+          "native_scope": "No time-approval workflow. Firm Operations has a human approval queue for its own proposals, which is a different object.",
+          "next_step": "Work happens in the NXT Firm app; nothing is written back to QuickBooks.",
+          "kind": "capability",
+          "related": [
+            {
+              "label": "Firm approvals",
+              "app": "firm",
+              "view": "approvals"
+            }
+          ]
+        },
+        {
+          "id": "observed-1118--schedule",
+          "label": "Schedule",
+          "observation": "observed",
+          "observed_path": "Time > Schedule",
+          "native_route": null,
+          "native_scope": "No scheduling.",
+          "next_step": "Out of scope unless requested.",
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--time-off",
+          "label": "Time off",
+          "observation": "observed",
+          "observed_path": "Time > Time off",
+          "native_route": null,
+          "native_scope": "No leave tracking.",
+          "next_step": "Out of scope unless requested.",
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--time-team",
+          "label": "Team",
+          "observation": "observed",
+          "observed_path": "Time > Team",
+          "native_route": "lists",
+          "native_scope": "Employees and their recorded time entries are both in Lists.",
+          "next_step": "No team scheduling, capacity or assignments. Nothing here writes back to QuickBooks.",
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--assignments",
+          "label": "Assignments",
+          "observation": "observed",
+          "observed_path": "Time > Assignments",
+          "native_route": null,
+          "native_scope": "No assignment workflow.",
+          "next_step": "Out of scope unless requested.",
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--time-projects",
+          "label": "Time projects",
+          "observation": "observed",
+          "observed_path": "Time > Projects",
+          "native_route": null,
+          "native_scope": "Firm Operations owns projects; the Ledger has none.",
+          "next_step": "Cross-app link belongs in the Firm module, not here.",
+          "related": [
+            {
+              "app": "firm",
+              "label": "Firm projects",
+              "view": "projects"
+            }
+          ],
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--time-reports",
+          "label": "Time reports",
+          "observation": "observed",
+          "observed_path": "Time > Reports",
+          "native_route": "reports/time",
+          "native_scope": "Open Reports and choose Time by employee: minutes recorded per employee and date in the selected period, with a CSV export.",
+          "next_step": "No billable rate, cost or invoicing from time; nothing writes back to QuickBooks.",
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--business-tax",
+          "label": "Business Tax",
+          "observation": "observed",
+          "observed_path": "Business Tax",
+          "native_route": null,
+          "native_scope": "No sales-tax filing in the Ledger. NXT Tax is a separate module and does not file.",
+          "next_step": "Tax filing is an external certification gate.",
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--firm-clients",
+          "label": "Clients",
+          "observation": "observed",
+          "observed_path": "Clients",
+          "native_route": null,
+          "native_scope": "Firm scope. Native client records live in Firm Operations, which opens from here. This is not a Ledger screen.",
+          "next_step": "Keep the firm areas in the Firm app; do not map them to Ledger routes.",
+          "related": [
+            {
+              "label": "Open Firm Operations",
+              "app": "firm",
+              "view": "overview"
+            }
+          ],
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--firm-work",
+          "label": "Work",
+          "observation": "observed",
+          "observed_path": "Work",
+          "native_route": null,
+          "native_scope": "Firm scope. Firm Operations owns projects and work items; the rail entry opens there, not in the Ledger.",
+          "next_step": "Keep the firm areas in the Firm app; do not map them to Ledger routes.",
+          "related": [
+            {
+              "label": "Open Firm work",
+              "app": "firm",
+              "view": "projects"
+            }
+          ],
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--firm-hub",
+          "label": "Firm hub",
+          "observation": "observed",
+          "observed_path": "Firm hub",
+          "native_route": null,
+          "native_scope": "Firm scope. The firm hub area maps to Firm Operations; there is no Ledger equivalent.",
+          "next_step": "Keep the firm areas in the Firm app; do not map them to Ledger routes.",
+          "related": [
+            {
+              "label": "Open Firm Operations",
+              "app": "firm",
+              "view": "accounts"
+            }
+          ],
+          "kind": "capability"
+        },
+        {
+          "id": "observed-1118--firm-books",
+          "label": "Firm Books",
+          "observation": "observed",
+          "observed_path": "Firm Books",
+          "native_route": null,
+          "native_scope": "Firm scope. NXT keeps the firm book in NXT Ledger, which is a different data set from QBOA Firm Books; the link opens it.",
+          "next_step": "Keep the firm areas in the Firm app; do not map them to Ledger routes.",
+          "related": [
+            {
+              "label": "Open NXT Ledger",
+              "route": "dashboard"
+            }
+          ],
+          "kind": "capability"
         }
       ]
     }

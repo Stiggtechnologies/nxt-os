@@ -40,6 +40,9 @@ struct OpenDoc {
     journal_entry_id: String,
     #[serde(default)]
     document_number: String,
+    /// pending, approved or rejected. Empty means no decision was requested.
+    #[serde(default)]
+    approval: String,
     #[serde(default)]
     tax_cents: i64,
 }
@@ -82,6 +85,15 @@ pub struct DocumentInput {
     #[serde(default)]
     pub tax: Option<TaxDetailInput>,
 }
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApprovalInput {
+    pub document_id: String,
+    pub decision: String,
+    #[serde(default)]
+    pub note: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PaymentInput {
@@ -159,7 +171,7 @@ impl CompanyBooks {
         Ok(json!({"sales_tax_enabled": input.enabled, "write_back": false, "authoritative_system": "quickbooks"}))
     }
     pub async fn open_document(&self, company: &str, input: DocumentInput) -> Result<Value> {
-        if !matches!(input.kind.as_str(), "invoice" | "bill") { return Err(bad("Document kind must be invoice or bill")); }
+        if !matches!(input.kind.as_str(), "invoice" | "bill" | "credit_memo" | "supplier_credit") { return Err(bad("Document kind must be invoice, bill, credit_memo or supplier_credit")); }
         if !date(&input.date) || !text(&input.memo, 500) || !text(&input.contact, 120) || input.contact.trim().is_empty() { return Err(bad("Document contact, date, or memo is invalid")); }
         if input.lines.is_empty() || input.lines.len() > 40 { return Err(bad("A document needs 1–40 lines")); }
         let (raw, mut state) = self.parallel_load(company).await?;
@@ -199,7 +211,7 @@ impl CompanyBooks {
         }
         let gross = total.checked_add(tax_posted).ok_or_else(|| bad("Amount overflow"))?;
         let mut lines = Vec::new();
-        if input.kind == "invoice" {
+        if input.kind == "invoice" || input.kind == "credit_memo" {
             lines.push(NativeLine { account_id: input.control_account.clone(), debit_cents: cents(gross), credit_cents: "0".into(), memo: input.memo.clone() });
             for line in &input.lines {
                 lines.push(NativeLine { account_id: line.account_id.clone(), debit_cents: "0".into(), credit_cents: cents(line.amount_cents), memo: input.memo.clone() });
@@ -216,6 +228,12 @@ impl CompanyBooks {
             }
             lines.push(NativeLine { account_id: input.control_account.clone(), debit_cents: "0".into(), credit_cents: cents(gross), memo: input.memo.clone() });
         }
+        if matches!(input.kind.as_str(), "credit_memo" | "supplier_credit") {
+            for line in lines.iter_mut() {
+                std::mem::swap(&mut line.debit_cents, &mut line.credit_cents);
+            }
+        }
+
         let journal = JournalInput {
             request_id: input.request_id.clone(),
             expected_head: input.expected_head.clone(),
@@ -238,12 +256,35 @@ impl CompanyBooks {
             total_cents: gross,
             journal_entry_id: entry_id,
             document_number: document_number.into(),
+                approval: String::new(),
             tax_cents: tax_posted,
         };
         state.documents.push(doc.clone());
         self.parallel_save(company, raw.as_deref(), &state).await?;
         Ok(json!({"id": doc.id, "journal_entry_id": doc.journal_entry_id, "document_number": doc.document_number, "total_cents": gross, "tax_cents": tax_posted, "tax_detail_ignored": tax_detail_ignored, "open_cents": gross, "head_sha256": head, "write_back": false, "authoritative_system": "quickbooks"}))
     }
+    /// Records an approval decision on a parallel document. Nothing is sent anywhere.
+    pub async fn set_approval(&self, company: &str, input: ApprovalInput) -> Result<Value> {
+        if !matches!(input.decision.as_str(), "pending" | "approved" | "rejected") {
+            return Err(bad("An approval decision is pending, approved or rejected"));
+        }
+        if !text(&input.note, 300) { return Err(bad("Approval note is too long")); }
+        let (raw, mut state) = self.parallel_load(company).await?;
+        let Some(document) = state.documents.iter_mut().find(|doc| doc.id == input.document_id) else {
+            return Err(err(StatusCode::NOT_FOUND, "Open document not found"));
+        };
+        if document.approval == input.decision {
+            return Ok(json!({"id": input.document_id, "approval": input.decision, "idempotent_replay": true, "write_back": false}));
+        }
+        if document.approval == "approved" && input.decision != "pending" {
+            return Err(bad("An approved document cannot be changed without returning it to pending first"));
+        }
+        document.approval = input.decision.clone();
+        let note = input.note.trim().to_string();
+        self.parallel_save(company, raw.as_deref(), &state).await?;
+        Ok(json!({"id": input.document_id, "approval": input.decision, "note": note, "write_back": false, "authoritative_system": "quickbooks"}))
+    }
+
     pub async fn apply_payment(&self, company: &str, input: PaymentInput) -> Result<Value> {
         if input.amount_cents <= 0 { return Err(bad("Payment amount must be positive cents")); }
         let (raw, mut state) = self.parallel_load(company).await?;
@@ -254,6 +295,9 @@ impl CompanyBooks {
         let paid: i64 = state.payments.iter().filter(|p| p.document_id == doc.id).map(|p| p.amount_cents).sum();
         let open = doc.total_cents - paid;
         if input.amount_cents > open { return Err(bad("Payment exceeds the open AR/AP balance")); }
+        if matches!(doc.kind.as_str(), "credit_memo" | "supplier_credit") {
+            return Err(bad("A credit memo is applied to an invoice or bill, it is never paid directly"));
+        }
         let (debit, credit) = if doc.kind == "invoice" {
             (input.cash_account.clone(), doc.control_account.clone())
         } else {
@@ -281,9 +325,12 @@ impl CompanyBooks {
         let (_, state) = self.parallel_load(company).await?;
         let rows: Vec<Value> = state.documents.iter().map(|doc| {
             let paid: i64 = state.payments.iter().filter(|p| p.document_id == doc.id).map(|p| p.amount_cents).sum();
-            json!({"id": doc.id, "kind": doc.kind, "contact": doc.contact, "total_cents": doc.total_cents, "open_cents": doc.total_cents - paid, "journal_entry_id": doc.journal_entry_id, "classes": doc.lines.iter().filter_map(|l| l.class_id.clone()).collect::<Vec<_>>()})
+            json!({"id": doc.id, "kind": doc.kind, "contact": doc.contact, "total_cents": doc.total_cents, "open_cents": if matches!(doc.kind.as_str(), "credit_memo" | "supplier_credit") { 0 } else { doc.total_cents - paid }, "credit": matches!(doc.kind.as_str(), "credit_memo" | "supplier_credit"), "approval": doc.approval, "journal_entry_id": doc.journal_entry_id, "classes": doc.lines.iter().filter_map(|l| l.class_id.clone()).collect::<Vec<_>>()})
         }).collect();
-        Ok(json!({"documents": rows, "classes": state.classes.len(), "attachments": state.attachments.len(), "write_back": false, "authoritative_system": "quickbooks"}))
+        let files: Vec<Value> = state.attachments.iter().map(|file| json!({
+        "id": file.id, "owner_id": file.owner_id, "filename": file.filename, "byte_len": file.byte_len
+    })).collect();
+    Ok(json!({"documents": rows, "classes": state.classes.len(), "class_list": state.classes, "attachments": state.attachments.len(), "attachment_list": files, "write_back": false, "authoritative_system": "quickbooks"}))
     }
     pub async fn sparse_native(&self, company: &str, entry_id: &str, input: SparseInput) -> Result<Value> {
         let (head, _) = self.current(company).await?.ok_or_else(|| err(StatusCode::NOT_FOUND, "Company has no committed book"))?;
