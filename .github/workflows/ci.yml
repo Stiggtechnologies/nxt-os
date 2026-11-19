@@ -28,6 +28,8 @@ jobs:
         run: |
           node --test tests/shared_api_reads.test.mjs tests/nixon_chat_voice.test.mjs tests/nixon_realtime.test.mjs
           node --check public/nxt/workspace-control.js
+          node --check public/nxt/workspace-pdf.js
+          node --check public/apps/signatures/esign.js
           python3 scripts/build-dtmax-native-financial-profiles.py --check
           node --test tests/t1_optional_workpapers.test.mjs
           node --check public/apps/tax/slip-groups.js

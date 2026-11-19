@@ -2,7 +2,7 @@
 use nxt_os::signatures::esign;
 
 #[test]
-fn only_test_and_outbox_modes_exist_and_nxt_never_sends() {
+fn environment_flags_cannot_enable_smtp_without_a_connected_mailbox() {
     unsafe { std::env::remove_var("NXT_ESIGN_DELIVERY"); }
     assert_eq!(esign::delivery_mode().ok().unwrap(), "test");
     for v in ["email", "smtp", "live"] {

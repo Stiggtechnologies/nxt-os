@@ -133,7 +133,8 @@ fn pdf(bytes: Vec<u8>, name: &str) -> Response {
 }
 fn esign_staff_router(state: Arc<Signatures>) -> Router {
     Router::new()
-        .route("/api/signatures/esign/catalog", get(|| async { Json(Signatures::esign_catalog()) }))
+        .route("/api/signatures/esign/catalog", get(mail_catalog))
+        .route("/api/signatures/esign/mail",get(mail_settings).put(save_mail_settings))
         .route("/api/signatures/esign/builtin/{key}", post(builtin_new))
         .route("/api/signatures/{id}/esign", get(es_status))
         .route("/api/signatures/{id}/esign/pdf", post(es_pdf))
@@ -162,6 +163,9 @@ async fn client_scope(State(s): S, req: axum::extract::Request, next: middleware
 }
 async fn builtin_new(State(s): S, Path(k): Path<String>, Json(v): Json<esign::BuiltinInput>) -> R { Ok(Json(s.instantiate_builtin(&k, v).await?)) }
 async fn es_status(State(s): S, Path(id): Path<String>) -> R { Ok(Json(s.esign_status(&id).await?)) }
+async fn mail_settings(State(s):S)->R{Ok(Json(s.mail_settings().await?))}
+async fn mail_catalog(State(s):S)->R{let mut value=Signatures::esign_catalog();let mode=s.mail_delivery_mode().await?;value["delivery_mode"]=json!(mode);value["external_email"]=json!(mode=="smtp");Ok(Json(value))}
+async fn save_mail_settings(State(s):S,Json(v):Json<super::mail::MailInput>)->R{Ok(Json(s.save_mail_settings(v).await?))}
 async fn es_pdf(State(s): S, Path(id): Path<String>, h: HeaderMap, Json(v): Json<esign::PdfInput>) -> R { Ok(Json(s.attach_pdf(&id, v, meta(&h)).await?)) }
 async fn es_send(State(s): S, Path(id): Path<String>, h: HeaderMap, Json(v): Json<esign::SendInput>) -> R { Ok(Json(s.send(&id, v, meta(&h)).await?)) }
 async fn es_link(State(s): S, Path(id): Path<String>, h: HeaderMap, Json(v): Json<esign::LinkInput>) -> R { Ok(Json(s.reissue_link(&id, v, meta(&h)).await?)) }

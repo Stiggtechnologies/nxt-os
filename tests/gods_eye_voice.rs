@@ -107,10 +107,11 @@ fn realtime_session_carries_the_transferred_god_s_eye_persona_and_tools() {
     assert_eq!(session["audio"]["input"]["transcription"]["model"], "gpt-4o-mini-transcribe", "the chat shows what was said");
     assert_eq!(session["tool_choice"], "auto");
     let names: Vec<&str> = session["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["nixon_command", "open_nixon_page", "inspect_workspace", "control_workspace"]);
+    assert_eq!(names, ["nixon_command", "open_nixon_page", "inspect_workspace", "read_workspace", "read_workspace_pdf", "control_workspace"]);
     assert!(instructions.contains("operate the taskbar and toolbars"));
     assert!(instructions.contains("preserve all existing confirmations"));
-    assert!(session["tools"][3]["parameters"]["properties"]["action"]["enum"].as_array().unwrap().contains(&json!("select")));
+    let controls=session["tools"].as_array().unwrap().iter().find(|t| t["name"]=="control_workspace").unwrap();
+    assert!(controls["parameters"]["properties"]["action"]["enum"].as_array().unwrap().contains(&json!("select")));
     let paths = &session["tools"][1]["parameters"]["properties"]["path"]["enum"];
     assert!(paths.as_array().unwrap().contains(&json!("/nixon/gods-eye")));
     assert_eq!(speech::nixon_page("/nixon/gods-eye/").map(|p| p.1), Some("God's Eye"));

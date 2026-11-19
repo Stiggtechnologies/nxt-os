@@ -3,12 +3,22 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
 
 const root = fileURLToPath(new URL('../public/', import.meta.url));
 const walk = dir => fs.readdirSync(dir, {withFileTypes: true})
   .flatMap(entry => entry.isDirectory() ? walk(path.join(dir, entry.name)) : [path.join(dir, entry.name)]);
 
 const htmlFiles = walk(root).filter(file => file.endsWith('.html'));
+
+test('vendored PDF reader assets match their pinned upstream integrity receipt',()=>{
+  const vendor=path.join(root,'vendor/pdfjs'),notice=JSON.parse(fs.readFileSync(path.join(vendor,'NOTICE.json'),'utf8'));
+  assert.equal(notice.version,'6.5.438');assert.equal(notice.license,'Apache-2.0');
+  for(const [name,proof] of Object.entries(notice.files)){
+    const filename=path.resolve(vendor,name);assert.ok(filename.startsWith(vendor+path.sep));
+    const bytes=fs.readFileSync(filename);assert.equal(bytes.length,proof.bytes,name);assert.equal(createHash('sha256').update(bytes).digest('hex'),proof.sha256,name);
+  }
+});
 
 /** Local, statically resolvable references only: skip remote, anchors, data and template literals. */
 function references(html) {

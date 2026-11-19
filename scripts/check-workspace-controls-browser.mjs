@@ -136,6 +136,19 @@ try {
   const removed=byLabel("Remove this control");
   assert.equal((await tool("control_workspace",{action:"click",target:removed})).ok,true);
   assert.equal((await tool("control_workspace",{action:"click",target:removed})).ok,false);
+  const readout=await tool("read_workspace",{query:"Shortcut handled"});
+  assert.ok(readout.content.some(row=>row.text==="Shortcut handled"));
+  // The PDF reader has a separate real text/scan acceptance test. Here verify
+  // that its image result reaches Realtime as image input, not base64 tool text.
+  await page.evaluate(()=>{
+    window.originalPdfRead=workspace.readPdf;
+    const canvas=document.createElement('canvas');canvas.width=20;canvas.height=20;
+    workspace.readPdf=async()=>({ok:true,pages:[{page:1,text:''}],_images:[{page:1,tile:1,x:0,y:0,width:20,height:20,page_width:20,page_height:20,image_url:canvas.toDataURL('image/jpeg')}]});
+  });
+  const pdfResult=await tool('read_workspace_pdf',{page:1});
+  assert.equal(pdfResult.ok,true);assert.equal(pdfResult._images,undefined);
+  assert.ok(await page.evaluate(()=>proof.sent.some(item=>item.item?.content?.some(c=>c.type==='input_image'&&c.image_url.startsWith('data:image/jpeg')))));
+  await page.evaluate(()=>{workspace.readPdf=originalPdfRead;});
   // Browser speech and typed commands use the same UI bridge without a cloud round trip.
   await page.locator("#chat textarea").fill("Nixon, switch company to Synthetic Alpha");
   await page.locator("#chat .nxc-composer").evaluate(form=>form.requestSubmit());

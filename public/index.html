@@ -230,12 +230,13 @@
 <script src="/nxt/company-switcher.js"></script>
 <script src="/nxt/staff-signin.js"></script>
 <script src="/apps/nixon/realtime.js"></script>
+<script src="/nxt/workspace-pdf.js"></script>
 <script src="/nxt/workspace-control.js"></script>
 <script src="/nxt/nixon-chat.js"></script>
 <script>
 const { api, esc, money, moneyShort, toast } = NXT;
 const $ = (s) => document.querySelector(s);
-const APPS = { ledger: { name: "NXT Ledger", path: "/apps/ledger/" }, firm: { name: "Firm Operations", path: "/apps/firm/" }, tax: { name: "NXT Tax", path: "/apps/tax/" }, engagements: { name: "NXT Engagements", path: "/apps/engagements/" }, signatures: { name: "Prepare signatures", path: "/apps/signatures/" }, migrations: { name: "Parallel testing", path: "/apps/migrations/" }, referrals: { name: "NXT Referrals", path: "/apps/referrals/" }, guardvoice: { name: "GuardVoice", path: "/apps/guardvoice/" }, nixon: { name: "Nixon", path: "/apps/nixon/" } };
+const APPS = { ledger: { name: "NXT Ledger", path: "/apps/ledger/" }, firm: { name: "Firm Operations", path: "/apps/firm/" }, tax: { name: "NXT Tax", path: "/apps/tax/" }, engagements: { name: "NXT Engagements", path: "/apps/engagements/" }, signatures: { name: "Prepare signatures", path: "/apps/signatures/" }, esign: {name:"Send for signature",path:"/apps/signatures/esign.html"}, migrations: { name: "Parallel testing", path: "/apps/migrations/" }, referrals: { name: "NXT Referrals", path: "/apps/referrals/" }, guardvoice: { name: "GuardVoice", path: "/apps/guardvoice/" }, nixon: { name: "Nixon", path: "/apps/nixon/" } };
 let status = null, chat = [];
 
 ["#markSignin", "#markDrawer"].forEach((s) => ($(s).innerHTML = NXT.MARK + "<span>NXT</span>"));
@@ -257,7 +258,7 @@ $("#themeBtn").onclick = () => {
 function route() {
   const [, app = "home", ...rest] = location.hash.split("/");
   const view = rest.join("/");
-  $("#os").classList.toggle("firm-focus", app === "firm" || app === "tax" || app === "engagements" || app === "signatures" || app === "migrations");
+  $("#os").classList.toggle("firm-focus", app === "firm" || app === "tax" || app === "engagements" || app === "signatures" || app === "esign" || app === "migrations");
   document.querySelectorAll(".dock [data-go]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.go === app)));
   const frame = $("#frame");
   if (APPS[app]) {
@@ -379,7 +380,7 @@ async function boot() {
   if (window.nxtCompanySwitcher) window.nxtCompanySwitcher.reload(); else window.nxtCompanySwitcher = NXTCompany.mountSwitcher($("#companySwitch"), { api, esc: NXT.esc });
   route();
 }
-function signOut() { NXT.key.clear(); showLauncher(false); askChat.clear(); $("#frame").removeAttribute("src"); $("#frame").dataset.src = ""; closeDrawer(); boot(); }
+function signOut() { window.NXTSignatureHandoff?.clear(); NXT.key.clear(); showLauncher(false); askChat.clear(); $("#frame").removeAttribute("src"); $("#frame").dataset.src = ""; closeDrawer(); boot(); }
 let staffPassword = "";
 function staffForm(id) { for (const f of ["staffForm", "enrollForm", "passwordForm"]) $("#" + f).hidden = f !== id; $("#keySignin").hidden = id !== "staffForm"; }
 function staffFail(e) { $("#signinErr").textContent = e.message; }
@@ -484,6 +485,7 @@ const COMMANDS = [
   ["Firm · Audit history", () => go("firm", "audit")],
   ["Tax · Worklist", () => go("tax", "worklist")],
   ["Tax · Import workpaper", () => go("tax", "import")],
+  ["Tax · CRA import", () => go("tax", "cra-import")],
   ["Tax · Calculation coverage", () => go("tax", "capabilities")],
   ["Tax · Audit trail", () => go("tax", "audit")],
   ["Engagements · Worklist", () => go("engagements", "worklist")],
@@ -495,6 +497,7 @@ const COMMANDS = [
   ["Prepare signatures · Templates", () => go("signatures", "templates")],
   ["Prepare signatures · Audit", () => go("signatures", "audit")],
   ["Prepare signatures · Connector status", () => go("signatures", "connector")],
+  ["Send for signature · Envelopes", () => go("esign")],
   ["Parallel testing · Source snapshots", () => go("migrations", "worklist")],
   ["Ledger · Dashboard", () => go("ledger", "dashboard")],
   ["Ledger · New invoice", () => go("ledger", "invoices/new")],
@@ -525,9 +528,16 @@ const COMMANDS = [
   ["GuardVoice · Handoffs", () => go("guardvoice", "handoffs")],
   ["GuardVoice · Simulator", () => go("guardvoice", "simulator")],
 ];
+let signatureHandoff=null;
+window.NXTSignatureHandoff={
+  peek(){if(signatureHandoff&&(!workspaceAllowed||!NXT.key.get()||Date.now()-signatureHandoff.at>1800000||signatureHandoff.company!==NXTCompany.get()))signatureHandoff=null;return signatureHandoff;},
+  clear(){signatureHandoff=null;}
+};
+NXTCompany.onChange(()=>window.NXTSignatureHandoff.clear());
 workspace = NXTWorkspace.create({
   allowed: () => workspaceAllowed && !!NXT.key.get() && !$("#os").hidden,
   destinations: () => [...COMMANDS.map(([label, run]) => ({ label, run })), ...Object.entries(APPS).map(([app, info]) => ({ label: info.name, aliases: [app, info.name.replace(/([a-z])([A-Z])/g, "$1 $2")], run: () => go(app) }))],
+  onSignature: ({blob,title,pages}) => {signatureHandoff={blob,title,pages,at:Date.now(),company:NXTCompany.get()};go('esign');return {ok:true,say:'Opened signature preparation with the selected PDF. Add recipients and review the request before sending. No email was sent.'};},
 });
 function openPalette() {
   if (document.querySelector(".palette") || $("#os").hidden) return;

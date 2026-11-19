@@ -11,7 +11,7 @@
 //!
 //! Delivery is off by default: `NXT_ESIGN_DELIVERY` unset or `test` means
 //! links and one-time codes are returned in-app and nothing is emailed. No
-//! other mode is implemented, so real sends are impossible from this code.
+//! SMTP is available only after staff connect and enable an authenticated mailbox.
 use super::*;
 use crate::client_journey::{Actor, ClientJourney, JourneyDef, StepStatus};
 use base64::Engine as _;
@@ -138,7 +138,7 @@ impl Ceremony {
             "signers":self.signers.iter().map(|s| json!({"recipient_id":s.recipient_id,"name":s.name,"email":s.email,"routing_order":s.routing_order,"status":s.status,"verified":s.verified,"consented":s.consented,"expires_at":s.expires_at})).collect::<Vec<_>>(),
             "events":self.events,"audit_chain_valid":self.verify_chain(),
             "signed_pdf_sha256":self.signed_pdf_sha256,"certificate_pdf_sha256":self.certificate_pdf_sha256,"completed_at":self.completed_at,
-            "external_email_sent":false})
+            "delivery_receipt_required":true})
     }
     fn active_order(&self) -> Option<u16> {
         self.signers.iter().filter(|s| s.kind == "signer" && s.status != "signed").map(|s| s.routing_order).min()
@@ -304,7 +304,7 @@ impl Signatures {
     }
 
     pub async fn send(&self, id: &str, input: SendInput, meta: ClientMeta) -> SResult<Value> {
-        let mode = delivery_mode()?;
+        let mode = self.mail_delivery_mode().await?;
         if !nonempty(&input.operator_label, 120) { return Err(bad("operator label is required")); }
         let env = self.envelope(id).await?;
         check(&env, input.expected_revision, Some(&input.expected_content_hash))?;
@@ -333,18 +333,20 @@ impl Signatures {
         }
         c.status = "sent".into(); c.delivery_mode = mode.into();
         activate(&mut c);
-        c.push("sent", &input.operator_label, &meta, &format!("delivery {mode}; links expire {expires}; no email sent"))?;
+        c.push("sent", &input.operator_label, &meta, &format!("delivery {mode}; links expire {expires}; email acceptance is recorded separately"))?;
         self.put_ceremony(Some(&raw), Some(&old), &c).await?;
-        self.queue_links(&c, &links, "").await?;
+        let delivery=self.queue_links(&c, &links, "").await?;
         let shown = if mode == "test" { json!(links) } else { json!([]) };
-        Ok(json!({"esign":c.public(),"delivery":{"mode":mode,"email_sent":false,"links":shown,"outbox_messages":if mode == "outbox" { links.len() } else { 0 }}}))
+        Ok(json!({"esign":c.public(),"delivery":{"mode":mode,"email_sent":delivery["email_sent"],"receipts":delivery["receipts"],"links":shown,"outbox_messages":if mode == "outbox" { links.len() } else { 0 }}}))
     }
 
     pub async fn reissue_link(&self, id: &str, input: LinkInput, meta: ClientMeta) -> SResult<Value> {
-        let mode = delivery_mode()?;
+        let mode = self.mail_delivery_mode().await?;
         let (raw, old) = self.ceremony(id).await?.ok_or_else(missing)?;
         if old.status != "sent" { return Err(conflict("envelope is not out for signature")); }
+        if old.delivery_mode=="smtp"&&mode!="smtp"{return Err(conflict("Reconnect the sending mailbox before reissuing a live signing link"));}
         let mut c = old.clone();
+        c.delivery_mode=mode.into();
         let s = c.signers.iter_mut().find(|s| s.recipient_id == input.recipient_id && s.status != "signed").ok_or_else(|| bad("unknown or finished recipient"))?;
         let token = secret(); let th = sha(token.as_bytes());
         self.store.set(&token_key(&th), id).await.map_err(storage_error)?;
@@ -353,8 +355,8 @@ impl Signatures {
         c.push("link_reissued", &input.operator_label, &meta, &input.recipient_id)?;
         self.put_ceremony(Some(&raw), Some(&old), &c).await?;
         let links = vec![json!({"recipient_id":input.recipient_id,"url":format!("/sign/#{token}")})];
-        self.queue_links(&c, &links, "Here is a new link. ").await?;
-        Ok(json!({"delivery":{"mode":mode,"email_sent":false,"links":if mode == "test" { json!(links) } else { json!([]) }}}))
+        let delivery=self.queue_links(&c, &links, "Here is a new link. ").await?;
+        Ok(json!({"delivery":{"mode":mode,"email_sent":delivery["email_sent"],"receipts":delivery["receipts"],"links":if mode == "test" { json!(links) } else { json!([]) }}}))
     }
 
     /// Expiry sweep + reminders without new infra: call from a cron or by hand. Reminders
@@ -376,15 +378,19 @@ impl Signatures {
                 let action = if expired { if input.reissue_expired { "reissue_expired" } else { "expired" } } else if due { "remind" } else { continue };
                 let mut item = json!({"envelope_id":env.id,"recipient_id":sg.recipient_id,"action":action,"expires_at":sg.expires_at});
                 if !input.dry_run && action != "expired" {
-                    match self.reissue_link(&env.id, LinkInput { operator_label: input.operator_label.clone(), recipient_id: sg.recipient_id.clone() }, meta.clone()).await {
+                    // Connecting a mailbox must not cause the existing hourly
+                    // rehearsal sweep to email old test or outbox recipients.
+                    if self.mail_delivery_mode().await?=="smtp" || c.delivery_mode=="smtp" {
+                        item["delivery"]=json!({"email_sent":false,"status":"explicit_reminder_required"});
+                    } else { match self.reissue_link(&env.id, LinkInput { operator_label: input.operator_label.clone(), recipient_id: sg.recipient_id.clone() }, meta.clone()).await {
                         Ok(v) => { item["delivery"] = v["delivery"].clone(); }
                         Err(e) => { item["error"] = json!(e.1); }
-                    }
+                    } }
                 }
                 out.push(item);
             }
         }
-        Ok(json!({"dry_run":input.dry_run,"email_sent":false,"results":out}))
+        Ok(json!({"dry_run":input.dry_run,"email_sent":out.iter().any(|r|r["delivery"]["email_sent"]==true),"results":out}))
     }
 
     pub async fn void(&self, id: &str, input: StaffInput, meta: ClientMeta) -> SResult<Value> {
@@ -398,7 +404,10 @@ impl Signatures {
     }
 
     pub async fn esign_status(&self, id: &str) -> SResult<Value> {
-        Ok(self.ceremony(id).await?.ok_or_else(missing)?.1.public())
+        let mut value=self.ceremony(id).await?.ok_or_else(missing)?.1.public();
+        let receipt=self.store.get(&format!("signatures:mail:envelope:{id}")).await.map_err(storage_error)?;
+        value["delivery"]=receipt.and_then(|r|serde_json::from_str::<Value>(&r).ok()).unwrap_or(json!({"email_sent":false}));
+        Ok(value)
     }
     pub async fn ceremony_record(&self, id: &str) -> SResult<Ceremony> {
         Ok(self.ceremony(id).await?.ok_or_else(missing)?.1)
@@ -475,8 +484,8 @@ impl Signatures {
             }
             s.otp_attempts = 0; s.otp_sends += 1; s.otp_last_at = Some(now());
             let (rid, name, email) = (s.recipient_id.clone(), s.name.clone(), s.email.clone());
-            c.push("otp_requested", &rid, &meta, &format!("one-time code issued by {} delivery; no email sent by NXT", c.delivery_mode))?;
-            if c.delivery_mode == "outbox" {
+            c.push("otp_requested", &rid, &meta, &format!("one-time code issued for {} delivery", c.delivery_mode))?;
+            if c.delivery_mode == "outbox" || c.delivery_mode == "smtp" {
                 Ok(json!({"code_delivery":"queued in the sender's outbox","_outbox":{"to_name":name,"to_email":email,"subject":format!("Your code for {}", c.title),"body":format!("Your one-time code is {code}. It expires in 10 minutes. If you didn't ask for it, ignore this message.")}}))
             } else {
                 Ok(json!({"test_code":code,"code_delivery":"shown in-app (test mode); no email sent"}))
@@ -485,7 +494,11 @@ impl Signatures {
         let mut v = r;
         if let Some(m) = v.as_object_mut().and_then(|o| o.remove("_outbox")) {
             let id = v["envelope_id"].as_str().unwrap_or("").to_string();
-            self.outbox_push(&id, vec![m]).await?;
+            if v["delivery_mode"]=="smtp" {
+                let receipt=self.mail_acceptance(&format!("otp:{id}:{}:{}",sha(token.as_bytes()),sha(code.as_bytes())),m["to_email"].as_str().unwrap_or(""),m["subject"].as_str().unwrap_or(""),m["body"].as_str().unwrap_or("")).await?;
+                v["code_delivery"]=json!(if receipt["email_sent"]==true{"accepted by the mail server; check your inbox"}else{"delivery unconfirmed; ask the sender to check the mailbox connection"});
+                v["email_sent"]=receipt["email_sent"].clone();
+            }else{self.outbox_push(&id, vec![m]).await?;}
         }
         Ok(v)
     }
@@ -505,11 +518,21 @@ impl Signatures {
         let list: Value = raw.as_deref().and_then(|o| serde_json::from_str(o).ok()).unwrap_or(json!([]));
         Ok(json!({"envelope_id":id,"messages":list,"sent_by_nxt":false}))
     }
-    async fn queue_links(&self, c: &Ceremony, links: &[Value], origin_note: &str) -> SResult<()> {
-        if c.delivery_mode != "outbox" { return Ok(()); }
-        let msgs = links.iter().filter_map(|l| c.signers.iter().find(|s| l["recipient_id"] == json!(s.recipient_id)).map(|s| json!({"to_name":s.name,"to_email":s.email,
+    async fn queue_links(&self, c: &Ceremony, links: &[Value], origin_note: &str) -> SResult<Value> {
+        if !["outbox","smtp"].contains(&c.delivery_mode.as_str()) { return Ok(json!({"email_sent":false,"receipts":[]})); }
+        let msgs:Vec<Value> = links.iter().filter_map(|l| c.signers.iter().find(|s| l["recipient_id"] == json!(s.recipient_id)).map(|s| json!({"to_name":s.name,"to_email":s.email,"recipient_id":s.recipient_id,"token_hash":s.token_hash,
             "subject":format!("Please sign: {}", c.title),"body":format!("{origin_note}Open this private link to review and sign: {{ORIGIN}}{} . It expires {}.", l["url"].as_str().unwrap_or(""), s.expires_at)}))).collect();
-        self.outbox_push(&c.envelope_id, msgs).await
+        if c.delivery_mode=="outbox" {self.outbox_push(&c.envelope_id, msgs).await?;return Ok(json!({"email_sent":false,"receipts":[]}));}
+        let mut receipts=vec![];
+        for m in msgs {
+            let identity=format!("link:{}:{}:{}",c.envelope_id,m["recipient_id"],m["token_hash"]);
+            let body=m["body"].as_str().unwrap_or("").replace("{ORIGIN}","https://os.nxtcorporation.ca");
+            let receipt=self.mail_acceptance(&identity,m["to_email"].as_str().unwrap_or(""),m["subject"].as_str().unwrap_or(""),&body).await;
+            receipts.push(json!({"recipient_id":m["recipient_id"],"receipt":receipt.unwrap_or(json!({"email_sent":false,"status":"delivery_unconfirmed"}))}));
+        }
+        let value=json!({"email_sent":!receipts.is_empty()&&receipts.iter().all(|r|r["receipt"]["email_sent"]==true),"receipts":receipts,"delivered_to_inbox":false});
+        self.store.set(&format!("signatures:mail:envelope:{}",c.envelope_id),&value.to_string()).await.map_err(storage_error)?;
+        Ok(value)
     }
     pub async fn otp_verify(&self, token: &str, input: CodeInput, meta: ClientMeta) -> SResult<Value> {
         let r = self.signer_mutate(token, |c, i| {

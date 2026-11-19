@@ -880,8 +880,9 @@
     return '<svg class="tax-toolbar-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">' + drawing + '</svg>';
   }
 
-  function mount(host,{request,isCurrent=()=>true,historicalKind=wireKind,onPrepare}) {
+  function mount(host,{request,isCurrent=()=>true,historicalKind=wireKind,onPrepare,preferredSourceKind=''}) {
     if(![wireKind,'historical-lines'].includes(historicalKind))throw Error('Unsupported historical source view');
+    if(preferredSourceKind && preferredSourceKind!=='afr-slips')throw Error('Unsupported preferred source view');
     let sequence=0,offset=0,search='',year='',activeClient='',kind=historicalKind,factOffset=0;
     let page=null,view='list',selectedYear='',comparison='',history=[],pdfs=[],pdfUrl='',pdfRecord=null,pdfPage=1,sourceKindExplicit=false,historyLoading=false,recoveredRawQueue=false,archivedYear='2022';
     let sort='client_number',direction='asc',status='',province='',exceptionSequence=0,ownerSequence=0,recoveredSequence=0,archivedSequence=0,csvGeneration=0,csvBusy=false,disposed=false;const clientCache=new Map(),exceptionUrls=[],csvUrls=[];
@@ -977,8 +978,8 @@
     function clientHead(){const c=selected();return '<div class="dtmax-client-head">Client #'+esc(c.client_number)+' · '+esc(c.name)+'<small>Imported source · '+(selectedYear?'Tax year '+esc(selectedYear):'No historical year')+'</small></div><div class="dtmax-toolbar"><label>Tax year<select data-dtmax-year>'+c.historical_years.slice().sort((a,b)=>b-a).map(y=>'<option value="'+y+'"'+(String(y)===selectedYear?' selected':'')+'>'+y+(c.recovered_native_source_years?.includes(y)&&!c.native_historical_years?.includes(y)?' · Recovered native source':c.pdf_only_years?.includes(y)?(c.source_archive_years?.includes(y)?' · Source archive':' · Preserved PDF'):'')+'</option>').join('')+'</select></label><button type="button" data-dtmax-back>Back to client list</button>'+(typeof onPrepare==='function'?'<button type="button" data-dtmax-prepare>Preparation options</button><span data-dtmax-prepare-status role="status"></span>':'')+'</div>';}
     function recoveredOnlyYear(){const c=selected(),y=Number(selectedYear);return c?.recovered_native_source_years?.includes(y)&&!c.native_historical_years?.includes(y);}
     function sourceArchiveOnlyYear(){const c=selected(),y=Number(selectedYear);return !recoveredOnlyYear()&&c?.source_archive_years?.includes(y)&&c.pdf_only_years?.includes(y)&&!c.preserved_pdf_figure_years?.includes(y);}
-    function defaultSourceKind(){if(recoveredOnlyYear())return 'recovered-native-effective-sources';if(sourceArchiveOnlyYear())return 'source-summary-figures';return !sourceArchiveOnlyYear()&&selected()?.pdf_only_years?.includes(Number(selectedYear))?'preserved-pdf-figures':historicalKind;}
-    function bindClient(){const prepare=q('[data-dtmax-prepare]');if(typeof onPrepare==='function'&&prepare){prepare.disabled=historyLoading;prepare.onclick=async()=>{const selection=preparationSelection();prepare.disabled=true;try{await onPrepare(selection);}catch(e){if(selection.isCurrent()){const note=q('[data-dtmax-prepare-status]');if(note)note.textContent=e.message;}}finally{if(selection.isCurrent())prepare.disabled=false;}};}q('[data-dtmax-back]').onclick=()=>show('list');q('[data-dtmax-year]').disabled=historyLoading;all('[data-dtmax-view]').forEach(b=>{if(b.dataset.dtmaxView!=='list')b.disabled=historyLoading;});q('[data-dtmax-year]').onchange=e=>{if(historyLoading)return;selectedYear=e.target.value;if(!sourceKindExplicit)kind=defaultSourceKind();return show(sourceArchiveOnlyYear()?'return':view);};}
+    function defaultSourceKind(){if(preferredSourceKind)return preferredSourceKind;if(recoveredOnlyYear())return 'recovered-native-effective-sources';if(sourceArchiveOnlyYear())return 'source-summary-figures';return !sourceArchiveOnlyYear()&&selected()?.pdf_only_years?.includes(Number(selectedYear))?'preserved-pdf-figures':historicalKind;}
+    function bindClient(){const prepare=q('[data-dtmax-prepare]');if(typeof onPrepare==='function'&&prepare){prepare.disabled=historyLoading;prepare.onclick=async()=>{const selection=preparationSelection();prepare.disabled=true;try{await onPrepare(selection);}catch(e){if(selection.isCurrent()){const note=q('[data-dtmax-prepare-status]');if(note)note.textContent=e.message;}}finally{if(selection.isCurrent())prepare.disabled=false;}};}q('[data-dtmax-back]').onclick=()=>show('list');q('[data-dtmax-year]').disabled=historyLoading;all('[data-dtmax-view]').forEach(b=>{if(b.dataset.dtmaxView!=='list')b.disabled=historyLoading;});q('[data-dtmax-year]').onchange=e=>{if(historyLoading)return;selectedYear=e.target.value;if(!sourceKindExplicit)kind=defaultSourceKind();return show(!preferredSourceKind&&sourceArchiveOnlyYear()?'return':view);};}
     const appliedClientFilters=()=>({search,year,sort,direction,status,province});
     const visibleClientFilters=()=>({search:q('[name=search]')?.value??'',year:q('[name=year]')?.value??'',sort:q('[name=sort]')?.value||'client_number',direction:q('[name=direction]')?.value||'asc',status:q('[name=status]')?.value??'',province:q('[name=province]')?.value??''});
     function csvUi(message){
@@ -1055,7 +1056,7 @@
       activeClient=client;kind=historicalKind;archivedYear='2022';comparison='';history=[];pdfs=[];releasePdf();historyLoading=true;
       selectedYear=year||String(Math.max(...selected().historical_years)||'');if(selectedYear==='-Infinity')selectedYear='';sourceKindExplicit=false;kind=defaultSourceKind();
       const n=++sequence;view='entry';shell(clientHead()+'<p class="dtmax-notice">Loading source history…</p>');bindClient();
-      try{const records=await historyFor(client,n);if(!records||!current(n))return;history=records;historyLoading=false;return show(sourceArchiveOnlyYear()?'return':'entry',true);}catch(e){if(current(n)){historyLoading=false;shell(clientHead()+'<p class="dtmax-error" role="alert">Source history unavailable: '+esc(e.message)+'</p>');bindClient();}}
+      try{const records=await historyFor(client,n);if(!records||!current(n))return;history=records;historyLoading=false;return show(!preferredSourceKind&&sourceArchiveOnlyYear()?'return':'entry',true);}catch(e){if(current(n)){historyLoading=false;shell(clientHead()+'<p class="dtmax-error" role="alert">Source history unavailable: '+esc(e.message)+'</p>');bindClient();}}
     }
     function historicalRecord(y){const matches=history.filter(r=>String(r.tax_year)===y);return matches.length===1?matches[0]:null;}
     async function show(next,focus=false,requestedPdf=null){
@@ -1125,13 +1126,15 @@
         if(r.reviewed_packet_scope||r.source_archive_scope){
           if(p.content_hex!==undefined||JSON.stringify(p.content_transport)!==JSON.stringify(r.content_transport))throw Error('Original packet content did not match');
           bytes=new Uint8Array(r.bytes);
-          for(let i=0;i<r.content_transport.chunk_count;i++){
+          for(let start=0;start<r.content_transport.chunk_count;start+=4){
+           await Promise.all(Array.from({length:Math.min(4,r.content_transport.chunk_count-start)},async(_,j)=>{const i=start+j;
             const chunk=await request(BASE+'clients/'+client+'/return-pdfs/'+r.tax_year+'/'+r.sha256+(r.source_archive_scope?'/archive-chunks/':'/chunks/')+i);if(!current(n))return;
             const expected=Math.min(r.content_transport.chunk_bytes,r.bytes-i*r.content_transport.chunk_bytes);
             if(chunk.source_scope!==SCOPE||chunk.test_copy!==true||chunk.tax_cases_imported!==0||chunk.client_number!==client||chunk.tax_year!==r.tax_year||chunk.sha256!==r.sha256||chunk.chunk_index!==i||chunk.bytes!==expected||typeof chunk.chunk_sha256!=='string'||!/^[0-9a-f]{64}$/.test(chunk.chunk_sha256))throw Error('Original packet section did not match');
             const part=decodePdfHex(chunk.content_hex,expected),digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',part)),b=>b.toString(16).padStart(2,'0')).join('');if(!current(n))return;
             if(digest!==chunk.chunk_sha256)throw Error('Original packet section failed browser hash verification');
             bytes.set(part,i*r.content_transport.chunk_bytes);
+           }));if(!current(n))return;
           }
         }else bytes=decodePdfHex(p.content_hex,r.bytes);
         const actual=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');if(!current(n))return;if(actual!==r.sha256)throw Error('Original PDF failed browser hash verification');

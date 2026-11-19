@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {spawnSync} from 'node:child_process';
 
 const root = new URL('../public/', import.meta.url);
 
@@ -24,7 +25,11 @@ test('every shipped script compiles', () => {
   const broken = [];
   for (const file of scripts) {
     try {
-      new vm.Script(fs.readFileSync(file, 'utf8'), { filename: file.pathname });
+      const source=fs.readFileSync(file,'utf8');
+      if(file.pathname.includes('/vendor/pdfjs/')){
+        const result=spawnSync(process.execPath,['--input-type=module','--check'],{input:source,encoding:'utf8'});
+        if(result.status!==0)throw Error(result.stderr);
+      }else new vm.Script(source, { filename: file.pathname });
     } catch (error) {
       broken.push(file.pathname.split('/public/').pop() + ': ' + error.message.split('\n')[0]);
     }
