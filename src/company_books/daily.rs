@@ -19,7 +19,35 @@ struct DailyState {
     #[serde(default)] stock_movements: Vec<super::inventory::Movement>,
     #[serde(default)] crm: Vec<CrmRecord>,
     #[serde(default)] mileage: Vec<MileageTrip>,
+    #[serde(default)] time_off: Vec<TimeOff>,
     #[serde(default)] sales_docs: Vec<SalesDoc>,
+}
+
+/// A leave request. NXT records the decision; it does not schedule, approve in a workflow
+/// or feed payroll.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TimeOff {
+    id: String,
+    employee_id: String,
+    kind: String,
+    from_date: String,
+    to_date: String,
+    days_milli: i64,
+    status: String,
+    note: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TimeOffInput {
+    pub request_id: String,
+    pub employee_id: String,
+    pub kind: String,
+    pub from_date: String,
+    pub to_date: String,
+    pub days_milli: i64,
+    #[serde(default)] pub status: String,
+    #[serde(default)] pub note: String,
 }
 
 /// A mileage trip. The rate is supplied by the firm; NXT does not claim a statutory rate.
@@ -274,6 +302,52 @@ impl CompanyBooks {
         Ok(json!({"id": input.request_id, "posts_to_ledger": false, "write_back": false, "authoritative_system": "quickbooks"}))
     }
     /// Stores a fixed-asset or prepaid schedule. The schedule is a record: nothing posts.
+    /// Records a leave request against an active employee.
+    pub async fn add_time_off(&self, company: &str, input: TimeOffInput) -> Result<Value> {
+        if !valid_id(&input.request_id) { return Err(bad("A leave request needs a request id")); }
+        if !matches!(input.kind.as_str(), "vacation" | "sick" | "unpaid" | "other") {
+            return Err(bad("Leave kind must be vacation, sick, unpaid or other"));
+        }
+        let status = if input.status.is_empty() { "requested".to_string() } else { input.status.clone() };
+        if !matches!(status.as_str(), "requested" | "approved" | "declined" | "cancelled") {
+            return Err(bad("Leave status must be requested, approved, declined or cancelled"));
+        }
+        if !date(&input.from_date) || !date(&input.to_date) { return Err(bad("A leave request needs valid dates")); }
+        if input.to_date < input.from_date { return Err(bad("Leave cannot end before it starts")); }
+        if input.days_milli <= 0 { return Err(bad("A leave request needs a positive number of days")); }
+        if !text(&input.note, 300) { return Err(bad("Leave note is too long")); }
+        let (raw, mut state) = self.daily_load(company).await?;
+        if state.time_off.iter().any(|row| row.id == input.request_id) {
+            return Ok(json!({"id": input.request_id, "idempotent_replay": true, "schedules_work": false, "write_back": false}));
+        }
+        if !state.employees.iter().any(|row| row.id == input.employee_id && row.active) {
+            return Err(bad("A leave request needs an active parallel employee"));
+        }
+        if state.time_off.len() >= 1000 { return Err(bad("Leave list is full")); }
+        state.time_off.push(TimeOff {
+            id: input.request_id.clone(),
+            employee_id: input.employee_id,
+            kind: input.kind,
+            from_date: input.from_date,
+            to_date: input.to_date,
+            days_milli: input.days_milli,
+            status,
+            note: input.note,
+        });
+        self.daily_save(company, raw.as_deref(), &state).await?;
+        Ok(json!({"id": input.request_id, "schedules_work": false, "write_back": false, "authoritative_system": "quickbooks"}))
+    }
+
+    /// Leave requests, most recent start first, with days per status.
+    pub async fn time_off_list(&self, company: &str) -> Result<Value> {
+        let (_, state) = self.daily_load(company).await?;
+        let mut rows = state.time_off.clone();
+        rows.sort_by(|a, b| b.from_date.cmp(&a.from_date));
+        let approved: i64 = rows.iter().filter(|row| row.status == "approved").map(|row| row.days_milli).sum();
+        let requested: i64 = rows.iter().filter(|row| row.status == "requested").map(|row| row.days_milli).sum();
+        Ok(json!({"requests": rows, "approved_days_milli": approved, "requested_days_milli": requested, "schedules_work": false, "write_back": false, "authoritative_system": "quickbooks"}))
+    }
+
     /// Records a mileage trip. The deduction is kilometres times the supplied rate.
     pub async fn add_mileage(&self, company: &str, input: MileageInput) -> Result<Value> {
         if !valid_id(&input.request_id) { return Err(bad("A mileage trip needs a request id")); }

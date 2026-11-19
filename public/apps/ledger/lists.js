@@ -364,6 +364,19 @@
           rows: trips.map(row => ({ date: text(row.date), purpose: text(row.purpose), km: (Number(row.kilometres_milli) / 1000).toFixed(3), rate: amount(row.rate_cents_per_km), amount: amount(row.amount_cents) }))
         });
       }
+      const leave = list(input.timeOff && input.timeOff.requests);
+      if (leave.length) {
+        built.push({
+          id: "timeoff",
+          label: "Time off",
+          kind: "parallel",
+          source: "Company book parallel list",
+          description: "Leave requests with kind, dates, days and a decision. NXT records the decision; it does not schedule work or feed payroll.",
+          boundary: PARALLEL_BOUNDARY,
+          columns: [{ key: "kind", label: "Kind" }, { key: "from", label: "From" }, { key: "to", label: "To" }, { key: "days", label: "Days", num: 1 }, { key: "status", label: "Status" }],
+          rows: leave.map(row => ({ kind: text(row.kind), from: text(row.from_date), to: text(row.to_date), days: (Number(row.days_milli) / 1000).toFixed(1), status: text(row.status) }))
+        });
+      }
       const pipeline = list(input.crm && input.crm.records);
       if (pipeline.length) {
         built.push({

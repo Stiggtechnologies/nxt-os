@@ -44,6 +44,7 @@ The request body is built to match the endpoint's `deny_unknown_fields` contract
 | Attachments | Company book subledger | none | Files already stored against parallel documents, with size and owner; no upload or download control |
 | Recurring transactions | Company book parallel lists | none | Invoice and bill templates with cadence and next date; **no scheduler, nothing posts automatically** |
 | Schedules | Company book parallel lists | none | Straight-line schedules for fixed assets, prepaid expenses and revenue recognition, with amortised and remaining amounts to the as-of date; **nothing is posted** |
+| Time off | Company book parallel lists | none | Leave requests with kind, dates, days and a decision; NXT does not schedule work or feed payroll |
 | Mileage | Company book parallel lists | none | Trips with distance, purpose and a firm-supplied rate; NXT computes distance times rate and claims no statutory rate |
 | Inventory | Company book parallel lists | none | On-hand quantity from stock movements, latest unit cost and value; not weighted average or FIFO |
 | Sales pipeline | Company book parallel lists | none | Opportunities, proposals and contracts with stage and value; NXT does not send or sign anything |

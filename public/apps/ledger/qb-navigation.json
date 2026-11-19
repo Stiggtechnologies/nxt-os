@@ -2086,9 +2086,9 @@
           "label": "Time off",
           "observation": "observed",
           "observed_path": "Time > Time off",
-          "native_route": null,
-          "native_scope": "No leave tracking.",
-          "next_step": "Out of scope unless requested.",
+          "native_route": "lists",
+          "native_scope": "Leave requests are recorded in Lists with employee, kind, dates, days and a requested/approved/declined decision.",
+          "next_step": "No scheduling, approval workflow, accrual balances or payroll feed. Nothing writes back to QuickBooks.",
           "kind": "capability"
         },
         {
