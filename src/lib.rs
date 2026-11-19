@@ -64,7 +64,10 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
         .with(Arc::new(client_journey::ledger::LedgerClose::new(company_books.clone())));
     let journeys = Arc::new(client_journey::service::Journeys::new(journey_store, capabilities));
     let backup = agent::openai::OpenAi::from_env().map(|m| Arc::new(m) as Arc<dyn agent::Model>);
-    let agent = agent::Claude::from_env().map(|m| agent::Agent::new(journeys.clone(), Arc::new(m)).with_backup(backup));
+    // OpenAI, then DeepSeek, then NVIDIA via OpenRouter (agent::chain). Claude only if no chain key is set.
+    let primary: Option<Arc<dyn agent::Model>> = agent::chain::Chain::from_env().map(|m| Arc::new(m) as Arc<dyn agent::Model>)
+        .or_else(|| agent::Claude::from_env().map(|m| Arc::new(m) as Arc<dyn agent::Model>));
+    let agent = primary.map(|m| agent::Agent::new(journeys.clone(), m).with_backup(backup));
     let directory = Arc::new(client_directory::Directory {
         company_books: company_books.clone(),
         migrations: migrations.clone(),

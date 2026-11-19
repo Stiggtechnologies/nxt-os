@@ -127,7 +127,7 @@ async fn reviews(State(api): S, Extension(id): Extension<Identity>) -> R {
 }
 async fn work(State(api): S, Extension(id): Extension<Identity>, Path(client): Path<String>) -> R {
     guard(&id, &client)?;
-    let agent = api.agent.as_ref().ok_or_else(|| ApiError(axum::http::StatusCode::SERVICE_UNAVAILABLE, "the firm agent needs an ANTHROPIC_API_KEY configured for this deployment".into()))?;
+    let agent = api.agent.as_ref().ok_or_else(|| ApiError(axum::http::StatusCode::SERVICE_UNAVAILABLE, "the firm agent needs OPENAI_API_KEY or OPENROUTER_API_KEY configured for this deployment".into()))?;
     Ok(Json(agent.work(&client).await?))
 }
 async fn staff(State(api): S, Extension(id): Extension<Identity>, Path((client, step)): Path<(String, String)>, Json(b): Json<StaffBody>) -> R {

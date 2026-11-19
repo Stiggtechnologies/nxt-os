@@ -11,7 +11,6 @@ use axum::{Json, Router, extract::State, http::StatusCode, middleware, routing::
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
-use std::time::Duration;
 
 #[derive(Clone)]
 pub struct Os {
@@ -59,9 +58,9 @@ pub fn router(os: Os) -> Router {
 
 async fn status(State(os): State<Os>) -> Json<Value> {
     Json(json!({
-        "ai_enabled": api_key().is_some(),
+        "ai_enabled": crate::agent::chain::primary_model().is_some() || api_key().is_some(),
         "auth_required": crate::referral::routes::auth_required(),
-        "model": model(),
+        "model": crate::agent::chain::primary_model().unwrap_or_else(model),
         "storage": os.ledger.store.backend_name(),
         "apps": [
             { "id": "ledger", "name": "NXT Ledger", "path": "/apps/ledger/" },
@@ -481,38 +480,15 @@ fn gods_eye_brief(v: &Value) -> Value {
     })
 }
 
-async fn call_claude(http: &reqwest::Client, key: &str, messages: &[Value]) -> Result<Value, String> {
-    let body = json!({
-        "model": model(),
-        "max_tokens": 16000,
-        "output_config": { "effort": "medium" },
-        "fallbacks": "default",
-        "system": SYSTEM_PROMPT,
-        "tools": tools(),
-        "messages": messages,
-    });
-    let resp = http
-        .post(api_url())
-        .timeout(Duration::from_secs(120))
-        .header("x-api-key", key)
-        .header("anthropic-version", "2026-10-21")
-        .header("anthropic-beta", "server-side-fallback-2026-07-01")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("couldn't reach the Claude API: {e}"))?;
-    let status = resp.status();
-    let v: Value = resp.json().await.map_err(|e| format!("invalid Claude API response: {e}"))?;
-    if !status.is_success() {
-        let msg = v["error"]["message"].as_str().unwrap_or("unknown error");
-        return Err(format!("Claude API error ({status}): {msg}"));
-    }
-    Ok(v)
-}
-
 async fn ask(State(os): State<Os>, Json(b): Json<AskBody>) -> Result<Json<Value>, ApiError> {
-    let Some(key) = api_key() else {
-        return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "Ask NXT needs an ANTHROPIC_API_KEY configured for this deployment.".into()));
+    // OpenAI, then DeepSeek, then NVIDIA via OpenRouter. Claude stays only as a last resort
+    // for a deployment that still sets ANTHROPIC_API_KEY and none of the chain keys.
+    let model: Box<dyn crate::agent::Model> = match crate::agent::chain::Chain::from_env() {
+        Some(chain) => Box::new(chain),
+        None => match crate::agent::Claude::from_env() {
+            Some(claude) => Box::new(claude),
+            None => return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "Ask NXT needs OPENAI_API_KEY or OPENROUTER_API_KEY configured for this deployment.".into())),
+        },
     };
     let mut messages: Vec<Value> = b
         .messages
@@ -529,11 +505,11 @@ async fn ask(State(os): State<Os>, Json(b): Json<AskBody>) -> Result<Json<Value>
     if messages.last().is_none_or(|m| m["role"] != "user") {
         return Err(ApiError(StatusCode::BAD_REQUEST, "the last message must be from the user".into()));
     }
-    let http = reqwest::Client::new();
     let mut actions = Vec::new();
     let mut tools_used = Vec::new();
     for _ in 0..MAX_TOOL_ROUNDS {
-        let resp = call_claude(&http, &key, &messages).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e))?;
+        let tool_defs: Vec<Value> = tools().as_array().cloned().unwrap_or_default();
+        let resp = model.respond(SYSTEM_PROMPT, &tool_defs, &messages).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.into_message()))?;
         let stop = resp["stop_reason"].as_str().unwrap_or("");
         if stop == "refusal" {
             return Ok(Json(json!({ "reply": "I can't help with that request.", "actions": actions, "tools_used": tools_used })));
