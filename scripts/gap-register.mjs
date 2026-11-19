@@ -162,8 +162,8 @@ if (invokedDirectly) {
     fs.writeFileSync(path.join(root, "docs/progress-baseline.json"), JSON.stringify(baseline, null, 2) + "\n");
     console.log("wrote docs/progress-baseline.json");
   } else if (args.includes("--check")) {
-    const current = fs.existsSync(doc) ? fs.readFileSync(doc, "utf8") : "";
-    const expected = markdown(data) + "\n";
+    const current = fs.existsSync(doc) ? fs.readFileSync(doc, "utf8").replace(/\r\n/g, "\n") : "";
+    const expected = markdown(data).replace(/\r\n/g, "\n") + "\n";
     if (current !== expected) {
       console.error("docs/GAP_REGISTER.md is stale. Run: node scripts/gap-register.mjs --write");
       process.exit(1);

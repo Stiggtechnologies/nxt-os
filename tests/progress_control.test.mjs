@@ -50,8 +50,8 @@ test('progress never regresses and nothing disappears', () => {
 });
 
 test('the committed register matches the catalogues', () => {
-  const current = read('../docs/GAP_REGISTER.md');
-  const expected = markdown(data) + '\n';
+  const current = read('../docs/GAP_REGISTER.md').replace(/\r\n/g, '\n');
+  const expected = markdown(data).replace(/\r\n/g, '\n') + '\n';
   assert.equal(current, expected, 'docs/GAP_REGISTER.md is stale; run node scripts/gap-register.mjs --write');
 });
 
