@@ -55,6 +55,7 @@ fn app_modules_with_tax(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<refe
 }
 
 fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine::Engine>, firm: Arc<firm::Firm>, tax: Arc<tax::Tax>, engagements:Arc<engagement::Engagements>, migrations:Arc<migrations::Migrations>, signatures:Arc<signatures::Signatures>, company_books:Arc<company_books::CompanyBooks>, source_lists:Arc<company_books::source_lists::SourceLists>, source_import: Arc<source_import::SourceImport>, journey_store: Store) -> Router {
+    let accounting_enabled = accounting_extension::enabled_from_env();
     tax.require_signed_t183_from(signatures.clone());
     let capabilities = client_journey::capability::Capabilities::new()
         .with(Arc::new(client_journey::sources::SourceSoftwareImport {
@@ -62,7 +63,8 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
             migrations: migrations.clone(),
             source_import: source_import.clone(),
         }))
-        .with(Arc::new(client_journey::ledger::LedgerClose::new(company_books.clone())));
+        .with(Arc::new(client_journey::ledger::LedgerClose::new(company_books.clone())
+            .with_accounting_controls(accounting_enabled)));
     let journeys = Arc::new(client_journey::service::Journeys::new(journey_store, capabilities));
     let backup = agent::openai::OpenAi::from_env().map(|m| Arc::new(m) as Arc<dyn agent::Model>);
     // OpenAI, then DeepSeek, then NVIDIA via OpenRouter (agent::chain). Claude only if no chain key is set.
@@ -91,7 +93,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
     };
     let inner = Router::new()
         .merge(ledger::routes::router(ledger.clone()))
-        .merge(accounting_extension::router(company_books.clone()))
+        .merge(accounting_extension::mount(accounting_enabled, company_books.clone()))
         .merge(ledger::routes::company_router(ledger.store.clone(), company_books.clone()))
         .merge(firm::router(firm.clone()))
         .merge(tax::router(tax.clone()))

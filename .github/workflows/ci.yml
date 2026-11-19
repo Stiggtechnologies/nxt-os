@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, review/accounting-extension-staging]
 permissions:
   contents: read
 jobs:
@@ -26,6 +26,7 @@ jobs:
         run: cargo test --locked
       - name: Verify browser and operational scripts
         run: |
+          node --test tests/accounting-*.test.mjs
           python3 scripts/build-dtmax-native-financial-profiles.py --check
           node --test tests/t1_optional_workpapers.test.mjs
           node --check public/apps/tax/slip-groups.js

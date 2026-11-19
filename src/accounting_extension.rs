@@ -50,6 +50,18 @@ use axum::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+pub(crate) fn enabled_from_env() -> bool {
+    enabled_value(std::env::var("NXT_ACCOUNTING_EXTENSION").ok().as_deref())
+}
+
+fn enabled_value(value: Option<&str>) -> bool {
+    value == Some("on")
+}
+
+pub(crate) fn mount(enabled: bool, books: Arc<CompanyBooks>) -> Router {
+    if enabled { router(books) } else { Router::new() }
+}
+
 const RELEASE_GATES: [(&str, &str, [&str; 3]); 7] = [
     (
         "LW-01",
@@ -272,6 +284,29 @@ fn close_summary(trial: &Value, head: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn accounting_routes_are_unmounted_unless_explicitly_enabled() {
+        use axum::{body::Body, http::Request};
+        use tower::ServiceExt;
+        for value in [None, Some(""), Some("off"), Some("true"), Some("ON"), Some("on ")] {
+            assert!(!enabled_value(value));
+        }
+        assert!(enabled_value(Some("on")));
+        let books = Arc::new(CompanyBooks::new(crate::store::Store::memory()));
+        for path in [
+            "/api/accounting-extension/readiness",
+            "/api/accounting-extension/archive/demo/fixture/events",
+            "/api/accounting-extension/simulations/demo/operation/journal",
+        ] {
+            let method = if path.ends_with("readiness") { "GET" } else { "POST" };
+            let request = || Request::builder().method(method).uri(path).body(Body::empty()).unwrap();
+            let disabled = mount(false,books.clone()).oneshot(request()).await.unwrap();
+            let enabled = mount(true,books.clone()).oneshot(request()).await.unwrap();
+            assert_eq!(disabled.status(), StatusCode::NOT_FOUND);
+            assert_ne!(enabled.status(), StatusCode::NOT_FOUND);
+        }
+    }
     use crate::firm::staff::Role;
     use std::collections::HashSet;
 

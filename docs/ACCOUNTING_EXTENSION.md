@@ -1,6 +1,12 @@
 
 # Accounting extension
 
+## Release switch and preview isolation
+
+The extension defaults to off. Only the exact value on for NXT_ACCOUNTING_EXTENSION mounts the accounting routes and enables its Client Journey close checks. When the switch is unset, the existing close assessment and evidence shape are used. The switch does not authorize production dispatch.
+
+Use the review branch for a Preview deployment. Confirm Preview environment variable scopes before pushing, and confirm storage after deployment. The initial review preview uses isolated process memory without firm records or production credentials. Its contents are ephemeral. To exercise authenticated accounting workflows on hosted staging later, use dedicated staging identities and a separate staging backing store before enabling the switch.
+
 The accounting extension integrates Company Books, Client Journey, and the staff identity model. It runs scoped evidence and research tasks and records release reviews. Operational dispatch remains disabled.
 
 ## Archive ingestion and retrieval

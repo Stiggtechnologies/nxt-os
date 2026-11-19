@@ -17,11 +17,13 @@ use chrono::{Datelike, NaiveDate, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+const BASELINE_NOT_CHECKED: [&str; 3] = ["bank reconciliation", "subledger allocations", "open exceptions"];
 const NOT_CHECKED: [&str; 4] = ["independent source completeness", "bank reconciliation", "subledger allocations", "open exceptions"];
 
 pub struct LedgerClose {
     company_books: Arc<CompanyBooks>,
     as_of: Option<NaiveDate>,
+    accounting_controls: bool,
 }
 
 fn last_month_end(today: NaiveDate) -> Option<String> {
@@ -53,7 +55,12 @@ fn blockers(evidence: &Value) -> Vec<String> {
 
 impl LedgerClose {
     pub fn new(company_books: Arc<CompanyBooks>) -> Self {
-        Self { company_books, as_of: None }
+        Self { company_books, as_of: None, accounting_controls: false }
+    }
+
+    pub(crate) fn with_accounting_controls(mut self, enabled: bool) -> Self {
+        self.accounting_controls = enabled;
+        self
     }
 
     /// Assess as of a fixed date instead of today.
@@ -65,6 +72,43 @@ impl LedgerClose {
     fn required_lock(&self, step: &str) -> Option<String> {
         (step == "monthly_close").then(|| last_month_end(self.as_of.unwrap_or_else(|| Utc::now().date_naive()))).flatten()
     }
+
+    async fn assess_baseline(&self, ctx: &StepContext) -> Readiness {
+        let blocked = |reason: String| Readiness::Blocked { reasons: vec![reason], evidence: json!({"not_checked": BASELINE_NOT_CHECKED}) };
+        let detail = match self.company_books.detail(&ctx.client_id).await {
+            Ok(v) => v,
+            Err(e) => return blocked(format!("company books unavailable: {}", e.1)),
+        };
+        if detail["stage"] != "import_committed" {
+            return blocked(format!("books are not committed (stage: {})", detail["stage"].as_str().unwrap_or("unknown")));
+        }
+        let trial = match self.company_books.trial_balance(&ctx.client_id).await {
+            Ok(v) => v,
+            Err(e) => return blocked(format!("trial balance unavailable: {}", e.1)),
+        };
+        let evidence = json!({
+            "head_sha256": detail["head_sha256"],
+            "locked_through": trial["head"]["locked_through"],
+            "required_locked_through": self.required_lock(&ctx.step),
+            "review_status": trial["head"]["review"]["status"],
+            "total_debit_cents": trial["analysis"]["total_debit_cents"],
+            "total_credit_cents": trial["analysis"]["total_credit_cents"],
+            "not_checked": BASELINE_NOT_CHECKED,
+        });
+        readiness(evidence, false)
+    }
+}
+
+fn readiness(evidence: Value, accounting_controls: bool) -> Readiness {
+    let mut reasons = blockers(&evidence);
+    if accounting_controls {
+        for check in evidence["checks"].as_array().into_iter().flatten() {
+            if check["passed"] != true && check["id"] != "trial_balance_balanced" {
+                reasons.push(format!("close control failed: {}", check["id"].as_str().unwrap_or("unknown")));
+            }
+        }
+    }
+    if reasons.is_empty() { Readiness::Ready { evidence } } else { Readiness::Blocked { reasons, evidence } }
 }
 
 impl Capability for LedgerClose {
@@ -76,6 +120,9 @@ impl Capability for LedgerClose {
     }
     fn assess<'a>(&'a self, ctx: &'a StepContext) -> BoxFut<'a, Readiness> {
         Box::pin(async move {
+            if !self.accounting_controls {
+                return self.assess_baseline(ctx).await;
+            }
             let blocked = |reason: String| Readiness::Blocked { reasons: vec![reason], evidence: json!({"not_checked": NOT_CHECKED}) };
             let report = match capture_close(&self.company_books, &ctx.client_id).await {
                 Ok(v) => v,
@@ -91,13 +138,7 @@ impl Capability for LedgerClose {
                 "checks": report["checks"],
                 "not_checked": NOT_CHECKED,
             });
-            let mut reasons = blockers(&evidence);
-            for check in report["checks"].as_array().into_iter().flatten() {
-                if check["passed"] != true && check["id"] != "trial_balance_balanced" {
-                    reasons.push(format!("close control failed: {}", check["id"].as_str().unwrap_or("unknown")));
-                }
-            }
-            if reasons.is_empty() { Readiness::Ready { evidence } } else { Readiness::Blocked { reasons, evidence } }
+            readiness(evidence, true)
         })
     }
 }
@@ -120,6 +161,23 @@ mod tests {
     #[test]
     fn clean_locked_book_has_no_blockers() {
         assert!(blockers(&book()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn default_off_preserves_legacy_close_evidence_for_uncommitted_books() {
+        let capability = LedgerClose::new(Arc::new(CompanyBooks::new(crate::store::Store::memory())));
+        let ctx = StepContext {
+            client_id: "demo".into(), step: "monthly_close".into(), sources: Default::default(),
+        };
+        let outcome = capability.assess(&ctx).await;
+        assert_eq!(outcome, Readiness::Blocked {
+            reasons: vec!["books are not committed (stage: acquisition_pending)".into()],
+            evidence: json!({"not_checked": BASELINE_NOT_CHECKED}),
+        });
+        let mut evidence = book();
+        evidence["checks"] = json!([{"id":"source_import_controls_passed","passed":false}]);
+        assert!(matches!(readiness(evidence.clone(),false), Readiness::Ready { .. }));
+        assert!(matches!(readiness(evidence,true), Readiness::Blocked { .. }));
     }
 
     #[test]
