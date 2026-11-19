@@ -128,3 +128,60 @@ fn screen_context_is_normalized_like_sync() {
     let long = speech::normalize_context(Some(&json!({"route": "x".repeat(900)})));
     assert_eq!(long.route.len(), 500);
 }
+
+#[test]
+fn source_health_follows_the_sync_context_contract() {
+    use nxt_os::nixon_finance::gods_eye::{can_display_source_as_live, source_health, SOURCE_HEALTH_STATES};
+    let companies = vec![
+        json!({"company_id": "firm", "sources": ["firm_ledger"]}),
+        json!({"company_id": "a", "sources": ["company_ledger"]}),
+        json!({"company_id": "b", "sources": ["company_ledger", "imported_company_books"]}),
+    ];
+    let gaps = vec![
+        json!({"company_id": "c", "note": "Ledger could not be read: boom"}),
+        json!({"company_id": "firm", "note": "612 imported company books exist; only the first 500 were listed."}),
+    ];
+    let s = source_health(&companies, &gaps, "2026-11-18T00:00:00Z");
+    let by = |k: &str| s.iter().find(|x| x["key"] == k).unwrap().clone();
+    assert_eq!(by("firm_ledger")["state"], "connected");
+    assert_eq!(by("company_ledgers")["state"], "partial_coverage");
+    assert_eq!(by("company_ledgers")["count"], 2);
+    assert_eq!(by("imported_company_books")["state"], "partial_coverage");
+    assert_eq!(by("cra_notices")["state"], "not_connected");
+    for x in &s {
+        assert!(SOURCE_HEALTH_STATES.contains(&x["state"].as_str().unwrap()), "{x}");
+        assert_eq!(x["display_as_live"], false, "nothing in NXT is shown as live");
+        assert!(x["observed_at"].is_null(), "observation time is not invented");
+        assert_eq!(x["checked_at"], "2026-11-18T00:00:00Z");
+    }
+    let none = source_health(&[json!({"company_id": "firm", "sources": ["firm_ledger"]})], &[json!({"company_id": "firm", "note": "Ledger could not be read: x"})], "t");
+    assert_eq!(none[0]["state"], "unavailable");
+    assert_eq!(none[1]["state"], "not_connected");
+    // canDisplaySourceAsLive truth table, as in SyncAI contracts.ts.
+    assert!(can_display_source_as_live("customer_operational", "live", "customer_authorized", true));
+    assert!(can_display_source_as_live("live_external", "live", "production_approved", true));
+    assert!(!can_display_source_as_live("simulated_industrial", "live", "production_approved", true));
+    assert!(!can_display_source_as_live("customer_operational", "connected", "customer_authorized", true));
+    assert!(!can_display_source_as_live("customer_operational", "live", "unreviewed", true));
+    assert!(!can_display_source_as_live("customer_operational", "live", "customer_authorized", false));
+}
+
+#[tokio::test]
+async fn gods_eye_view_reports_its_sources() {
+    unsafe { std::env::set_var("ADMIN_API_KEY", "k"); }
+    let shared = Store::memory();
+    let r = app_with(move || shared.clone());
+    ok(&r, "POST", "/api/company-ledger/synthetic-src/open", Some(json!({"name":"Synthetic Source Co"}))).await;
+    let v = ok(&r, "GET", "/api/nixon/gods-eye?as_of=2026-11-18", None).await;
+    let sources = v["sources"].as_array().unwrap();
+    let keys: Vec<&str> = sources.iter().map(|x| x["key"].as_str().unwrap()).collect();
+    assert_eq!(keys, ["firm_ledger", "company_ledgers", "imported_company_books", "tax_workspace", "cra_notices"]);
+    assert_eq!(sources[1]["state"], "connected");
+    assert_eq!(sources[1]["count"], 1);
+    assert_eq!(sources[2]["state"], "not_connected");
+    let line = voice::gods_eye_line(&v);
+    assert!(!line.contains("partly read"), "{line}");
+    let mut degraded = v.clone();
+    degraded["sources"][1]["state"] = json!("partial_coverage");
+    assert!(voice::gods_eye_line(&degraded).contains("One source was only partly read."));
+}

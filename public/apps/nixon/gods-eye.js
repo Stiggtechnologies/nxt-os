@@ -18,10 +18,17 @@
     const watchers = v.watchers
       .map((w) => `<li><b>${esc(w.title)}</b> <span class="meta">${esc(w.status === "no_source" ? "no source in NXT yet" : "active")}</span></li>`)
       .join("");
+    // SyncAI source-health panel (SCX-UX-010), transferred: state, count, check time, detail.
+    const srcs = v.sources || [];
+    const degraded = srcs.filter((x) => x.state !== "connected").length;
+    const sources = srcs
+      .map((x) => `<tr><td>${esc(x.name)}</td><td><span class="pill" data-state="${esc(x.state)}">${esc(x.state.replace(/_/g, " "))}</span></td><td>${x.count == null ? "" : esc(x.count)}</td><td class="meta">${esc((x.checked_at || "").slice(0, 19).replace("T", " "))} UTC</td><td class="meta">${esc(x.detail || "")}</td></tr>`)
+      .join("");
     el("#geSummary").innerHTML = `
       <p class="meta">As of ${esc(v.as_of)}. Books are ${esc(v.guardrails.books.replace("_", "-"))}. Posting and filing are disabled. No client is contacted. AI drafting is ${v.ai.enabled ? "on (zero-retention hosts only)" : "off"}.</p>
       ${companies ? `<table class="tbl"><thead><tr><th>Company</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th><th>Sources</th></tr></thead><tbody>${companies}</tbody></table>` : `<p>No findings across ${v.companies.length} compan${v.companies.length === 1 ? "y" : "ies"}.</p>`}
-      <details style="margin-top:8px"><summary>Watchers</summary><ul>${watchers}</ul></details>`;
+      <details style="margin-top:8px"><summary>Watchers</summary><ul>${watchers}</ul></details>
+      ${sources ? `<details style="margin-top:8px"${degraded ? " open" : ""}><summary>Sources${degraded ? ` · ${degraded} not fully connected` : ""}</summary><table class="tbl"><thead><tr><th>Source</th><th>State</th><th>Screened</th><th>Checked</th><th>Detail</th></tr></thead><tbody>${sources}</tbody></table><p class="meta">Counts are what this view screened, not a statement about the books. Nothing is shown as live.</p></details>` : ""}`;
     el("#geFindings").innerHTML = v.findings
       .sort((a, b) => (RISK[a.finding.risk_level] ?? 9) - (RISK[b.finding.risk_level] ?? 9))
       .map((f) => `<div class="card" style="margin-top:8px">${pill(f.finding.risk_level)} <b>${esc(f.finding.title)}</b> <span class="meta">${esc(f.company_id)} · ${esc(f.watcher)}</span>

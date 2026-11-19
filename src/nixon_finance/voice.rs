@@ -503,7 +503,9 @@ pub fn gods_eye_line(view: &serde_json::Value) -> String {
     let companies = view["companies"].as_array().map(|c| c.len()).unwrap_or(0);
     let gaps = view["gaps"].as_array().map(|g| g.len()).unwrap_or(0);
     let as_of = view["as_of"].as_str().unwrap_or("today");
-    let gap_line = match gaps { 0 => String::new(), 1 => " One gap is shown on screen.".into(), n => format!(" {n} gaps are shown on screen.") };
+    let partly = view["sources"].as_array().into_iter().flatten().filter(|x| matches!(x["state"].as_str(), Some("unavailable" | "partial_coverage"))).count();
+    let gap_line = match gaps { 0 => String::new(), 1 => " One gap is shown on screen.".into(), n => format!(" {n} gaps are shown on screen.") }
+        + &match partly { 0 => String::new(), 1 => " One source was only partly read.".into(), n => format!(" {n} sources were only partly read.") };
     if findings.is_empty() {
         return format!("God's Eye as of {as_of}: no findings across {companies} compan{}. I did not invent any.{gap_line}", if companies == 1 { "y" } else { "ies" });
     }
