@@ -277,6 +277,7 @@ function route() {
     $("#crumb").textContent = "Home";
     loadHome();
   }
+  window.NXTAssistant?.contextChanged();
 }
 function go(app, view) { location.hash = "/" + app + (view ? "/" + view : ""); }
 window.addEventListener("hashchange", route);
@@ -295,10 +296,11 @@ document.addEventListener("click", (e) => { if (e.target.closest("[data-ask-open
 // Apps report their current view so the URL stays shareable.
 window.addEventListener("message", (e) => {
   if (e.origin !== location.origin || !e.data?.nxt) return;
-  if (e.data.nxt === "view") {
+  if (e.data.nxt === "view" && e.source === $("#frame").contentWindow) {
     const [, app] = location.hash.split("/");
     const want = "#/" + app + (e.data.view ? "/" + e.data.view : "");
     if (APPS[app] && location.hash !== want) { history.replaceState(null, "", want); $("#frame").dataset.src = ($("#frame").dataset.src || APPS[app].path).split("#")[0] + (e.data.view ? "#" + e.data.view : ""); }
+    window.NXTAssistant?.contextChanged();
   }
   if (e.data.nxt === "signed-out") signOut();
   if (e.data.nxt === "company" && e.source === $("#frame").contentWindow) { NXTCompany.set(e.data.id || ""); if (e.data.open && e.data.id) go("nixon", NXTCompany.journeyView(e.data.id)); }
@@ -434,7 +436,29 @@ function openDrawer() { $("#drawer").classList.add("open"); askChat.render(); la
 function closeDrawer() { $("#drawer").classList.remove("open"); askChat.stop(); launcher?.sync(); }
 // Floating Nixon launcher: bottom right on every page of the shell (home and every app frame).
 launcher = NXTChat.launcher({ enabled: false, open: openDrawer, close: closeDrawer, isOpen: () => $("#drawer").classList.contains("open") });
-function showLauncher(show) { launcher?.enable(show); if (show) launcher?.restore(); }
+function showLauncher(show) {
+  launcher?.enable(show);
+  const request = NixonRealtime.takeHandoff();
+  if (show) {
+    launcher?.restore();
+    if (request) window.NXTAssistant.handle(request.action, request.text);
+  }
+}
+let assistantRequest = 0;
+window.NXTAssistant = {
+  contextChanged() { askChat.contextChanged(); },
+  async handle(action, text = "") {
+    const request = ++assistantRequest, token = NXT.key.get();
+    if (action === "stop") { askChat.stop(); return; }
+    if (!["open", "voice", "dictate", "send"].includes(action)) return;
+    openDrawer();
+    await askChat.refresh();
+    if (request !== assistantRequest || token !== NXT.key.get() || !$("#drawer").classList.contains("open")) return;
+    if (action === "voice") await askChat.startVoice();
+    if (action === "dictate") askChat.dictate();
+    if (action === "send") await askChat.voiceTurn(String(text).slice(0, 2000));
+  },
+};
 $("#closeDrawer").onclick = () => (launcher ? launcher.close() : closeDrawer());
 $("#clearChat").onclick = () => askChat.clear();
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#drawer").classList.contains("open") && !document.querySelector(".palette")) (launcher ? launcher.close() : closeDrawer()); });

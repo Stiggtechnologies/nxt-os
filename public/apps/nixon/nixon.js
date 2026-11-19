@@ -154,7 +154,7 @@ $("#run").onclick = async () => {
 loadStatus().then(() => api("/api/nixon/reviews")).then((list) => {
   if (list[0]) return api("/api/nixon/reviews/" + list[0].id).then(render);
 }).catch((e) => { if (e.status !== 401) toast(e.message, true); });
-tell("");
+tell(location.hash.replace(/^#\/?/, ""));
 
 const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
 let lastSpoken = "";
@@ -175,6 +175,7 @@ async function speak(text) { lastSpoken = text; speaking = true; await speaker.s
 async function sendVoice(transcript, channel, opts = {}) {
   const heard = (transcript || "").trim();
   if (!heard || (speaking && !opts.silent)) return;
+  if (!opts.silent && RT.hostAssistant("send", heard)) return;
   setVoiceState("Checking");
   try {
     const result = await api("/api/nixon/voice", { body: { transcript: heard, channel, last_spoken: lastSpoken, choices: window.__nixonChoices || [] } });
@@ -222,8 +223,10 @@ function ensureRecognition() {
 }
 
 const talk = $("#talk");
+talk.textContent = "Dictate in Ask NXT";
 talk.onpointerdown = (event) => {
   event.preventDefault();
+  if (RT.hostAssistant("dictate")) return;
   const engine = ensureRecognition();
   if (!engine) return;
   $("#openMic").checked = false;
@@ -235,8 +238,13 @@ talk.onpointerup = talk.onpointerleave = () => {
     try { recognition.stop(); } catch { /* not started */ }
   }
 };
-$("#stopTalk").onclick = () => { stopSpeaking(); if (liveConnection) endLive(); if (recognition) { try { recognition.stop(); } catch { /* idle */ } } setVoiceState("Push to talk"); };
+$("#stopTalk").onclick = () => { RT.hostAssistant("stop"); stopSpeaking(); if (liveConnection) endLive(); if (recognition) { try { recognition.stop(); } catch { /* idle */ } } setVoiceState("Push to talk"); };
 $("#openMic").onchange = () => {
+  if (RT.hostAssistant($("#openMic").checked ? "voice" : "stop")) {
+    $("#openMic").checked = false;
+    setVoiceState("Voice is in Ask NXT and continues across pages.");
+    return;
+  }
   const engine = ensureRecognition();
   if (!$("#openMic").checked) {
     setVoiceState("Push to talk");
@@ -261,6 +269,11 @@ const live = RT.createLiveSession({
 let liveConnection = null;
 function endLive(state) { live.end(state); liveConnection = null; }
 async function startLive(welcome) {
+  if (!welcome && RT.hostAssistant("voice")) {
+    endLive(); stopSpeaking();
+    setVoiceState("Voice is in Ask NXT and continues across pages.");
+    return;
+  }
   const outcome = await live.start(welcome);
   liveConnection = live.active ? live : null;
   if (outcome === "unsupported") $("#voiceHint").textContent = "This browser cannot start a live voice session. Type a command instead.";

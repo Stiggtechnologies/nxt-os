@@ -42,6 +42,8 @@ function sandbox({ identity = { role: "admin", clients: ["*"] }, aiEnabled = tru
   const sb = {
     document: doc, console, setTimeout, clearTimeout, JSON, Promise, Map, Set, Object, Array, String, Number, Boolean, Error,
     localStorage: { store: {}, getItem(k) { return this.store[k] ?? null; }, setItem(k, v) { this.store[k] = String(v); } },
+    sessionStorage: { store: {}, getItem(k) { return this.store[k] ?? null; }, setItem(k, v) { this.store[k] = String(v); }, removeItem(k) { delete this.store[k]; } },
+    URLSearchParams,
     navigator: {}, location: { pathname: "/apps/ledger/", assign: (u) => calls.push(["assign", u]) },
     speechSynthesis: { speak: (u) => spoken.push(u.text), cancel() {} },
     SpeechSynthesisUtterance: class { constructor(t) { this.text = t; } },
@@ -187,21 +189,17 @@ test("browsers without speech recognition hide the mic instead of showing a dead
   assert.equal(host.querySelector(".nxc-mic").hidden, true);
 });
 
-test("floating launcher: signed-in firm-wide staff only, opens a compact panel, Escape-closable, remembers state", async () => {
+test("standalone launcher moves into the shell before starting a conversation", async () => {
   const { sb } = sandbox({ shell: false });
   await tick();
   const bubble = sb.document.body.children?.find((c) => c.className === "nxl");
   assert.ok(bubble, "launcher mounted on a standalone page");
   assert.equal(bubble.getAttribute("aria-label"), "Talk to Nixon");
   const panel = sb.document.body.children.find((c) => c.className === "nxl-panel");
-  assert.equal(panel.hidden, true);
+  assert.equal(panel, undefined);
   bubble.onclick();
-  assert.equal(panel.hidden, false);
-  assert.equal(bubble.hidden, true);
-  assert.equal(sb.localStorage.getItem(sb.NXTChat.OPEN_KEY), "1");
-  panel.querySelector("[data-close]").onclick();
-  assert.equal(panel.hidden, true);
-  assert.equal(sb.localStorage.getItem(sb.NXTChat.OPEN_KEY), "0");
+  assert.deepEqual(sb.NixonRealtime.takeHandoff().action, "open");
+  assert.equal(sb.NixonRealtime.takeHandoff(), null, "handoff is consumed once");
 
   const scoped = sandbox({ shell: false, identity: { role: "reviewer", clients: ["client-a"] } });
   await tick();
@@ -231,9 +229,98 @@ test("live voice mode shows both sides as bubbles and runs tools only through th
   assert.deepEqual(heard, ["Give me God's Eye"]);
   assert.deepEqual(said, ["Three findings."]);
   assert.deepEqual(asked, ["give me god's eye"]);
-  assert.equal(sent[0].item.type, "function_call_output");
-  assert.equal(sent[1].type, "response.create");
+  assert.equal(sent.find(item => item.item?.type === "function_call_output").item.call_id, "c1");
+  assert.equal(sent.at(-1).type, "response.create");
   live.end();
+});
+
+test("live navigation keeps its connection and reports the new screen before the tool reply", async () => {
+  const { sb } = sandbox();
+  const sent = [], connections = [], stopped = [];
+  let route = "/nixon/gods-eye", channel;
+  sb.Audio = class { pause() {} };
+  sb.RTCPeerConnection = class {
+    constructor() { connections.push(this); this.closed = false; }
+    addTrack() {}
+    createDataChannel() { channel = {readyState: "open", send: message => sent.push(JSON.parse(message))}; return channel; }
+    async createOffer() { return {sdp:"offer"}; }
+    async setLocalDescription() {}
+    async setRemoteDescription() {}
+    close() { this.closed = true; }
+  };
+  sb.navigator.mediaDevices = {getUserMedia: async () => ({getTracks: () => [{stop: () => stopped.push(true)}]})};
+  sb.fetch = async () => ({status:200, json:async () => ({transport:{sdp:"answer"}})});
+  const live = sb.NixonRealtime.createLiveSession({
+    token: () => "synthetic", context: () => ({route}),
+    ask: async () => { route = "/ledger"; return {action:"speak", say:"Ledger opened"}; },
+  });
+  assert.equal(await live.start(), "live");
+  channel.onopen();
+  await channel.onmessage({data:JSON.stringify({type:"response.done", response:{output:[
+    {type:"function_call", call_id:"nav", name:"open_nixon_page", arguments:'{"path":"/ledger"}'},
+  ]}})});
+  assert.equal(connections.length, 1);
+  assert.equal(connections[0].closed, false);
+  assert.equal(stopped.length, 0);
+  assert.equal(live.active, true);
+  assert.match(sent[1].item.content[0].text, /\/ledger/);
+  assert.equal(sent[2].item.type, "function_call_output");
+  live.end();
+  assert.equal(stopped.length, 1);
+});
+
+test("stopping while microphone permission is pending cannot resurrect a session", async () => {
+  const {sb} = sandbox();
+  let resolveMicrophone, stops = 0, offers = 0;
+  sb.Audio = class {};
+  sb.RTCPeerConnection = class {
+    close() {} addTrack() {}
+    createOffer() { offers++; }
+  };
+  sb.navigator.mediaDevices = {getUserMedia: () => new Promise(resolve => { resolveMicrophone = resolve; })};
+  const live = sb.NixonRealtime.createLiveSession({token:() => "synthetic", context:() => ({})});
+  const starting = live.start();
+  live.end();
+  resolveMicrophone({getTracks:() => [{stop() {stops++;}}]});
+  assert.equal(await starting, "cancelled");
+  assert.equal(live.active, false);
+  assert.equal(stops, 1);
+  assert.equal(offers, 0);
+});
+
+test("a configured browser fallback stays on after the realtime offer is rejected", async () => {
+  const {sb, recognitions} = sandbox();
+  sb.Audio = class {};
+  sb.RTCPeerConnection = class {
+    close() {} addTrack() {}
+    createDataChannel() { return {readyState:"open"}; }
+    async createOffer() { return {sdp:"offer"}; }
+    async setLocalDescription() {}
+  };
+  sb.navigator.mediaDevices = {getUserMedia:async () => ({getTracks:() => [{stop(){}}]})};
+  const host = el();
+  sb.NXTChat.create(host);
+  await tick();
+  await host.querySelector(".nxc-voice").onclick();
+  assert.equal(host.querySelector(".nxc-voice").getAttribute("aria-pressed"), "true");
+  assert.ok(recognitions.at(-1).started);
+  assert.match(host.querySelector(".nxc-status-text").textContent, /browser speech/);
+});
+
+test("clear discards a reply and its navigation after sign-out", async () => {
+  const {sb} = sandbox();
+  let reply;
+  const previous = sb.NXT.api;
+  sb.NXT.api = (path, options) => path === "/api/os/ask" ? new Promise(resolve => {reply=resolve;}) : previous(path, options);
+  const opened = [], host = el();
+  const chat = sb.NXTChat.create(host, {onOpen:(...args) => opened.push(args)});
+  await tick();
+  const sending = chat.send("Open ledger");
+  chat.clear();
+  reply({reply:"Opening ledger", actions:[{type:"open_app", app:"ledger"}]});
+  await sending;
+  assert.equal(chat.messages.length, 0);
+  assert.equal(opened.length, 0);
 });
 
 test("shared helpers: spoken length, firm-wide rule, routing, safe tools", async () => {
