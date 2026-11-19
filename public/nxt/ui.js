@@ -89,4 +89,17 @@
   const MARK = `<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--ink)"/><path d="M9 22V10l8 12V10" stroke="var(--bg)" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 16h4m-2-2.5L24.5 16 22 18.5" stroke="var(--accent)" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
   window.NXT = { api, esc, money, moneyShort, toCents, today, fmtDate, toast, modal, confirm, csvDownload, key: store, MARK };
+  // Nixon voice chat and its floating launcher on every NXT OS page (the shell loads it itself;
+  // pages inside the shell's frame use the shell's launcher). It shows for signed-in staff only.
+  // Inside the shell's frame, phones keep the last row of an app clear of the shell's launcher.
+  if (typeof document !== "undefined" && document.documentElement && window.parent !== window) document.documentElement.classList.add("nxt-framed");
+  if (typeof document !== "undefined" && document.addEventListener && window.parent === window) {
+    const inject = () => {
+      if (window.NXTChat || document.querySelector('script[src="/nxt/nixon-chat.js"]')) return;
+      const s = document.createElement("script");
+      s.src = "/nxt/nixon-chat.js";
+      document.head.appendChild(s);
+    };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", inject); else inject();
+  }
 })();

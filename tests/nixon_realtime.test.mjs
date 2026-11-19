@@ -39,8 +39,9 @@ test("Nixon page loads the transferred controller and God's Eye entry points", (
   for (const id of ["welcomePlay", "welcomeMute", "meetingMode", "godsEyeCard"]) assert.match(html, new RegExp(`id="${id}"`));
   const js = fs.readFileSync(new URL("../public/apps/nixon/nixon.js", import.meta.url), "utf8");
   assert.match(js, /open_nixon_page/);
-  assert.match(js, /direction: "recvonly"/);
-  const tools = js.slice(js.indexOf("async function runRealtimeTool"), js.indexOf("async function startLive"));
+  assert.match(js, /RT\.createLiveSession\(/, "the Voice card uses the shared live controller");
+  assert.match(src, /direction: "recvonly"/);
+  const tools = src.slice(src.indexOf("async function runTool"), src.indexOf("// ---- Browser runtime"));
   assert.ok(tools.length > 100);
   assert.doesNotMatch(tools, /decide|execute|approve/, "live voice tools never reach the decision routes");
   const shell = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");

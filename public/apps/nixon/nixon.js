@@ -164,37 +164,13 @@ const SETTLE_MS = 450;
 
 function setVoiceState(text) { $("#voiceState").textContent = text; }
 
-function stopSpeaking() {
-  speaking = false;
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
-}
-
-function browserSpeak(text) {
-  if (!text || !window.speechSynthesis) return;
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "en-CA";
-  utterance.onstart = () => { speaking = true; setVoiceState("Speaking"); };
-  utterance.onend = () => { setTimeout(() => { speaking = false; setVoiceState($("#openMic").checked ? "Open microphone" : "Push to talk"); }, SETTLE_MS); };
-  window.speechSynthesis.speak(utterance);
-}
-
-async function speak(text) {
-  lastSpoken = text;
-  stopSpeaking();
-  speaking = true;
-  try {
-    const response = await fetch("/api/nixon/voice/speak", { method: "POST", headers: { authorization: "Bearer " + NXT.key.get(), "content-type": "application/json" }, body: JSON.stringify({ text }) });
-    if (response.headers.get("content-type")?.includes("audio")) {
-      const blob = await response.blob();
-      const audio = new Audio(URL.createObjectURL(blob));
-      audio.onended = () => { speaking = false; };
-      await audio.play();
-      return;
-    }
-  } catch { /* browser speech is the fallback */ }
-  speaking = false;
-  browserSpeak(text);
-}
+const RT = window.NixonRealtime;
+const idleState = () => ($("#openMic").checked ? "Open microphone" : "Push to talk");
+// Shared with the Ask NXT chat and the floating launcher (realtime.js createSpeaker).
+const speaker = RT.createSpeaker({ token: () => NXT.key.get(), onStart: () => { speaking = true; setVoiceState("Speaking"); }, onEnd: () => { speaking = false; setVoiceState(idleState()); }, settleMs: SETTLE_MS });
+function stopSpeaking() { speaking = false; speaker.stop(); }
+function browserSpeak(text) { speaker.browserSpeak(text); }
+async function speak(text) { lastSpoken = text; speaking = true; await speaker.speak(text); }
 
 async function sendVoice(transcript, channel, opts = {}) {
   const heard = (transcript || "").trim();
@@ -271,91 +247,28 @@ $("#openMic").onchange = () => {
   setVoiceState("Open microphone");
   try { engine.start(); } catch { /* already started */ }
 };
-// Live voice: the SyncAI God's Eye Realtime controller, transferred (useSyncRealtimeVoice.ts).
-// Tools: nixon_command (SyncAI ask_sync) and open_nixon_page (SyncAI open_sync_page), both run
-// through the audited /api/nixon/voice gate. Welcome playback is receive-only: no microphone.
-const RT = window.NixonRealtime;
+// Live voice: the SyncAI God's Eye Realtime controller, transferred (useSyncRealtimeVoice.ts),
+// now shared in realtime.js with the Ask NXT chat. Tools: nixon_command (SyncAI ask_sync) and
+// open_nixon_page (SyncAI open_sync_page), both run through the audited /api/nixon/voice gate.
+// Welcome playback is receive-only: no microphone.
+const live = RT.createLiveSession({
+  token: () => NXT.key.get(),
+  context: () => RT.screenContext(location.hash, document.title, $("#meetingMode")?.checked),
+  ask: (transcript) => sendVoice(transcript, "push_to_talk", { silent: true }),
+  onState: setVoiceState,
+  onEnd: (state) => setVoiceState(state || "Push to talk"),
+});
 let liveConnection = null;
-let liveMic = null;
-let welcomeOnly = false;
-const handledCalls = new Set();
-function endLive(state) {
-  if (liveConnection) { try { liveConnection.close(); } catch { /* closed */ } }
-  if (liveMic) liveMic.getTracks().forEach((track) => track.stop());
-  liveConnection = null; liveMic = null; welcomeOnly = false; handledCalls.clear();
-  setVoiceState(state || "Push to talk");
-}
-async function runRealtimeTool(call) {
-  let args = {};
-  try { args = JSON.parse(call.arguments || "{}"); } catch { return { ok: false, error: "Invalid command arguments." }; }
-  if (call.name === "nixon_command") {
-    const transcript = typeof args.transcript === "string" ? args.transcript.trim().slice(0, 2000) : "";
-    if (!transcript) return { ok: false, error: "A complete request for Nixon is required." };
-    const result = await sendVoice(transcript, "push_to_talk", { silent: true });
-    return result ? { ok: true, ...result } : { ok: false, error: "Nixon could not complete that request." };
-  }
-  if (call.name === "open_nixon_page") {
-    const said = RT.openTranscript(args.path);
-    if (!said) return { ok: false, error: "That is not a safe NXT OS path." };
-    const result = await sendVoice(said, "push_to_talk", { silent: true });
-    return result ? { ok: true, path: RT.pagePath(args.path), ...result } : { ok: false, error: "That page could not be opened." };
-  }
-  return { ok: false, error: "Unknown tool." };
-}
+function endLive(state) { live.end(state); liveConnection = null; }
 async function startLive(welcome) {
-  if (!window.RTCPeerConnection || (!welcome && !navigator.mediaDevices?.getUserMedia)) {
-    $("#voiceHint").textContent = "This browser cannot start a live voice session. Type a command instead.";
-    return;
+  const outcome = await live.start(welcome);
+  liveConnection = live.active ? live : null;
+  if (outcome === "unsupported") $("#voiceHint").textContent = "This browser cannot start a live voice session. Type a command instead.";
+  if (outcome === "fallback" || outcome === "forbidden") {
+    $("#voiceHint").textContent = "Live voice is not configured. Hold to talk uses this browser.";
+    if (welcome) browserSpeak(welcome);
   }
-  if (liveConnection) endLive();
-  setVoiceState(welcome ? "Playing welcome" : "Connecting");
-  try {
-    const connection = new RTCPeerConnection();
-    liveConnection = connection;
-    welcomeOnly = !!welcome;
-    const audio = new Audio();
-    audio.autoplay = true;
-    connection.ontrack = (event) => { audio.srcObject = event.streams[0]; };
-    if (welcome) connection.addTransceiver("audio", { direction: "recvonly" });
-    else {
-      liveMic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      liveMic.getTracks().forEach((track) => connection.addTrack(track, liveMic));
-    }
-    const channel = connection.createDataChannel("oai-events");
-    channel.onopen = () => {
-      if (welcome) { channel.send(JSON.stringify(RT.welcomeTurn(welcome))); channel.send(JSON.stringify(RT.WELCOME_RESPONSE)); }
-    };
-    channel.onmessage = async (event) => {
-      let payload; try { payload = JSON.parse(event.data); } catch { return; }
-      if (payload.type === "output_audio_buffer.stopped" && welcomeOnly) { endLive("Welcome finished"); return; }
-      if (payload.type !== "response.done" || welcomeOnly) return;
-      const calls = (payload.response?.output || []).filter((item) => item.type === "function_call" && !handledCalls.has(item.call_id));
-      for (const call of calls) {
-        handledCalls.add(call.call_id);
-        let result;
-        try { result = await runRealtimeTool(call); } catch (e) { result = { ok: false, error: e.message || "The Nixon voice command failed." }; }
-        if (liveConnection !== connection || channel.readyState !== "open") return;
-        channel.send(JSON.stringify({ type: "conversation.item.create", item: { type: "function_call_output", call_id: call.call_id, output: RT.boundedToolOutput(result) } }));
-      }
-      if (calls.length && channel.readyState === "open") channel.send(JSON.stringify({ type: "response.create" }));
-    };
-    const offer = await connection.createOffer();
-    await connection.setLocalDescription(offer);
-    const context = RT.screenContext(location.hash, document.title, $("#meetingMode")?.checked);
-    const response = await fetch("/api/nixon/voice/realtime", { method: "POST", headers: { authorization: "Bearer " + NXT.key.get(), "content-type": "application/json" }, body: JSON.stringify({ sdp: offer.sdp, context }) });
-    const body = await response.json();
-    if (body.fallback === "browser" || !body.transport?.sdp) {
-      endLive("Browser speech");
-      $("#voiceHint").textContent = "Live voice is not configured. Hold to talk uses this browser.";
-      if (welcome) browserSpeak(welcome);
-      return;
-    }
-    await connection.setRemoteDescription({ type: "answer", sdp: body.transport.sdp });
-    setVoiceState(welcome ? "Playing welcome. Microphone is off." : "Live voice");
-  } catch (error) {
-    endLive("Browser speech");
-    $("#voiceHint").textContent = "Live voice is unavailable. Hold to talk still works.";
-  }
+  if (outcome === "error") $("#voiceHint").textContent = "Live voice is unavailable. Hold to talk still works.";
 }
 $("#liveVoice").onclick = () => startLive();
 const WELCOME_MUTE = "nixon.welcome.muted";
@@ -369,7 +282,7 @@ async function setupWelcome() {
   const muted = () => { try { return localStorage.getItem(WELCOME_MUTE) === "1"; } catch { return false; } };
   const paint = () => { $("#welcomeMute").textContent = muted() ? "Unmute welcome" : "Mute welcome"; $("#welcomePlay").disabled = muted(); };
   $("#welcomePlay").onclick = () => { if (!muted()) startLive(text); };
-  $("#welcomeMute").onclick = () => { if (welcomeOnly) endLive(); try { localStorage.setItem(WELCOME_MUTE, muted() ? "0" : "1"); } catch { /* best effort */ } paint(); };
+  $("#welcomeMute").onclick = () => { if (live.welcomeOnly) endLive(); try { localStorage.setItem(WELCOME_MUTE, muted() ? "0" : "1"); } catch { /* best effort */ } paint(); };
   paint();
 }
 setupWelcome();

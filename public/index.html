@@ -91,17 +91,22 @@
   .palette li small { margin-left: auto; color: var(--faint); }
 
   @media (max-width: 720px) {
-    .os { grid-template-columns: 1fr; grid-template-rows: 1fr 60px; }
-    .dock { flex-direction: row; justify-content: space-around; padding: 0 8px; border-right: 0; border-top: 1px solid var(--line); order: 2; }
+    .os { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr 60px; }
+    /* The dock scrolls sideways on phones instead of widening the page (which pushed fixed
+       panels, the Ask NXT drawer and the Nixon launcher, off screen). */
+    .dock { flex-direction: row; justify-content: flex-start; gap: 4px; padding: 0 8px; border-right: 0; border-top: 1px solid var(--line); order: 2; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; }
+    .dock button { flex: none; }
     .dock .logo, .dock .grow { display: none; }
     .dock .tip { display: none; }
     .dock button[aria-current="true"]::before { left: 12px; right: 12px; top: -6px; bottom: auto; width: auto; height: 3px; }
     .cmd kbd, .who { display: none; }
+    .topbar { overflow-x: auto; gap: 10px; }
+    .cmd { flex: 0 0 auto; }
     .topbar { padding: 0 12px; }
   }
 </style>
 </head>
-<body>
+<body data-nxt-shell="1">
 <div class="signin" id="signin" hidden>
   <div class="box">
     <span class="nxt-mark" id="markSignin"></span>
@@ -218,16 +223,14 @@
     <button class="btn ghost sm" id="clearChat">Clear</button>
     <button class="btn ghost sm" id="closeDrawer" aria-label="Close">✕</button>
   </header>
-  <div class="chat" id="chat"></div>
-  <form class="composer" id="composer">
-    <textarea id="prompt" rows="1" placeholder="How much cash do we have? Who owes us money?" aria-label="Message"></textarea>
-    <button class="btn primary">Send</button>
-  </form>
+  <div class="nxc-host" id="chat"></div>
 </aside>
 
 <script src="/nxt/ui.js"></script>
 <script src="/nxt/company-switcher.js"></script>
 <script src="/nxt/staff-signin.js"></script>
+<script src="/apps/nixon/realtime.js"></script>
+<script src="/nxt/nixon-chat.js"></script>
 <script>
 const { api, esc, money, moneyShort, toast } = NXT;
 const $ = (s) => document.querySelector(s);
@@ -366,11 +369,11 @@ async function boot() {
   $("#signOut").hidden = !status.auth_required;
   $("#signin").hidden = true; $("#os").hidden = false;
   // Show who is signed in (staff name, or the shared key label); silently skip when unavailable.
-  api("/api/staff/me").then((m) => { const w = $("#whoami"); w.textContent = m.identity?.display_name || m.label || ""; w.title = m.label || ""; w.hidden = !w.textContent; }).catch(() => { $("#whoami").hidden = true; });
+  api("/api/staff/me").then((m) => { const w = $("#whoami"); w.textContent = m.identity?.display_name || m.label || ""; w.title = m.label || ""; w.hidden = !w.textContent; showLauncher(NixonRealtime.firmWide(m.identity)); askChat.refresh(); }).catch(() => { $("#whoami").hidden = true; showLauncher(false); });
   if (window.nxtCompanySwitcher) window.nxtCompanySwitcher.reload(); else window.nxtCompanySwitcher = NXTCompany.mountSwitcher($("#companySwitch"), { api, esc: NXT.esc });
   route();
 }
-function signOut() { NXT.key.clear(); $("#frame").removeAttribute("src"); $("#frame").dataset.src = ""; closeDrawer(); boot(); }
+function signOut() { NXT.key.clear(); showLauncher(false); askChat.clear(); $("#frame").removeAttribute("src"); $("#frame").dataset.src = ""; closeDrawer(); boot(); }
 let staffPassword = "";
 function staffForm(id) { for (const f of ["staffForm", "enrollForm", "passwordForm"]) $("#" + f).hidden = f !== id; $("#keySignin").hidden = id !== "staffForm"; }
 function staffFail(e) { $("#signinErr").textContent = e.message; }
@@ -423,48 +426,19 @@ $("#passwordForm").onsubmit = async (e) => {
 $("#signinForm").onsubmit = (e) => { e.preventDefault(); NXT.key.set($("#key").value.trim()); $("#key").value = ""; boot(); };
 $("#signOut").onclick = signOut;
 
-// ---- Ask NXT ----
-const SUGGEST = ["How much cash do we have?", "Who owes us money?", "Summarize this month's profit and loss", "What did Nixon find in the books?", "How is the referral program doing?"];
-function renderChat() {
-  const el = $("#chat");
-  if (!chat.length) {
-    el.innerHTML = `<div class="msg ai">I'm NXT. I read your live books and growth data, so ask me anything about the business.${status && !status.ai_enabled ? "\n\nAsk NXT isn't switched on yet: add an ANTHROPIC_API_KEY to this deployment." : ""}</div><div class="suggest">${SUGGEST.map((s) => `<button class="btn sm" data-s="${esc(s)}">${esc(s)}</button>`).join("")}</div>`;
-    el.querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => send(b.dataset.s)));
-    return;
-  }
-  el.innerHTML = chat.map((m) => `<div class="msg ${m.role === "user" ? "user" : "ai"}${m.pending ? " thinking" : ""}">${esc(m.content)}${m.meta ? `<div class="meta">${esc(m.meta)}</div>` : ""}</div>`).join("");
-  el.scrollTop = el.scrollHeight;
-}
-function openDrawer() { $("#drawer").classList.add("open"); renderChat(); setTimeout(() => $("#prompt").focus(), 150); }
-function closeDrawer() { $("#drawer").classList.remove("open"); }
-$("#closeDrawer").onclick = closeDrawer;
-$("#clearChat").onclick = () => { chat = []; renderChat(); };
-$("#composer").onsubmit = (e) => { e.preventDefault(); send($("#prompt").value); };
-$("#prompt").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send($("#prompt").value); } });
-
-let busy = false;
-async function send(text) {
-  text = (text || "").trim();
-  if (!text || busy) return;
-  busy = true;
-  $("#prompt").value = "";
-  chat.push({ role: "user", content: text });
-  const pending = { role: "assistant", content: "Working on it…", pending: true };
-  chat.push(pending);
-  renderChat();
-  try {
-    const history = chat.filter((m) => !m.pending && !m.local).map(({ role, content }) => ({ role, content }));
-    const r = await api("/api/os/ask", { body: { messages: history } });
-    pending.content = r.reply || "(no answer)";
-    pending.pending = false;
-    if (r.tools_used?.length) pending.meta = "Checked: " + [...new Set(r.tools_used)].filter((t) => t !== "open_app").join(", ").replace(/_/g, " ");
-    for (const a of r.actions || []) if (a.type === "open_app" && APPS[a.app]) go(a.app, a.view);
-  } catch (e) {
-    pending.content = e.message; pending.pending = false; pending.local = true;
-  }
-  busy = false;
-  renderChat();
-}
+// ---- Ask NXT (with Nixon voice: mic in the composer, voice mode, floating launcher) ----
+const askChat = NXTChat.create($("#chat"), { placeholder: "Message Nixon", onOpen: (app, view) => { if (APPS[app] || app === "home") go(app, view); }, route: () => location.hash.replace(/^#/, "") || "/home" });
+let launcher = null;
+function renderChat() { askChat.render(); }
+function openDrawer() { $("#drawer").classList.add("open"); askChat.render(); launcher?.sync(); setTimeout(() => askChat.focus(), 150); }
+function closeDrawer() { $("#drawer").classList.remove("open"); askChat.stop(); launcher?.sync(); }
+// Floating Nixon launcher: bottom right on every page of the shell (home and every app frame).
+launcher = NXTChat.launcher({ enabled: false, open: openDrawer, close: closeDrawer, isOpen: () => $("#drawer").classList.contains("open") });
+function showLauncher(show) { launcher?.enable(show); if (show) launcher?.restore(); }
+$("#closeDrawer").onclick = () => (launcher ? launcher.close() : closeDrawer());
+$("#clearChat").onclick = () => askChat.clear();
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#drawer").classList.contains("open") && !document.querySelector(".palette")) (launcher ? launcher.close() : closeDrawer()); });
+function send(text) { return askChat.send(text); }
 
 // ---- command palette ----
 const COMMANDS = [
