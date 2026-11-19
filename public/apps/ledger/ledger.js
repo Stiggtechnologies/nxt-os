@@ -330,7 +330,7 @@ views.vendors = contactViews("vendor");
 views.lists = async () => {
   const L = window.NXTLedgerLists;
   if (!L) { page("Lists", "", "", `<div class="card err-text">The lists module did not load. Reload the page.</div>`); return; }
-  let parallel = null, subledger = null, payroll = null, recurring = null, schedules = null, inventory = null, crm = null, salesDocs = null, parallelNote = "";
+  let parallel = null, subledger = null, payroll = null, recurring = null, schedules = null, inventory = null, crm = null, salesDocs = null, mileage = null, parallelNote = "";
   if (company) {
     try {
       parallel = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/daily`);
@@ -340,15 +340,16 @@ views.lists = async () => {
     try { schedules = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/schedules?as_of=${today()}`); } catch { schedules = null; }
     try { inventory = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/inventory`); } catch { inventory = null; }
     try { crm = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/crm`); } catch { crm = null; }
+    try { mileage = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/mileage`); } catch { mileage = null; }
     try { salesDocs = await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/sales-documents`); } catch { salesDocs = null; }
     }
     catch (e) { parallelNote = e.status === 404 ? "This company book has no parallel lists yet." : e.message; }
   }
-  const lanes = L.lanes({ contacts: S.contacts, accounts: S.accounts, parallel, subledger, payroll, recurring, schedules, inventory, crm, salesDocs });
+  const lanes = L.lanes({ contacts: S.contacts, accounts: S.accounts, parallel, subledger, payroll, recurring, schedules, inventory, crm, salesDocs, mileage });
   const scope = company || "firm-workspace";
   const head = L.summary(lanes);
   page("Lists", `${head.lanes} lists · ${head.rows} rows · ${head.native} from this ledger, ${head.parallel} from parallel lists.`,
-    `<button class="btn" id="exportAll">Export all lists</button>${company ? '<button class="btn" id="addSalesDoc">Sales document</button><button class="btn" id="addPipeline">Pipeline entry</button><button class="btn" id="addMovement">Stock movement</button><button class="btn" id="addSchedule">Add schedule</button><button class="btn" id="addRecurring">Add recurring</button><button class="btn primary" id="runPayroll">Run payroll</button>' : ''}`,
+    `<button class="btn" id="exportAll">Export all lists</button>${company ? '<button class="btn" id="addTrip">Mileage trip</button><button class="btn" id="addSalesDoc">Sales document</button><button class="btn" id="addPipeline">Pipeline entry</button><button class="btn" id="addMovement">Stock movement</button><button class="btn" id="addSchedule">Add schedule</button><button class="btn" id="addRecurring">Add recurring</button><button class="btn primary" id="runPayroll">Run payroll</button>' : ''}`,
     `<div class="card"><input id="q" placeholder="Search every list by name, number, email…" style="width:100%">
       <p class="form-note" style="margin:10px 0 0">Lists show what this book holds. Exports carry exactly the rows shown. Parallel lists accept new entries here, and nothing on this screen posts a journal, syncs or writes back to QuickBooks.</p></div>
      <div id="lanes"></div>${parallelNote ? `<p class="form-note" role="status">${esc(parallelNote)}</p>` : ""}`);
@@ -502,6 +503,8 @@ views.lists = async () => {
     });
   };
   $("#q").oninput = render; render();
+  const addTrip = $("#addTrip");
+  if (addTrip) addTrip.onclick = () => mileageModal();
   const addSalesDoc = $("#addSalesDoc");
   if (addSalesDoc) addSalesDoc.onclick = () => salesDocModal();
   const addPipeline = $("#addPipeline");
@@ -769,6 +772,33 @@ function recurringModal() {
   });
 }
 
+function mileageModal() {
+  return modal("Record a mileage trip", (el, close) => {
+    el.innerHTML = `<form class="form">
+      <label class="f">Date<input name="date" type="date" required value="${today()}"></label>
+      <label class="f">Kilometres<input name="km" type="number" min="0.001" step="0.001" required placeholder="0.000"></label>
+      <label class="f">Rate per km<input name="rate" type="number" min="0" step="0.01" required placeholder="0.00"></label>
+      <label class="f">Purpose<input name="purpose" placeholder="Client visit"></label>
+      <p class="form-note" style="grid-column:1/-1">NXT multiplies distance by the rate you enter. It does not claim a statutory rate and nothing posts to the ledger.</p>
+    </form>
+    <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Save trip</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("[data-ok]").onclick = async () => {
+      const form = new FormData(el.querySelector("form")), f = Object.fromEntries(form);
+      try {
+        await NXT.api(`/api/company-books/${encodeURIComponent(company)}/parallel/mileage`, { body: {
+          request_id: "trip-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+          date: f.date,
+          purpose: f.purpose || "",
+          kilometres_milli: Math.round(Number(f.km) * 1000),
+          rate_cents_per_km: NXT.toCents(f.rate)
+        } });
+        close(); toast("Mileage trip saved."); route();
+      } catch (e) { toast(e.message, true); }
+    };
+  });
+}
+
 function salesDocModal() {
   return modal("Add sales document", (el, close) => {
     const items = (parallel && Array.isArray(parallel.items) ? parallel.items : []).filter((item) => !item.archived);
@@ -884,7 +914,7 @@ function scheduleModal() {
   return modal("Add fixed asset or prepaid schedule", (el, close) => {
     const accounts = (S.accounts || []).filter((account) => !account.archived);
     el.innerHTML = `<form class="form">
-      <label class="f">Type<select name="kind"><option value="fixed_asset">Fixed asset</option><option value="prepaid">Prepaid expense</option></select></label>
+      <label class="f">Type<select name="kind"><option value="fixed_asset">Fixed asset</option><option value="prepaid">Prepaid expense</option><option value="revenue_recognition">Revenue recognition</option></select></label>
       <label class="f">Name<input name="name" required placeholder="Delivery van"></label>
       <label class="f">Total<input name="total" type="number" min="0.01" step="0.01" required placeholder="0.00"></label>
       <label class="f">Months<input name="months" type="number" min="1" max="600" step="1" required value="12"></label>

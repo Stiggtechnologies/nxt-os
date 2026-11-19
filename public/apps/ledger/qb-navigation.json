@@ -886,9 +886,9 @@
                   "label": "Revenue recognition",
                   "observation": "observed",
                   "observed_path": "All apps > Accounting > Revenue recognition",
-                  "native_route": null,
-                  "native_scope": "Native statements use saved NXT ledger entries. A deferred-revenue schedule and automatic recognition engine are not implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "native_route": "lists",
+                  "native_scope": "Revenue-recognition schedules use the same straight-line model as fixed assets and prepaid expenses, shown in the Lists Schedules lane.",
+                  "next_step": "No contract-based or usage-based recognition and no journal posting. Nothing writes back to QuickBooks.",
                   "kind": "capability"
                 },
                 {
@@ -984,9 +984,9 @@
                   "label": "Mileage",
                   "observation": "observed",
                   "observed_path": "All apps > Expenses & Bills > Mileage",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "native_route": "lists",
+                  "native_scope": "Mileage trips are recorded in Lists with date, distance, purpose and a firm-supplied rate; NXT computes distance times rate.",
+                  "next_step": "No statutory rate claim, no vehicle records and no ledger posting. Nothing writes back to QuickBooks.",
                   "kind": "capability"
                 }
               ]

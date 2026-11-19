@@ -84,6 +84,7 @@ function boot({ company = 'synthetic-co', parallel = null, subledger = null, inv
     // A company-scoped ledger rewrites /api/ledger/x to /api/company-ledger/<id>/x, so match by suffix.
     if (path.endsWith('/payroll')) return { by_year: [{ year: 2026, transactions: 3, debit_cents: '500000', credit_cents: '500000' }], payroll_accounts: [{ name: 'Payroll expense', lines: 2, debit_cents: '500000', credit_cents: '0' }], note: 'Derived from the committed journal.' };
     if (path.endsWith('/parallel/sales-documents')) return { documents: [{ id: 's1', kind: 'sales_order', contact: 'c1', document_number: 'SO-1', lines: [], total_cents: 75000 }] };
+    if (path.endsWith('/parallel/mileage')) return { trips: [{ id: 'm1', date: '2026-11-02', purpose: 'Client visit', kilometres_milli: 42000, rate_cents_per_km: 70, amount_cents: 2940 }], total_amount_cents: 2940 };
     if (path.endsWith('/parallel/crm')) return { records: [{ id: 'c1', kind: 'opportunity', title: 'Annual advisory retainer', contact: 'c1', value_cents: 1500000, status: 'open', date: '2026-11-01', note: '' }] };
     if (path.endsWith('/parallel/inventory')) return { items: [{ item_id: 'i1', name: 'Consulting hour', on_hand_milli: 12500, unit_cost_cents: 4000, value_cents: 50000, movements: 3 }] };
     if (path.includes('/parallel/schedules')) return { schedules: [{ id: 's1', name: 'Delivery van', kind: 'fixed_asset', total_cents: 1200000, months: 60, start_date: '2026-01-15', monthly_cents: 20000, amortised_cents: 100000, remaining_cents: 1100000, months_posted: 5 }] };
@@ -381,7 +382,7 @@ test('fixed asset and prepaid schedules list with their amortisation', async () 
   const app = boot({ parallel: PARALLEL });
   await app.ledger.views.lists();
   const lanes = app.elementsFor('#lanes')[0].innerHTML;
-  assert.match(lanes, /Fixed assets and prepaid/, 'the schedule lane renders');
+  assert.match(lanes, /Schedules/, 'the schedule lane renders');
   assert.match(lanes, /Delivery van/, 'the asset appears');
   assert.match(lanes, /Fixed asset/, 'the kind is readable');
   const button = app.elementsFor('#addSchedule')[0];
@@ -429,4 +430,18 @@ test('sales documents list and their dialog opens', async () => {
   assert.equal(typeof button.onclick, 'function');
   button.click();
   assert.ok(app.modals.some(m => /sales document/i.test(m.title)));
+});
+
+test('mileage trips list and the dialog opens', async () => {
+  const app = boot({ parallel: PARALLEL });
+  await app.ledger.views.lists();
+  const lanes = app.elementsFor('#lanes')[0].innerHTML;
+  assert.match(lanes, /Mileage/, 'the mileage lane renders');
+  assert.match(lanes, /Client visit/, 'the purpose appears');
+  assert.match(lanes, /42\.000/, 'distance keeps three decimals');
+  assert.match(lanes, /29\.40/, 'the deduction is shown');
+  const button = app.elementsFor('#addTrip')[0];
+  assert.equal(typeof button.onclick, 'function');
+  button.click();
+  assert.ok(app.modals.some(m => /mileage trip/i.test(m.title)));
 });
