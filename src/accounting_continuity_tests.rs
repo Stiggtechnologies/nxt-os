@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
-const FIXTURE: &str = include_str!("../tests/accounting-continuity-fixture.json");
+pub(super) const FIXTURE: &str = include_str!("accounting-continuity-fixture.json");
 const CONTROL_KEY: &str = "accounting:sandbox-continuity:v1:controls";
 
 fn config() -> Value {
@@ -141,7 +141,10 @@ async fn guarded_claim(
 
 #[tokio::test]
 async fn sandbox_lw_02c_emergency_expires_and_cannot_restore_authority() {
-    let store = Store::memory();
+    sandbox_lw_02c_emergency_expires_and_cannot_restore_authority_case(Store::memory()).await;
+}
+
+pub(super) async fn sandbox_lw_02c_emergency_expires_and_cannot_restore_authority_case(store: Store) {
     let mut control = controls();
     let operator = identity("emergency");
     let issuer = identity("reviewer");
@@ -172,7 +175,10 @@ async fn sandbox_lw_02c_emergency_expires_and_cannot_restore_authority() {
 
 #[tokio::test]
 async fn sandbox_lw_03a_rejects_unpinned_connector_and_model_before_dispatch() {
-    let store = Store::memory();
+    sandbox_lw_03a_rejects_unpinned_connector_and_model_before_dispatch_case(Store::memory()).await;
+}
+
+pub(super) async fn sandbox_lw_03a_rejects_unpinned_connector_and_model_before_dispatch_case(store: Store) {
     let control = controls();
     archive::save(&store, CONTROL_KEY, None, &control)
         .await
@@ -182,7 +188,12 @@ async fn sandbox_lw_03a_rejects_unpinned_connector_and_model_before_dispatch() {
     let actor = identity("automated");
     let now = fixture::instant();
     let id = prepare(&store, "version-binding", &actor, now).await;
-    let baseline = store.memory_snapshot().unwrap();
+    let keys = [
+        CONTROL_KEY.to_string(),
+        dispatch::key(fixture::COMPANY, &id).ok().unwrap(),
+        dispatch::sandbox_key(fixture::COMPANY, &id).ok().unwrap(),
+    ];
+    let baseline = store.mget(&keys).await.unwrap();
     assert!(control.admit(
         &actor,
         &control.active_manifest,
@@ -207,7 +218,7 @@ async fn sandbox_lw_03a_rejects_unpinned_connector_and_model_before_dispatch() {
         );
     }
     assert!(!control.admit(&actor, &"c".repeat(64), &control.connector, &control.model));
-    assert_eq!(baseline, store.memory_snapshot().unwrap());
+    assert_eq!(baseline, store.mget(&keys).await.unwrap());
     assert!(
         guarded_claim(
             &store,
@@ -315,18 +326,19 @@ async fn post_and_reconcile(
     assert_eq!(state["live_write_authorized"], false);
 }
 
-fn receipts(store: &Store) -> usize {
-    store.memory_snapshot().unwrap()["strings"]
-        .as_object()
-        .unwrap()
-        .keys()
-        .filter(|key| key.starts_with("nxt:accounting:isolated-journal:v1:"))
-        .count()
+async fn receipts(store: &Store, ids: &[String]) -> usize {
+    let keys: Vec<_> = ids.iter()
+        .map(|id| dispatch::sandbox_key(fixture::COMPANY, id).ok().unwrap())
+        .collect();
+    store.mget(&keys).await.unwrap().into_iter().flatten().count()
 }
 
 #[tokio::test]
 async fn sandbox_lw_03c_rollback_preserves_revocations_and_completed_receipts() {
-    let store = Store::memory();
+    sandbox_lw_03c_rollback_preserves_revocations_and_completed_receipts_case(Store::memory()).await;
+}
+
+pub(super) async fn sandbox_lw_03c_rollback_preserves_revocations_and_completed_receipts_case(store: Store) {
     let actor = identity("automated");
     let reviewer = identity("reviewer");
     let now = fixture::instant();
@@ -379,16 +391,19 @@ async fn sandbox_lw_03c_rollback_preserves_revocations_and_completed_receipts() 
         .await
         .is_err()
     );
-    assert_eq!(receipts(&store), 1);
+    assert_eq!(receipts(&store, &[id]).await, 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn sandbox_lw_07a_peak_drains_within_fixture_queue_and_deadline_targets() {
+    sandbox_lw_07a_peak_drains_within_fixture_queue_and_deadline_targets_case(Store::memory()).await;
+}
+
+pub(super) async fn sandbox_lw_07a_peak_drains_within_fixture_queue_and_deadline_targets_case(store: Store) {
     let metrics = config()["peak"].clone();
     let count = n(&metrics, "operations");
     let workers = n(&metrics, "workers");
     let work_seconds = n(&metrics, "work_seconds");
-    let store = Store::memory();
     let now = fixture::instant();
     let mut ids = Vec::new();
     for index in 0..count {
@@ -426,21 +441,22 @@ async fn sandbox_lw_07a_peak_drains_within_fixture_queue_and_deadline_targets() 
             result.unwrap();
         }
     }
-    assert_eq!(receipts(&store), count as usize);
+    assert_eq!(receipts(&store, &ids).await, count as usize);
 }
 
-async fn restore_strings(snapshot: &Value, store: &Store, select: impl Fn(&str) -> bool) {
-    for (key, value) in snapshot["strings"].as_object().unwrap() {
-        let name = key.strip_prefix("nxt:").unwrap();
-        if select(name) {
-            assert!(store.set_nx(name, value.as_str().unwrap()).await.unwrap());
-        }
+async fn restore_strings(store: &Store, keys: &[String], snapshot: Vec<Option<String>>) {
+    assert_eq!(snapshot.len(), keys.len());
+    for (key, value) in keys.iter().zip(snapshot) {
+        assert!(store.set_nx(key, &value.expect("fixture checkpoint record missing")).await.unwrap());
     }
 }
 
 #[tokio::test]
 async fn sandbox_lw_07b_restore_reapplies_revocation_and_hold_then_reconciles_provider_receipt() {
-    let original = Store::memory();
+    sandbox_lw_07b_restore_reapplies_revocation_and_hold_then_reconciles_provider_receipt_case(Store::memory(), Store::memory(), Store::memory()).await;
+}
+
+pub(super) async fn sandbox_lw_07b_restore_reapplies_revocation_and_hold_then_reconciles_provider_receipt_case(original: Store, provider: Store, restored: Store) {
     let now = fixture::instant();
     let operator = identity("automated");
     let reviewer = identity("reviewer");
@@ -467,10 +483,13 @@ async fn sandbox_lw_07b_restore_reapplies_revocation_and_hold_then_reconciles_pr
         .await
         .is_ok()
     );
-    let backup = original.memory_snapshot().unwrap();
+    let checkpoint_keys = [
+        archive::key(fixture::COMPANY, fixture::SOURCE).ok().unwrap(),
+        dispatch::key(fixture::COMPANY, &id).ok().unwrap(),
+    ];
+    let backup = original.mget(&checkpoint_keys).await.unwrap();
 
     // External effect arrives after the checkpoint. Model that separately from the restore.
-    let provider = Store::memory();
     let provider_id = prepare(&provider, "recover-pending", &operator, now).await;
     assert_eq!(id, provider_id);
     start(
@@ -494,8 +513,7 @@ async fn sandbox_lw_07b_restore_reapplies_revocation_and_hold_then_reconciles_pr
     );
 
     let timer = std::time::Instant::now();
-    let restored = Store::memory();
-    restore_strings(&backup, &restored, |_| true).await;
+    restore_strings(&restored, &checkpoint_keys, backup).await;
     fixture::send(
         &restored,
         3,
@@ -539,10 +557,8 @@ async fn sandbox_lw_07b_restore_reapplies_revocation_and_hold_then_reconciles_pr
             .await
             .is_err()
     );
-    restore_strings(&provider.memory_snapshot().unwrap(), &restored, |key| {
-        key.starts_with("accounting:isolated-journal:v1:")
-    })
-    .await;
+    let receipt_keys = [dispatch::sandbox_key(fixture::COMPANY, &id).ok().unwrap()];
+    restore_strings(&restored, &receipt_keys, provider.mget(&receipt_keys).await.unwrap()).await;
     let recovery = &config()["recovery"];
     let recovered_after = Duration::from_std(timer.elapsed()).unwrap();
     let result = dispatch::sandbox_reconcile(
@@ -557,9 +573,9 @@ async fn sandbox_lw_07b_restore_reapplies_revocation_and_hold_then_reconciles_pr
     .unwrap();
     assert!(timer.elapsed().as_secs() <= n(recovery, "rto_seconds"));
     assert_eq!(serde_json::to_value(result).unwrap()["state"], "reconciled");
-    assert_eq!(receipts(&restored), 1);
+    let recovered = receipts(&restored, &[id]).await;
+    assert_eq!(recovered, 1);
     let pending_before = 1usize;
-    let recovered = receipts(&restored);
     assert!(
         pending_before.saturating_sub(recovered) as u64 <= n(recovery, "rpo_pending_operations")
     );
@@ -567,7 +583,10 @@ async fn sandbox_lw_07b_restore_reapplies_revocation_and_hold_then_reconciles_pr
 
 #[tokio::test]
 async fn sandbox_lw_07c_provider_outage_routes_to_exclusive_manual_fallback_before_deadline() {
-    let store = Store::memory();
+    sandbox_lw_07c_provider_outage_routes_to_exclusive_manual_fallback_before_deadline_case(Store::memory()).await;
+}
+
+pub(super) async fn sandbox_lw_07c_provider_outage_routes_to_exclusive_manual_fallback_before_deadline_case(store: Store) {
     let now = fixture::instant();
     let automated = identity("automated");
     let metrics = &config()["outage"];
@@ -587,7 +606,7 @@ async fn sandbox_lw_07c_provider_outage_routes_to_exclusive_manual_fallback_befo
     for index in 0..n(metrics, "operations") {
         queue.push(prepare(&store, &format!("fallback-{index}"), &automated, now).await);
     }
-    assert_eq!(receipts(&store), 0);
+    assert_eq!(receipts(&store, &queue).await, 0);
     for (batch, ids) in queue.chunks(workers).enumerate() {
         let elapsed = (batch as u64 + 1) * work_seconds;
         assert!(elapsed <= n(metrics, "deadline_seconds"));
@@ -614,13 +633,13 @@ async fn sandbox_lw_07c_provider_outage_routes_to_exclusive_manual_fallback_befo
         .set("accounting:synthetic-provider:available", "true")
         .await
         .unwrap();
-    for id in queue {
+    for id in &queue {
         assert!(
             dispatch::apply(
                 &store,
                 &automated,
                 fixture::COMPANY,
-                &id,
+                id,
                 dispatch::Command::Claim {
                     path: dispatch::Path::Automated,
                     expected_payload_sha256: payload(),
@@ -631,5 +650,5 @@ async fn sandbox_lw_07c_provider_outage_routes_to_exclusive_manual_fallback_befo
             .is_err()
         );
     }
-    assert_eq!(receipts(&store), n(metrics, "operations") as usize);
+    assert_eq!(receipts(&store, &queue).await, n(metrics, "operations") as usize);
 }

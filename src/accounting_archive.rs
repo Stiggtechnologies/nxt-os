@@ -188,7 +188,7 @@ pub(super) enum Change {
     },
 }
 
-fn key(company: &str, source: &str) -> Result<String, ApiError> {
+pub(super) fn key(company: &str, source: &str) -> Result<String, ApiError> {
     if !safe_id(company) || !safe_id(source) {
         return Err(error(
             StatusCode::BAD_REQUEST,

@@ -36,7 +36,7 @@ const cases = checks.map(([id, test, prerequisite]) => ({
   prerequisite,
   local_evidence: test ? { test, passed: passedTests.has(test) } : null,
 }));
-const continuityFixture = readFileSync(new URL("../tests/accounting-continuity-fixture.json", import.meta.url));
+const continuityFixture = readFileSync(new URL("../src/accounting-continuity-fixture.json", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const fixtureData = JSON.parse(continuityFixture);
 return {
   live_writes_enabled: false,

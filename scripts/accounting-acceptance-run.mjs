@@ -193,6 +193,7 @@ export function runLocalSuites() {
     "--test", "tests/accounting-archive-sync.test.mjs", "tests/accounting-authority-monitor.test.mjs",
     "tests/accounting-sandbox-archive.test.mjs", "tests/accounting-acceptance-run.test.mjs",
     "tests/accounting-acceptance-templates.test.mjs", "tests/accounting-acceptance-guided.test.mjs",
+    "tests/accounting-hosted-staging-preflight.test.mjs", "tests/accounting-hosted-acceptance-run.test.mjs",
   ]);
   return {
     passed: rust.passed && node.passed, preflight: buildPreflight(rust.output),

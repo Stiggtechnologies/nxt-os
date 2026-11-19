@@ -1,5 +1,4 @@
 //! Accounting evidence, scoped retrieval, specialist workflows, and release review.
-#[cfg(test)]
 #[path = "accounting_acceptance.rs"]
 mod accounting_acceptance;
 #[path = "accounting_additional_procedures.rs"]
@@ -8,19 +7,18 @@ mod accounting_additional_procedures;
 mod accounting_archive;
 #[path = "accounting_authority.rs"]
 mod accounting_authority;
-#[cfg(test)]
 #[path = "accounting_continuity_tests.rs"]
 mod accounting_continuity_tests;
 #[path = "accounting_dispatch.rs"]
 mod accounting_dispatch;
 #[path = "accounting_graph.rs"]
 mod accounting_graph;
-#[cfg(test)]
 #[path = "accounting_hybrid_tests.rs"]
 mod accounting_hybrid_tests;
+#[path = "accounting_hosted_acceptance.rs"]
+mod accounting_hosted_acceptance;
 #[path = "accounting_release.rs"]
 mod accounting_release;
-#[cfg(test)]
 #[path = "accounting_review_tests.rs"]
 mod accounting_review_tests;
 #[cfg(test)]
@@ -113,7 +111,9 @@ pub fn router(books: Arc<CompanyBooks>) -> Router {
             get(close_evidence),
         )
         .merge(accounting_workflows::router())
+        .merge(accounting_hosted_acceptance::router())
         .layer(middleware::from_fn(require_admin))
+        .merge(accounting_hosted_acceptance::bootstrap_router())
         .layer(middleware::map_response(
             |mut response: Response| async move {
                 response.headers_mut().insert(
@@ -281,6 +281,28 @@ fn close_summary(trial: &Value, head: &str) -> Value {
     })
 }
 
+fn missing_batch_case() {
+    let ledger = json!({
+        "analysis": {"entries": 7, "lines": 13, "total_debit_cents": "80", "total_credit_cents": "80"},
+        "source_baseline_analysis": {"entries": 7, "lines": 13, "total_debit_cents": "80", "total_credit_cents": "80"},
+        "native_delta": {"entries": 1, "lines": 2, "total_debit_cents": "20", "total_credit_cents": "20"},
+        "reconciliation": {"source_baseline_unchanged": true, "source_controls_passed": true}
+    });
+    let result = close_summary(&ledger, "test-head");
+    let checks = result["checks"].as_array().unwrap();
+    assert_eq!(checks[0]["passed"], true);
+    assert!(checks[1..5].iter().all(|check| check["passed"] == false));
+    assert_eq!(result["release_authorized"], false);
+    let missing = close_summary(&Value::Null, "test-head");
+    assert!(
+        missing["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|check| check["passed"] == false)
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,25 +365,7 @@ mod tests {
 
     #[test]
     fn missing_or_omitted_batch_is_detected_even_when_debits_equal_credits() {
-        let ledger = json!({
-            "analysis": {"entries": 7, "lines": 13, "total_debit_cents": "80", "total_credit_cents": "80"},
-            "source_baseline_analysis": {"entries": 7, "lines": 13, "total_debit_cents": "80", "total_credit_cents": "80"},
-            "native_delta": {"entries": 1, "lines": 2, "total_debit_cents": "20", "total_credit_cents": "20"},
-            "reconciliation": {"source_baseline_unchanged": true, "source_controls_passed": true}
-        });
-        let result = close_summary(&ledger, "test-head");
-        let checks = result["checks"].as_array().unwrap();
-        assert_eq!(checks[0]["passed"], true);
-        assert!(checks[1..5].iter().all(|check| check["passed"] == false));
-        assert_eq!(result["release_authorized"], false);
-        let missing = close_summary(&Value::Null, "test-head");
-        assert!(
-            missing["checks"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|check| check["passed"] == false)
-        );
+        missing_batch_case();
     }
 
     #[test]

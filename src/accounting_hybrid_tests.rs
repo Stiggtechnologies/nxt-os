@@ -70,8 +70,11 @@ async fn hybrid_finds_semantic_only_match_and_hides_revoked_document() {
 
 #[tokio::test]
 async fn sandbox_journal_posts_once_and_reads_back_after_unknown_outcome() {
+    sandbox_journal_posts_once_and_reads_back_after_unknown_outcome_case(Store::memory()).await;
+}
+
+pub(super) async fn sandbox_journal_posts_once_and_reads_back_after_unknown_outcome_case(store: Store) {
     use dispatch::{Command, Operation, Path};
-    let store = Store::memory();
     let owner = fixture::person("usr_owner");
     let reviewer = fixture::person("usr_reviewer");
     let company = fixture::COMPANY;

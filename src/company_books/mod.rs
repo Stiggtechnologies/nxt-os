@@ -1,4 +1,5 @@
 //! Company-isolated, source-bound journal books. One CAS publishes the book and receipt.
+pub(crate) mod acceptance_fixture;
 mod adjustments;
 mod daily;
 mod subledger;

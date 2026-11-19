@@ -70,6 +70,7 @@ pub enum Store {
         url: String,
         token: String,
         http: reqwest::Client,
+        fixture_namespace: Option<uuid::Uuid>,
     },
     Supabase {
         url: String,
@@ -113,7 +114,10 @@ impl Store {
     /// Stable per-tenant cache key for remote backends; None for process memory.
     pub fn tenant_key(&self) -> Option<String> {
         match self {
-            Store::Redis { url, .. } => Some(format!("redis:{url}")),
+            Store::Redis { url, fixture_namespace, .. } => Some(match fixture_namespace {
+                Some(namespace) => format!("redis:{url}#{namespace}"),
+                None => format!("redis:{url}"),
+            }),
             Store::Supabase { url, namespace, .. } => Some(format!("supabase:{url}#{namespace}")),
             _ => None,
         }
@@ -156,6 +160,7 @@ impl Store {
                 url: url.trim_end_matches('/').to_string(),
                 token,
                 http: reqwest::Client::new(),
+                fixture_namespace: None,
             },
             _ => match std::env::var("NXT_DEV_STORE_FILE") {
                 Ok(path) if !path.is_empty() => Store::memory_file(&path),
@@ -203,11 +208,67 @@ impl Store {
             // keys are catalogued and appended to the company access audit inside it.
             return supabase_rpc(http, url, token, "nxt_store_command", json!({"p_namespace": namespace, "p_command": cmd})).await;
         }
-        let Store::Redis { url, token, http } = self else {
+        let Store::Redis { url, token, http, fixture_namespace } = self else {
             return Err("remote storage is unavailable".into());
+        };
+        let cmd = match fixture_namespace {
+            Some(namespace) => isolated_fixture_command(*namespace, cmd)?,
+            None => cmd,
         };
         redis_call(http, url, token, &cmd).await
     }
+
+    /// Creates an empty, expiring keyspace on the same Redis service. The
+    /// application store and other fixture runs use separate keys.
+    pub(crate) fn redis_fixture(&self) -> StoreResult<Self> {
+        let Self::Redis { url, token, .. } = self else {
+            return Err("acceptance fixtures require Redis storage".into());
+        };
+        let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(6))
+            .redirect(reqwest::redirect::Policy::none()).build()
+            .map_err(|_| "acceptance Redis client could not be initialized".to_string())?;
+        Ok(Self::Redis {
+            url: url.clone(),
+            token: token.clone(),
+            http,
+            fixture_namespace: Some(uuid::Uuid::new_v4()),
+        })
+    }
+}
+
+const FIXTURE_CAS: &str = "local current = redis.call('GET', KEYS[1]); if (ARGV[1] == 'missing' and not current) or (ARGV[1] == 'present' and current == ARGV[2]) then redis.call('SET', KEYS[1], ARGV[3]); return 1; end; return 0;";
+
+fn isolated_fixture_command(namespace: uuid::Uuid, mut command: Vec<Value>) -> StoreResult<Vec<Value>> {
+    const TTL_SECONDS: u64 = 7200;
+    let unsupported = || "unsupported Redis operation in acceptance fixture".to_string();
+    let operation = command.first().and_then(Value::as_str).ok_or_else(unsupported)?.to_owned();
+    let key_range = match operation.as_str() {
+        "GET" | "SET" | "SADD" | "SMEMBERS" | "SCARD" | "LRANGE" => 1..2,
+        "MGET" => 1..command.len(),
+        "EVAL" if command.get(1).and_then(Value::as_str) == Some(FIXTURE_CAS)
+            && command.get(2).and_then(Value::as_u64) == Some(1) => 3..4,
+        _ => return Err(unsupported()),
+    };
+    for index in key_range {
+        let key = command.get_mut(index).ok_or_else(unsupported)?;
+        let logical = key.as_str().and_then(|value| value.strip_prefix(PREFIX)).ok_or_else(unsupported)?;
+        *key = json!(format!("{PREFIX}acceptance:{}:{logical}", namespace.simple()));
+    }
+    match operation.as_str() {
+        "SET" => command.extend([json!("EX"), json!(TTL_SECONDS)]),
+        "SADD" => {
+            command = vec![json!("EVAL"), json!(format!(
+                "local n = redis.call('SADD', KEYS[1], ARGV[1]); redis.call('EXPIRE', KEYS[1], {TTL_SECONDS}); return n;"
+            )), json!(1), command[1].clone(), command[2].clone()];
+        }
+        "EVAL" => {
+            command[1] = json!(format!(
+                "local function cas() {FIXTURE_CAS} end; local n = cas(); if n == 1 then redis.call('EXPIRE', KEYS[1], {TTL_SECONDS}); end; return n;"
+            ));
+        }
+        _ => {}
+    }
+    Ok(command)
 }
 
 /// One PostgREST RPC call with the service credential. Every NXT RPC answers `{"result": ...}`.
@@ -352,8 +413,7 @@ impl Store {
                 Ok(true)
             }
             Store::Redis { .. } => {
-                let script = "local current = redis.call('GET', KEYS[1]); if (ARGV[1] == 'missing' and not current) or (ARGV[1] == 'present' and current == ARGV[2]) then redis.call('SET', KEYS[1], ARGV[3]); return 1; end; return 0;";
-                let result = self.remote(vec![json!("EVAL"), json!(script), json!(1), json!(key), json!(if expected.is_some() { "present" } else { "missing" }), json!(expected.unwrap_or("")), json!(value)]).await?;
+                let result = self.remote(vec![json!("EVAL"), json!(FIXTURE_CAS), json!(1), json!(key), json!(if expected.is_some() { "present" } else { "missing" }), json!(expected.unwrap_or("")), json!(value)]).await?;
                 decision(result)
             }
             Store::Supabase { .. } => decision(self.remote(vec![json!("COMPARE_EXCHANGE"), json!(key), json!(expected), json!(value)]).await?),
@@ -551,8 +611,29 @@ fn decision(value: Value) -> StoreResult<bool> {
 
 #[cfg(test)]
 mod compare_exchange_tests {
-    use super::Store;
+    use super::{FIXTURE_CAS, Store, isolated_fixture_command};
+    use serde_json::json;
     use std::sync::Arc;
+
+    #[test]
+    fn redis_fixtures_scope_every_key_and_expire_mutations() {
+        let scope = uuid::Uuid::from_u128(7);
+        let prefix = format!("nxt:acceptance:{}:", scope.simple());
+        let transform = |values: serde_json::Value| {
+            isolated_fixture_command(scope, values.as_array().unwrap().clone())
+        };
+        assert_eq!(transform(json!(["MGET", "nxt:a", "nxt:b"])).unwrap(),
+            json!(["MGET", format!("{prefix}a"), format!("{prefix}b")]).as_array().unwrap().clone());
+        let set = transform(json!(["SET", "nxt:a", "x", "NX"])).unwrap();
+        assert_eq!(set, json!(["SET", format!("{prefix}a"), "x", "NX", "EX", 7200]).as_array().unwrap().clone());
+        let cas = transform(json!(["EVAL", FIXTURE_CAS, 1, "nxt:a", "missing", "", "new"])).unwrap();
+        assert_eq!(cas[3], format!("{prefix}a"));
+        assert!(cas[1].as_str().unwrap().contains("redis.call('EXPIRE', KEYS[1], 7200)"));
+        assert!(transform(json!(["EVAL", "return 1", 1, "nxt:a"])).is_err());
+        assert!(transform(json!(["GET", "foreign:key"])).is_err());
+        assert!(transform(json!(["FLUSHDB"])).is_err());
+        assert!(Store::memory().redis_fixture().is_err());
+    }
 
     #[tokio::test]
     async fn missing_empty_and_stale_values_are_distinct() {

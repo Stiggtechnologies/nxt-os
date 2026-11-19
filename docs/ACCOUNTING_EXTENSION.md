@@ -7,6 +7,20 @@ The extension defaults to off. Only the exact value on for NXT_ACCOUNTING_EXTENS
 
 Use the review branch for a Preview deployment. Confirm Preview environment variable scopes before pushing, and confirm storage after deployment. The initial review preview uses isolated process memory without firm records or production credentials. Its contents are ephemeral. To exercise authenticated accounting workflows on hosted staging later, use dedicated staging identities and a separate staging backing store before enabling the switch.
 
+Before enabling hosted accounting, provision a dedicated store and scope its credentials, the staging bootstrap credential, and NXT_ACCOUNTING_EXTENSION to Preview on review/accounting-extension-staging only. Leave production variables unchanged. Use individual MFA accounts for the staging administrator, preparer, and reviewer. Where an exercise needs independent firm-wide actions, use distinct staging administrators. Assign a synthetic company only to scoped users and omit real client records. Disable or remove the staging bootstrap credential after administrators have verified access.
+
+Run node scripts/accounting-hosted-staging-preflight.mjs with NXT_ACCEPTANCE_STAGING_ORIGIN, NXT_ACCEPTANCE_PREVIEW_BYPASS, and NXT_ACCEPTANCE_STAFF_TOKEN supplied through the approved secret path. Its allowlist limits requests to the accounting branch's protected Vercel origin. It checks for Redis or Supabase, verifies individual MFA, confirms the extension is mounted and live dispatch is disabled, and checks the 21-case inventory. The preflight is read-only. Existing local acceptance results do not establish that the cases ran against the hosted preview.
+
+### Hosted synthetic acceptance
+
+- Keep NXT_ACCOUNTING_EXTENSION=on scoped to the accounting Preview branch and keep Vercel Deployment Protection enabled. The runner requires Vercel's Preview environment, this exact branch, and the branch's explicit Upstash REST pair. Each synthetic Redis key expires two hours after its last write.
+- For a fresh staff registry, generate a 32-byte random ticket encoded as lowercase hex. Store its SHA-256 digest as NXT_ACCOUNTING_STAGE_BOOTSTRAP_SHA256 on that Preview branch only. Set the CLI's NXT_ACCEPTANCE_STAGE_BOOTSTRAP_TICKET to the original ticket and NXT_ACCEPTANCE_STAGE_INITIAL_PASSWORD to a separate 32-byte random lowercase hex password through the approved secret path. Run node scripts/accounting-hosted-acceptance-run.mjs --bootstrap. The first administrator must replace the temporary password and enroll TOTP through NXT staff sign-in. The single-use claim persists in Redis. Remove the bootstrap digest after enrollment.
+- Use Firm Operations Staff access to create a second staging administrator and separate preparer and reviewer accounts. The administrators require all-client scope. Assign just stage-fixtures to the preparer and reviewer. Each account must change its temporary password and finish individual MFA before it provides a session for the run.
+- Inject NXT_ACCEPTANCE_STAGING_ORIGIN, NXT_ACCEPTANCE_STAGING_COMMIT and NXT_ACCEPTANCE_STAGING_DEPLOYMENT from the exact review deployment. Provide the accounting branch's approved Vercel share URL in NXT_ACCEPTANCE_PREVIEW_SHARE_URL or an authorized preview credential in NXT_ACCEPTANCE_PREVIEW_BYPASS. Supply the four individual staging sessions in NXT_ACCEPTANCE_STAFF_TOKEN, NXT_ACCEPTANCE_SECOND_ADMIN_TOKEN, NXT_ACCEPTANCE_PREPARER_TOKEN and NXT_ACCEPTANCE_REVIEWER_TOKEN. Keep tickets, passwords, share URLs and sessions in the approved secret path.
+- Run node scripts/accounting-hosted-acceptance-run.mjs. It confirms both administrator sessions, scoped access denials, Redis compare-and-set and read-back, and the 21-case inventory. Every receipt binds the deployment, commit, fixture digest and executing staff ID. The continuity exercises use synthetic identities, a simulated journal, fixture time for queue targets, and isolated logical restores.
+
+For a separate loopback rehearsal, build the dev example and run node scripts/accounting-local-staging-rehearsal.mjs DEV_BINARY NEW_LOCAL_DIRECTORY. It starts NXT with a fresh file-backed store and synthetic MFA accounts, verifies the identities after restarting with the bootstrap key disabled, and checks the extension's release-readiness boundary. It stops its local server and emits a credential-free result.
+
 The accounting extension integrates Company Books, Client Journey, and the staff identity model. It runs scoped evidence and research tasks and records release reviews. Operational dispatch remains disabled.
 
 ## Archive ingestion and retrieval
@@ -113,7 +127,7 @@ Run node scripts/accounting-acceptance-preflight.mjs PATH_TO_RUST_TEST_LOG to pr
 
 See [firm acceptance inputs](ACCOUNTING_ACCEPTANCE_INPUTS.md) for the prerequisites for each of the 21 cases.
 
-The [production blocker register](ACCOUNTING_PRODUCTION_BLOCKERS.md) describes the six synthetic continuity exercises and the evidence still required from the firm. Their parameters are recorded in tests/accounting-continuity-fixture.json. Run the Rust suite before generating the 21-case report. The report records the fixture digest and distinguishes passing local evidence from verified firm acceptance.
+The [production blocker register](ACCOUNTING_PRODUCTION_BLOCKERS.md) describes the six synthetic continuity exercises and the evidence still required from the firm. Their parameters are recorded in src/accounting-continuity-fixture.json. Run the Rust suite before generating the 21-case report. The report records the fixture digest and distinguishes passing local evidence from verified firm acceptance.
 
 ## Synthetic archive and embedding job
 

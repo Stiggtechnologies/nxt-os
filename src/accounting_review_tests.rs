@@ -1,7 +1,9 @@
 use super::{
     accounting_acceptance as fixture, accounting_archive as archive,
-    accounting_specialist as specialist, accounting_workpaper_review as workflow,
+    accounting_workpaper_review as workflow,
 };
+#[cfg(test)]
+use super::accounting_specialist as specialist;
 use crate::store::Store;
 use serde_json::{Value, json};
 
@@ -17,17 +19,22 @@ fn control(kind: &str) -> Value {
     }
 }
 
+#[cfg(test)]
 async fn setup(role: &str, keys: &str, control: Value) -> (Store, Value) {
     setup_with_procedure(role, keys, control, None).await
 }
 
+#[cfg(test)]
 async fn setup_with_procedure(
     role: &str,
     keys: &str,
     control: Value,
     procedure: Option<Value>,
 ) -> (Store, Value) {
-    let store = Store::memory();
+    setup_in(Store::memory(), role, keys, control, procedure).await
+}
+
+async fn setup_in(store: Store, role: &str, keys: &str, control: Value, procedure: Option<Value>) -> (Store, Value) {
     let mut evidence = serde_json::Map::new();
     let mut facts = control.as_object().unwrap().clone();
     facts.remove("kind");
@@ -153,6 +160,7 @@ fn approval(digest: &str) -> workflow::Review {
     .unwrap()
 }
 
+#[cfg(test)]
 fn supplemental_fixture(spec: &str, allowed: &str) -> (Value, Value) {
     let mut documents = json!({});
     let mut first_failure = None;
@@ -324,14 +332,20 @@ async fn all_77_workpapers_verify_archived_sources_and_record_independent_review
 
 #[tokio::test]
 async fn workpaper_rejects_unbound_inputs_self_review_digest_changes_and_revoked_sources() {
+    workpaper_rejects_unbound_inputs_self_review_digest_changes_and_revoked_sources_case(Store::memory()).await;
+}
+
+pub(super) async fn workpaper_rejects_unbound_inputs_self_review_digest_changes_and_revoked_sources_case(store: Store) {
     let preparer = fixture::person("usr_preparer");
     let reviewer = fixture::person("usr_reviewer");
     let outsider = fixture::person("usr_outsider");
     let now = fixture::instant();
-    let (store, input) = setup(
+    let (store, input) = setup_in(
+        store,
         "Accounts payable and expenses",
         "invoice_register,duplicate_report,payee_verification",
         control("amount_tie"),
+        None,
     )
     .await;
     let prepare = |input| serde_json::from_value(input).unwrap();

@@ -66,8 +66,7 @@ async fn search(store: &Store, actor: &Identity, now: DateTime<Utc>) -> archive:
     .ok()
     .unwrap()
 }
-async fn initialized() -> Store {
-    let store = Store::memory();
+async fn initialized(store: Store) -> Store {
     send(&store, 1, doc("v1", "Rent source amount")).await;
     send(
         &store,
@@ -117,7 +116,7 @@ fn approval(version: &str, node_hash: String) -> authority::Approval {
 
 #[tokio::test]
 async fn archive_events_are_ordered_idempotent_and_version_bound() {
-    let store = initialized().await;
+    let store = initialized(Store::memory()).await;
     send(&store, 3, doc("v2", "Rent corrected")).await;
     send(&store, 3, doc("v2", "Rent corrected")).await;
     for (sequence, change) in [
@@ -139,10 +138,14 @@ async fn archive_events_are_ordered_idempotent_and_version_bound() {
 
 #[tokio::test]
 async fn archive_coverage_and_permission_expiry_are_distinct() {
+    archive_coverage_and_permission_expiry_are_distinct_case(Store::memory()).await;
+}
+
+pub(super) async fn archive_coverage_and_permission_expiry_are_distinct_case(store: Store) {
     let actor = person("usr_reader");
-    let empty = search(&Store::memory(), &actor, instant()).await;
+    let empty = search(&store, &actor, instant()).await;
     assert_eq!(empty.coverage, "unavailable");
-    let store = initialized().await;
+    let store = initialized(store).await;
     let expired = search(&store, &actor, instant() + Duration::seconds(901)).await;
     assert_eq!(expired.coverage, "permission_feed_stale");
     assert!(expired.citations.is_empty());
@@ -167,7 +170,11 @@ async fn archive_coverage_and_permission_expiry_are_distinct() {
 
 #[tokio::test]
 async fn archive_uses_client_scope_and_document_grant_and_rechecks_after_revocation() {
-    let store = initialized().await;
+    archive_uses_client_scope_and_document_grant_and_rechecks_after_revocation_case(Store::memory()).await;
+}
+
+pub(super) async fn archive_uses_client_scope_and_document_grant_and_rechecks_after_revocation_case(store: Store) {
+    let store = initialized(store).await;
     let assigned = person("usr_reader");
     let absent = person("usr_unassigned_to_document");
     assert_eq!(
@@ -215,7 +222,11 @@ async fn archive_uses_client_scope_and_document_grant_and_rechecks_after_revocat
 
 #[tokio::test]
 async fn archive_hold_prevents_disposition_then_disposition_removes_text() {
-    let store = initialized().await;
+    archive_hold_prevents_disposition_then_disposition_removes_text_case(Store::memory()).await;
+}
+
+pub(super) async fn archive_hold_prevents_disposition_then_disposition_removes_text_case(store: Store) {
+    let store = initialized(store).await;
     send(
         &store,
         3,
@@ -265,7 +276,10 @@ async fn archive_hold_prevents_disposition_then_disposition_removes_text() {
 
 #[tokio::test]
 async fn authority_requires_independent_approval_and_keeps_effective_periods() {
-    let store = Store::memory();
+    authority_requires_independent_approval_and_keeps_effective_periods_case(Store::memory()).await;
+}
+
+pub(super) async fn authority_requires_independent_approval_and_keeps_effective_periods_case(store: Store) {
     let proposer = person("usr_writer");
     let reviewer = person("usr_reviewer");
     let hash = authority::propose(
@@ -338,7 +352,10 @@ async fn authority_requires_independent_approval_and_keeps_effective_periods() {
 
 #[tokio::test]
 async fn release_blocks_missing_acceptance_case_and_rejects_self_review() {
-    let store = Store::memory();
+    release_blocks_missing_acceptance_case_and_rejects_self_review_case(Store::memory()).await;
+}
+
+pub(super) async fn release_blocks_missing_acceptance_case_and_rejects_self_review_case(store: Store) {
     let proposer = person("usr_writer");
     let reviewer = person("usr_reviewer");
     let hash = release::propose(&store, &proposer, "pilot", release_input(false), instant())
@@ -373,7 +390,10 @@ async fn release_blocks_missing_acceptance_case_and_rejects_self_review() {
 
 #[tokio::test]
 async fn release_demands_exact_version_and_remains_blocked_even_with_21_reported_cases() {
-    let store = Store::memory();
+    release_demands_exact_version_and_remains_blocked_even_with_21_reported_cases_case(Store::memory()).await;
+}
+
+pub(super) async fn release_demands_exact_version_and_remains_blocked_even_with_21_reported_cases_case(store: Store) {
     let proposer = person("usr_writer");
     let reviewer = person("usr_reviewer");
     let hash = release::propose(&store, &proposer, "pilot", release_input(true), instant())
@@ -417,6 +437,10 @@ async fn release_demands_exact_version_and_remains_blocked_even_with_21_reported
 
 #[test]
 fn production_case_inventory_covers_all_seven_gates() {
+    production_case_inventory_covers_all_seven_gates_case();
+}
+
+pub(super) fn production_case_inventory_covers_all_seven_gates_case() {
     let expected: BTreeSet<_> = (1..=7)
         .flat_map(|i| ["A", "B", "C"].map(move |suffix| format!("LW-{i:02}{suffix}")))
         .collect();
@@ -429,8 +453,11 @@ fn production_case_inventory_covers_all_seven_gates() {
 
 #[tokio::test]
 async fn sandbox_lw_04a_manual_and_automated_claim_are_exclusive() {
+    sandbox_lw_04a_manual_and_automated_claim_are_exclusive_case(Store::memory()).await;
+}
+
+pub(super) async fn sandbox_lw_04a_manual_and_automated_claim_are_exclusive_case(store: Store) {
     use super::accounting_dispatch::{Command, Operation, Path, apply, operation_id};
-    let store = Store::memory();
     let first = person("usr_first");
     let second = person("usr_second");
     let id = operation_id(COMPANY, "close").ok().unwrap();
@@ -481,10 +508,12 @@ async fn sandbox_lw_04a_manual_and_automated_claim_are_exclusive() {
 }
 
 #[tokio::test]
-async fn sandbox_lw_04b_and_04c_uncertainty_requires_reconciliation_and_correction_links_original()
-{
+async fn sandbox_lw_04b_and_04c_uncertainty_requires_reconciliation_and_correction_links_original() {
+    sandbox_lw_04b_and_04c_uncertainty_requires_reconciliation_and_correction_links_original_case(Store::memory()).await;
+}
+
+pub(super) async fn sandbox_lw_04b_and_04c_uncertainty_requires_reconciliation_and_correction_links_original_case(store: Store) {
     use super::accounting_dispatch::{Command, Operation, Path, apply, operation_id};
-    let store = Store::memory();
     let first = person("usr_first");
     let second = person("usr_second");
     let id = operation_id(COMPANY, "close").ok().unwrap();
@@ -601,10 +630,13 @@ async fn sandbox_lw_04b_and_04c_uncertainty_requires_reconciliation_and_correcti
 }
 
 #[tokio::test]
-async fn evidence_graph_tracks_new_authority_and_archive_revocation_without_exposing_other_owners()
-{
+async fn evidence_graph_tracks_new_authority_and_archive_revocation_without_exposing_other_owners() {
+    evidence_graph_tracks_new_authority_and_archive_revocation_without_exposing_other_owners_case(Store::memory()).await;
+}
+
+pub(super) async fn evidence_graph_tracks_new_authority_and_archive_revocation_without_exposing_other_owners_case(store: Store) {
     use super::accounting_graph as graph;
-    let store = initialized().await;
+    let store = initialized(store).await;
     let actor = person("usr_reader");
     let request = || graph::Request {
         role: "Valuation".into(),

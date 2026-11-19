@@ -91,7 +91,7 @@ impl Record {
     }
 }
 
-fn key(company: &str, operation_id: &str) -> Result<String, ApiError> {
+pub(super) fn key(company: &str, operation_id: &str) -> Result<String, ApiError> {
     if !safe_id(company) || !valid_hash(operation_id) {
         return Err(error(
             StatusCode::BAD_REQUEST,
@@ -285,7 +285,7 @@ pub(super) struct SandboxReceipt {
     journal: SandboxJournal,
 }
 
-fn sandbox_key(company: &str, id: &str) -> Result<String, ApiError> {
+pub(super) fn sandbox_key(company: &str, id: &str) -> Result<String, ApiError> {
     key(company, id)?;
     Ok(format!("accounting:isolated-journal:v1:{company}:{id}"))
 }
