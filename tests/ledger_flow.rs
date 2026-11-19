@@ -150,7 +150,11 @@ async fn books_tie_out() {
     assert_eq!(preparation["envelopes"], json!([]));
     let ins = ok(&r, "GET", "/api/os/insights", None).await;
     assert!(ins["insights"].is_array());
-    unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
+    unsafe {
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("OPENROUTER_API_KEY");
+    }
     let (s, _) = call(&r, "POST", "/api/os/ask", Some(json!({"messages":[{"role":"user","content":"hi"}]}))).await;
     assert_eq!(s, 503);
 }

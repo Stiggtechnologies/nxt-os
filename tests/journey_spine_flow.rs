@@ -12,6 +12,8 @@ fn app() -> Router {
         std::env::set_var("ADMIN_API_KEY", "k");
         std::env::remove_var("CRON_SECRET");
         std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("OPENROUTER_API_KEY");
     }
     nxt_os::app_with(nxt_os::store::Store::memory)
 }

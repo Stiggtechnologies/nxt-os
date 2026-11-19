@@ -41,6 +41,8 @@ async fn journeys_are_scoped_to_assigned_clients() {
         std::env::set_var("NXT_STAFF_PBKDF2_ITERATIONS", "1000");
         std::env::set_var("NXT_AUTONOMY", r#"{"books_access":"human"}"#);
         std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("OPENROUTER_API_KEY");
     }
     staff::install(Arc::new(staff::Staff::new(Store::memory())));
     let r = app_with(Store::memory);
