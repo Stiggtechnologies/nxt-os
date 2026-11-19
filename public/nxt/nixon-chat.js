@@ -76,7 +76,7 @@ html.nxl-shown body{padding-bottom:84px}
     css();
     const { api, esc } = window.NXT;
     const onOpen = opts.onOpen || ((app, view) => window.location.assign("/#/" + app + (view ? "/" + view : "")));
-    let chat = [], busy = false, status = null, lastSpoken = "", choices = [], voiceOn = false, allowed = true;
+    let chat = [], busy = false, status = null, lastSpoken = "", choices = [], voiceOn = false, allowed = false, generation = 0;
     host.classList.add("nxc");
     host.innerHTML = `<div class="nxc-log" role="log" aria-live="polite"></div>
 <div class="nxc-status" hidden><span class="nxc-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span class="nxc-status-text"></span></div>
@@ -100,12 +100,15 @@ html.nxl-shown body{padding-bottom:84px}
     }
     // Voice controls only for staff with firm-wide access; re-checked after each sign-in.
     function refresh() {
-      if (!window.NXT.key.get()) { allowed = false; paintButtons(); return; }
+      if (!window.NXT.key.get()) { allowed = false; stop(); paintButtons(); return; }
       api("/api/os/status").then((s) => { status = s; render(); }).catch(() => {});
-      api("/api/staff/me").then((m) => { allowed = R.firmWide(m.identity); paintButtons(); }).catch(() => { allowed = false; paintButtons(); });
+      const token = window.NXT.key.get();
+      return api("/api/staff/me").then((m) => {
+        if (token !== window.NXT.key.get()) return;
+        allowed = R.firmWide(m.identity); if (!allowed) stop(); paintButtons();
+      }).catch(() => { allowed = false; stop(); paintButtons(); });
     }
     paintButtons();
-    refresh();
 
     function setStatus(text, kind) {
       bar.hidden = !text;
@@ -133,18 +136,21 @@ html.nxl-shown body{padding-bottom:84px}
 
     // Ask NXT turn for the last user message already in `chat`.
     async function runAsk(speakReply) {
+      const turn = generation;
       const pending = { role: "assistant", content: "Working on it…", pending: true };
       chat.push(pending);
       render();
       try {
         const history = chat.filter((m) => !m.pending && !m.local).map(({ role, content }) => ({ role, content }));
         const r = await api("/api/os/ask", { body: { messages: history } });
+        if (turn !== generation) return;
         pending.content = r.reply || "(no answer)";
         pending.pending = false;
         if (r.tools_used?.length) pending.meta = "Checked: " + [...new Set(r.tools_used)].filter((t) => t !== "open_app").join(", ").replace(/_/g, " ");
         for (const a of r.actions || []) if (a.type === "open_app") onOpen(a.app, a.view);
         if (speakReply) say(pending.content);
       } catch (e) {
+        if (turn !== generation) return;
         pending.content = e.message; pending.pending = false; pending.local = true;
       }
       render();
@@ -160,11 +166,14 @@ html.nxl-shown body{padding-bottom:84px}
     }
     // Spoken turn: the audited voice gate first, Ask NXT only for speech Nixon has no command for.
     async function nixonVoice(transcript, channel) {
+      const turn = generation;
       const v = await api("/api/nixon/voice", { body: { transcript, channel, last_spoken: lastSpoken, choices } });
-      choices = v.choices || [];
+      if (turn === generation) choices = v.choices || [];
       return v;
     }
     async function voiceTurn(text, channel) {
+      if (!allowed) return;
+      const turn = generation;
       text = String(text || "").trim();
       if (!text) return;
       if (busy) { setStatus("Still answering the last question…"); return; }
@@ -173,9 +182,11 @@ html.nxl-shown body{padding-bottom:84px}
       let v;
       try { v = await nixonVoice(text, channel); }
       catch (e) {
+        if (turn !== generation) return;
         chat.push({ role: "user", content: text, meta: "Spoken" }, { role: "assistant", content: e.message, local: true });
         busy = false; render(); setStatus(voiceOn ? statusFor() : ""); return;
       }
+      if (turn !== generation) return;
       const route = R.routeVoiceAnswer(v, !!status?.ai_enabled);
       if (route === "hold") { busy = false; setStatus(voiceOn ? statusFor() : ""); return; }
       chat.push({ role: "user", content: text, meta: "Spoken" });
@@ -193,7 +204,8 @@ html.nxl-shown body{padding-bottom:84px}
 
     // Mic: tap to start, tap again to send (SyncAI useDictation). Permission is asked on tap only.
     let dictation = null, heard = [], dictError = false;
-    micBtn.onclick = () => {
+    function dictate() {
+      if (!allowed) return;
       if (dictation?.listening) { dictation.stop(); return; }
       speaker.stop();
       heard = []; dictError = false;
@@ -209,7 +221,8 @@ html.nxl-shown body{padding-bottom:84px}
         },
       });
       if (dictation.start()) setStatus("Listening… tap the mic again to send", "listening");
-    };
+    }
+    micBtn.onclick = dictate;
 
     // Voice mode: OpenAI Realtime (marin, God's Eye persona and tools) when configured; otherwise
     // continuous browser speech through the same gate, on the open-mic channel (say "Nixon").
@@ -227,16 +240,17 @@ html.nxl-shown body{padding-bottom:84px}
       setStatus("");
     }
     async function startVoice() {
+      if (!allowed || voiceOn) return;
       if (dictation?.listening) dictation.stop();
       voiceOn = true; paintButtons();
       setStatus("Connecting voice mode…", "live");
       live = live || R.createLiveSession({
         token: () => window.NXT.key.get(),
         context: () => ({ route: opts.route ? opts.route() : "/ask", pageTitle: document.title || "NXT OS", mode: "conversation" }),
-        ask: async (t) => { try { const v = await nixonVoice(t, "push_to_talk"); opened(v.open); return v; } catch { return undefined; } },
+        ask: async (t) => { const turn = generation; try { const v = await nixonVoice(t, "push_to_talk"); if (turn !== generation) return; opened(v.open); return v; } catch { return undefined; } },
         onUserText: (t) => { chat.push({ role: "user", content: t, meta: "Spoken · voice mode", local: true }); render(); },
         onAssistantText: (t) => { chat.push({ role: "assistant", content: t, meta: "Nixon · live voice", local: true }); render(); },
-        onEnd: (state, was) => { if (was && voiceOn && !loop) { voiceOn = false; paintButtons(); setStatus(""); } },
+        onEnd: (state, was) => { if (was && voiceOn && !loop) { voiceOn = false; paintButtons(); setStatus(state || "Voice mode ended."); } },
       });
       const outcome = liveSupported ? await live.start() : "unsupported";
       if (!voiceOn) return;
@@ -251,15 +265,24 @@ html.nxl-shown body{padding-bottom:84px}
       if (loop.start()) setStatus(statusFor(), "live"); else endVoice();
     }
     voiceBtn.onclick = () => (voiceOn ? endVoice() : startVoice());
+    function stop() {
+      // Discard unfinished dictation on close/sign-out instead of submitting it.
+      heard = []; dictError = true;
+      if (dictation?.listening) dictation.stop();
+      endVoice();
+    }
 
     host.querySelector(".nxc-composer").onsubmit = (e) => { e.preventDefault(); send(input.value); };
     input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input.value); } });
+    refresh();
     render();
     return {
-      send, render, refresh,
-      clear() { chat = []; choices = []; render(); },
+      send, render, refresh, startVoice, dictate,
+      voiceTurn: (text) => voiceTurn(text, "push_to_talk"),
+      contextChanged() { live?.updateContext(); },
+      clear() { generation += 1; stop(); chat = []; choices = []; lastSpoken = ""; busy = false; render(); },
       focus() { input.focus(); },
-      stop() { if (dictation?.listening) dictation.stop(); endVoice(); },
+      stop,
       get messages() { return chat.slice(); },
     };
   }
@@ -329,7 +352,11 @@ html.nxl-shown body{padding-bottom:84px}
     if (window.parent !== window || document.body?.dataset.nxtShell || !window.NXT?.key.get()) return;
     window.NXT.api("/api/staff/me").then(async (m) => {
       const R = await ensureRealtime();
-      if (R.firmWide(m.identity)) launcher();
+      if (R.firmWide(m.identity)) launcher({
+        open: () => R.hostAssistant("open"),
+        close: () => {},
+        isOpen: () => false,
+      });
     }).catch(() => {});
   }
 
