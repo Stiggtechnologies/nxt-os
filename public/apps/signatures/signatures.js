@@ -19,7 +19,7 @@
   const identity = '<div class="identity-note">Shared workspace key: operator and reviewer labels are metadata. They do not establish verified identities or independent approval.</div>';
   const emptyDraft = () => ({title:"Untitled preparation",email_subject:"",email_message:"",context:null,documents:[],recipients:[],fields:[]});
   function go(view) { location.hash = view; }
-  function os(app) { if (parent !== window) parent.postMessage({nxt:"open-app",app,view:app === "home" ? "" : undefined},location.origin); }
+  function os(app) { if (parent !== window) parent.postMessage({nxt:"open-app",app,view:app === "home" ? "" : undefined},location.origin);else if(app==='esign')location.href='esign.html'; }
   function title(text, subtitle) { return `<h1>${esc(text)}</h1><p class="muted">${esc(subtitle)}</p>`; }
   function formRow(label, name, value, type = "text", extra = "") { return `<label>${esc(label)}<input type="${type}" name="${name}" value="${esc(value)}" ${extra}></label>`; }
   function choice(label, name, value, choices) { return `<label>${esc(label)}<select name="${name}">${choices.map(([v,t])=>`<option value="${esc(v)}"${value===v?" selected":""}>${esc(t)}</option>`).join("")}</select></label>`; }
@@ -162,7 +162,7 @@
   }
   document.addEventListener("click",e=>{
     const open=e.target.closest("[data-open]");if(open){go("envelope/"+open.dataset.open);return;}
-    const external=e.target.closest("[data-os]");if(external){os(external.dataset.os);return;}
+    const external=e.target.closest("[data-os]");if(external){e.preventDefault();os(external.dataset.os);return;}
     const b=e.target.closest("[data-action]");if(!b)return;const a=b.dataset.action;
     runAction(async()=>{
       const state=viewState();

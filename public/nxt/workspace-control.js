@@ -10,6 +10,7 @@
     const doc = root.document;
     let handles = new Map(), ids = new WeakMap(), sequence = 0, context = "", picker = null, picked = null;
     const ready = () => !!opts.allowed?.();
+    const pdf = root.NXTWorkspacePDF?.create({allowed:ready,documents,visible,signature:opts.onSignature});
     function frameLoading(frame) {
       if (!frame.dataset.src) return false;
       try {
@@ -57,7 +58,7 @@
       for (const entry of docs) {
        const modal = [...entry.doc.querySelectorAll('[aria-modal="true"],dialog[open]')].filter(visible).at(-1);
        for (const el of (modal || entry.doc).querySelectorAll(CONTROL)) {
-        if (!visible(el) || el.matches('input[type="hidden"],input[type="password"]') || /password|secret|api.?key|access.?token/i.test([el.name, el.id, el.autocomplete].join(" "))) continue;
+        if (!visible(el) || el.matches('input[type="hidden"],input[type="password"]') || /password|secret|api.?key|access.?token|one.?time.?code|verification.?code|\botp\b|\btotp\b/i.test([el.name, el.id, el.autocomplete].join(" "))) continue;
         const name = label(el);
         if (!name) continue;
         const row = { label: name, scope: entry.scope, kind: el.getAttribute("role") || (el.matches("input") ? el.type : el.tagName.toLowerCase()), disabled: el.matches(":disabled") || el.getAttribute("aria-disabled") === "true" };
@@ -68,6 +69,7 @@
         if (!id || handles.get(id)?.fingerprint !== fingerprint) { id = "control-" + ++sequence; ids.set(el, id); }
         row.id = id;
         if (el.matches("select")) row.selected = clean(el.selectedOptions[0]?.textContent);
+        if (el.matches('input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),textarea')) row.value = String(el.value || "").slice(0,2000);
         if (el.matches('input[type="checkbox"],input[type="radio"]')) row.checked = el.checked;
         if (el.hasAttribute("aria-expanded")) row.expanded = el.getAttribute("aria-expanded") === "true";
         const record = { el, row, context, fingerprint, aliases: [name, row.context && name + " " + row.context, el.id, el.name, el.title, el.dataset.go, el.dataset.nav, el.dataset.action, el.dataset.topRoute].filter(Boolean) };
@@ -151,11 +153,28 @@
       const selected = q ? rows.filter(r => norm([r.row.label, r.row.scope, ...r.aliases].join(" ")).includes(q)) : rows;
       const destinations = (opts.destinations?.() || []).filter(d => !q || norm(d.label).includes(q)).slice(0, 60).map(d => d.label);
       if (args.target) { const r = find(args.target); if (!r.el) return r; return success(r.row.label, { control: r.row, ...(r.el.matches("select") ? options(r.el, args.query, offset) : {}) }); }
-      return success("Found " + selected.length + " controls.", { loading: loading(), controls: selected.slice(offset, offset + 40).map(r => r.row), total_controls: selected.length, next_offset: offset + 40 < selected.length ? offset + 40 : null, destinations });
+      return success("Found " + selected.length + " controls.", { loading: loading(), controls: selected.slice(offset, offset + 40).map(r => r.row), total_controls: selected.length, next_offset: offset + 40 < selected.length ? offset + 40 : null, destinations, documents:pdf?.list() || [] });
+    }
+    function read(args={}) {
+      if(!ready())return fail("Sign in with access to this workspace first.");
+      const rows=[],q=norm(args.query),offset=Math.max(0,Math.min(10000,Number(args.offset)||0));
+      for(const entry of documents()){
+        const walker=entry.doc.createTreeWalker(entry.doc.body,4);
+        while(walker.nextNode()){
+          const node=walker.currentNode,el=node.parentElement;
+          if(!el||el.closest('script,style,noscript,textarea,[contenteditable="true"],.signin')||!visible(el))continue;
+          const text=clean(node.textContent);
+          if(text&&(!q||norm(text).includes(q)))rows.push({scope:entry.scope,text:text.slice(0,2000)});
+        }
+      }
+      const page=[];let bytes=0;
+      for(const row of rows.slice(offset,offset+100)){if(bytes+row.text.length>12000)break;page.push(row);bytes+=row.text.length;}
+      return success("Read the visible workspace.",{loading:loading(),content:page,total_items:rows.length,next_offset:offset+page.length<rows.length?offset+page.length:null,documents:pdf?.list()||[]});
     }
     async function act(args = {}) {
       if (!ready()) return fail("Sign in with access to this workspace first.");
       const action = args.action;
+      if(action === 'prepare_signature')return pdf?.stage(args.target)||fail('Refresh NXT OS to enable PDF signature preparation.');
       if (action === "wait") return wait();
       if (action === "navigate") {
         const destinations = opts.destinations?.() || [];
@@ -236,7 +255,8 @@
       if (action !== "click") return fail("Unknown workspace action.");
       if (el.matches("a[href]")) {
         const url = new URL(el.href, el.ownerDocument.URL);
-        if (url.origin !== root.location.origin || !/^https?:$/.test(url.protocol)) return fail("That link opens outside NXT OS. Use the visible link directly.");
+        pdf?.list();
+        if (url.origin !== root.location.origin || (!/^https?:$/.test(url.protocol) && !pdf?.permitsBlob(el))) return fail("That link opens outside NXT OS. Use the visible link directly.");
       }
       el.click(); return success("Activated " + r.row.label + ".");
     }
@@ -283,7 +303,7 @@
       }
       return null;
     }
-    return { inspect, act, command, reset() { closePicker(); handles.clear(); ids = new WeakMap(); context = ""; } };
+    return { inspect, read, readPdf:args=>pdf?.read(args)||fail("The PDF reader is unavailable. Refresh NXT OS."), act, command, reset() { closePicker(); handles.clear(); ids = new WeakMap(); context = "";pdf?.reset(); } };
   }
   root.NXTWorkspace = { create };
 })(typeof window !== "undefined" ? window : globalThis);

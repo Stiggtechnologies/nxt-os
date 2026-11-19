@@ -66,7 +66,7 @@ try {
         <form onsubmit="event.preventDefault();document.querySelector('#saved').textContent='Draft saved'">
         <label>Customer name<input name="customer"></label><label>Tax year<select name="year"><option value="2024">2024</option><option value="2025">2025</option><optgroup label="Locked years" disabled><option value="2030">2030</option></optgroup></select></label>
         <label><input type="checkbox" name="include">Include prior year</label><button>Save draft</button></form>
-        <button disabled>Disabled control</button><button hidden>Hidden control</button><input type="password" aria-label="Secret password"><button title="Duplicate">Duplicate</button><button title="Duplicate">Duplicate</button>
+        <button disabled>Disabled control</button><button hidden>Hidden control</button><input type="password" aria-label="Secret password"><input autocomplete="one-time-code" aria-label="Verification code" value="654321"><button title="Duplicate">Duplicate</button><button title="Duplicate">Duplicate</button>
         <a href="https://outside.invalid/">External link</a><p id="saved"></p>
         <button onclick="this.remove()">Remove this control</button>
         <table><tr><td>Record Alpha</td><td><button>Open</button></td></tr><tr><td>Record Beta</td><td><button>Open</button></td></tr></table>
@@ -107,7 +107,7 @@ try {
   await page.frameLocator("#frame").getByRole("heading",{name:"App fixture"}).waitFor();
   let controls=(await tool("inspect_workspace",{})).controls;
   assert.ok(controls.some(c=>c.label==="Tasks"));
-  assert.ok(!controls.some(c=>/Secret password|Hidden control/.test(c.label)));
+  assert.ok(!controls.some(c=>/Secret password|Verification code|Hidden control/.test(c.label)));
   const byLabel=label=>controls.find(c=>c.label===label)?.id;
   assert.equal((await tool("control_workspace",{action:"click",target:byLabel("Tasks")})).ok,true);
   assert.equal(await page.frameLocator("#frame").locator("h1").innerText(),"Tasks opened");
@@ -136,6 +136,19 @@ try {
   const removed=byLabel("Remove this control");
   assert.equal((await tool("control_workspace",{action:"click",target:removed})).ok,true);
   assert.equal((await tool("control_workspace",{action:"click",target:removed})).ok,false);
+  const readout=await tool("read_workspace",{query:"Shortcut handled"});
+  assert.ok(readout.content.some(row=>row.text==="Shortcut handled"));
+  // The PDF reader has a separate real text/scan acceptance test. Here verify
+  // that its image result reaches Realtime as image input, not base64 tool text.
+  await page.evaluate(()=>{
+    window.originalPdfRead=workspace.readPdf;
+    const canvas=document.createElement('canvas');canvas.width=20;canvas.height=20;
+    workspace.readPdf=async()=>({ok:true,pages:[{page:1,text:''}],_images:[{page:1,tile:1,x:0,y:0,width:20,height:20,page_width:20,page_height:20,image_url:canvas.toDataURL('image/jpeg')}]});
+  });
+  const pdfResult=await tool('read_workspace_pdf',{page:1});
+  assert.equal(pdfResult.ok,true);assert.equal(pdfResult._images,undefined);
+  assert.ok(await page.evaluate(()=>proof.sent.some(item=>item.item?.content?.some(c=>c.type==='input_image'&&c.image_url.startsWith('data:image/jpeg')))));
+  await page.evaluate(()=>{workspace.readPdf=originalPdfRead;});
   // Browser speech and typed commands use the same UI bridge without a cloud round trip.
   await page.locator("#chat textarea").fill("Nixon, switch company to Synthetic Alpha");
   await page.locator("#chat .nxc-composer").evaluate(form=>form.requestSubmit());

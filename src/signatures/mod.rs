@@ -1,6 +1,7 @@
-//! Original NXT internal agreement preparation. No send, signing or connector credentials.
+//! NXT agreement preparation and native e-signing, with opt-in authenticated mail.
 pub mod models;
 pub mod esign;
+pub mod mail;
 mod routes;
 use crate::{referral::routes::ApiError, store::Store};
 use axum::http::StatusCode;

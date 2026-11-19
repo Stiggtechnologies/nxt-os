@@ -15,6 +15,11 @@ test("workspace tools dispatch structured arguments without pretending to call t
   assert.equal(calls[1].args.target,"control-1");
   assert.equal((await R.runTool({name:"inspect_workspace"},ask)).ok,false);
   assert.equal((await R.runTool({name:"control_workspace",arguments:"invalid"},ask,workspace)).ok,false);
+  await R.runTool({name:"read_workspace_pdf",arguments:'{"page":2,"mode":"image"}'},ask,workspace);
+  assert.equal(calls.at(-1).name,"read_workspace_pdf");
+  await R.runTool({name:"read_workspace",arguments:'{"query":"saved"}'},ask,workspace);
+  assert.equal(calls.at(-1).name,"read_workspace");
+  assert.doesNotMatch(R.boundedToolOutput({ok:true,_images:[{image_url:"data:image/jpeg;base64,PRIVATE"}],pages:[{text:"PDF text"}]}),/PRIVATE|_images/);
   assert.equal((await R.runTool({name:"run_script",arguments:'{"code":"alert(1)"}'},ask,workspace)).ok,false);
 });
 

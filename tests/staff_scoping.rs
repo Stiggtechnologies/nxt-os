@@ -66,6 +66,8 @@ async fn scoping_extends_to_signatures_firm_books_and_cron_is_authenticated() {
     assert_eq!(call(&r, "GET", &format!("/api/signatures/{idb}"), &tok, None).await.0, 403);
     assert_eq!(call(&r, "GET", &format!("/api/signatures/{idb}/esign"), &tok, None).await.0, 403);
     assert_eq!(call(&r, "GET", "/api/signatures/audit", &tok, None).await.0, 403);
+    assert_eq!(call(&r, "GET", "/api/signatures/esign/mail", &tok, None).await.0, 403);
+    assert_eq!(call(&r, "PUT", "/api/signatures/esign/mail", &tok, Some(json!({}))).await.0, 403);
     assert_eq!(call(&r, "POST", "/api/signatures/esign/sweep", &tok, Some(json!({"operator_label":"x","dry_run":true}))).await.0, 403);
     assert_eq!(call(&r, "POST", "/api/signatures", &tok, Some(json!({"operator_label":"x","draft":draft("C"),"client_ref":"client-b"}))).await.0, 403);
     ok(&r, "POST", "/api/signatures", &tok, Some(json!({"operator_label":"x","draft":draft("D"),"client_ref":"client-a"}))).await;

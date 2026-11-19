@@ -267,7 +267,10 @@ html.nxl-shown body{padding-bottom:84px}
           if (!allowed) return { ok: false, error: "Sign in with access to this workspace first." };
           const controller = opts.workspace?.();
           if (!controller) return { ok: false, error: "Open NXT OS to use workspace controls." };
-          return name === "inspect_workspace" ? controller.inspect(args) : controller.act(args);
+          if(name === "inspect_workspace")return controller.inspect(args);
+          if(name === "read_workspace")return controller.read(args);
+          if(name === "read_workspace_pdf")return controller.readPdf(args);
+          return controller.act(args);
         },
         onUserText: (t) => { chat.push({ role: "user", content: t, meta: "Spoken · voice mode", local: true }); render(); },
         onAssistantText: (t) => { chat.push({ role: "assistant", content: t, meta: "Nixon · live voice", local: true }); render(); },

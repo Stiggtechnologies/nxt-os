@@ -440,6 +440,29 @@ impl Store {
         values.iter().map(|v|v.as_u64().filter(|n|*n<=i64::MAX as u64).and_then(|n|usize::try_from(n).ok()).ok_or_else(||"source counter response is not an unsigned cardinality".into())).collect()
     }
 
+    /// Compact, sealed company identity fields for navigation, not financial reads.
+    pub async fn company_identity_previews(&self, keys: &[String]) -> StoreResult<Vec<Option<Value>>> {
+        if keys.is_empty() { return Ok(vec![]); }
+        if keys.len()>100 { return Err("Identity projection exceeds 100 previews".into()); }
+        for key in keys {
+            let parts:Vec<_>=key.split(':').collect();
+            if parts.len()!=4 || parts[0]!="company-books" || parts[2]!="preview" || parts[1].is_empty() || parts[1].len()>96
+                || !parts[1].bytes().all(|c|c.is_ascii_alphanumeric()||b"_.-".contains(&c))
+                || parts[3].len()!=64 || !parts[3].bytes().all(|c|c.is_ascii_digit()||b"abcdef".contains(&c)) {
+                return Err("Identity projection key is outside company previews".into());
+            }
+        }
+        if let Store::Supabase{url,token,namespace,http}=self {
+            let prefixed:Vec<_>=keys.iter().map(|k|format!("{PREFIX}{k}")).collect();
+            let value=supabase_rpc(http,url,token,"nxt_company_identity_previews",json!({"p_namespace":namespace,"p_keys":prefixed})).await?;
+            let rows=value.as_array().ok_or("Identity projection response is not an array")?;
+            if rows.len()!=keys.len(){return Err("Identity projection cardinality differs".into());}
+            return Ok(rows.iter().map(|v|(!v.is_null()).then(||v.clone())).collect());
+        }
+        // Other backends retain full canonical Preview validation in CompanyBooks.
+        Ok(self.mget(keys).await?.into_iter().map(|raw|raw.map(|raw|json!({"raw":raw}))).collect())
+    }
+
     /// Prepends to a list (newest first), keeping at most `cap` entries.
     pub async fn lpush_capped(&self, key: &str, value: &str, cap: usize) -> StoreResult<()> {
         let key = format!("{PREFIX}{key}");

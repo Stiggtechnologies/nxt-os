@@ -41,6 +41,16 @@ async fn each_financial_read_loads_source_chunks_once() {
     assert_eq!(s.source_loads.load(Ordering::Relaxed), 1);
     let as_of = NaiveDate::from_ymd_opt(2026, 3, 31).unwrap();
     let before = s.store.memory_snapshot().unwrap();
+    let light=s.list_identity_page(0,500).await.ok().unwrap();
+    let full=s.list_page(0,50).await.ok().unwrap();
+    for key in ["company_id","stage"]{assert_eq!(light["companies"][0][key],full["companies"][0][key]);}
+    assert_eq!(light["companies"][0]["previews"][0]["company"],full["companies"][0]["previews"][0]["company"]);
+    assert_eq!(s.store.memory_snapshot().unwrap(),before,"identity lookup changes no source records");
+    let preview_key=CompanyBooks::key("test","preview",p["preview_id"].as_str().unwrap()).ok().unwrap();
+    let sealed=s.store.get(&preview_key).await.unwrap().unwrap();
+    s.store.set(&preview_key,"{}").await.unwrap();
+    assert!(s.list_identity_page(0,500).await.is_err(),"identity lookup cannot disguise corrupt source bytes");
+    s.store.set(&preview_key,&sealed).await.unwrap();
     s.source_loads.store(0, Ordering::Relaxed);
     let (tb, gl) = s.watcher_snapshot("test", as_of, 120, 5000).await.ok().unwrap();
     assert_eq!(s.source_loads.load(Ordering::Relaxed), 1, "a watcher validates its source once, not once per report/page");
