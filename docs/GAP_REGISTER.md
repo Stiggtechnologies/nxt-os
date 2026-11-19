@@ -9,24 +9,24 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 221 |
-| Routed | 138 |
+| Routed | 140 |
 | Linked | 24 |
 | External | 13 |
-| **Open** | **46** |
-| Routed coverage | 62% |
+| **Open** | **44** |
+| Routed coverage | 63% |
 | Source chrome excluded | 21 |
 
 ## By product
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 144 | 98 | 24 | 1 | 21 | 68% |
+| QuickBooks | 144 | 100 | 24 | 1 | 19 | 69% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (21)
+### Open to build (19)
 
 | Group | Gap | Next step |
 | --- | --- | --- |
@@ -42,8 +42,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Accounting | Receipts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Sales & Get Paid | Payment links | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Sales & Get Paid | QuickBooks payouts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Payroll | Payroll taxes | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Payroll | Compliance | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | YOUR COMPANY | Custom form styles | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | YOUR COMPANY | Payroll settings | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | LISTS | Custom fields | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |

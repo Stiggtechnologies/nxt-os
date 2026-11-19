@@ -1213,9 +1213,9 @@
                   "label": "Payroll taxes",
                   "observation": "observed",
                   "observed_path": "All apps > Payroll > Payroll taxes",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "native_route": "reports/payroll-remittance",
+                  "native_scope": "Open Reports and choose Payroll remittance: CPP, CPP2, EI, federal and Alberta tax withheld per month from recorded paystubs.",
+                  "next_step": "A worksheet only; no PD7A, remittance, T4 filing or penalty calculation.",
                   "kind": "capability"
                 },
                 {
@@ -1223,9 +1223,9 @@
                   "label": "Compliance",
                   "observation": "observed",
                   "observed_path": "All apps > Payroll > Compliance",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "native_route": "reports/payroll-remittance",
+                  "native_scope": "The payroll remittance worksheet shows what has been withheld and must be remitted.",
+                  "next_step": "No remittance scheduling, filing or compliance tracking.",
                   "kind": "capability"
                 }
               ]

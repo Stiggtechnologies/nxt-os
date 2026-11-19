@@ -456,3 +456,11 @@ test('the cash-flow report totals bank movements by month', async () => {
   assert.match(app.main.innerHTML, /Closing bank balance/, 'closing balance is shown');
   assert.match(app.main.innerHTML, /credit card accounts/, 'the exclusion is stated');
 });
+
+test('the payroll remittance report groups withheld amounts by month', async () => {
+  const app = boot();
+  await app.ledger.views.reports('payroll-remittance');
+  assert.match(app.main.innerHTML, /Total withheld|Paystubs/, 'the worksheet renders');
+  assert.match(app.main.innerHTML, /2026-11/, 'the pay month appears');
+  assert.match(app.main.innerHTML, /does not remit/, 'the limit is stated');
+});
