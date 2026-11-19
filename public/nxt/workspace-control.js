@@ -60,18 +60,22 @@
         if (!visible(el) || el.matches('input[type="hidden"],input[type="password"]') || /password|secret|api.?key|access.?token/i.test([el.name, el.id, el.autocomplete].join(" "))) continue;
         const name = label(el);
         if (!name) continue;
-        let id = ids.get(el);
-        if (!id) { id = "control-" + ++sequence; ids.set(el, id); }
-        const row = { id, label: name, scope: entry.scope, kind: el.getAttribute("role") || (el.matches("input") ? el.type : el.tagName.toLowerCase()), disabled: el.matches(":disabled") || el.getAttribute("aria-disabled") === "true" };
+        const row = { label: name, scope: entry.scope, kind: el.getAttribute("role") || (el.matches("input") ? el.type : el.tagName.toLowerCase()), disabled: el.matches(":disabled") || el.getAttribute("aria-disabled") === "true" };
         const surrounding = el.closest('tr,[role="row"],[data-client-row],fieldset');
         if (surrounding && surrounding !== el) row.context = clean(surrounding.textContent).slice(0, 240);
+        const fingerprint = JSON.stringify([row.label, row.scope, row.kind, row.context, el.getAttribute("href"), el.name, el.dataset.action, el.dataset.id, el.dataset.clientRow]);
+        let id = ids.get(el);
+        if (!id || handles.get(id)?.fingerprint !== fingerprint) { id = "control-" + ++sequence; ids.set(el, id); }
+        row.id = id;
         if (el.matches("select")) row.selected = clean(el.selectedOptions[0]?.textContent);
         if (el.matches('input[type="checkbox"],input[type="radio"]')) row.checked = el.checked;
         if (el.hasAttribute("aria-expanded")) row.expanded = el.getAttribute("aria-expanded") === "true";
-        const record = { el, row, context, aliases: [name, row.context && name + " " + row.context, el.id, el.name, el.title, el.dataset.go, el.dataset.nav, el.dataset.action, el.dataset.topRoute].filter(Boolean) };
+        const record = { el, row, context, fingerprint, aliases: [name, row.context && name + " " + row.context, el.id, el.name, el.title, el.dataset.go, el.dataset.nav, el.dataset.action, el.dataset.topRoute].filter(Boolean) };
         handles.set(id, record); rows.push(record);
        }
       }
+      const current = new Set(rows.map(r => r.row.id));
+      for (const id of handles.keys()) if (!current.has(id)) handles.delete(id);
       return rows;
     }
     const fail = (error, extra = {}) => ({ ok: false, error, ...extra });
@@ -100,19 +104,19 @@
       const rows = collect();
       if (handles.has(target)) {
         const r = handles.get(target);
-        return r.context === context && r.el.isConnected && visible(r.el) && rows.some(x => x.el === r.el) ? r : fail("That control changed. Inspect the workspace again.");
+        return r.context === context && r.el.isConnected && visible(r.el) && rows.some(x => x.row.id === target) ? r : fail("That control changed. Inspect the workspace again.");
       }
       if (/^control-\d+$/.test(target || "")) return fail("That control belongs to an earlier screen. Inspect again.");
       const found = matches(rows, target);
       return found.length === 1 ? found[0] : fail(found.length ? "Which control? More than one matches." : "No visible control matches that name.", { choices: found.slice(0, 15).map(r => r.row) });
     }
     function options(el, query = "", offset = 0) {
-      const all = [...el.options].filter(o => !o.disabled && !o.hidden && (!query || norm(o.textContent + " " + o.value).includes(norm(query))));
+      const all = [...el.options].filter(o => !o.matches(":disabled") && !o.closest("[hidden]") && (!query || norm(o.textContent + " " + o.value).includes(norm(query))));
       return { total_options: all.length, options: all.slice(offset, offset + 30).map(o => ({ label: clean(o.textContent).slice(0, 180), value: o.value, selected: o.selected })), next_offset: offset + 30 < all.length ? offset + 30 : null };
     }
     function closePicker() { picker?.remove(); picker = null; picked = null; }
     function choose(el, value) {
-      const all = [...el.options].filter(o => !o.disabled && !o.hidden);
+      const all = [...el.options].filter(o => !o.matches(":disabled") && !o.closest("[hidden]"));
       const exact = all.filter(o => o.value === value || norm(o.textContent) === norm(value));
       const found = exact.length ? exact : all.filter(o => norm(o.textContent).includes(norm(value)));
       if (found.length !== 1) return fail(found.length ? "Which option? More than one matches." : "That option is not available.", options(el, value));
@@ -214,7 +218,7 @@
           rows[(rows.findIndex(c => c.el === el) + (modifiers.shiftKey ? rows.length - 1 : 1)) % rows.length]?.el.focus();
         }
         if (proceed && el.matches("select") && ["ArrowUp", "ArrowDown"].includes(key)) {
-          const all = [...el.options].filter(o => !o.disabled && !o.hidden);
+          const all = [...el.options].filter(o => !o.matches(":disabled") && !o.closest("[hidden]"));
           const i = all.findIndex(o => o.selected), next = Math.max(0, Math.min(all.length - 1, i + (key === "ArrowUp" ? -1 : 1)));
           if (all[next]) return choose(el, all[next].value);
         }

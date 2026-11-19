@@ -64,7 +64,7 @@ try {
       return route.fulfill({contentType:"text/html",body:`<!doctype html><title>App fixture</title><h1>App fixture</h1>
         <nav><button aria-label="Tasks" onclick="document.querySelector('h1').textContent='Tasks opened'">▤</button><a href="#reports">Reports</a></nav>
         <form onsubmit="event.preventDefault();document.querySelector('#saved').textContent='Draft saved'">
-        <label>Customer name<input name="customer"></label><label>Tax year<select name="year"><option value="2024">2024</option><option value="2025">2025</option></select></label>
+        <label>Customer name<input name="customer"></label><label>Tax year<select name="year"><option value="2024">2024</option><option value="2025">2025</option><optgroup label="Locked years" disabled><option value="2030">2030</option></optgroup></select></label>
         <label><input type="checkbox" name="include">Include prior year</label><button>Save draft</button></form>
         <button disabled>Disabled control</button><button hidden>Hidden control</button><input type="password" aria-label="Secret password"><button title="Duplicate">Duplicate</button><button title="Duplicate">Duplicate</button>
         <a href="https://outside.invalid/">External link</a><p id="saved"></p>
@@ -114,6 +114,7 @@ try {
   assert.equal((await tool("control_workspace",{action:"fill",target:byLabel("Customer name"),value:"Synthetic Customer"})).ok,true);
   assert.equal(await page.frameLocator("#frame").locator('[name="customer"]').inputValue(),"Synthetic Customer");
   assert.equal((await tool("control_workspace",{action:"select",target:byLabel("Tax year"),value:"2025"})).ok,true);
+  assert.equal((await tool("control_workspace",{action:"select",target:byLabel("Tax year"),value:"2030"})).ok,false);
   assert.equal((await tool("control_workspace",{action:"check",target:byLabel("Include prior year"),value:"true"})).ok,true);
   assert.equal((await tool("control_workspace",{action:"click",target:byLabel("Save draft")})).ok,true);
   assert.equal(await page.frameLocator("#frame").locator("#saved").innerText(),"Draft saved");
@@ -126,6 +127,9 @@ try {
   const rowControls=await tool("inspect_workspace",{query:"Record Beta"});
   assert.equal(rowControls.controls.filter(c=>c.label==="Open").length,1);
   assert.match(rowControls.controls.find(c=>c.label==="Open").context,/Record Beta/);
+  const oldRow=rowControls.controls.find(c=>c.label==="Open").id;
+  await page.frameLocator("#frame").getByText("Record Beta",{exact:true}).evaluate(el=>el.textContent="Record Gamma");
+  assert.equal((await tool("control_workspace",{action:"click",target:oldRow})).ok,false,"a reused row must not retarget an earlier handle");
   assert.equal((await tool("control_workspace",{action:"click",target:byLabel("Disabled control")})).ok,false);
   assert.equal((await tool("control_workspace",{action:"click",target:"Duplicate"})).choices.length,2);
   assert.equal((await tool("control_workspace",{action:"click",target:byLabel("External link")})).ok,false);
