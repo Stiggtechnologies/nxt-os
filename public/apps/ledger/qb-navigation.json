@@ -687,9 +687,9 @@
                   "label": "Cash flow overview",
                   "observation": "observed",
                   "observed_path": "Reports > Financial planning > Cash flow overview",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "native_route": "reports/cash-flow",
+                  "native_scope": "Open Reports and choose Cash flow: bank-account money in and out by month, with opening and closing balances.",
+                  "next_step": "Bank accounts only; credit cards, cash-flow planner and forecasts are not modelled.",
                   "kind": "capability"
                 },
                 {

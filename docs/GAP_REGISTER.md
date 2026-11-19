@@ -9,10 +9,10 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 221 |
-| Routed | 137 |
+| Routed | 138 |
 | Linked | 24 |
 | External | 13 |
-| **Open** | **47** |
+| **Open** | **46** |
 | Routed coverage | 62% |
 | Source chrome excluded | 21 |
 
@@ -20,13 +20,13 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 144 | 97 | 24 | 1 | 22 | 67% |
+| QuickBooks | 144 | 98 | 24 | 1 | 21 | 68% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (22)
+### Open to build (21)
 
 | Group | Gap | Next step |
 | --- | --- | --- |
@@ -37,7 +37,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Custom report builder | Product/Item Profitability by Customer | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Reports | Custom reports | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Reports | Performance centre | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Financial planning | Cash flow overview | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Financial planning | Cash flow planner | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Financial planning | Forecasts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Accounting | Receipts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |

@@ -55,6 +55,48 @@ fn day_before(d: &str) -> String {
 }
 
 impl Ledger {
+    /// Cash moving through bank accounts, by month. Credit-card movements are excluded and
+    /// the caller is told so rather than seeing a blended figure.
+    pub async fn cash_flow(&self, from: &str, to: &str) -> LResult<Value> {
+        parse_date(from)?;
+        parse_date(to)?;
+        let b = self.books().await?;
+        let banks: Vec<&Account> = b.accounts.iter().filter(|a| a.role == AccountRole::Bank).collect();
+        let is_bank = |id: &str| banks.iter().any(|a| a.id == id);
+        let mut months: BTreeMap<String, (i64, i64)> = BTreeMap::new();
+        let (mut total_in, mut total_out) = (0_i64, 0_i64);
+        for entry in b.entries.iter().filter(|e| !e.voided && e.date.as_str() >= from && e.date.as_str() <= to) {
+            let month = entry.date.chars().take(7).collect::<String>();
+            for line in entry.lines.iter().filter(|l| is_bank(&l.account_id)) {
+                let slot = months.entry(month.clone()).or_insert((0, 0));
+                if line.debit > 0 { slot.0 += line.debit; total_in += line.debit; }
+                if line.credit > 0 { slot.1 += line.credit; total_out += line.credit; }
+            }
+        }
+        let opening_net = b.net(None, &day_before(from));
+        let opening: i64 = banks.iter().map(|a| natural(a.kind, *opening_net.get(&a.id).unwrap_or(&0))).sum();
+        let balances: Vec<Value> = banks.iter().map(|a| {
+            let closing_net = b.net(None, to);
+            row(a, natural(a.kind, *closing_net.get(&a.id).unwrap_or(&0)))
+        }).collect();
+        let rows: Vec<Value> = months.iter().map(|(month, (inflow, outflow))| json!({
+            "month": month, "in_cents": inflow, "out_cents": outflow, "net_cents": inflow - outflow
+        })).collect();
+        let closing = opening + total_in - total_out;
+        Ok(json!({
+            "from": from, "to": to, "basis": "debits and credits on bank-role accounts",
+            "months": rows,
+            "accounts": balances,
+            "opening_balance_cents": opening,
+            "total_in_cents": total_in,
+            "total_out_cents": total_out,
+            "net_cents": total_in - total_out,
+            "closing_balance_cents": closing,
+            "excludes": ["credit card accounts", "unposted or voided entries"]
+        }))
+    }
+
+
     async fn books(&self) -> LResult<Books> {
         // Reports are reads: never seed the chart from here.
         Ok(Books { company: self.company().await?, accounts: self.accounts_read().await?, entries: self.entries().await? })

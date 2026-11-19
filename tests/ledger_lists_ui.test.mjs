@@ -82,6 +82,7 @@ function boot({ company = 'synthetic-co', parallel = null, subledger = null, inv
     if (path.endsWith('/parallel/subledger')) return subledger || {};
     if (path === '/api/company-books/synthetic-co') return { head: 'head-1' };
     // A company-scoped ledger rewrites /api/ledger/x to /api/company-ledger/<id>/x, so match by suffix.
+    if (path.includes('/reports/cash-flow')) return { months: [{ month: '2026-10', in_cents: 400000, out_cents: 150000, net_cents: 250000 }], opening_balance_cents: 100000, total_in_cents: 400000, total_out_cents: 150000, closing_balance_cents: 350000, excludes: ['credit card accounts'] };
     if (path.endsWith('/payroll')) return { by_year: [{ year: 2026, transactions: 3, debit_cents: '500000', credit_cents: '500000' }], payroll_accounts: [{ name: 'Payroll expense', lines: 2, debit_cents: '500000', credit_cents: '0' }], note: 'Derived from the committed journal.' };
     if (path.endsWith('/parallel/sales-documents')) return { documents: [{ id: 's1', kind: 'sales_order', contact: 'c1', document_number: 'SO-1', lines: [], total_cents: 75000 }] };
     if (path.endsWith('/parallel/mileage')) return { trips: [{ id: 'm1', date: '2026-11-02', purpose: 'Client visit', kilometres_milli: 42000, rate_cents_per_km: 70, amount_cents: 2940 }], total_amount_cents: 2940 };
@@ -444,4 +445,14 @@ test('mileage trips list and the dialog opens', async () => {
   assert.equal(typeof button.onclick, 'function');
   button.click();
   assert.ok(app.modals.some(m => /mileage trip/i.test(m.title)));
+});
+
+test('the cash-flow report totals bank movements by month', async () => {
+  const app = boot();
+  await app.ledger.views.reports('cash-flow');
+  assert.match(app.main.innerHTML, /Cash flow|Month/, 'the report renders');
+  assert.match(app.main.innerHTML, /2026-10/, 'the month row appears');
+  assert.match(app.main.innerHTML, /Opening bank balance/, 'opening balance is shown');
+  assert.match(app.main.innerHTML, /Closing bank balance/, 'closing balance is shown');
+  assert.match(app.main.innerHTML, /credit card accounts/, 'the exclusion is stated');
 });

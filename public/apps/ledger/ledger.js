@@ -1119,6 +1119,7 @@ const REPORTS = {
   "ap-aging": ["Accounts payable aging", "Who you owe, and when it's due.", "asof"],
   "sales-tax": ["GST/HST return", "Working paper for CRA lines 101, 105, 108 and 109.", "range"],
   "general-ledger": ["General ledger", "Every line, by account, with running balances.", "range"],
+  "cash-flow": ["Cash flow", "Money in and out of bank accounts, by month.", "range"],
   time: ["Time by employee", "Minutes recorded in this book, per employee and date.", "range"],
   payroll: ["Payroll summary", "Journal lines on payroll-named accounts, by year. Derived from the committed journal, not from pay runs.", "asof"],
 };
@@ -1172,6 +1173,12 @@ function sectionRows(rows) { return rows.map((r) => `<tr class="click" onclick="
 function plain(rows) { return rows.map((r) => `<tr><td class="indent">${esc(r.code ? r.code + " · " : "")}${esc(r.name)}</td><td class="num">${money(r.amount)}</td></tr>`).join(""); }
 
 function renderReport(key, d, st = { from: "", to: "" }) {
+  if (key === "cash-flow") {
+    const rows = (Array.isArray(d.months) ? d.months : []).map((m) => `<tr><td>${esc(m.month)}</td><td class="num">${money(m.in_cents)}</td><td class="num">${money(m.out_cents)}</td><td class="num">${money(m.net_cents)}</td></tr>`).join("");
+    return `<table><thead><tr><th>Month</th><th class="num">In</th><th class="num">Out</th><th class="num">Net</th></tr></thead><tbody>${rows || '<tr><td colspan="4">No bank movements in this period.</td></tr>'}</tbody></table>
+      <table style="margin-top:12px"><tr><td>Opening bank balance</td><td class="num">${money(d.opening_balance_cents)}</td></tr><tr><td>Total in</td><td class="num">${money(d.total_in_cents)}</td></tr><tr><td>Total out</td><td class="num">${money(d.total_out_cents)}</td></tr><tr class="grand"><td>Closing bank balance</td><td class="num">${money(d.closing_balance_cents)}</td></tr></table>
+      <p class="form-note">Bank accounts only: ${esc((d.excludes || []).join(", "))}.</p>`;
+  }
   if (key === "time") {
     const employees = Array.isArray(d.employees) ? d.employees : [];
     const entries = (Array.isArray(d.time) ? d.time : []).filter((row) => row.date >= st.from && row.date <= st.to);

@@ -6,10 +6,10 @@
   ],
   "total": {
     "capabilities": 221,
-    "routed": 137,
+    "routed": 138,
     "linked": 24,
     "external": 13,
-    "open": 47,
+    "open": 46,
     "chrome": 21,
     "percent": 62
   },
@@ -17,10 +17,10 @@
     {
       "product": "QuickBooks",
       "capabilities": 144,
-      "routed": 97,
+      "routed": 98,
       "linked": 24,
       "external": 1,
-      "open": 22
+      "open": 21
     },
     {
       "product": "DT Max",
@@ -67,7 +67,6 @@
     "observed-1118--schedule",
     "observed-1118--time-off",
     "reports--custom-reports",
-    "reports--financial-planning--cash-flow-overview",
     "reports--financial-planning--cash-flow-planner",
     "reports--financial-planning--forecasts",
     "reports--performance-centre",
