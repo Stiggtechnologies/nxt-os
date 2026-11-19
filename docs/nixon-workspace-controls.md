@@ -35,7 +35,9 @@ visible result before claiming completion.
 Performance changes share concurrent GETs across the shell and app frames, with
 independent cancellation and response objects. Only catalog metadata is briefly
 reused; financial reads remain fresh. Writes and sign-in changes invalidate reuse.
-The directory reads independent sources concurrently. Company inventory overlaps
+The directory and imported T1 client list read independent sources concurrently;
+T1 profile batches overlap in bounded groups while preserving identity validation,
+filtering, ordering and export coverage. Company inventory overlaps
 four bounded preview reads while preserving every integrity check. God's Eye
 screens four companies at a time and uses one validated book snapshot for its
 trial balance and bounded GL window.
