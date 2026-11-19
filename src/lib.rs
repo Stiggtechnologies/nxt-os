@@ -3,6 +3,7 @@
 //! (`client_journey`) is the spine: each step is done by a module capability
 //! (`client_journey::capability`) or recorded by staff, and human gates stay human.
 
+pub mod accounting_extension;
 pub mod agent;
 pub mod autonomy;
 pub mod guardvoice;
@@ -90,6 +91,7 @@ fn app_all(ledger: Arc<ledger::engine::Ledger>, referrals: Arc<referral::engine:
     };
     let inner = Router::new()
         .merge(ledger::routes::router(ledger.clone()))
+        .merge(accounting_extension::router(company_books.clone()))
         .merge(ledger::routes::company_router(ledger.store.clone(), company_books.clone()))
         .merge(firm::router(firm.clone()))
         .merge(tax::router(tax.clone()))

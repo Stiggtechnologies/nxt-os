@@ -1,0 +1,36 @@
+{
+  "version": "nxt-accounting-acceptance-v1",
+  "common_inputs": ["profile_manifest", "control_matrix", "sandbox_scope", "operator_roster", "fixture_inventory"],
+  "gates": {
+    "LW-01": ["service_owner", "independent_accounting_reviewer"],
+    "LW-02": ["firm_operations_owner", "security_owner"],
+    "LW-03": ["engineering_release_owner", "service_owner"],
+    "LW-04": ["connector_owner", "service_operations_owner"],
+    "LW-05": ["records_owner", "privacy_owner"],
+    "LW-06": ["jurisdiction_service_owner", "professional_compliance_owner"],
+    "LW-07": ["production_operations_owner", "continuity_owner"]
+  },
+  "cases": {
+    "LW-01A": ["source_control_totals", "omitted_batch_fixture", "expected_post_block"],
+    "LW-01B": ["independent_close_workpaper", "expected_journals_and_exceptions", "rounding_and_tolerances"],
+    "LW-01C": ["jurisdiction_obligation_fixtures", "historical_authority_and_due_dates", "omitted_obligation_fixture"],
+    "LW-02A": ["administrative_authority_matrix", "separate_admin_identities", "admin_entry_point_inventory"],
+    "LW-02B": ["revocable_sandbox_credentials", "queued_and_inflight_fixture", "revocation_and_readback_expectations"],
+    "LW-02C": ["emergency_role_policy", "emergency_identity_and_expiry_targets", "reserved_decision_fixture"],
+    "LW-03A": ["connector_and_model_version_inventory", "incompatible_substitution_fixture", "deployment_alert_destination"],
+    "LW-03B": ["active_workflow_fixture", "prior_and_replacement_rules", "migration_decision_and_expected_revalidation"],
+    "LW-03C": ["approved_prior_and_current_releases", "rollback_runbook_and_operator", "independent_revocation_and_receipt_baseline"],
+    "LW-04A": ["approved_provider_sandbox", "manual_and_automated_operator_mandates", "shared_business_key_and_receipt_query"],
+    "LW-04B": ["acceptance_without_ack_fault_fixture", "sandbox_readback_authority", "independent_reconciliation_operator"],
+    "LW-04C": ["posted_sandbox_operation", "correction_authority_and_process", "notification_and_expected_destination_state"],
+    "LW-05A": ["reconciled_archive_inventory_and_scope", "historical_source_grants", "no_match_and_unavailable_fixtures"],
+    "LW-05B": ["permission_feed_and_grant_fixtures", "revocation_timing_and_freshness_targets", "inflight_test_environment"],
+    "LW-05C": ["approved_disposition_and_hold_fixtures", "stale_sandbox_backup", "restore_and_disposition_targets"],
+    "LW-06A": ["signed_service_jurisdiction_matrix", "control_to_case_evidence_map", "reviewed_approval_limits_and_effective_dates"],
+    "LW-06B": ["valid_and_expired_credentials", "supported_and_unsupported_channels", "out_of_scope_entity_fixture"],
+    "LW-06C": ["approved_old_and_new_authority", "affected_open_and_queued_runs", "historical_selection_and_invalidation_expectations"],
+    "LW-07A": ["measured_peak_volume_and_staffing", "queue_and_reconciliation_targets", "load_environment_and_alert_routes"],
+    "LW-07B": ["approved_recovery_and_data_loss_targets", "restorable_backups_receipts_holds_and_revocations", "scheduled_recovery_exercise"],
+    "LW-07C": ["deadline_calendar_and_provider_outage", "manual_staff_and_throughput_targets", "destination_reconciliation_access"]
+  }
+}

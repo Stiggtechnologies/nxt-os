@@ -11,12 +11,13 @@
 //! gives the agent no actions; it never posts to the books or locks a period.
 
 use super::capability::{BoxFut, Capability, Readiness, StepContext};
+use crate::accounting_extension::capture_close;
 use crate::company_books::CompanyBooks;
 use chrono::{Datelike, NaiveDate, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-const NOT_CHECKED: [&str; 3] = ["bank reconciliation", "subledger allocations", "open exceptions"];
+const NOT_CHECKED: [&str; 4] = ["independent source completeness", "bank reconciliation", "subledger allocations", "open exceptions"];
 
 pub struct LedgerClose {
     company_books: Arc<CompanyBooks>,
@@ -76,27 +77,26 @@ impl Capability for LedgerClose {
     fn assess<'a>(&'a self, ctx: &'a StepContext) -> BoxFut<'a, Readiness> {
         Box::pin(async move {
             let blocked = |reason: String| Readiness::Blocked { reasons: vec![reason], evidence: json!({"not_checked": NOT_CHECKED}) };
-            let detail = match self.company_books.detail(&ctx.client_id).await {
-                Ok(v) => v,
-                Err(e) => return blocked(format!("company books unavailable: {}", e.1)),
-            };
-            if detail["stage"] != "import_committed" {
-                return blocked(format!("books are not committed (stage: {})", detail["stage"].as_str().unwrap_or("unknown")));
-            }
-            let trial = match self.company_books.trial_balance(&ctx.client_id).await {
+            let report = match capture_close(&self.company_books, &ctx.client_id).await {
                 Ok(v) => v,
                 Err(e) => return blocked(format!("trial balance unavailable: {}", e.1)),
             };
             let evidence = json!({
-                "head_sha256": detail["head_sha256"],
-                "locked_through": trial["head"]["locked_through"],
+                "head_sha256": report["head_sha256"],
+                "locked_through": report["locked_through"],
                 "required_locked_through": self.required_lock(&ctx.step),
-                "review_status": trial["head"]["review"]["status"],
-                "total_debit_cents": trial["analysis"]["total_debit_cents"],
-                "total_credit_cents": trial["analysis"]["total_credit_cents"],
+                "review_status": report["review_status"],
+                "total_debit_cents": report["total_debit_cents"],
+                "total_credit_cents": report["total_credit_cents"],
+                "checks": report["checks"],
                 "not_checked": NOT_CHECKED,
             });
-            let reasons = blockers(&evidence);
+            let mut reasons = blockers(&evidence);
+            for check in report["checks"].as_array().into_iter().flatten() {
+                if check["passed"] != true && check["id"] != "trial_balance_balanced" {
+                    reasons.push(format!("close control failed: {}", check["id"].as_str().unwrap_or("unknown")));
+                }
+            }
             if reasons.is_empty() { Readiness::Ready { evidence } } else { Readiness::Blocked { reasons, evidence } }
         })
     }

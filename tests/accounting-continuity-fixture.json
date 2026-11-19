@@ -1,0 +1,23 @@
+{
+  "fixture_id": "accounting-continuity-synthetic-v1",
+  "classification": "synthetic_sandbox_only",
+  "production_approval": false,
+  "company": "company-a",
+  "roles": {
+    "automated": "usr_sandbox_worker",
+    "manual": "usr_sandbox_fallback",
+    "manual_backup": "usr_sandbox_fallback_backup",
+    "reviewer": "usr_sandbox_reviewer",
+    "emergency": "usr_sandbox_emergency"
+  },
+  "release": {
+    "connector": "sandbox-journal-v1",
+    "model": "sandbox-deterministic-v1",
+    "prior_manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "current_manifest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "emergency_ttl_minutes": 15,
+  "recovery": { "rto_seconds": 300, "rpo_pending_operations": 0 },
+  "peak": { "operations": 24, "workers": 4, "work_seconds": 10, "max_queue_seconds": 60, "deadline_seconds": 90 },
+  "outage": { "operations": 6, "manual_workers": 2, "work_seconds": 20, "deadline_seconds": 90 }
+}

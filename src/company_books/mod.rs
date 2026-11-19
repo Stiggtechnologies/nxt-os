@@ -1267,13 +1267,16 @@ impl CompanyBooks {
         }
         Ok(v)
     }
-    async fn book(&self, company: &str) -> Result<(Head, Preview, Vec<Account>, Vec<Entry>)> {
-        let s = self.snapshot(company).await?.ok_or_else(|| {
+    async fn required_snapshot(&self, company: &str) -> Result<BookSnapshot> {
+        self.snapshot(company).await?.ok_or_else(|| {
             err(
                 StatusCode::NOT_FOUND,
                 "Company has no committed journal book",
             )
-        })?;
+        })
+    }
+    async fn book(&self, company: &str) -> Result<(Head, Preview, Vec<Account>, Vec<Entry>)> {
+        let s = self.required_snapshot(company).await?;
         let mut entries = s.source_entries;
         entries.extend(s.native_entries);
         Ok((s.head, s.preview, s.accounts, entries))
@@ -1338,10 +1341,11 @@ impl CompanyBooks {
         limit: usize,
         max_bytes: usize,
     ) -> Result<Value> {
-        let (h, p, _, entries) = self.book(company).await?;
+        let BookSnapshot { head_id, head: h, preview: p, native_entries, .. } =
+            self.required_snapshot(company).await?;
         let source = p.analysis.clone();
         let mut combined = source.clone();
-        let native = &entries[source.entries..];
+        let native = &native_entries;
         let (mut nd, mut nc, mut nl) = (0i128, 0i128, 0usize);
         for e in native {
             for l in &e.lines {
@@ -1419,7 +1423,7 @@ impl CompanyBooks {
         let mut baseline = serde_json::to_value(&source).map_err(|_| corrupt())?;
         baseline.as_object_mut().unwrap().remove("balances");
         Ok(
-            json!({"company_id":company,"company":p.input.company,"head":h,"source":p.input.source,"analysis":analysis,"source_baseline_analysis":baseline,"balances":rows,"offset":offset,"limit":limit,"total":total,"next_offset":next_offset,"has_more":next_offset.is_some(),"max_bytes":max_bytes,"page_bytes":page_bytes,"native_delta":{"entries":native.len(),"lines":nl,"total_debit_cents":nd.to_string(),"total_credit_cents":nc.to_string()},"reconciliation":match &h.review { None => json!({"source_baseline_unchanged":true,"source_controls_passed":true,"combined_balances_match_source":matches_source}), Some(r) => json!({"source_baseline_unchanged":true,"source_controls_passed":p.analysis.controls_passed,"review_status":r.status,"combined_balances_match_source":matches_source}) },"controls":controls()}),
+            json!({"company_id":company,"company":p.input.company,"head_sha256":head_id,"head":h,"source":p.input.source,"analysis":analysis,"source_baseline_analysis":baseline,"balances":rows,"offset":offset,"limit":limit,"total":total,"next_offset":next_offset,"has_more":next_offset.is_some(),"max_bytes":max_bytes,"page_bytes":page_bytes,"native_delta":{"entries":native.len(),"lines":nl,"total_debit_cents":nd.to_string(),"total_credit_cents":nc.to_string()},"reconciliation":match &h.review { None => json!({"source_baseline_unchanged":true,"source_controls_passed":true,"combined_balances_match_source":matches_source}), Some(r) => json!({"source_baseline_unchanged":true,"source_controls_passed":p.analysis.controls_passed,"review_status":r.status,"combined_balances_match_source":matches_source}) },"controls":controls()}),
         )
     }
 }

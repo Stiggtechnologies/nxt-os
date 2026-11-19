@@ -1,0 +1,412 @@
+[
+  {
+    "group": "Engagement management and client service",
+    "role": "Client intake and entity resolution",
+    "output": "Verified client and entity map, representatives, and intake gaps."
+  },
+  {
+    "group": "Engagement management and client service",
+    "role": "Acceptance, continuance, and conflicts",
+    "output": "Conflict and risk assessment with an acceptance decision package."
+  },
+  {
+    "group": "Engagement management and client service",
+    "role": "Independence and permitted services",
+    "output": "Entity and affiliate checks, threats, service restrictions, and escalations."
+  },
+  {
+    "group": "Engagement management and client service",
+    "role": "Proposals and engagement terms",
+    "output": "Scoped proposal, draft engagement terms, amendments, and signature status."
+  },
+  {
+    "group": "Engagement management and client service",
+    "role": "Engagement coordination and deadlines",
+    "output": "Assignment plan, dependencies, deadline calendar, and exception queue."
+  },
+  {
+    "group": "Engagement management and client service",
+    "role": "Client communications and document requests",
+    "output": "Authorized reminders, requests, draft status and delivery communications."
+  },
+  {
+    "group": "Engagement management and client service",
+    "role": "Engagement closeout and disengagement",
+    "output": "Outstanding obligations, access and delivery checks, and records handoff."
+  },
+  {
+    "group": "Engagement management and client service",
+    "role": "Client due diligence and AML support",
+    "output": "Identity and ownership evidence and case package for the designated officer where applicable."
+  },
+  {
+    "group": "Bookkeeping, controllership, and reporting",
+    "role": "Transaction intake and coding",
+    "output": "Coded transaction proposals, duplicate checks, and evidence matches."
+  },
+  {
+    "group": "Bookkeeping, controllership, and reporting",
+    "role": "Accounts payable and expenses",
+    "output": "Validated bills and expenses, exceptions, and prepared payment batches."
+  },
+  {
+    "group": "Bookkeeping, controllership, and reporting",
+    "role": "Accounts receivable and collections",
+    "output": "Invoices, cash application, aging, and dispute queue."
+  },
+  {
+    "group": "Bookkeeping, controllership, and reporting",
+    "role": "Bank and balance-sheet reconciliation",
+    "output": "Tie-outs, reconciling items, and follow-up."
+  },
+  {
+    "group": "Bookkeeping, controllership, and reporting",
+    "role": "Treasury and disbursements",
+    "output": "Liquidity view, verified payee exceptions, release package, and settlement checks."
+  },
+  {
+    "group": "Bookkeeping, controllership, and reporting",
+    "role": "Fixed assets, leases, and inventory",
+    "output": "Rollforwards, accounting schedules, and reconciliations."
+  },
+  {
+    "group": "Bookkeeping, controllership, and reporting",
+    "role": "Revenue recognition and contract accounting",
+    "output": "Contract analysis, cutoff and deferred revenue schedules, and policy questions."
+  },
+  {
+    "group": "Bookkeeping, controllership, and reporting",
+    "role": "Close and general ledger",
+    "output": "Journals, accruals, close workpapers, and period exceptions."
+  },
+  {
+    "group": "Bookkeeping, controllership, and reporting",
+    "role": "Consolidation, intercompany, and FX",
+    "output": "Entity mapping, eliminations, translation schedules, and consolidated tie-outs."
+  },
+  {
+    "group": "Bookkeeping, controllership, and reporting",
+    "role": "Financial statements and technical accounting",
+    "output": "Framework analysis, disclosure schedules, and draft statements."
+  },
+  {
+    "group": "Bookkeeping, controllership, and reporting",
+    "role": "Industry and fund accounting",
+    "output": "Industry-specific schedules, restricted fund or grant accounting, and project reporting."
+  },
+  {
+    "group": "Payroll and employer compliance",
+    "role": "Payroll master data and onboarding",
+    "output": "Verified employee and contractor changes and exception queue."
+  },
+  {
+    "group": "Payroll and employer compliance",
+    "role": "Payroll processing and exception review",
+    "output": "Gross-to-net checks, benefits and deductions, and release package."
+  },
+  {
+    "group": "Payroll and employer compliance",
+    "role": "Employer filings and remittances",
+    "output": "Deposit schedules, year-end filings, registration issues, and notice triage."
+  },
+  {
+    "group": "Payroll and employer compliance",
+    "role": "Payroll reconciliation and corrections",
+    "output": "Bank, ledger, provider, and filing reconciliations and proposed corrections."
+  },
+  {
+    "group": "Payroll and employer compliance",
+    "role": "Cross-border employment and mobility",
+    "output": "Jurisdiction, withholding, and social security analysis and referrals."
+  },
+  {
+    "group": "Tax",
+    "role": "Tax intake and carryforwards",
+    "output": "Source completeness, book-to-tax inputs, prior elections, basis, and carryforward continuity."
+  },
+  {
+    "group": "Tax",
+    "role": "Canadian personal tax",
+    "output": "Individual compliance and planning package."
+  },
+  {
+    "group": "Tax",
+    "role": "Canadian corporate tax",
+    "output": "Corporate compliance, tax accounts, instalments, and schedules."
+  },
+  {
+    "group": "Tax",
+    "role": "US individual tax",
+    "output": "Federal individual compliance and planning coordinated with state and local work."
+  },
+  {
+    "group": "Tax",
+    "role": "US business and pass-through tax",
+    "output": "Corporate, partnership, and S corporation schedules and owner reporting."
+  },
+  {
+    "group": "Tax",
+    "role": "Trust, estate, and gift tax",
+    "output": "Fiduciary and related returns, beneficiary reporting, and planning workpapers."
+  },
+  {
+    "group": "Tax",
+    "role": "Exempt organization and charity tax",
+    "output": "Applicable returns, status monitoring, and escalations."
+  },
+  {
+    "group": "Tax",
+    "role": "State, provincial, and local direct tax",
+    "output": "Nexus, allocation, franchise tax, registrations, and compliance obligations."
+  },
+  {
+    "group": "Tax",
+    "role": "Indirect tax",
+    "output": "Canadian GST/HST, QST and other sales taxes, US sales and use tax, and filing schedules."
+  },
+  {
+    "group": "Tax",
+    "role": "International and cross-border tax",
+    "output": "Treaty, residence, permanent establishment, withholding, credits, and foreign reporting analysis."
+  },
+  {
+    "group": "Tax",
+    "role": "Transfer pricing",
+    "output": "Intercompany transaction mapping, documentation, and method support."
+  },
+  {
+    "group": "Tax",
+    "role": "Credits, incentives, and specialized tax",
+    "output": "Eligibility and supporting evidence for enabled credit and incentive profiles."
+  },
+  {
+    "group": "Tax",
+    "role": "Tax planning, reorganizations, and transactions",
+    "output": "Structuring, elections, succession, and transaction tax scenarios."
+  },
+  {
+    "group": "Tax",
+    "role": "Tax authority research and rule maintenance",
+    "output": "Period-specific cited research and proposed rule updates."
+  },
+  {
+    "group": "Tax",
+    "role": "Tax technical review",
+    "output": "Diagnostics, tie-outs, omissions, uncertain positions, and reviewer package."
+  },
+  {
+    "group": "Tax",
+    "role": "Tax filing and authorization coordination",
+    "output": "Versioned filing package, authorization status, receipts, and rejections."
+  },
+  {
+    "group": "Tax",
+    "role": "Tax notices, examinations, and controversy",
+    "output": "Deadlines, representation scope, evidence, draft responses, and escalation."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Engagement classification and standards selection",
+    "output": "Applicable engagement type, framework, standards, and review requirements."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Audit planning and risk assessment",
+    "output": "Materiality support, risk analysis, and procedure proposals."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Controls and IT audit",
+    "output": "Walkthroughs, control inventories, IT controls, and testing workpapers."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Evidence, confirmations, and sampling",
+    "output": "Population checks, confirmation tracking, sampling records, and exceptions."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Substantive testing",
+    "output": "Evidence and findings by account, cycle, and assertion."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Estimates, going concern, and specialists",
+    "output": "Estimate and going-concern evidence and specialist coordination."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Audit completion and reporting",
+    "output": "Misstatement schedule, subsequent events, representations, and report package."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Review engagements",
+    "output": "Inquiry, analytics, exceptions, and review report draft."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Compilation and financial statement preparation",
+    "output": "Service-specific schedules, statements, and deliverable wording."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Agreed-upon procedures",
+    "output": "Procedure and evidence mapping and draft factual findings."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "SOC and other attestation",
+    "output": "Criteria, controls, evidence, exceptions, and reporting support."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Government, grant, and compliance assurance",
+    "output": "Program-specific workpapers and compliance procedures where offered."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Public-company and regulated assurance",
+    "output": "Issuer or regulated-engagement workflows where the firm is authorized."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Engagement quality review coordination",
+    "output": "Eligible reviewer routing, issue tracking, and documented completion."
+  },
+  {
+    "group": "Assurance and related services",
+    "role": "Report release and file assembly",
+    "output": "Signed version check, release package, delivery evidence, and file lock."
+  },
+  {
+    "group": "Advisory and specialized practice",
+    "role": "Outsourced CFO and performance advisory",
+    "output": "Budgets, cash forecasts, KPIs, covenants, and management reporting."
+  },
+  {
+    "group": "Advisory and specialized practice",
+    "role": "Financial modeling and scenario analysis",
+    "output": "Assumptions, sensitivities, model tie-outs, and comparisons."
+  },
+  {
+    "group": "Advisory and specialized practice",
+    "role": "Transaction advisory and due diligence",
+    "output": "Quality-of-earnings, working-capital, and debt-like item analysis."
+  },
+  {
+    "group": "Advisory and specialized practice",
+    "role": "Valuation",
+    "output": "Methods, scenarios, and draft work for the qualified reviewer."
+  },
+  {
+    "group": "Advisory and specialized practice",
+    "role": "Restructuring and turnaround",
+    "output": "Liquidity forecasts, stakeholder schedules, and options."
+  },
+  {
+    "group": "Advisory and specialized practice",
+    "role": "Forensic accounting and litigation support",
+    "output": "Matter-scoped evidence, chain of custody, tracing, and damages schedules."
+  },
+  {
+    "group": "Advisory and specialized practice",
+    "role": "Internal audit, risk, and controls advisory",
+    "output": "Risk registers, controls analysis, internal audit work, and remediation."
+  },
+  {
+    "group": "Advisory and specialized practice",
+    "role": "Accounting systems and process advisory",
+    "output": "System requirements, mapping, and migration tie-outs."
+  },
+  {
+    "group": "Advisory and specialized practice",
+    "role": "Succession and owner advisory",
+    "output": "Ownership transition and continuity scenarios and specialist coordination."
+  },
+  {
+    "group": "Firm operations and governance",
+    "role": "Business development and pipeline",
+    "output": "Lead qualification, follow-up, and CRM reporting."
+  },
+  {
+    "group": "Firm operations and governance",
+    "role": "Resource planning and capacity",
+    "output": "Schedules, workload, skill coverage, and backup assignments."
+  },
+  {
+    "group": "Firm operations and governance",
+    "role": "Practice billing and profitability",
+    "output": "Time, WIP, realization, invoices, and engagement margins."
+  },
+  {
+    "group": "Firm operations and governance",
+    "role": "Firm finance and procurement",
+    "output": "Internal finance and purchasing workflows under firm-specific permissions."
+  },
+  {
+    "group": "Firm operations and governance",
+    "role": "People operations and credentials",
+    "output": "Onboarding, offboarding, training, and credential renewal queues."
+  },
+  {
+    "group": "Firm operations and governance",
+    "role": "Quality management and inspections",
+    "output": "Monitoring, complaints, findings, remediation evidence, and owner assignment."
+  },
+  {
+    "group": "Firm operations and governance",
+    "role": "Vendor and continuity coordination",
+    "output": "Vendor dependencies, service reviews, and continuity exercises."
+  },
+  {
+    "group": "Firm operations and governance",
+    "role": "Security and privacy incident triage",
+    "output": "Incident scope, evidence collection, and escalation to designated responders."
+  },
+  {
+    "group": "Knowledge and archive operations",
+    "role": "Archive discovery and migration",
+    "output": "Source inventory, manifests, and batch reconciliation."
+  },
+  {
+    "group": "Knowledge and archive operations",
+    "role": "Data classification and permitted use",
+    "output": "Classification proposals and unresolved permission or region cases."
+  },
+  {
+    "group": "Knowledge and archive operations",
+    "role": "Legacy entity and matter resolution",
+    "output": "Reviewed mapping of historical files, entities, and matters."
+  },
+  {
+    "group": "Knowledge and archive operations",
+    "role": "Document extraction quality",
+    "output": "OCR, spreadsheet, table, and citation exceptions."
+  },
+  {
+    "group": "Knowledge and archive operations",
+    "role": "Firm knowledge curation",
+    "output": "Proposed approved templates, precedents, and methodology."
+  },
+  {
+    "group": "Knowledge and archive operations",
+    "role": "Authority monitoring",
+    "output": "Official source change alerts, captured versions, and owner routing."
+  },
+  {
+    "group": "Knowledge and archive operations",
+    "role": "Index synchronization and health",
+    "output": "Freshness, missed events, failed jobs, and drift review."
+  },
+  {
+    "group": "Knowledge and archive operations",
+    "role": "Retention, holds, and disposition",
+    "output": "Records-owner packages and verified derivative disposition status."
+  },
+  {
+    "group": "Knowledge and archive operations",
+    "role": "Retrieval evaluation",
+    "output": "Citation, historical-rule, access, and regression benchmarks."
+  }
+]

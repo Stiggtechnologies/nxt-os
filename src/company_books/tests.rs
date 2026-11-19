@@ -41,6 +41,21 @@ async fn each_financial_read_loads_source_chunks_once() {
     assert_eq!(s.source_loads.load(Ordering::Relaxed), 1);
 }
 #[tokio::test]
+async fn accounting_close_evidence_uses_the_committed_book_version() {
+    let (books, input) = staged().await;
+    let preview = books.preview("test", input).await.ok().unwrap();
+    let preview_id = preview["preview_id"].as_str().unwrap();
+    let commit = books.commit("test", review_commit(preview_id, false)).await.ok().unwrap();
+    books.source_loads.store(0, Ordering::Relaxed);
+    let evidence = crate::accounting_extension::capture_close(&books, "test").await.ok().unwrap();
+    assert_eq!(evidence["head_sha256"], commit["head_sha256"]);
+    assert_eq!(evidence["source_evidence"]["archive_sha256"], "a".repeat(64));
+    assert_eq!(books.source_loads.load(Ordering::Relaxed), 1);
+    assert!(evidence["checks"].as_array().unwrap().iter().all(|check| check["passed"] == true));
+    assert_eq!(evidence["release_authorized"], false);
+    assert!(crate::accounting_extension::capture_close(&books, "other").await.is_err());
+}
+#[tokio::test]
 async fn interrupted_local_staging_never_publishes_dangling_global_inventory() {
     let (s, input) = staged().await;
     let (a, e) = s.data("test", &input.chunks).await.ok().unwrap();
