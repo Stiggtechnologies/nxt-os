@@ -353,11 +353,11 @@ impl CompanyBooks {
     /// Records a pipeline entry. Nothing is sent, signed or posted.
     pub async fn add_crm(&self, company: &str, input: CrmInput) -> Result<Value> {
         if !valid_id(&input.request_id) { return Err(bad("A pipeline record needs a request id")); }
-        if !matches!(input.kind.as_str(), "opportunity" | "proposal" | "contract") {
-            return Err(bad("A pipeline record is an opportunity, a proposal or a contract"));
+        if !matches!(input.kind.as_str(), "opportunity" | "proposal" | "contract" | "appointment" | "review") {
+            return Err(bad("A pipeline record is an opportunity, a proposal, a contract, an appointment or a review"));
         }
         if input.title.trim().is_empty() || !text(&input.title, 120) { return Err(bad("A pipeline record needs a title")); }
-        if !matches!(input.status.as_str(), "open" | "won" | "lost" | "sent" | "accepted" | "declined" | "draft" | "active" | "ended") {
+        if !matches!(input.status.as_str(), "open" | "won" | "lost" | "sent" | "accepted" | "declined" | "draft" | "active" | "ended" | "scheduled" | "held" | "cancelled" | "received") {
             return Err(bad("That status is not one the pipeline understands"));
         }
         if !date(&input.date) { return Err(bad("A pipeline record needs a valid date")); }
@@ -387,7 +387,7 @@ impl CompanyBooks {
         let (_, state) = self.daily_load(company).await?;
         let mut rows = state.crm.clone();
         rows.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| a.title.cmp(&b.title)));
-        let totals: Vec<Value> = ["opportunity", "proposal", "contract"].iter().map(|kind| {
+        let totals: Vec<Value> = ["opportunity", "proposal", "contract", "appointment", "review"].iter().map(|kind| {
             let of: Vec<&CrmRecord> = rows.iter().filter(|row| row.kind == *kind).collect();
             let open_value: i64 = of.iter().filter(|row| matches!(row.status.as_str(), "open" | "sent" | "draft" | "active")).map(|row| row.value_cents).sum();
             json!({"kind": kind, "count": of.len(), "open_value_cents": open_value})

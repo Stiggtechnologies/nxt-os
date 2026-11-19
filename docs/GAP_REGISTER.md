@@ -9,24 +9,24 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 221 |
-| Routed | 134 |
+| Routed | 137 |
 | Linked | 24 |
 | External | 13 |
-| **Open** | **50** |
-| Routed coverage | 61% |
+| **Open** | **47** |
+| Routed coverage | 62% |
 | Source chrome excluded | 21 |
 
 ## By product
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 144 | 94 | 24 | 1 | 25 | 65% |
+| QuickBooks | 144 | 97 | 24 | 1 | 22 | 67% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (25)
+### Open to build (22)
 
 | Group | Gap | Next step |
 | --- | --- | --- |
@@ -34,7 +34,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Suppliers | Print cheques | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Other | Batch transactions | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Other | New chat | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Custom report builder | Revenue Recognition Report (Beta) | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Custom report builder | Product/Item Profitability by Customer | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Reports | Custom reports | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Reports | Performance centre | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
@@ -44,8 +43,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Accounting | Receipts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Sales & Get Paid | Payment links | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Sales & Get Paid | QuickBooks payouts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Customer Hub | Appointments | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Customer Hub | Reviews | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Payroll | Payroll taxes | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | Payroll | Compliance | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
 | YOUR COMPANY | Custom form styles | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |

@@ -836,8 +836,8 @@ function salesDocModal() {
 function pipelineModal() {
   return modal("Add pipeline entry", (el, close) => {
     el.innerHTML = `<form class="form">
-      <label class="f">Kind<select name="kind"><option value="opportunity">Opportunity</option><option value="proposal">Proposal</option><option value="contract">Contract</option></select></label>
-      <label class="f">Status<select name="status"><option value="open">Open</option><option value="won">Won</option><option value="lost">Lost</option><option value="sent">Sent</option><option value="accepted">Accepted</option><option value="declined">Declined</option><option value="draft">Draft</option><option value="active">Active</option><option value="ended">Ended</option></select></label>
+      <label class="f">Kind<select name="kind"><option value="opportunity">Opportunity</option><option value="proposal">Proposal</option><option value="contract">Contract</option><option value="appointment">Appointment</option><option value="review">Review</option></select></label>
+      <label class="f">Status<select name="status"><option value="open">Open</option><option value="won">Won</option><option value="lost">Lost</option><option value="sent">Sent</option><option value="accepted">Accepted</option><option value="declined">Declined</option><option value="draft">Draft</option><option value="active">Active</option><option value="ended">Ended</option><option value="scheduled">Scheduled</option><option value="held">Held</option><option value="cancelled">Cancelled</option><option value="received">Received</option></select></label>
       <label class="f" style="grid-column:1/-1">Title<input name="title" required placeholder="Annual advisory retainer"></label>
       <label class="f">Contact<select name="contact"></select></label>
       <label class="f">Value<input name="value" type="number" min="0" step="0.01" value="0"></label>
