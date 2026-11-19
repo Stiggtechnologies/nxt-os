@@ -56,6 +56,7 @@ export function disposition(node) {
   if (node.native_route) return "routed";
   if (list(node.related).length) return "linked";
   if (EXTERNAL_GATE.test(text(node.next_step)) || EXTERNAL_GATE.test(text(node.native_scope))) return "external";
+  if (node.scope === "out_of_scope") return "scope";
   return "open";
 }
 
@@ -67,7 +68,8 @@ export function register() {
     label: text(row.node.label),
     disposition: disposition(row.node),
     route: text(row.node.native_route),
-    next_step: text(row.node.next_step)
+    next_step: text(row.node.next_step),
+    scope_reason: text(row.node.scope_reason)
   }));
   const products = [...new Set(rows.map(row => row.product))];
   const summary = products.map(product => {
@@ -82,16 +84,17 @@ export function register() {
       routed: count("routed"),
       linked: count("linked"),
       external: count("external"),
+      scope: count("scope"),
       open: count("open"),
       percent: capabilities ? Math.round((count("routed") / capabilities) * 100) : 0
     };
   });
   const total = summary.reduce(
     (acc, row) => {
-      for (const key of ["capabilities", "routed", "linked", "external", "open", "chrome"]) acc[key] += row[key];
+      for (const key of ["capabilities", "routed", "linked", "external", "scope", "open", "chrome"]) acc[key] += row[key];
       return acc;
     },
-    { capabilities: 0, routed: 0, linked: 0, external: 0, open: 0, chrome: 0 }
+    { capabilities: 0, routed: 0, linked: 0, external: 0, scope: 0, open: 0, chrome: 0 }
   );
   total.percent = total.capabilities ? Math.round((total.routed / total.capabilities) * 100) : 0;
   return { rows, summary, total };
@@ -109,15 +112,16 @@ export function markdown(data = register()) {
   lines.push(`| Routed | ${data.total.routed} |`);
   lines.push(`| Linked | ${data.total.linked} |`);
   lines.push(`| External | ${data.total.external} |`);
+  lines.push(`| Out of scope (recorded) | ${data.total.scope} |`);
   lines.push(`| **Open** | **${data.total.open}** |`);
   lines.push(`| Routed coverage | ${data.total.percent}% |`);
   lines.push(`| Source chrome excluded | ${data.total.chrome} |`);
   lines.push("");
   lines.push("## By product", "");
-  lines.push("| Product | Capabilities | Routed | Linked | External | Open | Coverage |");
-  lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: |");
+  lines.push("| Product | Capabilities | Routed | Linked | External | Out of scope | Open | Coverage |");
+  lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
   for (const row of data.summary) {
-    lines.push(`| ${row.product} | ${row.capabilities} | ${row.routed} | ${row.linked} | ${row.external} | ${row.open} | ${row.percent}% |`);
+    lines.push(`| ${row.product} | ${row.capabilities} | ${row.routed} | ${row.linked} | ${row.external} | ${row.scope} | ${row.open} | ${row.percent}% |`);
   }
   lines.push("");
   for (const row of data.summary) {
@@ -129,6 +133,14 @@ export function markdown(data = register()) {
       lines.push("| Group | Gap | Next step |");
       lines.push("| --- | --- | --- |");
       for (const item of open) lines.push(`| ${item.group} | ${item.label} | ${item.next_step || "_no next step recorded_"} |`);
+      lines.push("");
+    }
+    const scoped = data.rows.filter(item => item.product === row.product && item.disposition === "scope");
+    if (scoped.length) {
+      lines.push(`### Out of scope, recorded decision (${scoped.length})`, "");
+      lines.push("| Group | Gap | Why it is not built |");
+      lines.push("| --- | --- | --- |");
+      for (const item of scoped) lines.push(`| ${item.group} | ${item.label} | ${item.scope_reason || "_no reason recorded_"} |`);
       lines.push("");
     }
     if (external.length) {

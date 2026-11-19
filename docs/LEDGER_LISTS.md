@@ -52,6 +52,8 @@ The request body is built to match the endpoint's `deny_unknown_fields` contract
 | Time entries | `time` | `{request_id, employee_id, date, minutes}` |
 | Recurring transactions | `recurring` | `{request_id, kind, contact, document_number, amount_cents, cadence, next_date, active}` |
 | Paystubs | `payroll` | `{request_id, employee_id, pay_date, annual_gross_cents, periods, province, federal_claim_cents, provincial_claim_cents}` |
+| Mileage | `mileage` | `{request_id, date, purpose, kilometres_milli, rate_cents_per_km}` |
+| Time off | `time-off` | `{request_id, employee_id, kind, from_date, to_date, days_milli, status, note}` |
 | Schedules | `schedules` | `{request_id, name, kind, total_cents, months, start_date, account_id}` |
 | Inventory movement | `inventory` | `{request_id, item_id, kind, quantity_milli, unit_cost_cents, date, memo}` |
 | Pipeline entry | `crm` | `{request_id, kind, title, contact, value_cents, status, date, note}` |

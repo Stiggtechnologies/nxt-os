@@ -31,7 +31,7 @@ test('summarize counts destinations, links and gaps per product', () => {
   assert.deepEqual([wx.total, wx.routed, wx.percent], [3, 1, 33]);
   const q = s.products.find(p => p.id === 'quickbooks');
   assert.deepEqual([q.total, q.routed, q.linked, q.blocked], [3, 1, 1, 1], 'linked rows are neither routed nor blocked');
-  assert.deepEqual(plain(s.totals), { total: 8, routed: 3, linked: 1, chrome: 0, external: 0, open: 4, percent: 38 }, 'rows without a kind count as capabilities; external gates are split out');
+  assert.deepEqual(plain(s.totals), { total: 8, routed: 3, linked: 1, chrome: 0, external: 0, scope: 0, open: 4, percent: 38 }, 'rows without a kind count as capabilities; external gates are split out');
 });
 
 test('a missing catalogue does not invent products', () => {

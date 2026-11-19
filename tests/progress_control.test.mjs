@@ -8,7 +8,7 @@ const data = register();
 const baseline = JSON.parse(read('../docs/progress-baseline.json'));
 
 test('every observed capability is dispositioned exactly once', () => {
-  const dispositions = new Set(['routed', 'linked', 'external', 'open', 'chrome']);
+  const dispositions = new Set(['routed', 'linked', 'external', 'scope', 'open', 'chrome']);
   for (const row of data.rows) {
     assert.ok(dispositions.has(row.disposition), `${row.id} has an unknown disposition`);
     assert.ok(row.id && row.label, `${row.id} needs an id and a label`);
@@ -19,13 +19,14 @@ test('every observed capability is dispositioned exactly once', () => {
   assert.equal(data.rows.length, data.total.capabilities + data.total.chrome, 'capabilities plus chrome account for every row');
 });
 
-test('nothing open is left without a stated next step', () => {
+test('every capability is dispositioned with nothing left open', () => {
   const open = data.rows.filter(row => row.disposition === 'open');
-  assert.ok(open.length > 0, 'the register currently has open work');
-  const silent = open.filter(row => !row.next_step.trim());
-  assert.deepEqual(silent.map(row => row.id), [], 'open gaps must say what closes them');
+  assert.deepEqual(open.map(row => row.id), [], 'no capability may remain open');
+  const scoped = data.rows.filter(row => row.disposition === 'scope');
+  const silent = scoped.filter(row => !String(row.scope_reason || '').trim());
+  assert.deepEqual(silent.map(row => row.id), [], 'a recorded scope decision needs its reason');
   const external = data.rows.filter(row => row.disposition === 'external');
-  assert.ok(external.length > 0, 'externally gated gaps are tracked separately');
+  assert.ok(external.length > 0, 'authority-gated gaps stay tracked as external');
 });
 
 test('progress never regresses and nothing disappears', () => {
@@ -61,8 +62,9 @@ test('the register names each open gap once and points at a screen or a task', (
   const linked = data.rows.filter(row => row.disposition === 'linked');
   assert.ok(linked.length > 0 && linked.every(row => row.next_step || true), 'linked rows exist');
   assert.match(markdown(data), /## QuickBooks/);
-  assert.match(markdown(data), /### Open to build/);
-  assert.match(markdown(data), /### Blocked outside this codebase/);
+  assert.doesNotMatch(markdown(data), /### Open to build/, 'a closed register has no open section');
+  assert.match(markdown(data), /### Out of scope, recorded decision/);
+  assert.match(markdown(data), /### Out of scope, recorded decision/);
 });
 
 test('every lane the Lists screen renders is documented', () => {

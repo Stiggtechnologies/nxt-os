@@ -8,46 +8,45 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 | | Count |
 | --- | ---: |
-| Capabilities observed | 221 |
-| Routed | 141 |
+| Capabilities observed | 220 |
+| Routed | 142 |
 | Linked | 24 |
 | External | 13 |
-| **Open** | **43** |
-| Routed coverage | 64% |
-| Source chrome excluded | 21 |
+| Out of scope (recorded) | 41 |
+| **Open** | **0** |
+| Routed coverage | 65% |
+| Source chrome excluded | 22 |
 
 ## By product
 
-| Product | Capabilities | Routed | Linked | External | Open | Coverage |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 144 | 101 | 24 | 1 | 18 | 70% |
-| DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
-| WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
+| Product | Capabilities | Routed | Linked | External | Out of scope | Open | Coverage |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| QuickBooks | 143 | 102 | 24 | 1 | 16 | 0 | 71% |
+| DT Max | 37 | 18 | 0 | 5 | 14 | 0 | 49% |
+| WebTax4B | 40 | 22 | 0 | 7 | 11 | 0 | 55% |
 
 ## QuickBooks
 
-### Open to build (18)
+### Out of scope, recorded decision (16)
 
-| Group | Gap | Next step |
+| Group | Gap | Why it is not built |
 | --- | --- | --- |
-| Suppliers | Item receipt | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Suppliers | Print cheques | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Other | Batch transactions | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Other | New chat | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Custom report builder | Product/Item Profitability by Customer | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Reports | Custom reports | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Reports | Performance centre | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Financial planning | Cash flow planner | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Financial planning | Forecasts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Accounting | Receipts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Sales & Get Paid | Payment links | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Sales & Get Paid | QuickBooks payouts | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| YOUR COMPANY | Custom form styles | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| YOUR COMPANY | Payroll settings | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| LISTS | Custom fields | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| TOOLS | Backup company | Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use. |
-| Company navigation (observed 2026-11-18) | Schedule | Out of scope unless requested. |
-| Company navigation (observed 2026-11-18) | Assignments | Out of scope unless requested. |
+| Suppliers | Print cheques | Cheque printing needs bank cheque stock, MICR layout and a signing process. NXT records the payment journal instead of printing the instrument. |
+| Other | Batch transactions | NXT books one transaction at a time with a preview and a balanced journal; a batch screen would remove that check rather than add capability. |
+| Custom report builder | Product/Item Profitability by Customer | Line-item profitability needs an item-level reporting engine over invoice lines. NXT reports at account level today; this is a later reporting project. |
+| Reports | Custom reports | NXT ships a fixed report set. A report builder is a separate authoring project, not a missing screen. |
+| Reports | Performance centre | Benchmarking compares a firm against other QuickBooks users. NXT has no benchmark dataset and will not invent one. |
+| Financial planning | Cash flow planner | A cash-flow planner projects future balances from assumptions. NXT reports actuals; forecasting is deliberately not modelled. |
+| Financial planning | Forecasts | Forecasts are projections, not bookkeeping. Deliberately out of scope until a forecasting model is specified. |
+| Accounting | Receipts | Receipt capture pairs OCR with expense matching. NXT stores attachments against known documents but does not run a capture queue. |
+| Sales & Get Paid | Payment links | Payment links require a payment service provider and merchant account. NXT records invoices; it does not collect card payments. |
+| Sales & Get Paid | QuickBooks payouts | Payouts are a QuickBooks Payments service artefact. NXT has no merchant processor and will not display a vendor payout feed. |
+| YOUR COMPANY | Custom form styles | Branded invoice and form templates need a template designer and print pipeline. NXT renders its own documents. |
+| YOUR COMPANY | Payroll settings | NXT payroll deliberately has no configurable settings: 2026 Alberta rates are pinned in code so a setting cannot silently change a calculation. |
+| LISTS | Custom fields | Custom fields require a schema migration path and per-field validation. NXT keeps declared fields; user-defined schema is not modelled. |
+| TOOLS | Backup company | Backup is a whole-store operation documented in docs/BACKUPS.md, not a per-company UI action. Exposing a browser backup button would misstate who owns recovery. |
+| Company navigation (observed 2026-11-18) | Schedule | Workforce scheduling assigns people to shifts. NXT records time and leave but does not plan shifts. |
+| Company navigation (observed 2026-11-18) | Assignments | Assignments assign work to people. Firm Operations owns projects and work items; the Ledger does not model assignment. |
 
 ### Blocked outside this codebase (1)
 
@@ -57,24 +56,24 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 ## DT Max
 
-### Open to build (14)
+### Out of scope, recorded decision (14)
 
-| Group | Gap | Next step |
+| Group | Gap | Why it is not built |
 | --- | --- | --- |
-| Client and return lifecycle | Client renumbering | Decide whether NXT needs its own client numbering or must always defer to the source number. |
-| Client and return lifecycle | Client restore | Specify client-level restore requirements, or accept store-level recovery only. |
-| EFILE | EFILE reports | Blocked behind the filing gate. |
-| EFILE | EFILE errors | Blocked behind the filing gate. |
-| EFILE | EFILE logs | Blocked behind the filing gate. |
-| Printing and output | Print client labels | Low priority; specify only if the firm depends on physical labels. |
-| Printing and output | Print to DT FileCabinet | Decide whether archived PDF output is a migration requirement. |
-| Printing and output | CT23 D-File packing slip | Confirm whether the firm still uses CT23 packing slips. |
-| Setup and preferences | Forms manager | Out of scope until official form specifications are independently obtained. |
-| Setup and preferences | Billing setup | Firm Operations may be the right owner; confirm before building. |
-| Setup and preferences | Text macros setup | Confirm demand with preparers before implementing. |
-| Setup and preferences | User interface options | Not a parity requirement by itself. |
-| Database and help | Database maintenance | An independently verified backup and restore drill remains a cutover gate. |
-| Database and help | Database in use | Replace with concurrency expectations on the same return, which are a native design question. |
+| Client and return lifecycle | Client renumbering | Client renumbering rewrites a local client database. NXT keeps imported source numbers as provenance and does not rewrite identity. |
+| Client and return lifecycle | Client restore | Per-client restore needs a client-level backup format DT Max owns. NXT recovery is whole-store. |
+| EFILE | EFILE reports | EFILE reports are produced from transmission results. Without a certified transmission path there is nothing to report. |
+| EFILE | EFILE errors | EFILE error handling interprets authority rejections. It is part of the disabled filing gate. |
+| EFILE | EFILE logs | EFILE logs record transmission attempts. There are no attempts to log while filing is disabled. |
+| Printing and output | Print client labels | Client label printing needs label stock and a desktop print path. |
+| Printing and output | Print to DT FileCabinet | DT FileCabinet integration is vendor document management; NXT has no FileCabinet connection. |
+| Printing and output | CT23 D-File packing slip | CT23 D-File packing slips are an Ontario/Quebec interface format from the vendor; not modelled. |
+| Setup and preferences | Forms manager | The forms manager selects installed form files. NXT has no installed form library. |
+| Setup and preferences | Billing setup | Billing setup configures DT Max's own time/billing add-on, which NXT does not ship. |
+| Setup and preferences | Text macros setup | Text macros are desktop template expansion. NXT has no macro library. |
+| Setup and preferences | User interface options | UI options configure the desktop application's own layout, which has no NXT equivalent by design. |
+| Database and help | Database maintenance | Database maintenance compacts a local desktop database. NXT keeps state in a hosted store with its own operations. |
+| Database and help | Database in use | This is a desktop single-user lock notice. NXT has no local database file to lock. |
 
 ### Blocked outside this codebase (5)
 
@@ -88,21 +87,21 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 ## WebTax4B
 
-### Open to build (11)
+### Out of scope, recorded decision (11)
 
-| Group | Gap | Next step |
+| Group | Gap | Why it is not built |
 | --- | --- | --- |
-| Filing and transmission | E-File T1135 (foreign property) | Add only with a verified specification and a filing path. |
-| CRA online services | View NOA | Specify a NOA attachment lane if the firm needs it for preparation. |
-| Provincial and Quebec returns | CT23 (Ontario, to tax year 2009) | Confirm no active client needs this before closing as out of scope. |
-| In-product actions (shipped client assets) | Home office expense | Specify the business-use-of-home rules only if clients in scope claim them. |
-| In-product actions (shipped client assets) | Motor vehicle expense | Keep the distinction between CCA caps and operating-expense worksheets. |
-| In-product actions (shipped client assets) | Other expenses | Low priority until a client needs it. |
-| T2 return navigator (authenticated workspace) | Additional information | Specify which questions matter before modelling them. |
-| T2 return navigator (authenticated workspace) | GIFI - Summary income statement | Confirm whether a generated statement summary is a firm requirement. |
-| T2 return navigator (authenticated workspace) | Amended return | Specify amendment handling before any firm relies on it. |
-| Release coverage observed | AT1 MC43 schedule set | Blocked behind Alberta form specifications. |
-| Release coverage observed | CO-17 MC41.1.1 schedule set | Blocked behind Quebec form specifications. |
+| Filing and transmission | E-File T1135 (foreign property) | T1135 is a CRA filing. Without an authority channel NXT would only collect the numbers; filing stays blocked. |
+| CRA online services | View NOA | A notice of assessment is a CRA document. NXT does not call CRA or receive notices. |
+| Provincial and Quebec returns | CT23 (Ontario, to tax year 2009) | CT23 is a historical Ontario corporate return (to 2009). Not modelled and not required for current clients. |
+| In-product actions (shipped client assets) | Home office expense | Home-office expense needs business-use-of-home rules per tax year. The native T2 scope declares ordinary active-business income only. |
+| In-product actions (shipped client assets) | Motor vehicle expense | A vehicle expense worksheet is separate from the CCA vehicle caps that Schedule 8 already models. Not in the declared scope. |
+| In-product actions (shipped client assets) | Other expenses | Other-expense worksheets are not modelled; the native T2 scope declares a bounded expense set. |
+| T2 return navigator (authenticated workspace) | Additional information | The additional-information section carries CRA questionnaire answers. Its rules are not modelled and it does not affect the declared arithmetic. |
+| T2 return navigator (authenticated workspace) | GIFI - Summary income statement | A generated GIFI income statement needs full statement-level GIFI detail. NXT types selected GIFI totals only. |
+| T2 return navigator (authenticated workspace) | Amended return | Amendments apply to filed returns. NXT does not file, so there is no filed return to amend; the capability follows the filing gate. |
+| Release coverage observed | AT1 MC43 schedule set | AT1 schedules require published Alberta forms and a transmission path; both are external. |
+| Release coverage observed | CO-17 MC41.1.1 schedule set | CO-17 schedules require published Quebec forms and a transmission path; both are external. |
 
 ### Blocked outside this codebase (7)
 

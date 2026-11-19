@@ -26,6 +26,7 @@ function externalGate(entry) {
         linked: 0,
         blocked: entries.length - routed,
     external: entries.filter(entry => !entry.native_route && !list(entry.related).length && externalGate(entry)).length,
+    scope: entries.filter(entry => !entry.native_route && !list(entry.related).length && !externalGate(entry) && entry.scope === "out_of_scope").length,
         percent: pct(routed, entries.length),
         href: "/apps/tax/index.html#source-map?source=" + encodeURIComponent(source.id)
       };
@@ -54,6 +55,7 @@ function externalGate(entry) {
       linked,
       blocked: capabilities.length - routed - linked,
     external: capabilities.filter(entry => !entry.native_route && !list(entry.related).length && externalGate(entry)).length,
+    scope: capabilities.filter(entry => !entry.native_route && !list(entry.related).length && !externalGate(entry) && entry.scope === "out_of_scope").length,
       percent: pct(routed, capabilities.length),
       href: "/apps/ledger/index.html#dashboard"
     };
@@ -109,8 +111,9 @@ function externalGate(entry) {
     const linked = products.reduce((sum, product) => sum + product.linked, 0);
   const chrome = products.reduce((sum, product) => sum + (product.chrome || 0), 0);
   const external = products.reduce((sum, product) => sum + (product.external || 0), 0);
-  const open = products.reduce((sum, product) => sum + Math.max(0, product.blocked - (product.external || 0)), 0);
-    return { products, totals: { total, routed, linked, chrome, external, open, percent: pct(routed, total) }, reports: reportCoverage(coverage), blockers: externalBlockers(taxCatalog, qbMap) };
+  const scope = products.reduce((sum, product) => sum + (product.scope || 0), 0);
+  const open = products.reduce((sum, product) => sum + Math.max(0, product.blocked - (product.external || 0) - (product.scope || 0)), 0);
+    return { products, totals: { total, routed, linked, chrome, external, scope, open, percent: pct(routed, total) }, reports: reportCoverage(coverage), blockers: externalBlockers(taxCatalog, qbMap) };
   }
 
   function blockerSection(blockers, esc) {
@@ -149,7 +152,7 @@ function externalGate(entry) {
     const totals = summary.totals;
     const cards = products.map(product => `<article class="card" data-parity="${esc(product.id)}">
       <div class="card-head"><div><h2>${esc(product.label)}</h2><p class="form-note">${esc(product.product)}</p></div><span class="pill neutral">${product.percent}%</span></div>
-      <dl class="dialog-facts"><div><dt>Observed entries</dt><dd>${product.total}</dd></div>${product.chrome ? `<div><dt>Product chrome excluded</dt><dd>${product.chrome}</dd></div>` : ""}${product.external ? `<div><dt>Blocked outside this codebase</dt><dd>${product.external}</dd></div>` : ""}<div><dt>Open to build</dt><dd>${Math.max(0, product.blocked - (product.external || 0))}</dd></div><div><dt>Native destination</dt><dd>${product.routed}</dd></div><div><dt>Cross-app link only</dt><dd>${product.linked}</dd></div><div><dt>No destination</dt><dd>${product.blocked}</dd></div></dl>
+      <dl class="dialog-facts"><div><dt>Observed entries</dt><dd>${product.total}</dd></div>${product.chrome ? `<div><dt>Product chrome excluded</dt><dd>${product.chrome}</dd></div>` : ""}${product.external ? `<div><dt>Blocked outside this codebase</dt><dd>${product.external}</dd></div>` : ""}<div><dt>Out of scope (recorded)</dt><dd>${product.scope || 0}</dd></div><div><dt>Open to build</dt><dd>${Math.max(0, product.blocked - (product.external || 0) - (product.scope || 0))}</dd></div><div><dt>Native destination</dt><dd>${product.routed}</dd></div><div><dt>Cross-app link only</dt><dd>${product.linked}</dd></div><div><dt>No destination</dt><dd>${product.blocked}</dd></div></dl>
       <p class="form-note">A native destination is a narrower NXT screen; it is not proof of equivalence.</p>
       <div class="row"><a class="btn" href="${esc(product.href)}" target="_top">Open the ${esc(product.label)} map</a></div>
     </article>`).join("");
