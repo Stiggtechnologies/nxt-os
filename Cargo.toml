@@ -14,7 +14,7 @@ hmac = "0.13.0"
 lopdf = { version = "0.38", default-features = false }
 lettre = { version = "=0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
 ring = "0.17"
-reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls-no-provider"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls-no-provider", "gzip"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

@@ -182,7 +182,7 @@ impl Store {
         }
         let _ = rustls::crypto::ring::default_provider().install_default();
         let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15))
-            .redirect(reqwest::redirect::Policy::none()).build()
+            .gzip(true).redirect(reqwest::redirect::Policy::none()).build()
             .map_err(|_| "Supabase HTTP client could not be initialized".to_string())?;
         Ok(Store::Supabase { url: parsed.as_str().trim_end_matches('/').into(), token: token.into(), namespace: namespace.into(), http })
     }
