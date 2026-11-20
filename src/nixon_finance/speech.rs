@@ -247,18 +247,53 @@ fn realtime_model() -> String {
 }
 
 pub async fn negotiate(ledger: &Ledger, offer: RealtimeOffer) -> Result<serde_json::Value, NixonError> {
+    negotiate_with(ledger, offer, openai_key(), REALTIME_URL).await
+}
+
+/// Daily Realtime session cap, reserved before the provider is called.
+pub const REALTIME_DAILY_SESSIONS: i64 = 20;
+
+/// The daily store key a Realtime session slot is reserved under.
+pub fn realtime_quota_key(day: &str) -> String {
+    format!("nixon:realtime:{day}")
+}
+
+/// The daily store key spoken characters are reserved under.
+pub fn tts_quota_key(day: &str) -> String {
+    format!("nixon:tts:{day}")
+}
+
+/// SyncAI `sync-realtime-session` `releaseQuota`, transferred: a reservation the provider never
+/// used (rejected, unreachable, unreadable answer) is handed back, so an outage does not burn
+/// the day's allowance. Best effort: a failed release only leaves the cap stricter.
+async fn release(ledger: &Ledger, key: &str, by: i64) {
+    let _ = ledger.store.incr_by(key, -by).await;
+}
+
+/// reqwest is built with `rustls-no-provider`; install ring first as the other NXT clients do
+/// (agent::chain, ai_gateway, store), so voice never depends on another module having run.
+fn http() -> reqwest::Client {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reqwest::Client::new()
+}
+
+/// `negotiate` with the key and provider URL passed in, so the quota release can be tested
+/// against an unreachable address without a real key.
+pub async fn negotiate_with(ledger: &Ledger, offer: RealtimeOffer, key: Option<String>, url: &str) -> Result<serde_json::Value, NixonError> {
     if offer.sdp.trim().is_empty() {
         return Err(NixonError::new(400, "sdp is required"));
     }
     if offer.sdp.len() > 65_536 {
         return Err(NixonError::new(413, "sdp is too large"));
     }
-    let Some(key) = openai_key() else {
+    let Some(key) = key else {
         return Err(NixonError::new(503, "realtime_unconfigured"));
     };
     let day = crate::ledger::engine::today();
-    let used = ledger.store.incr_by(&format!("nixon:realtime:{day}"), 1).await.map_err(|m| NixonError::new(500, m))?;
-    if used > 20 {
+    let slot = realtime_quota_key(&day);
+    let used = ledger.store.incr_by(&slot, 1).await.map_err(|m| NixonError::new(500, m))?;
+    if used > REALTIME_DAILY_SESSIONS {
+        release(ledger, &slot, 1).await;
         return Err(NixonError::new(429, "realtime_quota"));
     }
     let boundary = "nixonrealtimeboundary";
@@ -267,20 +302,22 @@ pub async fn negotiate(ledger: &Ledger, offer: RealtimeOffer) -> Result<serde_js
         "--{boundary}\r\nContent-Disposition: form-data; name=\"sdp\"\r\n\r\n{}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"session\"\r\n\r\n{session}\r\n--{boundary}--\r\n",
         offer.sdp
     );
-    let response = reqwest::Client::new()
-        .post(REALTIME_URL)
+    let sent = http()
+        .post(url)
         .bearer_auth(key)
         .header("content-type", format!("multipart/form-data; boundary={boundary}"))
         .body(body)
         .timeout(std::time::Duration::from_secs(20))
         .send()
-        .await
-        .map_err(|_| NixonError::new(502, "voice_provider_unavailable"))?;
-    let status = response.status();
-    let answer = response.text().await.map_err(|_| NixonError::new(502, "voice_provider_unavailable"))?;
-    if !status.is_success() {
+        .await;
+    let answer = match sent {
+        Ok(response) if response.status().is_success() => response.text().await.ok().filter(|a| !a.trim().is_empty()),
+        _ => None,
+    };
+    let Some(answer) = answer else {
+        release(ledger, &slot, 1).await;
         return Err(NixonError::new(502, "voice_provider_unavailable"));
-    }
+    };
     ledger.audit("nixon.realtime", format!("session=negotiated posting=disabled filing=disabled day={day}")).await?;
     Ok(serde_json::json!({
         "session": { "id": "realtime" },
@@ -296,6 +333,11 @@ pub struct SpeakRequest {
 }
 
 pub async fn synthesize(ledger: &Ledger, request: SpeakRequest) -> Result<Vec<u8>, NixonError> {
+    synthesize_with(ledger, request, openai_key(), SPEECH_URL).await
+}
+
+/// `synthesize` with the key and provider URL passed in (see `negotiate_with`).
+pub async fn synthesize_with(ledger: &Ledger, request: SpeakRequest, key: Option<String>, url: &str) -> Result<Vec<u8>, NixonError> {
     let text = strip_for_speech(&request.text);
     if text.is_empty() {
         return Err(NixonError::new(400, "nothing to speak"));
@@ -303,17 +345,20 @@ pub async fn synthesize(ledger: &Ledger, request: SpeakRequest) -> Result<Vec<u8
     if text.chars().count() > SPEECH_MAX_CHARS + 1 {
         return Err(NixonError::new(400, "speech is too long"));
     }
-    let Some(key) = openai_key() else {
+    let Some(key) = key else {
         return Err(NixonError::new(503, "tts_unconfigured"));
     };
     let day = crate::ledger::engine::today();
-    let used = ledger.store.incr_by(&format!("nixon:tts:{day}"), text.chars().count() as i64).await.map_err(|m| NixonError::new(500, m))?;
+    let slot = tts_quota_key(&day);
+    let chars = text.chars().count() as i64;
+    let used = ledger.store.incr_by(&slot, chars).await.map_err(|m| NixonError::new(500, m))?;
     if used > daily_cap() {
+        release(ledger, &slot, chars).await;
         return Err(NixonError::new(429, "tts_quota"));
     }
     let voice = std::env::var("NIXON_TTS_VOICE").ok().filter(|v| !v.is_empty()).unwrap_or_else(|| "marin".into());
-    let response = reqwest::Client::new()
-        .post(SPEECH_URL)
+    let sent = http()
+        .post(url)
         .bearer_auth(key)
         .json(&serde_json::json!({
             "model": "gpt-4o-mini-tts",
@@ -323,10 +368,16 @@ pub async fn synthesize(ledger: &Ledger, request: SpeakRequest) -> Result<Vec<u8
         }))
         .timeout(std::time::Duration::from_secs(20))
         .send()
-        .await
-        .map_err(|_| NixonError::new(502, "voice_provider_unavailable"))?;
-    if !response.status().is_success() {
-        return Err(NixonError::new(502, "voice_provider_unavailable"));
+        .await;
+    let audio = match sent {
+        Ok(response) if response.status().is_success() => response.bytes().await.ok().map(|b| b.to_vec()).filter(|b| !b.is_empty()),
+        _ => None,
+    };
+    match audio {
+        Some(bytes) => Ok(bytes),
+        None => {
+            release(ledger, &slot, chars).await;
+            Err(NixonError::new(502, "voice_provider_unavailable"))
+        }
     }
-    response.bytes().await.map(|b| b.to_vec()).map_err(|_| NixonError::new(502, "voice_provider_unavailable"))
 }
