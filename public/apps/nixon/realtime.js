@@ -110,6 +110,14 @@
       onChange();
     });
   }
+  // SyncAI's Space-bar push to talk: ignored while typing in a field, and while not live.
+  function bindPushToTalkKeys(win, session) {
+    const typing = (t) => !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+    const down = (e) => { if (e.code !== "Space" || e.repeat || typing(e.target) || !session.active || !session.pushToTalk) return; e.preventDefault(); session.press(true); };
+    const up = (e) => { if (e.code !== "Space" || !session.active || !session.pushToTalk) return; e.preventDefault(); session.press(false); };
+    win.addEventListener("keydown", down); win.addEventListener("keyup", up);
+    return () => { win.removeEventListener("keydown", down); win.removeEventListener("keyup", up); };
+  }
   const LIVE_REQUEST_TIMEOUT_MS = 20000;
   const WELCOME_MAX_MS = 45000;
   // SyncAI boundedToolOutput: answer (here `say`) capped at 8,000 chars, error at 1,000.
@@ -291,16 +299,18 @@
   // playback is receive-only: no microphone. Returns "live", "fallback", "forbidden",
   // "unsupported" or "error" so each page words its own hint.
   function createLiveSession(opts) {
-    let connection = null, mic = null, welcomeOnly = false, connected = false, channel = null, audio = null, lastContext = "", lastMessage = "", welcomeTimer = null;
+    let connection = null, mic = null, welcomeOnly = false, connected = false, channel = null, audio = null, lastContext = "", lastMessage = "", welcomeTimer = null, muted = false, pushToTalk = false;
     const handled = new Set();
+    // SyncAI end(): cancel any reply in flight before the transport closes.
     function end(state) {
+      try { if (channel?.readyState === "open") channel.send(JSON.stringify({ type: "response.cancel" })); } catch { /* closing */ }
       const pc = connection, was = connected;
       connection = null; connected = false;
       if (welcomeTimer) { root.clearTimeout(welcomeTimer); welcomeTimer = null; }
       if (pc) { try { pc.close(); } catch { /* closed */ } }
       if (mic) mic.getTracks().forEach((track) => track.stop());
       if (audio) { audio.pause?.(); audio.srcObject = null; }
-      mic = null; audio = null; channel = null; welcomeOnly = false; handled.clear(); lastContext = "";
+      mic = null; audio = null; channel = null; welcomeOnly = false; handled.clear(); lastContext = ""; muted = false;
       opts.onEnd?.(state, was);
     }
     function updateContext() {
@@ -310,6 +320,20 @@
       if (data === lastContext) return;
       lastContext = data;
       channel.send(JSON.stringify(update));
+    }
+    // SyncAI toggleMute / togglePushToTalk: the microphone track is disabled, never re-requested,
+    // so Nixon can finish speaking. Push to talk keeps the track off except while pressed.
+    function setMic(on) { mic?.getAudioTracks?.().forEach((track) => { track.enabled = on; }); muted = !on; }
+    function setMuted(next) { if (!mic) return false; setMic(!next); opts.onState?.(next ? "Microphone muted. Nixon can finish speaking." : "Microphone live. Speak naturally."); return true; }
+    function setPushToTalk(next) {
+      pushToTalk = !!next;
+      if (mic) { setMic(!pushToTalk); opts.onState?.(pushToTalk ? "Push to talk ready. Hold Space to speak." : "Open microphone mode. Speak naturally."); }
+    }
+    function press(down) {
+      if (!pushToTalk || !mic) return false;
+      setMic(!!down);
+      opts.onState?.(down ? "Listening… release Space to mute." : "Push to talk ready. Hold Space to speak.");
+      return true;
     }
     function fail(status, code) {
       const e = liveError(status, code);
@@ -345,6 +369,7 @@
           if (connection !== pc) { stream.getTracks().forEach((track) => track.stop()); return "cancelled"; }
           mic = stream;
           mic.getTracks().forEach((track) => pc.addTrack(track, mic));
+          if (pushToTalk) setMic(false);
         }
         const events = pc.createDataChannel("oai-events");
         channel = events;
@@ -415,8 +440,8 @@
         return fail(0, e && (e.name === "NotAllowedError" || e.name === "SecurityError") ? "microphone_blocked" : "voice_provider_unavailable");
       }
     }
-    return { start, end, updateContext, get active() { return connected; }, get welcomeOnly() { return welcomeOnly; }, get stream() { return mic; }, get lastMessage() { return lastMessage; } };
+    return { start, end, updateContext, get active() { return connected; }, get welcomeOnly() { return welcomeOnly; }, get stream() { return mic; }, get lastMessage() { return lastMessage; }, setMuted, setPushToTalk, press, get muted() { return muted; }, get pushToTalk() { return pushToTalk; } };
   }
 
-  root.NixonRealtime = { PAGES, pagePath, openTranscript, givenName, welcomeText, welcomeTurn, WELCOME_RESPONSE, screenContext, screenContextUpdate, liveError, waitForIce, LIVE_REQUEST_TIMEOUT_MS, WELCOME_MAX_MS, boundedToolOutput, SPEECH_MAX_CHARS, spokenText, firmWide, hostAssistant, takeHandoff, routeVoiceAnswer, runTool, createDictation, createSpeaker, createLiveSession };
+  root.NixonRealtime = { PAGES, pagePath, openTranscript, givenName, welcomeText, welcomeTurn, WELCOME_RESPONSE, screenContext, screenContextUpdate, liveError, waitForIce, bindPushToTalkKeys, LIVE_REQUEST_TIMEOUT_MS, WELCOME_MAX_MS, boundedToolOutput, SPEECH_MAX_CHARS, spokenText, firmWide, hostAssistant, takeHandoff, routeVoiceAnswer, runTool, createDictation, createSpeaker, createLiveSession };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -264,8 +264,17 @@ const live = RT.createLiveSession({
   context: () => RT.screenContext(location.hash, document.title, $("#meetingMode")?.checked),
   ask: (transcript) => sendVoice(transcript, "push_to_talk", { silent: true }),
   onState: setVoiceState,
-  onEnd: (state) => setVoiceState(state || "Push to talk"),
+  onEnd: (state) => { setVoiceState(state || "Push to talk"); paintLiveControls(); },
 });
+// SyncAI SyncRealtimeVoicePanel mute and push-to-talk, shown only during a live session.
+function paintLiveControls() {
+  const on = live.active && !live.welcomeOnly;
+  if ($("#liveMute")) { $("#liveMute").hidden = !on; $("#liveMute").textContent = live.muted ? "Unmute" : "Mute"; }
+  if ($("#livePttWrap")) { $("#livePttWrap").hidden = !on; $("#livePtt").checked = live.pushToTalk; }
+}
+if ($("#liveMute")) $("#liveMute").onclick = () => { live.setMuted(!live.muted); paintLiveControls(); };
+if ($("#livePtt")) $("#livePtt").onchange = () => { live.setPushToTalk($("#livePtt").checked); paintLiveControls(); };
+RT.bindPushToTalkKeys(window, live);
 let liveConnection = null;
 function endLive(state) { live.end(state); liveConnection = null; }
 async function startLive(welcome) {
@@ -276,6 +285,7 @@ async function startLive(welcome) {
   }
   const outcome = await live.start(welcome);
   liveConnection = live.active ? live : null;
+  paintLiveControls();
   if (outcome === "unsupported") $("#voiceHint").textContent = "This browser cannot start a live voice session. Type a command instead.";
   if (outcome === "fallback" || outcome === "forbidden") {
     $("#voiceHint").textContent = "Live voice is not configured. Hold to talk uses this browser.";

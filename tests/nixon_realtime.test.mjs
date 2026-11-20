@@ -154,3 +154,49 @@ test("a hung negotiation is aborted at the request timeout", async () => {
   assert.equal(await live.start(), "error");
   assert.match(live.lastMessage, /took too long/);
 });
+
+test("live mute and push to talk disable the microphone track, never re-request it; end cancels the reply", async () => {
+  const { RT } = liveSandbox(async () => ({ ok: true, status: 200, json: async () => ({ transport: { sdp: "answer" } }) }));
+  const track = { enabled: true, stop() {} };
+  let requests = 0;
+  const sent = [];
+  const sb = { setTimeout, clearTimeout, AbortController, TextEncoder, navigator: { mediaDevices: { getUserMedia: async () => { requests++; return { getTracks: () => [track], getAudioTracks: () => [track] }; } } } };
+  vm.runInNewContext(src, sb);
+  sb.Audio = class { pause() {} };
+  sb.RTCPeerConnection = class {
+    addTrack() {} close() {}
+    createDataChannel() { return { readyState: "open", send: (m) => sent.push(JSON.parse(m)) }; }
+    async createOffer() { return { sdp: "o" }; } async setLocalDescription() {} async setRemoteDescription() {}
+  };
+  sb.fetch = async () => ({ ok: true, status: 200, json: async () => ({ transport: { sdp: "answer" } }) });
+  const live = sb.NixonRealtime.createLiveSession({ token: () => "synthetic", context: () => ({}) });
+  assert.equal(live.setMuted(true), false, "nothing to mute before a session");
+  assert.equal(await live.start(), "live");
+  live.setMuted(true); assert.equal(track.enabled, false); assert.equal(live.muted, true);
+  live.setMuted(false); assert.equal(track.enabled, true);
+  live.setPushToTalk(true); assert.equal(track.enabled, false);
+  assert.equal(live.press(true), true); assert.equal(track.enabled, true);
+  live.press(false); assert.equal(track.enabled, false);
+  live.setPushToTalk(false); assert.equal(track.enabled, true); assert.equal(live.press(true), false);
+  assert.equal(requests, 1);
+  live.end();
+  assert.equal(sent.at(-1).type, "response.cancel");
+  assert.ok(RT.bindPushToTalkKeys);
+});
+
+test("Space push to talk ignores typing in fields and only acts during a live push-to-talk session", () => {
+  const RT = load();
+  const handlers = {};
+  const win = { addEventListener: (t, f) => { handlers[t] = f; }, removeEventListener: (t) => { delete handlers[t]; } };
+  const presses = [];
+  const session = { active: true, pushToTalk: true, press: (d) => presses.push(d) };
+  const unbind = RT.bindPushToTalkKeys(win, session);
+  const ev = (code, target = { tagName: "BODY" }) => ({ code, target, repeat: false, preventDefault() {} });
+  handlers.keydown(ev("Space", { tagName: "TEXTAREA" }));
+  handlers.keydown(ev("KeyA"));
+  handlers.keydown(ev("Space")); handlers.keyup(ev("Space"));
+  session.pushToTalk = false; handlers.keydown(ev("Space"));
+  assert.deepEqual(presses, [true, false]);
+  unbind();
+  assert.equal(Object.keys(handlers).length, 0);
+});
