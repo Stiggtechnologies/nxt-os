@@ -281,7 +281,7 @@ async function startLive(welcome) {
     $("#voiceHint").textContent = "Live voice is not configured. Hold to talk uses this browser.";
     if (welcome) browserSpeak(welcome);
   }
-  if (outcome === "error") $("#voiceHint").textContent = "Live voice is unavailable. Hold to talk still works.";
+  if (outcome === "error") $("#voiceHint").textContent = live.lastMessage || "Live voice is unavailable. Hold to talk still works.";
 }
 $("#liveVoice").onclick = () => startLive();
 const WELCOME_MUTE = "nixon.welcome.muted";

@@ -286,7 +286,9 @@ html.nxl-shown body{padding-bottom:84px}
         ignore: () => speaker.speaking || busy,
         onError: (m) => { endVoice(); setStatus(m, "err"); },
       });
-      if (loop.start()) setStatus(statusFor(), "live"); else endVoice();
+      // SyncAI readableConnectionError: say why live voice did not start before falling back.
+      const why = outcome === "error" && live?.lastMessage ? live.lastMessage + " Using browser speech instead. " : "";
+      if (loop.start()) setStatus(why + statusFor(), "live"); else endVoice();
     }
     voiceBtn.onclick = () => (voiceOn ? endVoice() : startVoice());
     function stop() {
