@@ -279,14 +279,16 @@ html.nxl-shown body{padding-bottom:84px}
       const outcome = liveSupported ? await live.start() : "unsupported";
       if (!voiceOn) return;
       if (outcome === "live") { setStatus(statusFor(), "live"); return; }
-      if (outcome === "forbidden") { voiceOn = false; paintButtons(); setStatus("Voice is for staff with firm-wide access.", "err"); return; }
+      if (outcome === "forbidden") { voiceOn = false; paintButtons(); setStatus(R.liveError(403).message, "err"); return; }
       if (!dictationSupported) { voiceOn = false; paintButtons(); setStatus("Live voice isn't configured, and this browser has no speech recognition. Use Chrome, Edge or Safari, or type.", "err"); return; }
       loop = R.createDictation((t) => voiceTurn(t, "open_mic"), {
         restartOnEnd: true,
         ignore: () => speaker.speaking || busy,
         onError: (m) => { endVoice(); setStatus(m, "err"); },
       });
-      if (loop.start()) setStatus(statusFor(), "live"); else endVoice();
+      // SyncAI readableConnectionError: say why live voice did not start before falling back.
+      const why = outcome === "error" && live?.lastMessage ? live.lastMessage + " Using browser speech instead. " : "";
+      if (loop.start()) setStatus(why + statusFor(), "live"); else endVoice();
     }
     voiceBtn.onclick = () => (voiceOn ? endVoice() : startVoice());
     function stop() {

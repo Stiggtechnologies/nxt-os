@@ -1,19 +1,19 @@
 # God's Eye transfer ledger (SyncAI Sync Context → NXT OS Nixon)
 
 Source: `Stiggtechnologies/ai-maintenance-system` `docs/sync-context/capability-ledger.json` (ledgerId `sync-context-godseye-integration-contract`, 132 capabilities), read 2026-11-18 at main `b7843702`.
-Branch: `feat/nixon-gods-eye-voice` (local). Nixon is the layer; God's Eye is what it does.
+First pass: `feat/nixon-gods-eye-voice` (PR #217, squash `551ddb1`), then PR #218 (`e9b48f8`, Ask NXT mic and floating launcher). Second pass: `feat/nixon-gods-eye-transfer` (2026-11-19), which re-read SyncAI PRs #470 (`c16ae5b6`) and #660 (`b7843702`) file by file against NXT and ported what was still missing. Nixon is the layer; God's Eye is what it does.
 
 Status meanings: **transferred+tested** = copied on this branch with tests; **already in Nixon** = on nxt-os main before this branch (or its finance equivalent); **needs key or dependency** = transferable but blocked on a named external piece; **left out** = no NXT data or purpose, reason given.
 
 | Status | Count |
 | --- | --- |
-| transferred+tested | 11 |
-| already in Nixon | 28 |
+| transferred+tested | 13 |
+| already in Nixon | 26 |
 | needs key or dependency | 1 |
 | left out | 92 |
 | total | 132 |
 
-Keys that the transferred pieces need at runtime (names only): `OPENAI_API_KEY` (live Realtime voice, cloud TTS, Ask NXT tier 1), `OPENROUTER_API_KEY` (DeepSeek and NVIDIA fallback tiers). Without them the voice uses browser speech and Ask NXT is off.
+Keys that the transferred pieces need at runtime (names only): `OPENAI_API_KEY` (live Realtime voice, cloud TTS, Ask NXT tier 1; set in Vercel production 2026-11-18), `OPENROUTER_API_KEY` (DeepSeek and NVIDIA fallback tiers; set in Vercel production 2026-11-19, but the OpenRouter account has no credits, so the paid fallback models answer 402 until credits are added). Without them the voice uses browser speech and Ask NXT is off.
 
 | ID | Title | SyncAI status | NXT status | Evidence / reason |
 | --- | --- | --- | --- | --- |
@@ -98,13 +98,13 @@ Keys that the transferred pieces need at runtime (names only): `OPENAI_API_KEY` 
 | SCX-DEMO-007 | Road-closure logistics scenario | prototype_only | left out | synthetic industrial demo scenario; NXT tests use synthetic books instead |
 | SCX-DEMO-008 | Project SIMOPS scenario | prototype_only | left out | synthetic industrial demo scenario; NXT tests use synthetic books instead |
 | SCX-DEMO-009 | Demo-to-customer source replacement | missing | left out | demo-to-customer source swap; no demo sources in God's Eye |
-| SCX-VOICE-001 | Server-mediated speech-to-speech | existing_foundation | transferred+tested | Realtime session config transferred into speech.rs (persona, tools, context, marin); browser never gets the key. Live audio needs OPENAI_API_KEY (unset in Vercel) |
-| SCX-VOICE-002 | Context-grounded voice answers | existing_foundation | transferred+tested | God's Eye voice intent answers from gods_eye::view; tests/gods_eye_voice.rs |
+| SCX-VOICE-001 | Server-mediated speech-to-speech | existing_foundation | transferred+tested | Realtime session config transferred into speech.rs (persona, tools, context, marin); browser never gets the key. Second pass: SyncAI `waitForIce` (10 s), 20 s negotiation timeout, `readableConnectionError` (`liveError`), end on disconnect/channel close, blocked-playback and 45 s welcome close; tests/nixon_realtime.test.mjs |
+| SCX-VOICE-002 | Context-grounded voice answers | existing_foundation | transferred+tested | God's Eye voice intent answers from gods_eye::view; tests/gods_eye_voice.rs. Second pass: `buildRealtimeScreenContextUpdate` as `screenContextUpdate` (system item, entity reference, "call the tool, do not guess") |
 | SCX-VOICE-003 | Bounded map tools | prototype_only | transferred+tested | bounded tools nixon_command + open_nixon_page (allow list); map tools left out (no map) |
-| SCX-VOICE-004 | Push-to-talk and optional open microphone | prototype_only | already in Nixon | push-to-talk default and opt-in open mic existed; transferred receive-only welcome Play/Mute added and tested |
+| SCX-VOICE-004 | Push-to-talk and optional open microphone | prototype_only | transferred+tested | Second pass: SyncAI `toggleMute`/`togglePushToTalk` and hold-Space push to talk ported into the live session (`setMuted`, `setPushToTalk`, `press`, `bindPushToTalkKeys`); track disabled, never re-requested; Nixon voice card shows Mute and Push to talk while live. Browser push-to-talk and opt-in open mic existed before |
 | SCX-VOICE-005 | Visible action confirmation | existing_foundation | already in Nixon | voice refuses approve/post/file; re-tested with "God's Eye approve every fix" |
 | SCX-VOICE-006 | Safety and emergency abstention | existing_foundation | already in Nixon | books equivalent: no posting/filing/audit verdict by voice (persona text). Plant safety part has no NXT data |
-| SCX-VOICE-007 | Voice audit, retention and cost control | existing_foundation | already in Nixon | every voice turn audited; Realtime 20/day and TTS character caps. Per-tenant retention n/a (one workspace, no audio stored) |
+| SCX-VOICE-007 | Voice audit, retention and cost control | existing_foundation | transferred+tested | every voice turn audited; Realtime 20/day and TTS character caps. Second pass: SyncAI `releaseQuota` ported, so a provider failure hands the Realtime slot and TTS characters back (tests/voice_quota_release.rs). Per-tenant retention n/a (one workspace, no audio stored) |
 | SCX-INV-001 | Synchronized Investigation Replay | prototype_only | left out | NXT OS has no cameras, video, positioning or worker-zone data |
 | SCX-INV-002 | Before/during/after event window | prototype_only | left out | NXT OS has no cameras, video, positioning or worker-zone data |
 | SCX-INV-003 | Camera auto-selection by coverage | prototype_only | left out | NXT OS has no cameras, video, positioning or worker-zone data |
@@ -139,7 +139,7 @@ Keys that the transferred pieces need at runtime (names only): `OPENAI_API_KEY` 
 | SCX-PLAT-005 | PostGIS spatial and temporal queries | missing | left out | NXT OS has no map, globe, spatial, site or asset data |
 | SCX-PLAT-006 | Durable event streaming and telemetry | existing_foundation | left out | no telemetry streams in NXT |
 | SCX-PLAT-007 | Replay indexing and retention | missing | left out | NXT OS has no cameras, video, positioning or worker-zone data |
-| SCX-PLAT-008 | Offline, stale and degraded behavior | missing | transferred+tested | partial/unavailable sources reported and spoken ("only partly read"); unreadable ledger becomes a gap |
+| SCX-PLAT-008 | Offline, stale and degraded behavior | missing | transferred+tested | partial/unavailable sources reported and spoken ("only partly read"); unreadable ledger becomes a gap. Second pass: live voice says why it did not start (quota, expired sign-in, provider down, timeout, blocked mic) instead of "not configured" |
 | SCX-PLAT-009 | Customer connector portfolio | external_dependency | needs key or dependency | customer connectors: CRA notice source and live bank feed are not built (CRA watcher reports no_source) |
 | SCX-PLAT-010 | Privacy, labor and legal approvals | external_dependency | left out | NXT OS has no cameras, video, positioning or worker-zone data |
 | SCX-PLAT-011 | Source conflict handling | missing | already in Nixon | native_delta finding keeps imported QuickBooks and native NXT balances side by side; nothing merged |
@@ -159,5 +159,18 @@ Keys that the transferred pieces need at runtime (names only): `OPENAI_API_KEY` 
 | God's Eye voice intent and Ask NXT `gods_eye` tool | thin adapters over `gods_eye::view` | `voice.rs`, `os.rs` | `tests/gods_eye_voice*.rs`, `os::firm_tool_tests` |
 | Source-health contract and `canDisplaySourceAsLive` | `src/lib/sync-context/contracts.ts` | `gods_eye::source_health` | `tests/gods_eye_voice.rs` |
 | AI provider chain: OpenAI, then DeepSeek, then NVIDIA via OpenRouter | `Stiggtechnologies/stiggWebsite3.0` `api/_lib/chatCore.ts` (`buildAttemptPlan`, `runWithFallback`; PR #2 `2a25eb4`, PR #3 `84ea757`) | `src/agent/chain.rs`, used by Ask NXT and the firm agent | `agent::chain::tests`, `tests/ai_provider_chain.rs` |
+
+## Second pass (feat/nixon-gods-eye-transfer): SyncAI file-by-file check
+
+| SyncAI file (PR #470 / #660) | Piece | NXT status after this branch |
+| --- | --- | --- |
+| `supabase/functions/_shared/sync-realtime-core.ts` | persona, `ask_sync`/`open_sync_page`, screen context, meeting mode, size limits | done in #217 (`speech.rs`); field mode left out (no permits/LOTO data) |
+| `supabase/functions/sync-realtime-session/index.ts` | auth, flags, quota reserve, provider exchange | done in #217; **quota release on provider failure ported now**; per-org feature flags and data-egress guard are Supabase multi-tenant pieces with no NXT equivalent (one workspace, firm_wide_only gate) |
+| `src/lib/speech/syncRealtimeClient.ts` | request timeout, error codes, path normalizing, context key, screen-change update, tool-call collection | path allow list and tool collection done in #217; **20 s timeout, error-code handling and `buildRealtimeScreenContextUpdate` ported now** |
+| `src/hooks/useSyncRealtimeVoice.ts` | WebRTC controller, ICE wait, welcome, tool loop, mute, push to talk, end | controller, welcome and tool loop done in #217/#218; **ICE wait, readable errors, playback/disconnect handling, welcome close, mute, hold-Space push to talk and `response.cancel` on end ported now** |
+| `src/components/SyncAssistantWelcome.tsx` | receive-only welcome with first name | done in #217 |
+| `src/components/SyncRealtimeVoicePanel.tsx` | live panel: status, mute, push to talk | status done; **Mute and Push to talk controls ported now** on the Nixon voice card; model/last-event debug readout not ported |
+| `src/components/CopilotDock.tsx` | docked copilot, mic in composer | done in #218 as Ask NXT (`public/nxt/nixon-chat.js`) |
+| `src/hooks/useSyncStream.ts` | SSE streaming of `ask_sync` answers | **not ported**: Ask NXT answers arrive whole; streaming needs a server SSE route in Rust (next step) |
 
 Not changed: GuardVoice's phone engine (`src/nixon`, `src/guardvoice`, PR #4) still reads `ANTHROPIC_API_KEY`; it is off limits on this branch.

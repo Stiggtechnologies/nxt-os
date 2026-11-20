@@ -240,6 +240,7 @@ talk.onpointerup = talk.onpointerleave = () => {
 };
 $("#stopTalk").onclick = () => { RT.hostAssistant("stop"); stopSpeaking(); if (liveConnection) endLive(); if (recognition) { try { recognition.stop(); } catch { /* idle */ } } setVoiceState("Push to talk"); };
 $("#openMic").onchange = () => {
+  if (liveTalking()) { live.setPushToTalk(!$("#openMic").checked); return; }
   if (RT.hostAssistant($("#openMic").checked ? "voice" : "stop")) {
     $("#openMic").checked = false;
     setVoiceState("Voice is in Ask NXT and continues across pages.");
@@ -264,8 +265,20 @@ const live = RT.createLiveSession({
   context: () => RT.screenContext(location.hash, document.title, $("#meetingMode")?.checked),
   ask: (transcript) => sendVoice(transcript, "push_to_talk", { silent: true }),
   onState: setVoiceState,
-  onEnd: (state) => setVoiceState(state || "Push to talk"),
+  onEnd: (state) => { setVoiceState(state || "Push to talk"); paintLiveControls(); },
 });
+// SyncAI SyncRealtimeVoicePanel mute, shown only during a live session. Push to talk reuses the
+// existing Open microphone checkbox: unchecked during a live session means hold Space to talk.
+const liveTalking = () => live.active && !live.welcomeOnly;
+let micBeforeLive = null;
+function paintLiveControls() {
+  const on = liveTalking();
+  if ($("#liveMute")) { $("#liveMute").hidden = !on; $("#liveMute").textContent = live.muted ? "Unmute" : "Mute"; }
+  if (on && micBeforeLive === null) { micBeforeLive = $("#openMic").checked; $("#openMic").checked = !live.pushToTalk; }
+  if (!on && micBeforeLive !== null) { $("#openMic").checked = micBeforeLive; micBeforeLive = null; }
+}
+if ($("#liveMute")) $("#liveMute").onclick = () => { live.setMuted(!live.muted); paintLiveControls(); };
+RT.bindPushToTalkKeys(window, live);
 let liveConnection = null;
 function endLive(state) { live.end(state); liveConnection = null; }
 async function startLive(welcome) {
@@ -276,12 +289,13 @@ async function startLive(welcome) {
   }
   const outcome = await live.start(welcome);
   liveConnection = live.active ? live : null;
+  paintLiveControls();
   if (outcome === "unsupported") $("#voiceHint").textContent = "This browser cannot start a live voice session. Type a command instead.";
   if (outcome === "fallback" || outcome === "forbidden") {
     $("#voiceHint").textContent = "Live voice is not configured. Hold to talk uses this browser.";
     if (welcome) browserSpeak(welcome);
   }
-  if (outcome === "error") $("#voiceHint").textContent = "Live voice is unavailable. Hold to talk still works.";
+  if (outcome === "error") $("#voiceHint").textContent = live.lastMessage || "Live voice is unavailable. Hold to talk still works.";
 }
 $("#liveVoice").onclick = () => startLive();
 const WELCOME_MUTE = "nixon.welcome.muted";
