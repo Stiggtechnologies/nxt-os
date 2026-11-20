@@ -240,6 +240,7 @@ talk.onpointerup = talk.onpointerleave = () => {
 };
 $("#stopTalk").onclick = () => { RT.hostAssistant("stop"); stopSpeaking(); if (liveConnection) endLive(); if (recognition) { try { recognition.stop(); } catch { /* idle */ } } setVoiceState("Push to talk"); };
 $("#openMic").onchange = () => {
+  if (liveTalking()) { live.setPushToTalk(!$("#openMic").checked); return; }
   if (RT.hostAssistant($("#openMic").checked ? "voice" : "stop")) {
     $("#openMic").checked = false;
     setVoiceState("Voice is in Ask NXT and continues across pages.");
@@ -266,14 +267,17 @@ const live = RT.createLiveSession({
   onState: setVoiceState,
   onEnd: (state) => { setVoiceState(state || "Push to talk"); paintLiveControls(); },
 });
-// SyncAI SyncRealtimeVoicePanel mute and push-to-talk, shown only during a live session.
+// SyncAI SyncRealtimeVoicePanel mute, shown only during a live session. Push to talk reuses the
+// existing Open microphone checkbox: unchecked during a live session means hold Space to talk.
+const liveTalking = () => live.active && !live.welcomeOnly;
+let micBeforeLive = null;
 function paintLiveControls() {
-  const on = live.active && !live.welcomeOnly;
+  const on = liveTalking();
   if ($("#liveMute")) { $("#liveMute").hidden = !on; $("#liveMute").textContent = live.muted ? "Unmute" : "Mute"; }
-  if ($("#livePttWrap")) { $("#livePttWrap").hidden = !on; $("#livePtt").checked = live.pushToTalk; }
+  if (on && micBeforeLive === null) { micBeforeLive = $("#openMic").checked; $("#openMic").checked = !live.pushToTalk; }
+  if (!on && micBeforeLive !== null) { $("#openMic").checked = micBeforeLive; micBeforeLive = null; }
 }
 if ($("#liveMute")) $("#liveMute").onclick = () => { live.setMuted(!live.muted); paintLiveControls(); };
-if ($("#livePtt")) $("#livePtt").onchange = () => { live.setPushToTalk($("#livePtt").checked); paintLiveControls(); };
 RT.bindPushToTalkKeys(window, live);
 let liveConnection = null;
 function endLive(state) { live.end(state); liveConnection = null; }

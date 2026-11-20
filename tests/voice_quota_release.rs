@@ -51,3 +51,39 @@ async fn an_unreachable_speech_provider_hands_the_characters_back() {
     assert_eq!((err.status, err.message.as_str()), (502, "voice_provider_unavailable"));
     assert_eq!(ledger.store.incr_by(&key, 0).await.unwrap(), 0);
 }
+
+/// A one-shot local HTTP server answering every request with `reply`.
+async fn local(reply: &'static str) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let mut buf = [0u8; 65536];
+            let _ = socket.read(&mut buf).await;
+            let _ = socket.write_all(reply.as_bytes()).await;
+            let _ = socket.shutdown().await;
+        }
+    });
+    format!("http://{addr}/realtime")
+}
+
+#[tokio::test]
+async fn a_provider_error_status_is_refunded_once() {
+    let ledger = Ledger::new(Store::memory());
+    let url = local("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+    let err = speech::negotiate_with(&ledger, offer(), Some("dummy".into()), &url).await.unwrap_err();
+    assert_eq!(err.status, 502);
+    assert_eq!(ledger.store.incr_by(&speech::realtime_quota_key(&today()), 0).await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn a_2xx_the_provider_may_have_opened_is_not_refunded() {
+    // Abuse guard: a success status may already be a live upstream session, so it stays spent
+    // even when its body is unusable. Refunds cannot be farmed into extra sessions.
+    let ledger = Ledger::new(Store::memory());
+    let url = local("HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+    let err = speech::negotiate_with(&ledger, offer(), Some("dummy".into()), &url).await.unwrap_err();
+    assert_eq!(err.status, 502);
+    assert_eq!(ledger.store.incr_by(&speech::realtime_quota_key(&today()), 0).await.unwrap(), 1);
+}

@@ -74,15 +74,16 @@
   // SyncAI readableConnectionError, transferred: the server's error code becomes a plain
   // sentence instead of every failure reading as "not configured". `outcome` keeps the values
   // callers already handle ("forbidden", "fallback", "error").
+  const MIC_BLOCKED = "Microphone access was blocked. Allow it in your browser's site settings.";
   const LIVE_ERRORS = {
     realtime_unconfigured: ["fallback", "Live voice is not configured on this NXT OS server."],
     realtime_quota: ["error", "Today's live voice allowance has been used. Hold to talk and typing still work."],
     unauthorized: ["error", "Your NXT OS sign-in expired. Sign in again to use live voice."],
-    forbidden: ["forbidden", "Live voice is for staff with firm-wide access."],
+    forbidden: ["forbidden", "Voice is for staff with firm-wide access."],
     voice_provider_unavailable: ["error", "The voice provider did not answer. Try again in a minute; typing still works."],
     timeout: ["error", "The voice connection took too long to start. Try again."],
     ice_timeout: ["error", "Timed out while preparing the voice connection."],
-    microphone_blocked: ["error", "Microphone access was blocked. Allow it in your browser's site settings."],
+    microphone_blocked: ["error", MIC_BLOCKED],
     playback_blocked: ["error", "Your browser blocked voice playback. Try starting the conversation again."],
     welcome_paused: ["fallback", "Your browser paused the welcome audio. Select Play to hear it."],
     invalid_voice_response: ["error", "The voice server sent an answer this browser could not use."],
@@ -232,7 +233,7 @@
       };
       r.onerror = (event) => {
         if (event.error === "no-speech" || event.error === "aborted") return;
-        if (event.error === "not-allowed" || event.error === "service-not-allowed") { want = false; denied = true; opts.onError?.("Microphone access was blocked. Allow it in your browser's site settings."); return; }
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") { want = false; denied = true; opts.onError?.(MIC_BLOCKED); return; }
         opts.onError?.("Dictation stopped unexpectedly.");
       };
       r.onend = () => {

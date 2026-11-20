@@ -279,7 +279,7 @@ html.nxl-shown body{padding-bottom:84px}
       const outcome = liveSupported ? await live.start() : "unsupported";
       if (!voiceOn) return;
       if (outcome === "live") { setStatus(statusFor(), "live"); return; }
-      if (outcome === "forbidden") { voiceOn = false; paintButtons(); setStatus("Voice is for staff with firm-wide access.", "err"); return; }
+      if (outcome === "forbidden") { voiceOn = false; paintButtons(); setStatus(R.liveError(403).message, "err"); return; }
       if (!dictationSupported) { voiceOn = false; paintButtons(); setStatus("Live voice isn't configured, and this browser has no speech recognition. Use Chrome, Edge or Safari, or type.", "err"); return; }
       loop = R.createDictation((t) => voiceTurn(t, "open_mic"), {
         restartOnEnd: true,

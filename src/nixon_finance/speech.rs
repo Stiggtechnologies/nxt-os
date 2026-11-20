@@ -310,12 +310,17 @@ pub async fn negotiate_with(ledger: &Ledger, offer: RealtimeOffer, key: Option<S
         .timeout(std::time::Duration::from_secs(20))
         .send()
         .await;
-    let answer = match sent {
-        Ok(response) if response.status().is_success() => response.text().await.ok().filter(|a| !a.trim().is_empty()),
-        _ => None,
+    // Refund only when the provider created nothing: the request never reached it or it
+    // answered with an error status. A 2xx whose body cannot be read may already have opened a
+    // session upstream, so that slot stays spent. One request, one reservation, at most one refund.
+    let response = match sent {
+        Ok(response) if response.status().is_success() => response,
+        _ => {
+            release(ledger, &slot, 1).await;
+            return Err(NixonError::new(502, "voice_provider_unavailable"));
+        }
     };
-    let Some(answer) = answer else {
-        release(ledger, &slot, 1).await;
+    let Some(answer) = response.text().await.ok().filter(|a| !a.trim().is_empty()) else {
         return Err(NixonError::new(502, "voice_provider_unavailable"));
     };
     ledger.audit("nixon.realtime", format!("session=negotiated posting=disabled filing=disabled day={day}")).await?;
@@ -369,15 +374,13 @@ pub async fn synthesize_with(ledger: &Ledger, request: SpeakRequest, key: Option
         .timeout(std::time::Duration::from_secs(20))
         .send()
         .await;
-    let audio = match sent {
-        Ok(response) if response.status().is_success() => response.bytes().await.ok().map(|b| b.to_vec()).filter(|b| !b.is_empty()),
-        _ => None,
-    };
-    match audio {
-        Some(bytes) => Ok(bytes),
-        None => {
+    // Same refund rule as Realtime: only when the provider produced nothing billable.
+    let response = match sent {
+        Ok(response) if response.status().is_success() => response,
+        _ => {
             release(ledger, &slot, chars).await;
-            Err(NixonError::new(502, "voice_provider_unavailable"))
+            return Err(NixonError::new(502, "voice_provider_unavailable"));
         }
-    }
+    };
+    response.bytes().await.ok().map(|b| b.to_vec()).filter(|b| !b.is_empty()).ok_or_else(|| NixonError::new(502, "voice_provider_unavailable"))
 }

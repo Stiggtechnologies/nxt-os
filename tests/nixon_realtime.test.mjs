@@ -113,19 +113,20 @@ test("waitForIce resolves on complete gathering and gives up after its ceiling",
   await assert.rejects(RT.waitForIce(stuck, 5), /ice_timeout/);
 });
 
-function liveSandbox(fetchImpl, timers = { setTimeout, clearTimeout }) {
-  const sb = { ...timers, AbortController, TextEncoder, navigator: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } } };
+function liveSandbox(fetchImpl, timers = { setTimeout, clearTimeout }, track = { enabled: true, stop() {} }) {
+  const counts = { microphone: 0 }, sent = [];
+  const sb = { ...timers, AbortController, TextEncoder, navigator: { mediaDevices: { getUserMedia: async () => { counts.microphone++; return { getTracks: () => [track], getAudioTracks: () => [track] }; } } } };
   vm.runInNewContext(src, sb);
   const sentOffers = [];
   sb.Audio = class { pause() {} };
   sb.RTCPeerConnection = class {
     constructor() { this.iceGatheringState = "complete"; this.localDescription = { sdp: "gathered-offer" }; }
     addTrack() {} close() {}
-    createDataChannel() { return { readyState: "open", send() {} }; }
+    createDataChannel() { return { readyState: "open", send: (m) => sent.push(JSON.parse(m)) }; }
     async createOffer() { return { sdp: "raw-offer" }; } async setLocalDescription() {} async setRemoteDescription() {}
   };
   sb.fetch = async (url, init) => { sentOffers.push(JSON.parse(init.body).sdp); return fetchImpl(url, init); };
-  return { RT: sb.NixonRealtime, sentOffers };
+  return { RT: sb.NixonRealtime, sentOffers, sent, counts, track };
 }
 
 test("a used-up daily allowance says so instead of 'not configured', and the gathered offer is sent", async () => {
@@ -156,20 +157,8 @@ test("a hung negotiation is aborted at the request timeout", async () => {
 });
 
 test("live mute and push to talk disable the microphone track, never re-request it; end cancels the reply", async () => {
-  const { RT } = liveSandbox(async () => ({ ok: true, status: 200, json: async () => ({ transport: { sdp: "answer" } }) }));
-  const track = { enabled: true, stop() {} };
-  let requests = 0;
-  const sent = [];
-  const sb = { setTimeout, clearTimeout, AbortController, TextEncoder, navigator: { mediaDevices: { getUserMedia: async () => { requests++; return { getTracks: () => [track], getAudioTracks: () => [track] }; } } } };
-  vm.runInNewContext(src, sb);
-  sb.Audio = class { pause() {} };
-  sb.RTCPeerConnection = class {
-    addTrack() {} close() {}
-    createDataChannel() { return { readyState: "open", send: (m) => sent.push(JSON.parse(m)) }; }
-    async createOffer() { return { sdp: "o" }; } async setLocalDescription() {} async setRemoteDescription() {}
-  };
-  sb.fetch = async () => ({ ok: true, status: 200, json: async () => ({ transport: { sdp: "answer" } }) });
-  const live = sb.NixonRealtime.createLiveSession({ token: () => "synthetic", context: () => ({}) });
+  const { RT, sent, counts, track } = liveSandbox(async () => ({ ok: true, status: 200, json: async () => ({ transport: { sdp: "answer" } }) }));
+  const live = RT.createLiveSession({ token: () => "synthetic", context: () => ({}) });
   assert.equal(live.setMuted(true), false, "nothing to mute before a session");
   assert.equal(await live.start(), "live");
   live.setMuted(true); assert.equal(track.enabled, false); assert.equal(live.muted, true);
@@ -178,10 +167,9 @@ test("live mute and push to talk disable the microphone track, never re-request 
   assert.equal(live.press(true), true); assert.equal(track.enabled, true);
   live.press(false); assert.equal(track.enabled, false);
   live.setPushToTalk(false); assert.equal(track.enabled, true); assert.equal(live.press(true), false);
-  assert.equal(requests, 1);
+  assert.equal(counts.microphone, 1);
   live.end();
   assert.equal(sent.at(-1).type, "response.cancel");
-  assert.ok(RT.bindPushToTalkKeys);
 });
 
 test("Space push to talk ignores typing in fields and only acts during a live push-to-talk session", () => {
