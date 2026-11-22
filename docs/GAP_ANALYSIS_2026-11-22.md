@@ -8,7 +8,7 @@ Reconciles the generated [gap register](GAP_REGISTER.md), the dated
 recorded as *out of scope* back into scope. The 41 rows that were written off
 are now **open** in the register, each with a next step; the earlier reason is
 kept as the recorded rationale so the trade-offs stay visible. The register
-therefore reports **36 open** of 220 capabilities and **13 external**; routed
+therefore reports **35 open** of 220 capabilities and **13 external**; routed
 coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 
 ## Closed in this pass
@@ -23,6 +23,7 @@ coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 | Credit memos | Native `DocKind::CreditMemo` posting Dr income / Dr GST-HST, Cr AR; application to an invoice for the same customer without a second posting; void releases the invoices it covered. | `7900950`; `tests/credit_memos.rs` |
 | Forecasts | Weekly cash projection from open invoice/bill due dates and scheduled recurring entries, with opening and projected closing cash; labelled a projection and shown at `#reports/forecast`. | `tests/forecast.rs` |
 | Budget vs actual | Monthly budget cells per account (replacing on re-entry, deletable) compared with the committed journal's natural movement; P&L accounts plus any explicitly budgeted account; `#reports/budget-vs-actual` with a budget editor. | `tests/budgets.rs` |
+| Saved report views | Any report can be saved under a name with its date window and account filter; saved views list on the reports index, open the live report, keep CSV/print, and can be deleted. | `tests/saved_reports.rs` |
 | Batch transactions | POST /api/ledger/entries/batch validates every journal before posting any of them and reports the entries it created; the journal screen has a Batch editor with per-entry balance feedback. | `tests/batch_entries.rs` |
 | Performance centre | Trailing-year revenue, expenses, net and margin, cash, receivable/payable balances with AR/AP days, monthly revenue and top customers, all from the ledger; the note says no peer benchmark data is used. | `tests/performance.rs` |
 | Cash plan | Assumption-based projection: today's bank balance carried forward by planned monthly receipts and payments, with an Edit plan action; explicitly separate from the document-based forecast. | `tests/cash_plan.rs` |
@@ -38,8 +39,8 @@ were not rebuilt; the 2026-11-05 map predates that screen.
 The [gap register](GAP_REGISTER.md) is authoritative and now lists 41 open
 capabilities. The largest clusters:
 
-- QuickBooks (11): cheque printing, custom report builder, receipt inbox,
-  payment links and payouts, form styles,
+- QuickBooks (10): cheque printing, receipt inbox, payment links and payouts,
+  form styles,
   payroll settings, custom fields, backup-company action, shift scheduling,
   assignments.
 - DT Max (14): client renumbering/restore, EFILE reports/errors/logs,

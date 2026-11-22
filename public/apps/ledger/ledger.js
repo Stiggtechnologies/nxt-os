@@ -1079,6 +1079,20 @@ function creditMemoModal(kind) {
   });
 }
 
+function saveViewModal(key, st) {
+  return modal("Save this view", (el, close) => {
+    el.innerHTML = `<p class="muted" style="margin-top:0">Saves ${esc((REPORTS[key] || [key])[0])} with ${fmtDate(st.from)} – ${fmtDate(st.to)}${st.account_id ? " and the selected account" : ""}.</p>
+      <form class="form"><label class="f" style="grid-column:1/-1">Name<input name="name" required maxlength="60" placeholder="e.g. Q1 profit"></label></form>
+      <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Save view</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("[data-ok]").onclick = async () => {
+      const name = el.querySelector("[name=name]").value.trim();
+      if (!name) return toast("Enter a name", true);
+      try { await api("/api/ledger/saved-reports", { body: { name, report: key, from: st.from, to: st.to, account_id: st.account_id || null } }); toast("View saved"); close(true); route(); } catch (e) { err(e); }
+    };
+  });
+}
+
 function cashPlanModal() {
   return modal("Cash plan assumptions", (el, close) => {
     api("/api/ledger/plan").then((plan) => {
@@ -1469,8 +1483,21 @@ function presets() {
 
 views.reports = async (name) => {
   if (!name) {
-    return page("Reports", "Real-time statements from your books.", "",
-      `<div class="report-list">${Object.entries(REPORTS).map(([k, [t, d]]) => `<a href="#reports/${k}"><b>${t}</b><span>${d}</span></a>`).join("")}</div>`);
+    const saved = await api("/api/ledger/saved-reports");
+    page("Reports", "Real-time statements from your books.", "",
+      `<div class="report-list">${Object.entries(REPORTS).map(([k, [t, d]]) => `<a href="#reports/${k}"><b>${t}</b><span>${d}</span></a>`).join("")}</div>
+      <div class="card" style="margin-top:14px"><h3 style="margin:0 0 8px">Saved views</h3>
+        ${saved.length ? table([
+          { h: "Name", f: (v) => `<a href="#reports/${esc(v.report)}?${new URLSearchParams({ from: v.from, to: v.to, ...(v.account_id ? { account_id: v.account_id } : {}) })}"><b>${esc(v.name)}</b></a>` },
+          { h: "Report", f: (v) => esc((REPORTS[v.report] || [v.report])[0]) },
+          { h: "Period", f: (v) => `${fmtDate(v.from)} – ${fmtDate(v.to)}` },
+          { h: "", f: (v) => `<button class="btn sm ghost" data-del-view="${v.id}">Delete</button>` },
+        ], saved) : `<div class="empty">Save any report with its filters from its page.</div>`}
+      </div>`);
+    $$("[data-del-view]", main).forEach((b) => (b.onclick = async () => {
+      try { await api(`/api/ledger/saved-reports/${encodeURIComponent(b.dataset.delView)}`, { method: "DELETE" }); toast("Saved view deleted"); route(); } catch (e) { err(e); }
+    }));
+    return;
   }
   const [key, qs] = name.split("?");
   const meta = REPORTS[key];
@@ -1493,6 +1520,7 @@ views.reports = async (name) => {
        ${key === "budget-vs-actual" ? `<button class="btn" id="budgets">Set budgets</button>` : ""}
        ${key === "profit-loss-by-class" ? `<button class="btn" id="classes">Manage classes</button>` : ""}
        ${key === "cash-plan" ? `<button class="btn" id="editPlan">Edit plan</button>` : ""}
+       <button class="btn" id="saveView">Save view</button>
        <button class="btn" onclick="print()">Print</button><button class="btn" id="csv">Export</button>`,
       `<div class="card report">${renderReport(key, data, st)}</div>`);
     const upd = () => { st.from = $("#from")?.value || st.from; st.to = $("#to").value; st.account_id = $("#acctF")?.value || ""; history.replaceState(null, "", `#reports/${key}?${new URLSearchParams(st)}`); run().catch(err); };
@@ -1503,6 +1531,7 @@ views.reports = async (name) => {
     $("#budgets")?.addEventListener("click", () => budgetModal());
     $("#classes")?.addEventListener("click", () => classModal());
     $("#editPlan")?.addEventListener("click", () => cashPlanModal());
+    $("#saveView")?.addEventListener("click", () => saveViewModal(key, st));
   };
   await run();
 };

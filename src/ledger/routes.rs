@@ -230,6 +230,8 @@ fn routes(st: Arc<Ledger>) -> Router {
         .route("/api/ledger/sales-receipts", post(sales_receipt))
         .route("/api/ledger/plan", get(cash_plan).put(save_cash_plan))
         .route("/api/ledger/entries/batch", post(post_batch))
+        .route("/api/ledger/saved-reports", get(saved_reports).post(save_saved_report))
+        .route("/api/ledger/saved-reports/{id}", delete(delete_saved_report))
         .route("/api/ledger/classes", get(classes).post(save_class))
         .route("/api/ledger/classes/{id}", delete(delete_class))
         .route("/api/ledger/budgets", get(budgets).post(set_budget))
@@ -403,6 +405,15 @@ async fn create_credit_memo(State(l): S, Json(b): Json<DocInput>) -> R {
 }
 async fn apply_credit(State(l): S, Path(id): Path<String>, Json(b): Json<ApplyCreditInput>) -> R {
     ok(l.apply_credit(&id, b).await)
+}
+async fn saved_reports(State(l): S) -> R {
+    ok(l.saved_reports().await)
+}
+async fn save_saved_report(State(l): S, Json(b): Json<SavedReportInput>) -> R {
+    ok(l.save_saved_report(b).await)
+}
+async fn delete_saved_report(State(l): S, Path(id): Path<String>) -> R {
+    ok(l.delete_saved_report(&id).await.map(|_| json!({ "deleted": id })))
 }
 async fn post_batch(State(l): S, Json(b): Json<BatchInput>) -> R {
     ok(l.post_batch(b).await)

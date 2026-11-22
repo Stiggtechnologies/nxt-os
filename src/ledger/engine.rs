@@ -248,6 +248,16 @@ pub struct BatchInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct SavedReportInput {
+    pub name: String,
+    pub report: String,
+    pub from: String,
+    pub to: String,
+    #[serde(default)]
+    pub account_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SalesReceiptInput {
     pub contact_id: String,
     pub date: String,
@@ -1365,6 +1375,63 @@ impl Ledger {
         }
         self.audit("batch.posted", format!("{} entries", posted.len())).await?;
         Ok(posted)
+    }
+
+    // ---- saved report views ---------------------------------------------------
+
+    /// Report keys the browser can open; a saved view may only point at one of these.
+    const REPORT_KEYS: [&'static str; 21] = [
+        "profit-loss", "profit-loss-by-month", "profit-loss-comparison", "profit-loss-by-class",
+        "balance-sheet", "trial-balance", "ar-aging", "ap-aging", "sales-tax", "general-ledger",
+        "cash-flow", "forecast", "cash-plan", "performance", "budget-vs-actual", "item-profitability",
+        "customer-balances", "vendor-balances", "payroll-remittance", "time", "payroll",
+    ];
+
+    pub async fn saved_reports(&self) -> LResult<Vec<SavedReport>> {
+        let mut saved: Vec<SavedReport> = self.store.get_json(&self.key("saved_reports")).await?.unwrap_or_default();
+        saved.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(saved)
+    }
+
+    pub async fn save_saved_report(&self, input: SavedReportInput) -> LResult<SavedReport> {
+        let name = input.name.trim().to_string();
+        if name.is_empty() {
+            return bad("give the saved view a name");
+        }
+        if !Self::REPORT_KEYS.contains(&input.report.as_str()) {
+            return bad(format!("'{}' is not a report NXT can save", input.report));
+        }
+        parse_date(&input.from)?;
+        parse_date(&input.to)?;
+        let mut saved = self.saved_reports().await?;
+        if saved.iter().any(|view| view.name.eq_ignore_ascii_case(&name)) {
+            return bad(format!("a saved view named '{name}' already exists"));
+        }
+        let view = SavedReport {
+            id: new_id("view"),
+            name,
+            report: input.report,
+            from: input.from,
+            to: input.to,
+            account_id: input.account_id.filter(|id| !id.is_empty()),
+            created_at: now(),
+        };
+        saved.push(view.clone());
+        self.store.set_json(&self.key("saved_reports"), &saved).await?;
+        self.audit("saved_report.created", format!("{} {}", view.name, view.report)).await?;
+        Ok(view)
+    }
+
+    pub async fn delete_saved_report(&self, id: &str) -> LResult<()> {
+        let mut saved = self.saved_reports().await?;
+        let before = saved.len();
+        saved.retain(|view| view.id != id);
+        if saved.len() == before {
+            return Err(LedgerError::NotFound(format!("no saved view {id}")));
+        }
+        self.store.set_json(&self.key("saved_reports"), &saved).await?;
+        self.audit("saved_report.deleted", id.to_string()).await?;
+        Ok(())
     }
 
     // ---- cash plan ------------------------------------------------------------

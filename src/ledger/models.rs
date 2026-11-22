@@ -307,6 +307,20 @@ impl Default for Company {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedReport {
+    pub id: String,
+    pub name: String,
+    /// Existing report route key, e.g. profit-loss.
+    pub report: String,
+    pub from: String,
+    pub to: String,
+    #[serde(default)]
+    pub account_id: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CashPlan {
     /// Planned recurring monthly receipts and payments, in cents.
     pub monthly_in_cents: i64,
