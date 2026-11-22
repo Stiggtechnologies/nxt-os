@@ -62,9 +62,9 @@
               "label": "Client restore",
               "source_label": "Client restore",
               "observation": "observed",
-              "native_route": null,
-              "native_scope": "No per-client restore. Rollback is the whole-store backup and recovery path, which is a different scope.",
-              "next_step": "Add a per-client export/restore package over the store namespace.",
+              "native_route": "#worklist",
+              "native_scope": "Per-client bundle: export a client's returns and families with a checksum; restore only into an empty client reference, with fresh record ids.",
+              "next_step": "Return editor -> Export client; worklist -> Restore client bundle.",
               "scope": "in_scope",
               "scope_reason": "Per-client restore needs a client-level backup format DT Max owns. NXT recovery is whole-store.",
               "in_scope_since": "2026-11-22"

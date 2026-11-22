@@ -155,13 +155,43 @@
     }, { wide: true });
   }
 
+  async function downloadClientBundle() {
+    if (!state.record?.client_ref) return toast("This return has no client reference", true);
+    try {
+      const bundle = await request(`/returns/${pid(state.record.id)}/client-export`);
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = `nxt-client-${String(bundle.client_ref).replace(/[^A-Za-z0-9_-]/g, "_")}-${today()}.json`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      toast(`Client bundle ready · ${list(bundle.returns).length} return(s) · SHA-256 ${String(bundle.sha256).slice(0, 12)}…`);
+    } catch (error) { toast(error.message, true); }
+  }
+
+  function restoreClientBundle() {
+    const picker = document.createElement("input");
+    picker.type = "file"; picker.accept = ".json,application/json";
+    picker.onchange = async () => {
+      const file = picker.files?.[0];
+      if (!file) return;
+      try {
+        const bundle = JSON.parse(await file.text());
+        const result = await request("/clients/import", { body: bundle });
+        toast(`Restored ${Number(result.imported) || 0} return(s) for ${result.client_ref}`);
+        await navigate();
+      } catch (error) { toast(error.message, true); }
+    };
+    picker.click();
+  }
+
   async function worklist(version) {
     state.record = null; state.draft = null; state.dirty = false;
     const [summary, records] = await Promise.all([request("/summary"), request("/returns")]);
     if (version !== state.version) return;
     state.returns = list(records); setStorage(summary.storage); renderPrograms();
     const years = [...new Set([...programs().flatMap(p => list(p.years)), ...state.returns.map(r => r.tax_year)])].sort((a, b) => b - a);
-    page(version, "Tax worklist", "Prepare, calculate and review independently versioned workpapers across the tax suite.", button("Export worklist", "export-worklist") + button("Import package", "import") + button("Create return", "new-return", "", "primary"),
+    page(version, "Tax worklist", "Prepare, calculate and review independently versioned workpapers across the tax suite.", button("Export worklist", "export-worklist") + button("Import package", "import") + button("Restore client bundle", "client-restore") + button("Create return", "new-return", "", "primary"),
       restrictedNotice() + `<div id="dtmax-t1-source"></div><div class="summary-grid">${[["Draft workpapers", summary.drafts || 0], ["Calculated", summary.calculated || 0], ["Awaiting review", summary.in_review || 0], ["Approved", summary.approved || 0]].map(([label, value]) => `<div class="summary-tile"><span class="label">${label}</span><strong>${Number(value)}</strong></div>`).join("")}</div>
       <div class="card"><h2>NXT preparation workpapers</h2><p>The company selector filters these workpapers. Imported personal T1 source clients above are firm-wide.</p><div class="list-filters"><label>Program${select("program", [["", "All programs"], ...programs().map(p => [p.id, p.id.toUpperCase()])], state.program, "data-work-filter")}</label><label>Tax year${select("year", [["", "All years"], ...years.map(y => [y, y])], state.year, "data-work-filter")}</label><label>Status${select("status", statuses, state.status, "data-work-filter")}</label><label>Jurisdiction${select("jurisdiction", [["", "All jurisdictions"], ...(window.NXTTaxWorklist?.jurisdictions(state.returns) || []).map(j => [j, j])], state.jurisdiction, "data-work-filter")}</label><label>Sort${select("sort", [["", "Default order"], ["name", "Name"], ["year", "Tax year"], ["updated", "Last updated"], ["status", "Status"]], state.sort, "data-work-filter")}</label><label class="search">Search workpapers${input("search", state.search, "search", 'placeholder="Name or client reference" data-work-filter')}</label></div><div id="return-table"></div></div>`);
     renderWorkRows();
@@ -336,7 +366,7 @@
   function renderWorkspace() {
     const r = state.record, p = program(r.program); main.classList.add("workspace-mode");
     const editable = canEdit(r);
-    main.innerHTML = `<div class="work-head">${r.program === "T1" ? t1WorkpaperTabs() : '<a class="back" href="#worklist">← Tax worklist</a>'}<div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary", r.program === "T1" ? "save" : "")}${button("Calculate", "calculate", "", "ink", r.program === "T1" ? "calculate" : "")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Print workpaper", "print", "", "", r.program === "T1" ? "print" : "")}${schedule8PrintAvailable() ? button("Print Schedule 8", "schedule8-print") : ""}${button("Roll forward", "rollforward")}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
+    main.innerHTML = `<div class="work-head">${r.program === "T1" ? t1WorkpaperTabs() : '<a class="back" href="#worklist">← Tax worklist</a>'}<div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary", r.program === "T1" ? "save" : "")}${button("Calculate", "calculate", "", "ink", r.program === "T1" ? "calculate" : "")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Export client", "client-export")}${button("Print workpaper", "print", "", "", r.program === "T1" ? "print" : "")}${schedule8PrintAvailable() ? button("Print Schedule 8", "schedule8-print") : ""}${button("Roll forward", "rollforward")}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
       ${r.current_scope_supported===false?'<div class="notice" role="alert"><strong>Unsupported current calculation scope.</strong><p>Saved calculations and approvals are historical only. This workpaper cannot enter review, approval, authorization or recorded filing in this program, year and jurisdiction.</p></div>':""}${!browserEntryAvailable(r) && r.current_scope_supported!==false ? '<div class="notice" role="note"><strong>Year-specific browser editor pending.</strong><p>Input editing is unavailable for this saved workpaper. Its inputs remain unchanged; calculation results, diagnostics, history and exports remain available. A limited engine path does not verify an entry form.</p></div>' : ""}<div class="return-grid">${workspaceNavigation(r,p)}<section class="return-editor" id="return-editor" aria-label="Return data"></section><aside class="result-panel" id="result-panel" aria-label="Calculation status and diagnostics"></aside></div>`;
     $$("[data-action=save-return],[data-action=calculate]", main).forEach(b => b.disabled = !editable);
     renderEditor(); renderSidePanel(); setDirtyStatus();
@@ -612,6 +642,7 @@
     "open-return": id => go(`return/${id}`), "import": () => go("import"), "save-return": () => saveReturn(), "calculate": () => calculate(),
     "review-return": () => transition("in_review"), "approve-return": () => transition("approved"), "reopen-return": () => transition("draft"), "archive-return": () => transition("archived"),
     "rollforward": () => rollforward(), "package": () => downloadReturn("package"), "print": () => downloadReturn("print"),
+    "client-export": () => downloadClientBundle(), "client-restore": () => restoreClientBundle(),
     "schedule8-print": () => downloadReturn("schedule8-print"),
     "add-corporate": () => { if(!canEdit(state.record)||!isCorporate(state.record)) return; state.draft.corporate=newCorporateProfile(); markDirty(); renderEditor(); },
     "remove-corporate": async () => { if(!canEdit(state.record)||!state.draft.corporate) return; if(!await NXT.confirm("Remove corporate profile?","Remove the profile, financial lines and adjustments from this draft. The calculation inputs remain available. Save to record this change.","Remove profile")) return; state.draft.corporate=null; Object.keys(state.errors).filter(k=>k.startsWith("gifi-")||k.startsWith("adjustment-")).forEach(k=>delete state.errors[k]); markDirty(); renderEditor(); },

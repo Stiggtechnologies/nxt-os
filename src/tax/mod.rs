@@ -19,6 +19,7 @@ pub mod spouse_optimize;
 pub mod family_workflow;
 pub mod t2_intake;
 pub mod filing_desk;
+pub mod client_bundle;
 pub mod stripe;
 mod routes;
 pub use routes::router;
@@ -116,7 +117,7 @@ fn input_hash(r: &TaxReturn) -> TResult<String> { hash(&ReturnInput::from(r)) }
 fn assert_revision(r: &TaxReturn, expected: u64) -> TResult<()> {
     if r.revision != expected { Err(conflict("return changed; reload before trying again")) } else { Ok(()) }
 }
-fn audit(s: &mut TaxState, return_id: &str, action: &str, detail: impl Into<String>) {
+pub(crate) fn audit(s: &mut TaxState, return_id: &str, action: &str, detail: impl Into<String>) {
     // Append-only, newest first. Events are never truncated or edited; capacity is bounded by the state size limit.
     let prev_hash=s.audit.first().map(|e|if e.hash.is_empty(){"pre-chain".to_string()}else{e.hash.clone()}).unwrap_or_else(||"genesis".into());
     let mut e=AuditEvent { id:id("taxaudit"), return_id:return_id.into(), at:now(), action:action.into(), detail:detail.into(), prev_hash, hash:String::new() };

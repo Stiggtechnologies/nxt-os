@@ -22,6 +22,8 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/t183",get(t183_draft))
         .route("/api/tax/returns/{id}/rollforward",post(rollforward))
         .route("/api/tax/returns/{id}/package",get(package))
+        .route("/api/tax/returns/{id}/client-export",get(client_export))
+        .route("/api/tax/clients/import",post(client_import))
         .route("/api/tax/returns/{id}/print",get(print))
         .route("/api/tax/returns/{id}/schedule8-print",get(print_schedule8))
         .route("/api/tax/returns/{id}/filing",post(filing))
@@ -200,6 +202,12 @@ pub(super) fn print_workpaper(r:&TaxReturn)->TResult<String>{
 
 async fn audit_verify(State(t):S) -> R { ok(super::verify_audit(&t.audit().await?)) }
 async fn rates() -> R { ok(super::coverage::rate_metadata()) }
+async fn client_export(State(t): S, Path(id): Path<String>) -> R {
+    ok(super::client_bundle::export(&t, &id).await?)
+}
+async fn client_import(State(t): S, Json(body): Json<Value>) -> R {
+    ok(super::client_bundle::import(&t, body).await?)
+}
 async fn maintenance_check(State(t): S) -> R {
     ok(t.maintenance_check().await?)
 }

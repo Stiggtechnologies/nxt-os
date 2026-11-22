@@ -6,10 +6,10 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 156,
+    "routed": 157,
     "linked": 26,
     "external": 13,
-    "open": 25,
+    "open": 24,
     "chrome": 22,
     "percent": 71
   },
@@ -25,10 +25,10 @@
     {
       "product": "DT Max",
       "capabilities": 37,
-      "routed": 20,
+      "routed": 21,
       "linked": 0,
       "external": 5,
-      "open": 12
+      "open": 11
     },
     {
       "product": "WebTax4B",
@@ -44,7 +44,6 @@
     "all-apps--sales-get-paid--quickbooks-payouts",
     "dtmax.billing-setup",
     "dtmax.client-renumbering",
-    "dtmax.client-restore",
     "dtmax.ct23",
     "dtmax.database-in-use",
     "dtmax.efile-errors",
