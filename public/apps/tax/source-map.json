@@ -52,9 +52,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "NXT Tax has no client renumbering operation. Imported source client numbers are retained verbatim as provenance.",
-              "next_step": "Decide whether NXT needs its own client numbering or must always defer to the source number.",
-              "scope": "out_of_scope",
-              "scope_reason": "Client renumbering rewrites a local client database. NXT keeps imported source numbers as provenance and does not rewrite identity."
+              "next_step": "Add a client-number remap that preserves the imported source number as provenance.",
+              "scope": "in_scope",
+              "scope_reason": "Client renumbering rewrites a local client database. NXT keeps imported source numbers as provenance and does not rewrite identity.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.client-restore",
@@ -63,9 +64,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No per-client restore. Rollback is the whole-store backup and recovery path, which is a different scope.",
-              "next_step": "Specify client-level restore requirements, or accept store-level recovery only.",
-              "scope": "out_of_scope",
-              "scope_reason": "Per-client restore needs a client-level backup format DT Max owns. NXT recovery is whole-store."
+              "next_step": "Add a per-client export/restore package over the store namespace.",
+              "scope": "in_scope",
+              "scope_reason": "Per-client restore needs a client-level backup format DT Max owns. NXT recovery is whole-store.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.client-access-log",
@@ -160,9 +162,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No EFILE reporting exists because no transmission exists.",
-              "next_step": "Blocked behind the filing gate.",
-              "scope": "out_of_scope",
-              "scope_reason": "EFILE reports are produced from transmission results. Without a certified transmission path there is nothing to report."
+              "next_step": "Store and render transmission-result reports; producing real results still requires the CRA filing gate.",
+              "scope": "in_scope",
+              "scope_reason": "EFILE reports are produced from transmission results. Without a certified transmission path there is nothing to report.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.efile-errors",
@@ -171,9 +174,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "Native calculation diagnostics are not transmission diagnostics.",
-              "next_step": "Blocked behind the filing gate.",
-              "scope": "out_of_scope",
-              "scope_reason": "EFILE error handling interprets authority rejections. It is part of the disabled filing gate."
+              "next_step": "Model authority rejection codes behind the filing gate; no transmission today.",
+              "scope": "in_scope",
+              "scope_reason": "EFILE error handling interprets authority rejections. It is part of the disabled filing gate.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.efile-logs",
@@ -182,9 +186,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No transmission log exists.",
-              "next_step": "Blocked behind the filing gate.",
-              "scope": "out_of_scope",
-              "scope_reason": "EFILE logs record transmission attempts. There are no attempts to log while filing is disabled."
+              "next_step": "Record transmission attempts locally once a certified path exists.",
+              "scope": "in_scope",
+              "scope_reason": "EFILE logs record transmission attempts. There are no attempts to log while filing is disabled.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.efile-defaults",
@@ -279,9 +284,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No label layout or label printer integration.",
-              "next_step": "Low priority; specify only if the firm depends on physical labels.",
-              "scope": "out_of_scope",
-              "scope_reason": "Client label printing needs label stock and a desktop print path."
+              "next_step": "Add a client-label print sheet (Avery-compatible PDF) from client records.",
+              "scope": "in_scope",
+              "scope_reason": "Client label printing needs label stock and a desktop print path.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.print-queue",
@@ -299,9 +305,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No NXT document cabinet export. Engagement opaque-file versions are a different module and scope.",
-              "next_step": "Decide whether archived PDF output is a migration requirement.",
-              "scope": "out_of_scope",
-              "scope_reason": "DT FileCabinet integration is vendor document management; NXT has no FileCabinet connection."
+              "next_step": "Add a Document Manager export bundle that can be filed into an external cabinet.",
+              "scope": "in_scope",
+              "scope_reason": "DT FileCabinet integration is vendor document management; NXT has no FileCabinet connection.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.ct23",
@@ -310,9 +317,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "Not implemented.",
-              "next_step": "Confirm whether the firm still uses CT23 packing slips.",
-              "scope": "out_of_scope",
-              "scope_reason": "CT23 D-File packing slips are an Ontario/Quebec interface format from the vendor; not modelled."
+              "next_step": "Add a CT23 D-File packing-slip export once the firm confirms the format.",
+              "scope": "in_scope",
+              "scope_reason": "CT23 D-File packing slips are an Ontario/Quebec interface format from the vendor; not modelled.",
+              "in_scope_since": "2026-11-22"
             }
           ]
         },
@@ -336,9 +344,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No form manager; no vendor form assets are used.",
-              "next_step": "Out of scope until official form specifications are independently obtained.",
-              "scope": "out_of_scope",
-              "scope_reason": "The forms manager selects installed form files. NXT has no installed form library."
+              "next_step": "Add a form-catalogue view over published CRA forms with version pinning.",
+              "scope": "in_scope",
+              "scope_reason": "The forms manager selects installed form files. NXT has no installed form library.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.printing-options",
@@ -356,9 +365,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "Tax billing is not implemented in NXT Tax.",
-              "next_step": "Firm Operations may be the right owner; confirm before building.",
-              "scope": "out_of_scope",
-              "scope_reason": "Billing setup configures DT Max's own time/billing add-on, which NXT does not ship."
+              "next_step": "Move time/WIP billing into Firm Operations with rate tables and invoice generation.",
+              "scope": "in_scope",
+              "scope_reason": "Billing setup configures DT Max's own time/billing add-on, which NXT does not ship.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.text-macros",
@@ -367,9 +377,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No macro library for preparer text.",
-              "next_step": "Confirm demand with preparers before implementing.",
-              "scope": "out_of_scope",
-              "scope_reason": "Text macros are desktop template expansion. NXT has no macro library."
+              "next_step": "Add reusable text snippets for preparer notes with expansion in workpapers.",
+              "scope": "in_scope",
+              "scope_reason": "Text macros are desktop template expansion. NXT has no macro library.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.ui-options",
@@ -378,9 +389,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "NXT has no user-interface options dialog; it uses a single responsive theme with light and dark appearance.",
-              "next_step": "Not a parity requirement by itself.",
-              "scope": "out_of_scope",
-              "scope_reason": "UI options configure the desktop application's own layout, which has no NXT equivalent by design."
+              "next_step": "Add workspace layout preferences per operator.",
+              "scope": "in_scope",
+              "scope_reason": "UI options configure the desktop application's own layout, which has no NXT equivalent by design.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.audit-trail-setup",
@@ -404,9 +416,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No client-facing database rebuild. Recovery is a provider-level backup and restore procedure.",
-              "next_step": "An independently verified backup and restore drill remains a cutover gate.",
-              "scope": "out_of_scope",
-              "scope_reason": "Database maintenance compacts a local desktop database. NXT keeps state in a hosted store with its own operations."
+              "next_step": "Add an operator maintenance job with a dry-run verification report.",
+              "scope": "in_scope",
+              "scope_reason": "Database maintenance compacts a local desktop database. NXT keeps state in a hosted store with its own operations.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.database-in-use",
@@ -415,9 +428,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No file-lock model; NXT is a hosted multi-request service.",
-              "next_step": "Replace with concurrency expectations on the same return, which are a native design question.",
-              "scope": "out_of_scope",
-              "scope_reason": "This is a desktop single-user lock notice. NXT has no local database file to lock."
+              "next_step": "Add per-return editing locks with an explicit takeover flow.",
+              "scope": "in_scope",
+              "scope_reason": "This is a desktop single-user lock notice. NXT has no local database file to lock.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "dtmax.help",
@@ -535,9 +549,10 @@
               "observation": "documented",
               "native_route": null,
               "native_scope": "T1135 is not modelled.",
-              "next_step": "Add only with a verified specification and a filing path.",
-              "scope": "out_of_scope",
-              "scope_reason": "T1135 is a CRA filing. Without an authority channel NXT would only collect the numbers; filing stays blocked."
+              "next_step": "Add a T1135 data-collection worksheet; filing stays behind the CRA gate.",
+              "scope": "in_scope",
+              "scope_reason": "T1135 is a CRA filing. Without an authority channel NXT would only collect the numbers; filing stays blocked.",
+              "in_scope_since": "2026-11-22"
             }
           ]
         },
@@ -572,9 +587,10 @@
               "observation": "documented",
               "native_route": null,
               "native_scope": "No notice-of-assessment intake. Prior-year figures come only from preserved source facts.",
-              "next_step": "Specify a NOA attachment lane if the firm needs it for preparation.",
-              "scope": "out_of_scope",
-              "scope_reason": "A notice of assessment is a CRA document. NXT does not call CRA or receive notices."
+              "next_step": "Add a notice-of-assessment document lane stored against a client year.",
+              "scope": "in_scope",
+              "scope_reason": "A notice of assessment is a CRA document. NXT does not call CRA or receive notices.",
+              "in_scope_since": "2026-11-22"
             }
           ]
         },
@@ -607,9 +623,10 @@
               "observation": "documented",
               "native_route": null,
               "native_scope": "Not modelled; historical Ontario corporate returns are out of scope.",
-              "next_step": "Confirm no active client needs this before closing as out of scope.",
-              "scope": "out_of_scope",
-              "scope_reason": "CT23 is a historical Ontario corporate return (to 2009). Not modelled and not required for current clients."
+              "next_step": "Add historical CT23 data entry for pre-2010 years if a client needs it.",
+              "scope": "in_scope",
+              "scope_reason": "CT23 is a historical Ontario corporate return (to 2009). Not modelled and not required for current clients.",
+              "in_scope_since": "2026-11-22"
             }
           ]
         },
@@ -675,9 +692,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No home-office worksheet is modelled.",
-              "next_step": "Specify the business-use-of-home rules only if clients in scope claim them.",
-              "scope": "out_of_scope",
-              "scope_reason": "Home-office expense needs business-use-of-home rules per tax year. The native T2 scope declares ordinary active-business income only."
+              "next_step": "Add a business-use-of-home worksheet for T2 with per-year rules.",
+              "scope": "in_scope",
+              "scope_reason": "Home-office expense needs business-use-of-home rules per tax year. The native T2 scope declares ordinary active-business income only.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "webtax4b.vehicle-expense",
@@ -686,9 +704,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "Motor vehicle capital limits are modelled in Schedule 8; there is no vehicle expense worksheet.",
-              "next_step": "Keep the distinction between CCA caps and operating-expense worksheets.",
-              "scope": "out_of_scope",
-              "scope_reason": "A vehicle expense worksheet is separate from the CCA vehicle caps that Schedule 8 already models. Not in the declared scope."
+              "next_step": "Add a motor-vehicle operating-expense worksheet distinct from CCA caps.",
+              "scope": "in_scope",
+              "scope_reason": "A vehicle expense worksheet is separate from the CCA vehicle caps that Schedule 8 already models. Not in the declared scope.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "webtax4b.other-expense",
@@ -697,9 +716,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No other-expense worksheet.",
-              "next_step": "Low priority until a client needs it.",
-              "scope": "out_of_scope",
-              "scope_reason": "Other-expense worksheets are not modelled; the native T2 scope declares a bounded expense set."
+              "next_step": "Add an other-expense worksheet with a declared line scope.",
+              "scope": "in_scope",
+              "scope_reason": "Other-expense worksheets are not modelled; the native T2 scope declares a bounded expense set.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "webtax4b.help-node",
@@ -769,9 +789,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No additional-information section exists in the native T2 workpaper.",
-              "next_step": "Specify which questions matter before modelling them.",
-              "scope": "out_of_scope",
-              "scope_reason": "The additional-information section carries CRA questionnaire answers. Its rules are not modelled and it does not affect the declared arithmetic."
+              "next_step": "Add the additional-information questionnaire fields with declared arithmetic impact.",
+              "scope": "in_scope",
+              "scope_reason": "The additional-information section carries CRA questionnaire answers. Its rules are not modelled and it does not affect the declared arithmetic.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "webtax4b.nav-gifi-balance-sheet",
@@ -807,9 +828,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No summary income statement view is generated from the native T2 workpaper.",
-              "next_step": "Confirm whether a generated statement summary is a firm requirement.",
-              "scope": "out_of_scope",
-              "scope_reason": "A generated GIFI income statement needs full statement-level GIFI detail. NXT types selected GIFI totals only."
+              "next_step": "Generate a GIFI summary income statement from typed GIFI totals.",
+              "scope": "in_scope",
+              "scope_reason": "A generated GIFI income statement needs full statement-level GIFI detail. NXT types selected GIFI totals only.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "webtax4b.nav-non-farming",
@@ -865,9 +887,10 @@
               "observation": "observed",
               "native_route": null,
               "native_scope": "No amended-return flag and no amendment workflow for a previously filed return.",
-              "next_step": "Specify amendment handling before any firm relies on it.",
-              "scope": "out_of_scope",
-              "scope_reason": "Amendments apply to filed returns. NXT does not file, so there is no filed return to amend; the capability follows the filing gate."
+              "next_step": "Add an amendment record that supersedes a filed return; filing stays external.",
+              "scope": "in_scope",
+              "scope_reason": "Amendments apply to filed returns. NXT does not file, so there is no filed return to amend; the capability follows the filing gate.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "webtax4b.nav-certification",
@@ -902,9 +925,10 @@
               "observation": "documented",
               "native_route": null,
               "native_scope": "No AT1 schedules are produced.",
-              "next_step": "Blocked behind Alberta form specifications.",
-              "scope": "out_of_scope",
-              "scope_reason": "AT1 schedules require published Alberta forms and a transmission path; both are external."
+              "next_step": "Add AT1 schedules from published Alberta forms when available.",
+              "scope": "in_scope",
+              "scope_reason": "AT1 schedules require published Alberta forms and a transmission path; both are external.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "webtax4b.co17-schedules",
@@ -913,9 +937,10 @@
               "observation": "documented",
               "native_route": null,
               "native_scope": "No CO-17 schedules are produced.",
-              "next_step": "Blocked behind Quebec form specifications.",
-              "scope": "out_of_scope",
-              "scope_reason": "CO-17 schedules require published Quebec forms and a transmission path; both are external."
+              "next_step": "Add CO-17 schedules from published Quebec forms when available.",
+              "scope": "in_scope",
+              "scope_reason": "CO-17 schedules require published Quebec forms and a transmission path; both are external.",
+              "in_scope_since": "2026-11-22"
             }
           ]
         }

@@ -9,8 +9,7 @@
     "routed": 142,
     "linked": 24,
     "external": 13,
-    "scope": 41,
-    "open": 0,
+    "open": 41,
     "chrome": 22,
     "percent": 65
   },
@@ -21,7 +20,7 @@
       "routed": 102,
       "linked": 24,
       "external": 1,
-      "open": 0
+      "open": 16
     },
     {
       "product": "DT Max",
@@ -29,7 +28,7 @@
       "routed": 18,
       "linked": 0,
       "external": 5,
-      "open": 0
+      "open": 14
     },
     {
       "product": "WebTax4B",
@@ -37,10 +36,52 @@
       "routed": 22,
       "linked": 0,
       "external": 7,
-      "open": 0
+      "open": 11
     }
   ],
-  "open_ids": [],
+  "open_ids": [
+    "all-apps--accounting--receipts",
+    "all-apps--sales-get-paid--payment-links",
+    "all-apps--sales-get-paid--quickbooks-payouts",
+    "create--other--batch-transactions",
+    "create--suppliers--print-cheques",
+    "dtmax.billing-setup",
+    "dtmax.client-renumbering",
+    "dtmax.client-restore",
+    "dtmax.ct23",
+    "dtmax.database-in-use",
+    "dtmax.database-maintenance",
+    "dtmax.efile-errors",
+    "dtmax.efile-logs",
+    "dtmax.efile-reports",
+    "dtmax.filecabinet",
+    "dtmax.forms-manager",
+    "dtmax.print-labels",
+    "dtmax.text-macros",
+    "dtmax.ui-options",
+    "observed-1118--assignments",
+    "observed-1118--schedule",
+    "reports--custom-reports",
+    "reports--financial-planning--cash-flow-planner",
+    "reports--financial-planning--forecasts",
+    "reports--performance-centre",
+    "reports--standard-reports--custom-report-builder--product-item-profitability-by-customer",
+    "settings--lists--custom-fields",
+    "settings--tools--backup-company",
+    "settings--your-company--custom-form-styles",
+    "settings--your-company--payroll-settings",
+    "webtax4b.at1-schedules",
+    "webtax4b.co17-schedules",
+    "webtax4b.ct23",
+    "webtax4b.home-expense",
+    "webtax4b.nav-additional-information",
+    "webtax4b.nav-amended",
+    "webtax4b.nav-gifi-summary",
+    "webtax4b.noa",
+    "webtax4b.other-expense",
+    "webtax4b.t1135",
+    "webtax4b.vehicle-expense"
+  ],
   "external_ids": [
     "dtmax.efile-defaults",
     "dtmax.efile-quebec",

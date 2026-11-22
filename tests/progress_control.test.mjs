@@ -8,7 +8,7 @@ const data = register();
 const baseline = JSON.parse(read('../docs/progress-baseline.json'));
 
 test('every observed capability is dispositioned exactly once', () => {
-  const dispositions = new Set(['routed', 'linked', 'external', 'scope', 'open', 'chrome']);
+  const dispositions = new Set(['routed', 'linked', 'external', 'open', 'chrome']);
   for (const row of data.rows) {
     assert.ok(dispositions.has(row.disposition), `${row.id} has an unknown disposition`);
     assert.ok(row.id && row.label, `${row.id} needs an id and a label`);
@@ -19,20 +19,22 @@ test('every observed capability is dispositioned exactly once', () => {
   assert.equal(data.rows.length, data.total.capabilities + data.total.chrome, 'capabilities plus chrome account for every row');
 });
 
-test('every capability is dispositioned with nothing left open', () => {
+test('every capability is dispositioned and every open gap carries a next step', () => {
+  // 2026-11-22: the owner brought the previously recorded out-of-scope capabilities
+  // back into scope, so open work is expected and each row must say what building it means.
   const open = data.rows.filter(row => row.disposition === 'open');
-  assert.deepEqual(open.map(row => row.id), [], 'no capability may remain open');
-  const scoped = data.rows.filter(row => row.disposition === 'scope');
-  const silent = scoped.filter(row => !String(row.scope_reason || '').trim());
-  assert.deepEqual(silent.map(row => row.id), [], 'a recorded scope decision needs its reason');
+  assert.ok(open.length > 0, 'the register tracks open work');
+  const silent = open.filter(row => !String(row.next_step || '').trim());
+  assert.deepEqual(silent.map(row => row.id), [], 'an open gap needs a next step');
   const external = data.rows.filter(row => row.disposition === 'external');
   assert.ok(external.length > 0, 'authority-gated gaps stay tracked as external');
+  assert.equal(data.rows.filter(row => row.disposition === 'scope').length, 0, 'no row may be written off as out of scope');
 });
 
 test('progress never regresses and nothing disappears', () => {
   assert.equal(data.total.capabilities, baseline.total.capabilities, 'the observed capability set changed; regenerate the baseline deliberately');
   assert.ok(data.total.routed >= baseline.total.routed, `routed dropped from ${baseline.total.routed} to ${data.total.routed}`);
-  assert.ok(data.total.open <= baseline.total.open, `open work grew from ${baseline.total.open} to ${data.total.open}`);
+  assert.ok(data.total.open <= baseline.total.open, `open work grew from ${baseline.total.open} to ${data.total.open} without a deliberate baseline update`);
   assert.equal(data.total.linked, baseline.total.linked, 'linked rows changed');
 
   const openNow = data.rows.filter(row => row.disposition === 'open').map(row => row.id).sort();
@@ -62,9 +64,11 @@ test('the register names each open gap once and points at a screen or a task', (
   const linked = data.rows.filter(row => row.disposition === 'linked');
   assert.ok(linked.length > 0 && linked.every(row => row.next_step || true), 'linked rows exist');
   assert.match(markdown(data), /## QuickBooks/);
-  assert.doesNotMatch(markdown(data), /### Open to build/, 'a closed register has no open section');
-  assert.match(markdown(data), /### Out of scope, recorded decision/);
-  assert.match(markdown(data), /### Out of scope, recorded decision/);
+  assert.match(markdown(data), /### Open to build/, 'open work is listed');
+  assert.doesNotMatch(markdown(data), /### Out of scope, recorded decision/, 'nothing is written off as out of scope');
+  const openRows = data.rows.filter(row => row.disposition === 'open');
+  assert.ok(openRows.length >= 41, 'the re-scoped capabilities are open work');
+  assert.ok(openRows.every(row => row.next_step), 'each open gap states its next step');
 });
 
 test('every lane the Lists screen renders is documented', () => {

@@ -273,10 +273,11 @@
                   "observed_path": "Create > Suppliers > Print cheques",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "next_step": "Render recorded bill payments as printable cheque PDFs with a configurable layout; no MICR or signing claim.",
                   "kind": "capability",
-                  "scope": "out_of_scope",
-                  "scope_reason": "Cheque printing needs bank cheque stock, MICR layout and a signing process. NXT records the payment journal instead of printing the instrument."
+                  "scope": "in_scope",
+                  "scope_reason": "Cheque printing needs bank cheque stock, MICR layout and a signing process. NXT records the payment journal instead of printing the instrument.",
+                  "in_scope_since": "2026-11-22"
                 },
                 {
                   "id": "create--suppliers--add-supplier",
@@ -429,10 +430,11 @@
                   "observed_path": "Create > Other > Batch transactions",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "next_step": "Stage several balanced journals and post them atomically behind one preview.",
                   "kind": "capability",
-                  "scope": "out_of_scope",
-                  "scope_reason": "NXT books one transaction at a time with a preview and a balanced journal; a batch screen would remove that check rather than add capability."
+                  "scope": "in_scope",
+                  "scope_reason": "NXT books one transaction at a time with a preview and a balanced journal; a batch screen would remove that check rather than add capability.",
+                  "in_scope_since": "2026-11-22"
                 },
                 {
                   "id": "create--other--pay-down-credit-card",
@@ -593,10 +595,11 @@
                       "observed_path": "Reports > Standard reports > Custom report builder > Product/Item Profitability by Customer",
                       "native_route": null,
                       "native_scope": "No complete working native equivalent has been established for this source capability.",
-                      "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                      "next_step": "Add an item-level profitability report over invoice lines grouped by customer and item description.",
                       "kind": "capability",
-                      "scope": "out_of_scope",
-                      "scope_reason": "Line-item profitability needs an item-level reporting engine over invoice lines. NXT reports at account level today; this is a later reporting project."
+                      "scope": "in_scope",
+                      "scope_reason": "Line-item profitability needs an item-level reporting engine over invoice lines. NXT reports at account level today; this is a later reporting project.",
+                      "in_scope_since": "2026-11-22"
                     },
                     {
                       "id": "reports--standard-reports--custom-report-builder--invoice-approval-status",
@@ -619,10 +622,11 @@
               "observed_path": "Reports > Custom reports",
               "native_route": null,
               "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "next_step": "Add a saved-report builder over the existing report endpoints with field, filter and CSV selection.",
               "kind": "capability",
-              "scope": "out_of_scope",
-              "scope_reason": "NXT ships a fixed report set. A report builder is a separate authoring project, not a missing screen."
+              "scope": "in_scope",
+              "scope_reason": "NXT ships a fixed report set. A report builder is a separate authoring project, not a missing screen.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "reports--management-reports",
@@ -678,10 +682,11 @@
               "observed_path": "Reports > Performance centre",
               "native_route": null,
               "native_scope": "No complete working native equivalent has been established for this source capability.",
-              "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+              "next_step": "Add a firm performance dashboard over NXT metrics; do not import third-party benchmark data.",
               "kind": "capability",
-              "scope": "out_of_scope",
-              "scope_reason": "Benchmarking compares a firm against other QuickBooks users. NXT has no benchmark dataset and will not invent one."
+              "scope": "in_scope",
+              "scope_reason": "Benchmarking compares a firm against other QuickBooks users. NXT has no benchmark dataset and will not invent one.",
+              "in_scope_since": "2026-11-22"
             },
             {
               "id": "reports--financial-planning",
@@ -709,10 +714,11 @@
                   "observed_path": "Reports > Financial planning > Cash flow planner",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "next_step": "Add a projection report from user-entered assumptions, labelled as a plan rather than actuals.",
                   "kind": "capability",
-                  "scope": "out_of_scope",
-                  "scope_reason": "A cash-flow planner projects future balances from assumptions. NXT reports actuals; forecasting is deliberately not modelled."
+                  "scope": "in_scope",
+                  "scope_reason": "A cash-flow planner projects future balances from assumptions. NXT reports actuals; forecasting is deliberately not modelled.",
+                  "in_scope_since": "2026-11-22"
                 },
                 {
                   "id": "reports--financial-planning--budgets",
@@ -731,10 +737,11 @@
                   "observed_path": "Reports > Financial planning > Forecasts",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "next_step": "Add a forecast from AR/AP due dates and recurring templates, clearly labelled as a projection.",
                   "kind": "capability",
-                  "scope": "out_of_scope",
-                  "scope_reason": "Forecasts are projections, not bookkeeping. Deliberately out of scope until a forecasting model is specified."
+                  "scope": "in_scope",
+                  "scope_reason": "Forecasts are projections, not bookkeeping. Deliberately out of scope until a forecasting model is specified.",
+                  "in_scope_since": "2026-11-22"
                 }
               ]
             }
@@ -852,10 +859,11 @@
                   "observed_path": "All apps > Accounting > Receipts",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "next_step": "Add a receipt inbox that attaches documents to an expense and requires human matching; no OCR claim.",
                   "kind": "capability",
-                  "scope": "out_of_scope",
-                  "scope_reason": "Receipt capture pairs OCR with expense matching. NXT stores attachments against known documents but does not run a capture queue."
+                  "scope": "in_scope",
+                  "scope_reason": "Receipt capture pairs OCR with expense matching. NXT stores attachments against known documents but does not run a capture queue.",
+                  "in_scope_since": "2026-11-22"
                 },
                 {
                   "id": "all-apps--accounting--reconcile",
@@ -1063,10 +1071,11 @@
                   "observed_path": "All apps > Sales & Get Paid > Payment links",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "next_step": "Add invoice payment-link records and a webhook contract; the merchant account stays a deployment dependency.",
                   "kind": "capability",
-                  "scope": "out_of_scope",
-                  "scope_reason": "Payment links require a payment service provider and merchant account. NXT records invoices; it does not collect card payments."
+                  "scope": "in_scope",
+                  "scope_reason": "Payment links require a payment service provider and merchant account. NXT records invoices; it does not collect card payments.",
+                  "in_scope_since": "2026-11-22"
                 },
                 {
                   "id": "all-apps--sales-get-paid--sales-orders",
@@ -1085,10 +1094,11 @@
                   "observed_path": "All apps > Sales & Get Paid > QuickBooks payouts",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "next_step": "Add a payout import contract for a configured provider; no feed is shown without one.",
                   "kind": "capability",
-                  "scope": "out_of_scope",
-                  "scope_reason": "Payouts are a QuickBooks Payments service artefact. NXT has no merchant processor and will not display a vendor payout feed."
+                  "scope": "in_scope",
+                  "scope_reason": "Payouts are a QuickBooks Payments service artefact. NXT has no merchant processor and will not display a vendor payout feed.",
+                  "in_scope_since": "2026-11-22"
                 },
                 {
                   "id": "all-apps--sales-get-paid--products-services",
@@ -1587,10 +1597,11 @@
                   "observed_path": "Settings > YOUR COMPANY > Custom form styles",
                   "native_route": null,
                   "native_scope": "Native invoices use an original NXT layout. A full visual form-style editor and source template import are not implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "next_step": "Add bounded invoice and estimate template settings used by the print view.",
                   "kind": "capability",
-                  "scope": "out_of_scope",
-                  "scope_reason": "Branded invoice and form templates need a template designer and print pipeline. NXT renders its own documents."
+                  "scope": "in_scope",
+                  "scope_reason": "Branded invoice and form templates need a template designer and print pipeline. NXT renders its own documents.",
+                  "in_scope_since": "2026-11-22"
                 },
                 {
                   "id": "settings--your-company--default-report-settings",
@@ -1619,10 +1630,11 @@
                   "observed_path": "Settings > YOUR COMPANY > Payroll settings",
                   "native_route": null,
                   "native_scope": "No native payroll processing or payroll settings equivalent is implemented.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "next_step": "Add a typed payroll settings object with pinned 2026 Alberta rates; rate changes ship as a ruleset release.",
                   "kind": "capability",
-                  "scope": "out_of_scope",
-                  "scope_reason": "NXT payroll deliberately has no configurable settings: 2026 Alberta rates are pinned in code so a setting cannot silently change a calculation."
+                  "scope": "in_scope",
+                  "scope_reason": "NXT payroll deliberately has no configurable settings: 2026 Alberta rates are pinned in code so a setting cannot silently change a calculation.",
+                  "in_scope_since": "2026-11-22"
                 },
                 {
                   "id": "settings--your-company--get-desktop-app",
@@ -1712,10 +1724,11 @@
                   "observed_path": "Settings > LISTS > Custom fields",
                   "native_route": null,
                   "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "next_step": "Add declared custom fields per entity type with validation and report columns; no user-defined schema migration.",
                   "kind": "capability",
-                  "scope": "out_of_scope",
-                  "scope_reason": "Custom fields require a schema migration path and per-field validation. NXT keeps declared fields; user-defined schema is not modelled."
+                  "scope": "in_scope",
+                  "scope_reason": "Custom fields require a schema migration path and per-field validation. NXT keeps declared fields; user-defined schema is not modelled.",
+                  "in_scope_since": "2026-11-22"
                 },
                 {
                   "id": "settings--lists--rules",
@@ -1891,10 +1904,11 @@
                   "observed_path": "Settings > TOOLS > Backup company",
                   "native_route": null,
                   "native_scope": "Encrypted off-site NXT Store backups are configured. This is not a QuickBooks company backup, and independent key custody and recovery acceptance remain separate gates.",
-                  "next_step": "Specify this source workflow and its permitted inputs, implement the required native behavior, and compare paired synthetic cases before accepting it for operational use.",
+                  "next_step": "Expose the documented backup/restore runbook as an operator action with a verified artifact.",
                   "kind": "capability",
-                  "scope": "out_of_scope",
-                  "scope_reason": "Backup is a whole-store operation documented in docs/BACKUPS.md, not a per-company UI action. Exposing a browser backup button would misstate who owns recovery."
+                  "scope": "in_scope",
+                  "scope_reason": "Backup is a whole-store operation documented in docs/BACKUPS.md, not a per-company UI action. Exposing a browser backup button would misstate who owns recovery.",
+                  "in_scope_since": "2026-11-22"
                 },
                 {
                   "id": "settings--tools--share-screen",
@@ -2106,10 +2120,11 @@
           "observed_path": "Time > Schedule",
           "native_route": null,
           "native_scope": "No scheduling.",
-          "next_step": "Out of scope unless requested.",
+          "next_step": "Add shift scheduling on top of recorded time and leave, owned by Firm Operations.",
           "kind": "capability",
-          "scope": "out_of_scope",
-          "scope_reason": "Workforce scheduling assigns people to shifts. NXT records time and leave but does not plan shifts."
+          "scope": "in_scope",
+          "scope_reason": "Workforce scheduling assigns people to shifts. NXT records time and leave but does not plan shifts.",
+          "in_scope_since": "2026-11-22"
         },
         {
           "id": "observed-1118--time-off",
@@ -2138,10 +2153,11 @@
           "observed_path": "Time > Assignments",
           "native_route": null,
           "native_scope": "No assignment workflow.",
-          "next_step": "Out of scope unless requested.",
+          "next_step": "Add assignable firm projects and tasks with an audit trail.",
           "kind": "capability",
-          "scope": "out_of_scope",
-          "scope_reason": "Assignments assign work to people. Firm Operations owns projects and work items; the Ledger does not model assignment."
+          "scope": "in_scope",
+          "scope_reason": "Assignments assign work to people. Firm Operations owns projects and work items; the Ledger does not model assignment.",
+          "in_scope_since": "2026-11-22"
         },
         {
           "id": "observed-1118--time-projects",
