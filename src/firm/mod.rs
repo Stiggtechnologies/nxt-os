@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 use std::{collections::HashSet, sync::Arc};
 
 const STATE_KEY: &str = "firm:state:v1";
+const SHIFTS_KEY: &str = "firm:shifts:v1";
 const MAX_STATE_BYTES: usize = 8 * 1024 * 1024;
 pub type FResult<T> = Result<T, ApiError>;
 
@@ -44,6 +45,19 @@ fn date(value: &str) -> FResult<NaiveDate> {
     let d = NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| bad("invalid calendar date"))?;
     if !("1900-01-01"..="9998-12-31").contains(&value) { return Err(bad("date must be between 1900 and 9998")); }
     Ok(d)
+}
+
+fn clock(value: &str) -> FResult<()> {
+    let bytes = value.as_bytes();
+    if bytes.len() != 5 || bytes[2] != b':' {
+        return Err(bad("times must be HH:MM"));
+    }
+    let hour: u32 = value[..2].parse().map_err(|_| bad("times must be HH:MM"))?;
+    let minute: u32 = value[3..].parse().map_err(|_| bad("times must be HH:MM"))?;
+    if hour > 23 || minute > 59 {
+        return Err(bad("times must be HH:MM"));
+    }
+    Ok(())
 }
 
 fn optional_date(value: &Option<String>) -> FResult<()> {
@@ -121,6 +135,56 @@ fn builtin_templates() -> Vec<ProjectTemplate> {
 
 impl Firm {
     pub fn new(store: Store, ledger: Arc<Ledger>) -> Self { Self { store, ledger } }
+
+    // ---- shift roster ---------------------------------------------------------
+
+    pub async fn shifts(&self) -> FResult<Vec<Shift>> {
+        let mut shifts: Vec<Shift> = self.store.get_json(SHIFTS_KEY).await?.unwrap_or_default();
+        shifts.sort_by(|a, b| a.date.cmp(&b.date).then(a.start.cmp(&b.start)));
+        Ok(shifts)
+    }
+
+    /// Create or replace a roster shift. Shifts are planning records; they do not
+    /// touch time entries, payroll or the ledger.
+    pub async fn save_shift(&self, input: ShiftInput) -> FResult<Shift> {
+        text(&input.staff, "staff", 120, true)?;
+        date(&input.date)?;
+        clock(&input.start)?;
+        clock(&input.end)?;
+        if input.start >= input.end {
+            return Err(bad("a shift must end after it starts"));
+        }
+        text(&input.note, "note", 500, false)?;
+        let mut shifts = self.shifts().await?;
+        let shift_id = input.id.filter(|value| !value.is_empty()).unwrap_or_else(|| id("shift"));
+        if !shifts.iter().any(|shift| shift.id == shift_id) && shifts.len() >= 500 {
+            return Err(bad("the shift roster is limited to 500 shifts"));
+        }
+        shifts.retain(|shift| shift.id != shift_id);
+        let shift = Shift {
+            id: shift_id,
+            staff: input.staff.trim().to_string(),
+            date: input.date,
+            start: input.start,
+            end: input.end,
+            note: input.note.trim().to_string(),
+            created_at: now(),
+        };
+        shifts.push(shift.clone());
+        self.store.set_json(SHIFTS_KEY, &shifts).await?;
+        Ok(shift)
+    }
+
+    pub async fn delete_shift(&self, shift_id: &str) -> FResult<()> {
+        let mut shifts = self.shifts().await?;
+        let before = shifts.len();
+        shifts.retain(|shift| shift.id != shift_id);
+        if shifts.len() == before {
+            return Err(missing("shift"));
+        }
+        self.store.set_json(SHIFTS_KEY, &shifts).await?;
+        Ok(())
+    }
 
     pub async fn snapshot(&self) -> FResult<FirmState> {
         let mut state: FirmState = self.store.get_json(STATE_KEY).await?.unwrap_or_default();

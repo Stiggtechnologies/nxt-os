@@ -42,10 +42,19 @@ pub fn router(firm: Arc<Firm>) -> Router {
         .route("/api/firm/integrations", get(integrations))
         .route("/api/firm/audit", get(audit))
         .route("/api/firm/clients/{client}/work", get(client_work))
+        .route("/api/firm/shifts", get(shifts).post(save_shift))
+        .route("/api/firm/shifts/{id}", axum::routing::delete(delete_shift))
         .layer(middleware::from_fn_with_state(firm.clone(), client_scope))
         .layer(middleware::from_fn(require_admin))
         .with_state(firm.clone())
         .merge(Router::new().route("/api/cron/firm-tick", get(cron_tick)).with_state(firm))
+}
+
+async fn shifts(State(f): S) -> R { ok(f.shifts().await?) }
+async fn save_shift(State(f): S, Json(b): Json<ShiftInput>) -> R { ok(f.save_shift(b).await?) }
+async fn delete_shift(State(f): S, Path(shift_id): Path<String>) -> R {
+    f.delete_shift(&shift_id).await?;
+    ok(json!({ "deleted": shift_id }))
 }
 
 #[derive(serde::Deserialize)]

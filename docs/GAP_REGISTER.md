@@ -10,9 +10,9 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | --- | ---: |
 | Capabilities observed | 220 |
 | Routed | 151 |
-| Linked | 24 |
+| Linked | 25 |
 | External | 13 |
-| **Open** | **32** |
+| **Open** | **31** |
 | Routed coverage | 69% |
 | Source chrome excluded | 22 |
 
@@ -20,13 +20,13 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 143 | 111 | 24 | 1 | 7 | 78% |
+| QuickBooks | 143 | 111 | 25 | 1 | 6 | 78% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (7)
+### Open to build (6)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
@@ -35,7 +35,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Sales & Get Paid | QuickBooks payouts | Add a payout import contract for a configured provider; no feed is shown without one. | Payouts are a QuickBooks Payments service artefact. NXT has no merchant processor and will not display a vendor payout feed. |
 | LISTS | Custom fields | Add declared custom fields per entity type with validation and report columns; no user-defined schema migration. | Custom fields require a schema migration path and per-field validation. NXT keeps declared fields; user-defined schema is not modelled. |
 | TOOLS | Backup company | Expose the documented backup/restore runbook as an operator action with a verified artifact. | Backup is a whole-store operation documented in docs/BACKUPS.md, not a per-company UI action. Exposing a browser backup button would misstate who owns recovery. |
-| Company navigation (observed 2026-11-18) | Schedule | Add shift scheduling on top of recorded time and leave, owned by Firm Operations. | Workforce scheduling assigns people to shifts. NXT records time and leave but does not plan shifts. |
 | Company navigation (observed 2026-11-18) | Assignments | Add assignable firm projects and tasks with an audit trail. | Assignments assign work to people. Firm Operations owns projects and work items; the Ledger does not model assignment. |
 
 ### Blocked outside this codebase (1)

@@ -2119,12 +2119,19 @@
           "observation": "observed",
           "observed_path": "Time > Schedule",
           "native_route": null,
-          "native_scope": "No scheduling.",
-          "next_step": "Add shift scheduling on top of recorded time and leave, owned by Firm Operations.",
+          "native_scope": "Shift roster lives in Firm Operations on the Staff access screen; shifts are planning records only.",
+          "next_step": "Firm Operations -> Staff access -> Shift roster.",
           "kind": "capability",
           "scope": "in_scope",
           "scope_reason": "Workforce scheduling assigns people to shifts. NXT records time and leave but does not plan shifts.",
-          "in_scope_since": "2026-11-22"
+          "in_scope_since": "2026-11-22",
+          "related": [
+            {
+              "app": "firm",
+              "view": "staff",
+              "label": "Firm shift roster"
+            }
+          ]
         },
         {
           "id": "observed-1118--time-off",

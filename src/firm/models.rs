@@ -42,6 +42,33 @@ pub struct InstantiateInput {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Shift {
+    pub id: String,
+    /// Roster label for the person on the shift.
+    pub staff: String,
+    pub date: String,
+    /// HH:MM, 24-hour local time.
+    pub start: String,
+    pub end: String,
+    #[serde(default)]
+    pub note: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShiftInput {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub staff: String,
+    pub date: String,
+    pub start: String,
+    pub end: String,
+    #[serde(default)]
+    pub note: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
     pub title: String,
