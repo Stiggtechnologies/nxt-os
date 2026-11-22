@@ -10,7 +10,7 @@ use axum::{
     http::{HeaderValue, StatusCode, Uri, header},
     middleware,
     response::{IntoResponse, Response},
-    routing::{any, get, post},
+    routing::{any, delete, get, post},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -220,6 +220,8 @@ fn routes(st: Arc<Ledger>) -> Router {
         .route("/api/ledger/feed/import", post(import_feed))
         .route("/api/ledger/feed/{id}/categorize", post(categorize))
         .route("/api/ledger/feed/{id}/exclude", post(exclude))
+        .route("/api/ledger/rules", get(rules).post(save_rule))
+        .route("/api/ledger/rules/{keyword}", delete(delete_rule))
         .route("/api/ledger/reconcile", get(reconciliations).post(reconcile))
         .route("/api/ledger/reports/{name}", get(report))
         .route("/api/ledger/audit", get(audit))
@@ -359,6 +361,15 @@ async fn categorize(State(l): S, Path(id): Path<String>, Json(b): Json<Categoriz
 }
 async fn exclude(State(l): S, Path(id): Path<String>) -> R {
     ok(l.exclude_feed(&id).await)
+}
+async fn rules(State(l): S) -> R {
+    ok(l.rules().await)
+}
+async fn save_rule(State(l): S, Json(b): Json<BankRuleInput>) -> R {
+    ok(l.save_rule(b).await)
+}
+async fn delete_rule(State(l): S, Path(keyword): Path<String>) -> R {
+    ok(l.delete_rule(&keyword).await.map(|_| json!({ "deleted": keyword })))
 }
 async fn reconciliations(State(l): S) -> R {
     ok(l.reconciliations().await)

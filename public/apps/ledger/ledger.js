@@ -602,10 +602,24 @@ async function moneyCards() {
 }
 
 views.banking = async () => {
-  const [feed, cards] = await Promise.all([api("/api/ledger/feed"), moneyCards()]);
+  const [feed, cards, rules] = await Promise.all([api("/api/ledger/feed"), moneyCards(), api("/api/ledger/rules")]);
   let tab = "pending";
   const render = () => {
     const list = feed.filter((f) => f.item.status === tab);
+    const rulePanel = `<div class="card" style="margin-top:14px"><h3 style="margin:0 0 4px">Bank rules</h3>
+      <p class="muted" style="margin:0 0 10px">A rule pre-fills the category when a description contains its keyword. The longest matching keyword wins.${rules.length ? "" : " No rules yet."}</p>
+      ${rules.length ? table([
+        { h: "Keyword", f: (r) => `<b>${esc(r.keyword)}</b>` },
+        { h: "Category", f: (r) => esc(acct(r.account_id)?.name || r.account_id) },
+        { h: "Tax", f: (r) => esc(r.tax_code) },
+        { h: "", f: (r) => `<button class="btn sm ghost" data-del="${esc(r.keyword)}">Delete</button>` },
+      ], rules) : ""}
+      <div class="row" style="margin-top:10px;flex-wrap:nowrap">
+        <input id="ruleKw" placeholder="Keyword, e.g. adobe" maxlength="80" style="max-width:220px">
+        <select id="ruleAcct" style="max-width:220px">${acctOptions((a) => !isMoney(a) && !["receivable", "payable"].includes(a.role), "acc_6300")}</select>
+        <select id="ruleTax" style="max-width:170px">${taxOptions(S.company.default_tax_code)}</select>
+        <button class="btn primary" id="ruleAdd">Add rule</button>
+      </div></div>`;
     page("Bank feed", "Import statements, review each transaction, and NXT learns your categories.",
       `<button class="btn" id="tax">GST/HST payment</button><button class="btn" id="xfer">Transfer</button><button class="btn" id="dep">Deposit</button><button class="btn" id="exp">Expense</button><button class="btn primary" id="imp">Import CSV</button>`,
       `${cards}<div class="card"><div class="tabs">${["pending", "added", "excluded"].map((t) => `<button data-t="${t}" aria-selected="${t === tab}">${t === "pending" ? "For review" : t[0].toUpperCase() + t.slice(1)} (${feed.filter((f) => f.item.status === t).length})</button>`).join("")}</div>
@@ -616,7 +630,7 @@ views.banking = async () => {
         { h: "Tax", f: (f) => `<select data-tax>${taxOptions(f.suggestion?.tax_code || (f.item.amount < 0 ? S.company.default_tax_code : "NONE"))}</select>` },
         { h: "", f: (f) => `<div class="row" style="flex-wrap:nowrap"><label class="check" title="Apply to future matches"><input type="checkbox" data-rule${f.suggestion ? "" : " checked"}> Rule</label><button class="btn sm primary" data-add="${f.item.id}">Add</button><button class="btn sm ghost" data-ex="${f.item.id}">Exclude</button></div>` },
       ], list, { empty: feed.length ? "All caught up." : `No transactions yet. <a href="#" id="imp2">Import a bank CSV</a> to get started.` })
-      : table([{ h: "Date", f: (f) => fmtDate(f.item.date) }, { h: "Description", f: (f) => esc(f.item.description) }, { h: "Amount", num: 1, f: (f) => money(f.item.amount) }, { h: "Status", f: (f) => pill(f.item.status) }], list)}</div>`);
+      : table([{ h: "Date", f: (f) => fmtDate(f.item.date) }, { h: "Description", f: (f) => esc(f.item.description) }, { h: "Amount", num: 1, f: (f) => money(f.item.amount) }, { h: "Status", f: (f) => pill(f.item.status) }], list)}</div>${rulePanel}`);
     $$(".tabs button", main).forEach((b) => (b.onclick = () => { tab = b.dataset.t; render(); }));
     $("#imp").onclick = $("#imp2") ? (e) => { e?.preventDefault?.(); importModal(); } : importModal;
     if ($("#imp2")) $("#imp2").onclick = (e) => { e.preventDefault(); importModal(); };
@@ -629,6 +643,14 @@ views.banking = async () => {
       try { await api(`/api/ledger/feed/${b.dataset.add}/categorize`, { body: { account_id: $("[data-cat]", tr).value, tax_code: $("[data-tax]", tr).value, create_rule: $("[data-rule]", tr).checked } }); toast("Added to your books"); route(); refreshBadge(); } catch (e) { err(e); }
     }));
     $$("[data-ex]", main).forEach((b) => (b.onclick = async () => { try { await api(`/api/ledger/feed/${b.dataset.ex}/exclude`, { body: {} }); route(); refreshBadge(); } catch (e) { err(e); } }));
+    $("#ruleAdd").onclick = async () => {
+      const keyword = $("#ruleKw").value.trim();
+      if (!keyword) return toast("Enter a keyword to match", true);
+      try { await api("/api/ledger/rules", { body: { keyword, account_id: $("#ruleAcct").value, tax_code: $("#ruleTax").value } }); toast("Rule saved"); route(); } catch (e) { err(e); }
+    };
+    $$("[data-del]", main).forEach((b) => (b.onclick = async () => {
+      try { await api(`/api/ledger/rules/${encodeURIComponent(b.dataset.del)}`, { method: "DELETE" }); toast("Rule deleted"); route(); } catch (e) { err(e); }
+    }));
   };
   render();
 };

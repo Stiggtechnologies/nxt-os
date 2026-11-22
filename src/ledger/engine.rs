@@ -205,6 +205,17 @@ pub struct CategorizeInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BankRuleInput {
+    /// Keyword matched against the lowercased feed description.
+    pub keyword: String,
+    pub account_id: String,
+    #[serde(default)]
+    pub tax_code: Option<String>,
+    #[serde(default)]
+    pub contact_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ReconcileInput {
     pub account_id: String,
     pub statement_date: String,
@@ -1055,7 +1066,10 @@ impl Ledger {
             .into_iter()
             .map(|i| {
                 let desc = i.description.to_lowercase();
-                let rule = rules.iter().find(|r| desc.contains(&r.keyword));
+                let rule = rules
+                    .iter()
+                    .filter(|r| desc.contains(&r.keyword))
+                    .max_by_key(|r| r.keyword.len());
                 serde_json::json!({ "item": i, "suggestion": rule })
             })
             .collect())
@@ -1063,6 +1077,57 @@ impl Ledger {
 
     pub async fn rules(&self) -> LResult<Vec<BankRule>> {
         Ok(self.store.get_json(&self.key("rules")).await?.unwrap_or_default())
+    }
+
+    /// Create or replace a bank rule. Keywords match case-insensitively against the
+    /// feed description; the longest matching keyword wins.
+    pub async fn save_rule(&self, input: BankRuleInput) -> LResult<BankRule> {
+        let keyword = input.keyword.trim().to_lowercase();
+        if keyword.is_empty() {
+            return Err(LedgerError::BadRequest("Enter a keyword to match.".into()));
+        }
+        if keyword.chars().count() > 80 {
+            return Err(LedgerError::BadRequest("Keywords are limited to 80 characters.".into()));
+        }
+        if keyword.chars().any(char::is_control) {
+            return Err(LedgerError::BadRequest("Keywords cannot contain control characters.".into()));
+        }
+        let accounts = self.accounts_read().await?;
+        let account = accounts
+            .iter()
+            .find(|a| a.id == input.account_id)
+            .ok_or_else(|| LedgerError::BadRequest("Choose an existing account for the rule.".into()))?;
+        if account.archived {
+            return Err(LedgerError::BadRequest("That account is archived.".into()));
+        }
+        if matches!(account.role, AccountRole::Bank | AccountRole::CreditCard | AccountRole::Receivable | AccountRole::Payable) {
+            return Err(LedgerError::BadRequest("A bank rule must categorize to a non-bank income, expense or other account.".into()));
+        }
+        let tax_code = input.tax_code.unwrap_or_else(|| "NONE".into());
+        if !tax_codes().iter().any(|code| code.code == tax_code) {
+            return Err(LedgerError::BadRequest("Choose a known tax code.".into()));
+        }
+        let rule = BankRule { keyword: keyword.clone(), account_id: input.account_id, tax_code, contact_id: input.contact_id };
+        let mut rules = self.rules().await?;
+        rules.retain(|r| r.keyword != keyword);
+        rules.push(rule.clone());
+        rules.sort_by(|a, b| b.keyword.len().cmp(&a.keyword.len()).then(a.keyword.cmp(&b.keyword)));
+        self.store.set_json(&self.key("rules"), &rules).await?;
+        self.audit("bank_rule.saved", format!("{keyword} -> {}", rule.account_id)).await?;
+        Ok(rule)
+    }
+
+    pub async fn delete_rule(&self, keyword: &str) -> LResult<()> {
+        let keyword = keyword.trim().to_lowercase();
+        let mut rules = self.rules().await?;
+        let before = rules.len();
+        rules.retain(|r| r.keyword != keyword);
+        if rules.len() == before {
+            return Err(LedgerError::NotFound(format!("no bank rule matches '{keyword}'")));
+        }
+        self.store.set_json(&self.key("rules"), &rules).await?;
+        self.audit("bank_rule.deleted", keyword).await?;
+        Ok(())
     }
 
     pub async fn categorize(&self, id: &str, input: CategorizeInput) -> LResult<FeedItem> {
