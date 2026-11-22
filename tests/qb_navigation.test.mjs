@@ -58,7 +58,7 @@ test('public menu catalog contains generic navigation with unique IDs and no sou
 test('every native and related mapping resolves to an existing bounded route', () => {
   const viewNames = new Set([...ledgerSource.matchAll(/views\.([a-z]+)\s*=/g)].map(match => match[1]));
   viewNames.add('native-create');
-  const reports = new Set(['profit-loss', 'balance-sheet', 'trial-balance', 'ar-aging', 'ap-aging', 'sales-tax', 'general-ledger', 'time', 'cash-flow', 'payroll-remittance', 'profit-loss-by-month', 'profit-loss-comparison', 'customer-balances', 'vendor-balances', 'forecast', 'item-profitability', 'profit-loss-by-class', 'budget-vs-actual']);
+  const reports = new Set(['profit-loss', 'balance-sheet', 'trial-balance', 'ar-aging', 'ap-aging', 'sales-tax', 'general-ledger', 'time', 'cash-flow', 'payroll-remittance', 'profit-loss-by-month', 'profit-loss-comparison', 'customer-balances', 'vendor-balances', 'forecast', 'item-profitability', 'profit-loss-by-class', 'budget-vs-actual', 'cash-plan']);
   const forms = new Set(['expense', 'deposit', 'transfer', 'journal', 'customer', 'supplier']);
   for (const entry of flatten(catalog.groups)) {
     if (entry.native_route) assert.ok(entry.native_scope && entry.observation === 'observed', entry.id);

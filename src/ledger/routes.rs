@@ -228,6 +228,7 @@ fn routes(st: Arc<Ledger>) -> Router {
         .route("/api/ledger/credit-memos", get(credit_memos).post(create_credit_memo))
         .route("/api/ledger/credit-memos/{id}/apply", post(apply_credit))
         .route("/api/ledger/sales-receipts", post(sales_receipt))
+        .route("/api/ledger/plan", get(cash_plan).put(save_cash_plan))
         .route("/api/ledger/classes", get(classes).post(save_class))
         .route("/api/ledger/classes/{id}", delete(delete_class))
         .route("/api/ledger/budgets", get(budgets).post(set_budget))
@@ -402,6 +403,12 @@ async fn create_credit_memo(State(l): S, Json(b): Json<DocInput>) -> R {
 async fn apply_credit(State(l): S, Path(id): Path<String>, Json(b): Json<ApplyCreditInput>) -> R {
     ok(l.apply_credit(&id, b).await)
 }
+async fn cash_plan(State(l): S) -> R {
+    ok(l.cash_plan().await)
+}
+async fn save_cash_plan(State(l): S, Json(b): Json<CashPlan>) -> R {
+    ok(l.save_cash_plan(b).await)
+}
 async fn sales_receipt(State(l): S, Json(b): Json<SalesReceiptInput>) -> R {
     ok(l.create_sales_receipt(b).await)
 }
@@ -447,6 +454,7 @@ pub async fn run_report(l: &Ledger, name: &str, q: &Range) -> LResult<Value> {
         "budget-vs-actual" => l.budget_vs_actual(&q.from(), &q.to()).await,
         "profit-loss-by-class" => l.profit_loss_by_class(&q.from(), &q.to()).await,
         "item-profitability" => l.item_profitability(&q.from(), &q.to()).await,
+        "cash-plan" => l.cash_plan_projection(&q.from(), &q.to()).await,
         "profit-loss-by-month" => l.profit_loss_by_month(&q.from(), &q.to()).await,
         "profit-loss-comparison" => l.profit_loss_comparison(&q.from(), &q.to()).await,
         "customer-balances" => l.contact_balances(DocKind::Invoice, &q.to()).await,

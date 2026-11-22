@@ -307,6 +307,21 @@ impl Default for Company {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CashPlan {
+    /// Planned recurring monthly receipts and payments, in cents.
+    pub monthly_in_cents: i64,
+    pub monthly_out_cents: i64,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+impl Default for CashPlan {
+    fn default() -> Self {
+        Self { monthly_in_cents: 0, monthly_out_cents: 0, updated_at: String::new() }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Class {
     pub id: String,
     pub name: String,

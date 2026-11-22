@@ -1341,6 +1341,26 @@ impl Ledger {
         Ok(serde_json::json!({ "doc": doc, "payment": payment }))
     }
 
+    // ---- cash plan ------------------------------------------------------------
+
+    pub async fn cash_plan(&self) -> LResult<CashPlan> {
+        Ok(self.store.get_json(&self.key("plan")).await?.unwrap_or_default())
+    }
+
+    pub async fn save_cash_plan(&self, input: CashPlan) -> LResult<CashPlan> {
+        if input.monthly_in_cents < 0 || input.monthly_out_cents < 0 {
+            return bad("planned monthly amounts cannot be negative");
+        }
+        let plan = CashPlan {
+            monthly_in_cents: input.monthly_in_cents,
+            monthly_out_cents: input.monthly_out_cents,
+            updated_at: now(),
+        };
+        self.store.set_json(&self.key("plan"), &plan).await?;
+        self.audit("cash_plan.saved", format!("in {} out {}", plan.monthly_in_cents, plan.monthly_out_cents)).await?;
+        Ok(plan)
+    }
+
     // ---- classes --------------------------------------------------------------
 
     pub async fn classes(&self) -> LResult<Vec<Class>> {

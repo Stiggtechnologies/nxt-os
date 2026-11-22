@@ -1079,6 +1079,22 @@ function creditMemoModal(kind) {
   });
 }
 
+function cashPlanModal() {
+  return modal("Cash plan assumptions", (el, close) => {
+    api("/api/ledger/plan").then((plan) => {
+      el.innerHTML = `<p class="muted" style="margin-top:0">The plan carries today's bank balance forward by these monthly amounts. It ignores recorded invoices and bills; use the Cash forecast for those.</p>
+        <form class="form"><label class="f">Planned monthly receipts<input name="monthly_in" type="number" min="0" step="0.01" value="${((plan.monthly_in_cents || 0) / 100).toFixed(2)}"></label>
+          <label class="f">Planned monthly payments<input name="monthly_out" type="number" min="0" step="0.01" value="${((plan.monthly_out_cents || 0) / 100).toFixed(2)}"></label></form>
+        <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Save plan</button></div>`;
+      el.querySelector("[data-x]").onclick = () => close();
+      el.querySelector("[data-ok]").onclick = async () => {
+        const f = Object.fromEntries(new FormData(el.querySelector("form")));
+        try { await api("/api/ledger/plan", { method: "PUT", body: { monthly_in_cents: toCents(f.monthly_in), monthly_out_cents: toCents(f.monthly_out) } }); toast("Plan saved"); close(true); route(); } catch (e) { err(e); }
+      };
+    }).catch(err);
+  });
+}
+
 function salesReceiptModal() {
   return modal("Sales receipt", (el, close) => {
     const customers = (S.contacts || []).filter((c) => c.kind === "customer" && !c.archived);
@@ -1372,6 +1388,7 @@ const REPORTS = {
   "budget-vs-actual": ["Budget vs actual", "Monthly budgets against the committed journal.", "range"],
   "profit-loss-by-class": ["Profit and loss by class", "Income and expense grouped by class or department.", "range"],
   "item-profitability": ["Revenue by customer and item", "Invoice lines grouped by customer and description, net of credit memos.", "range"],
+  "cash-plan": ["Cash plan", "Today's cash carried forward by planned monthly receipts and payments.", "range"],
   "profit-loss-by-month": ["Profit and loss by month", "Income, costs and net income, one column per month.", "range"],
   "profit-loss-comparison": ["Profit and loss comparison", "This period against the same period last year.", "range"],
   "customer-balances": ["Customer balance summary", "Open invoice balance per customer.", "asof"],
@@ -1418,6 +1435,7 @@ views.reports = async (name) => {
        ${key === "general-ledger" ? `<select id="acctF">${acctOptions(null, st.account_id, { blank: "All accounts" })}</select>` : ""}
        ${key === "budget-vs-actual" ? `<button class="btn" id="budgets">Set budgets</button>` : ""}
        ${key === "profit-loss-by-class" ? `<button class="btn" id="classes">Manage classes</button>` : ""}
+       ${key === "cash-plan" ? `<button class="btn" id="editPlan">Edit plan</button>` : ""}
        <button class="btn" onclick="print()">Print</button><button class="btn" id="csv">Export</button>`,
       `<div class="card report">${renderReport(key, data, st)}</div>`);
     const upd = () => { st.from = $("#from")?.value || st.from; st.to = $("#to").value; st.account_id = $("#acctF")?.value || ""; history.replaceState(null, "", `#reports/${key}?${new URLSearchParams(st)}`); run().catch(err); };
@@ -1427,6 +1445,7 @@ views.reports = async (name) => {
     $("#remit")?.addEventListener("click", () => transferModal(true));
     $("#budgets")?.addEventListener("click", () => budgetModal());
     $("#classes")?.addEventListener("click", () => classModal());
+    $("#editPlan")?.addEventListener("click", () => cashPlanModal());
   };
   await run();
 };
@@ -1435,6 +1454,18 @@ function sectionRows(rows) { return rows.map((r) => `<tr class="click" onclick="
 function plain(rows) { return rows.map((r) => `<tr><td class="indent">${esc(r.code ? r.code + " · " : "")}${esc(r.name)}</td><td class="num">${money(r.amount)}</td></tr>`).join(""); }
 
 function renderReport(key, d, st = { from: "", to: "" }) {
+  if (key === "cash-plan") {
+    const rows = Array.isArray(d.rows) ? d.rows : [];
+    return `<div class="grid kpis" style="margin-bottom:14px"><div class="kpi"><div class="k">Opening cash</div><div class="v">${money(d.opening_cash_cents)}</div></div><div class="kpi"><div class="k">Planned monthly net</div><div class="v">${money((d.monthly_in_cents || 0) - (d.monthly_out_cents || 0))}</div></div><div class="kpi"><div class="k">Projected close</div><div class="v">${money(d.closing_cash_cents)}</div></div></div>
+      ${table([
+        { h: "Month", f: (r) => esc(r.month) },
+        { h: "Planned in", num: 1, f: (r) => money(r.planned_in_cents) },
+        { h: "Planned out", num: 1, f: (r) => money(r.planned_out_cents) },
+        { h: "Net", num: 1, f: (r) => money(r.net_cents) },
+        { h: "Projected cash", num: 1, f: (r) => money(r.projected_cash_cents) },
+      ], rows)}
+      <p class="muted" style="margin:12px 0 0">${esc(d.assumptions || "")}</p>`;
+  }
   if (key === "item-profitability") {
     const rows = Array.isArray(d.rows) ? d.rows : [];
     return `${table([
@@ -1586,6 +1617,11 @@ function renderReport(key, d, st = { from: "", to: "" }) {
 
 function reportCsv(key, d, st = { from: "", to: "" }) {
   const $c = (v) => window.NXTLedgerFormat.cents(v);
+  if (key === "cash-plan") {
+    const rows = [["month", "planned_in", "planned_out", "net", "projected_cash"]];
+    for (const r of (Array.isArray(d.rows) ? d.rows : [])) rows.push([r.month, $c(r.planned_in_cents), $c(r.planned_out_cents), $c(r.net_cents), $c(r.projected_cash_cents)]);
+    return rows.map((r) => r.join(",")).join("\n");
+  }
   if (key === "item-profitability") {
     const rows = [["customer", "item", "quantity", "revenue", "documents"]];
     for (const r of (Array.isArray(d.rows) ? d.rows : [])) rows.push([JSON.stringify(r.customer), JSON.stringify(r.item), r.quantity, $c(r.revenue_cents), r.documents]);

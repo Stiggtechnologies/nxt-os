@@ -391,6 +391,56 @@ impl Ledger {
             "basis": "monthly budget cells versus the committed journal's natural movement" }))
     }
 
+    /// Cash plan: today's bank balance carried forward by the operator's planned
+    /// monthly receipts and payments. Assumptions are explicit; nothing here is actual.
+    pub async fn cash_plan_projection(&self, from: &str, to: &str) -> LResult<Value> {
+        let f = parse_date(from)?;
+        let t = parse_date(to)?;
+        if t < f {
+            return Err(super::engine::LedgerError::BadRequest("'to' is before 'from'".into()));
+        }
+        let b = self.books().await?;
+        let banks: Vec<&Account> = b.accounts.iter().filter(|a| a.role == AccountRole::Bank).collect();
+        let opening_net = b.net(None, &day_before(from));
+        let opening: i64 = banks.iter().map(|a| natural(a.kind, *opening_net.get(&a.id).unwrap_or(&0))).sum();
+        let plan = self.cash_plan().await?;
+        let monthly_net = plan.monthly_in_cents - plan.monthly_out_cents;
+        let mut rows = Vec::new();
+        let mut cash = opening;
+        let mut cursor = f.with_day(1).unwrap_or(f);
+        while cursor <= t && rows.len() < 60 {
+            let (year, month) = (cursor.year(), cursor.month());
+            let start = NaiveDate::from_ymd_opt(year, month, 1).unwrap();
+            let end = if month == 12 {
+                NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap() - chrono::Duration::days(1)
+            } else {
+                NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap() - chrono::Duration::days(1)
+            };
+            cash += monthly_net;
+            rows.push(json!({
+                "month": start.format("%Y-%m").to_string(),
+                "start": start.format("%Y-%m-%d").to_string(),
+                "end": end.min(t).format("%Y-%m-%d").to_string(),
+                "planned_in_cents": plan.monthly_in_cents,
+                "planned_out_cents": plan.monthly_out_cents,
+                "net_cents": monthly_net,
+                "projected_cash_cents": cash,
+            }));
+            let next = if month == 12 {
+                NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
+            } else {
+                NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap()
+            };
+            cursor = next;
+        }
+        Ok(json!({
+            "from": from, "to": to, "opening_cash_cents": opening,
+            "monthly_in_cents": plan.monthly_in_cents, "monthly_out_cents": plan.monthly_out_cents,
+            "closing_cash_cents": cash, "rows": rows,
+            "assumptions": "Assumption-only: today's bank balance plus planned monthly receipts/payments. Recorded invoices, bills and schedules are excluded; use the cash forecast for those.",
+        }))
+    }
+
     /// Revenue by customer and item (invoice line description). Credit memos reduce
     /// the same customer/item row, so the report follows the books rather than
     /// counting issuances only.
