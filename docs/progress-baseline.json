@@ -6,21 +6,21 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 148,
+    "routed": 149,
     "linked": 24,
     "external": 13,
-    "open": 35,
+    "open": 34,
     "chrome": 22,
-    "percent": 67
+    "percent": 68
   },
   "products": [
     {
       "product": "QuickBooks",
       "capabilities": 143,
-      "routed": 108,
+      "routed": 109,
       "linked": 24,
       "external": 1,
-      "open": 10
+      "open": 9
     },
     {
       "product": "DT Max",
@@ -40,7 +40,6 @@
     }
   ],
   "open_ids": [
-    "all-apps--accounting--receipts",
     "all-apps--sales-get-paid--payment-links",
     "all-apps--sales-get-paid--quickbooks-payouts",
     "create--suppliers--print-cheques",

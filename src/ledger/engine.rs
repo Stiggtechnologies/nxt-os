@@ -248,6 +248,24 @@ pub struct BatchInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ReceiptInput {
+    pub description: String,
+    pub date: String,
+    #[serde(default)]
+    pub amount_cents: Option<i64>,
+    pub filename: String,
+    #[serde(default)]
+    pub content_type: String,
+    pub data_base64: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReceiptMatchInput {
+    #[serde(default)]
+    pub entry_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SavedReportInput {
     pub name: String,
     pub report: String,
@@ -1375,6 +1393,119 @@ impl Ledger {
         }
         self.audit("batch.posted", format!("{} entries", posted.len())).await?;
         Ok(posted)
+    }
+
+    // ---- receipt inbox --------------------------------------------------------
+
+    /// The inbox is one bounded list: metadata plus base64 payloads. Twenty
+    /// receipts and 12 MB of payload are the working ceiling.
+    const RECEIPT_LIMIT: usize = 20;
+    const RECEIPT_BYTES: usize = 12_000_000;
+
+    async fn receipt_list(&self) -> LResult<Vec<Receipt>> {
+        Ok(self.store.get_json(&self.key("receipts")).await?.unwrap_or_default())
+    }
+
+    async fn save_receipt_list(&self, receipts: &[Receipt]) -> LResult<()> {
+        self.store.set_json(&self.key("receipts"), &receipts).await?;
+        Ok(())
+    }
+
+    pub async fn receipts(&self) -> LResult<Vec<ReceiptSummary>> {
+        let mut receipts = self.receipt_list().await?;
+        receipts.sort_by(|a, b| b.date.cmp(&a.date).then(b.created_at.cmp(&a.created_at)));
+        Ok(receipts
+            .into_iter()
+            .map(|r| ReceiptSummary {
+                id: r.id,
+                description: r.description,
+                date: r.date,
+                amount_cents: r.amount_cents,
+                filename: r.filename,
+                entry_id: r.entry_id,
+                created_at: r.created_at,
+            })
+            .collect())
+    }
+
+    pub async fn receipt(&self, id: &str) -> LResult<Receipt> {
+        self.receipt_list()
+            .await?
+            .into_iter()
+            .find(|receipt| receipt.id == id)
+            .ok_or_else(|| LedgerError::NotFound(format!("no receipt {id}")))
+    }
+
+    /// Store an uploaded receipt. Nothing is matched automatically: a person
+    /// attaches it to a posting, and an unmatched receipt stays in the inbox.
+    pub async fn add_receipt(&self, input: ReceiptInput) -> LResult<Receipt> {
+        if input.data_base64.trim().is_empty() {
+            return bad("the receipt file is empty");
+        }
+        if input.data_base64.len() > 2_800_000 {
+            return bad("the receipt is larger than 2 MB");
+        }
+        parse_date(&input.date)?;
+        if input.amount_cents.is_some_and(|amount| amount < 0) {
+            return bad("a receipt amount cannot be negative");
+        }
+        if input.filename.trim().is_empty() {
+            return bad("the receipt needs a file name");
+        }
+        let mut receipts = self.receipt_list().await?;
+        if receipts.len() >= Self::RECEIPT_LIMIT {
+            return bad(format!("the inbox already holds {} receipts; match or delete one first", Self::RECEIPT_LIMIT));
+        }
+        let used: usize = receipts.iter().map(|receipt| receipt.data_base64.len()).sum();
+        if used + input.data_base64.len() > Self::RECEIPT_BYTES {
+            return bad("the receipt inbox is full; match or delete a receipt first");
+        }
+        let receipt = Receipt {
+            id: new_id("rcpt"),
+            description: input.description.trim().to_string(),
+            date: input.date,
+            amount_cents: input.amount_cents,
+            filename: input.filename.trim().to_string(),
+            content_type: input.content_type,
+            data_base64: input.data_base64,
+            entry_id: None,
+            created_at: now(),
+        };
+        receipts.push(receipt.clone());
+        self.save_receipt_list(&receipts).await?;
+        self.audit("receipt.added", receipt.filename.clone()).await?;
+        Ok(receipt)
+    }
+
+    pub async fn match_receipt(&self, id: &str, input: ReceiptMatchInput) -> LResult<Receipt> {
+        let mut receipts = self.receipt_list().await?;
+        let receipt = receipts
+            .iter_mut()
+            .find(|receipt| receipt.id == id)
+            .ok_or_else(|| LedgerError::NotFound(format!("no receipt {id}")))?;
+        receipt.entry_id = match input.entry_id.filter(|entry| !entry.is_empty()) {
+            None => None,
+            Some(entry_id) => {
+                self.entry(&entry_id).await?;
+                Some(entry_id)
+            }
+        };
+        let updated = receipt.clone();
+        self.save_receipt_list(&receipts).await?;
+        self.audit("receipt.matched", format!("{} -> {:?}", id, updated.entry_id)).await?;
+        Ok(updated)
+    }
+
+    pub async fn delete_receipt(&self, id: &str) -> LResult<()> {
+        let mut receipts = self.receipt_list().await?;
+        let before = receipts.len();
+        receipts.retain(|receipt| receipt.id != id);
+        if receipts.len() == before {
+            return Err(LedgerError::NotFound(format!("no receipt {id}")));
+        }
+        self.save_receipt_list(&receipts).await?;
+        self.audit("receipt.deleted", id.to_string()).await?;
+        Ok(())
     }
 
     // ---- saved report views ---------------------------------------------------

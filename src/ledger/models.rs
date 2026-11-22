@@ -307,6 +307,34 @@ impl Default for Company {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Receipt {
+    pub id: String,
+    pub description: String,
+    pub date: String,
+    #[serde(default)]
+    pub amount_cents: Option<i64>,
+    pub filename: String,
+    #[serde(default)]
+    pub content_type: String,
+    /// Base64 payload; bounded at 2 MB by the engine.
+    pub data_base64: String,
+    #[serde(default)]
+    pub entry_id: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReceiptSummary {
+    pub id: String,
+    pub description: String,
+    pub date: String,
+    pub amount_cents: Option<i64>,
+    pub filename: String,
+    pub entry_id: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedReport {
     pub id: String,
     pub name: String,

@@ -9,29 +9,28 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 148 |
+| Routed | 149 |
 | Linked | 24 |
 | External | 13 |
-| **Open** | **35** |
-| Routed coverage | 67% |
+| **Open** | **34** |
+| Routed coverage | 68% |
 | Source chrome excluded | 22 |
 
 ## By product
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 143 | 108 | 24 | 1 | 10 | 76% |
+| QuickBooks | 143 | 109 | 24 | 1 | 9 | 76% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (10)
+### Open to build (9)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
 | Suppliers | Print cheques | Render recorded bill payments as printable cheque PDFs with a configurable layout; no MICR or signing claim. | Cheque printing needs bank cheque stock, MICR layout and a signing process. NXT records the payment journal instead of printing the instrument. |
-| Accounting | Receipts | Add a receipt inbox that attaches documents to an expense and requires human matching; no OCR claim. | Receipt capture pairs OCR with expense matching. NXT stores attachments against known documents but does not run a capture queue. |
 | Sales & Get Paid | Payment links | Add invoice payment-link records and a webhook contract; the merchant account stays a deployment dependency. | Payment links require a payment service provider and merchant account. NXT records invoices; it does not collect card payments. |
 | Sales & Get Paid | QuickBooks payouts | Add a payout import contract for a configured provider; no feed is shown without one. | Payouts are a QuickBooks Payments service artefact. NXT has no merchant processor and will not display a vendor payout feed. |
 | YOUR COMPANY | Custom form styles | Add bounded invoice and estimate template settings used by the print view. | Branded invoice and form templates need a template designer and print pipeline. NXT renders its own documents. |

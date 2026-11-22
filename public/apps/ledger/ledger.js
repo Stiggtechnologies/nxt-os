@@ -620,10 +620,26 @@ async function moneyCards() {
 }
 
 views.banking = async () => {
-  const [feed, cards, rules] = await Promise.all([api("/api/ledger/feed"), moneyCards(), api("/api/ledger/rules")]);
+  const [feed, cards, rules, receipts] = await Promise.all([api("/api/ledger/feed"), moneyCards(), api("/api/ledger/rules"), api("/api/ledger/receipts")]);
   let tab = "pending";
   const render = () => {
     const list = feed.filter((f) => f.item.status === tab);
+    const receiptPanel = `<div class="card" style="margin-top:14px"><h3 style="margin:0 0 4px">Receipt inbox</h3>
+      <p class="muted" style="margin:0 0 10px">Attach a photo or PDF, then match it to a posting. Nothing is read by OCR and nothing is matched automatically.</p>
+      ${receipts.length ? table([
+        { h: "Description", f: (r) => `<b>${esc(r.description || r.filename)}</b><div class="faint" style="font-size:12px">${esc(r.filename)}</div>` },
+        { h: "Date", f: (r) => fmtDate(r.date) },
+        { h: "Amount", num: 1, f: (r) => r.amount_cents === null || r.amount_cents === undefined ? "—" : money(r.amount_cents) },
+        { h: "Matched to", f: (r) => r.entry_id ? "entry" : `<span class="muted">unmatched</span>` },
+        { h: "", f: (r) => `<div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-rcpt-open="${r.id}">Open</button><button class="btn sm" data-rcpt-match="${r.id}">Match</button><button class="btn sm ghost" data-rcpt-del="${r.id}">Delete</button></div>` },
+      ], receipts) : `<div class="empty">No receipts yet.</div>`}
+      <div class="row" style="margin-top:10px;flex-wrap:nowrap">
+        <input id="rcptDesc" placeholder="Description" style="max-width:200px">
+        <input id="rcptDate" type="date" value="${today()}">
+        <input id="rcptAmount" type="number" min="0" step="0.01" placeholder="Amount" style="max-width:120px">
+        <input id="rcptFile" type="file" accept="image/*,application/pdf">
+        <button class="btn primary" id="rcptAdd">Add receipt</button>
+      </div></div>`;
     const rulePanel = `<div class="card" style="margin-top:14px"><h3 style="margin:0 0 4px">Bank rules</h3>
       <p class="muted" style="margin:0 0 10px">A rule pre-fills the category when a description contains its keyword. The longest matching keyword wins.${rules.length ? "" : " No rules yet."}</p>
       ${rules.length ? table([
@@ -648,7 +664,7 @@ views.banking = async () => {
         { h: "Tax", f: (f) => `<select data-tax>${taxOptions(f.suggestion?.tax_code || (f.item.amount < 0 ? S.company.default_tax_code : "NONE"))}</select>` },
         { h: "", f: (f) => `<div class="row" style="flex-wrap:nowrap"><label class="check" title="Apply to future matches"><input type="checkbox" data-rule${f.suggestion ? "" : " checked"}> Rule</label><button class="btn sm primary" data-add="${f.item.id}">Add</button><button class="btn sm ghost" data-ex="${f.item.id}">Exclude</button></div>` },
       ], list, { empty: feed.length ? "All caught up." : `No transactions yet. <a href="#" id="imp2">Import a bank CSV</a> to get started.` })
-      : table([{ h: "Date", f: (f) => fmtDate(f.item.date) }, { h: "Description", f: (f) => esc(f.item.description) }, { h: "Amount", num: 1, f: (f) => money(f.item.amount) }, { h: "Status", f: (f) => pill(f.item.status) }], list)}</div>${rulePanel}`);
+      : table([{ h: "Date", f: (f) => fmtDate(f.item.date) }, { h: "Description", f: (f) => esc(f.item.description) }, { h: "Amount", num: 1, f: (f) => money(f.item.amount) }, { h: "Status", f: (f) => pill(f.item.status) }], list)}</div>${receiptPanel}${rulePanel}`);
     $$(".tabs button", main).forEach((b) => (b.onclick = () => { tab = b.dataset.t; render(); }));
     $("#imp").onclick = $("#imp2") ? (e) => { e?.preventDefault?.(); importModal(); } : importModal;
     if ($("#imp2")) $("#imp2").onclick = (e) => { e.preventDefault(); importModal(); };
@@ -668,6 +684,22 @@ views.banking = async () => {
     };
     $$("[data-del]", main).forEach((b) => (b.onclick = async () => {
       try { await api(`/api/ledger/rules/${encodeURIComponent(b.dataset.del)}`, { method: "DELETE" }); toast("Rule deleted"); route(); } catch (e) { err(e); }
+    }));
+    $("#rcptAdd").onclick = async () => {
+      const file = $("#rcptFile").files[0];
+      if (!file) return toast("Choose a receipt file", true);
+      const dataUrl = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
+      try {
+        await api("/api/ledger/receipts", { body: { description: $("#rcptDesc").value.trim(), date: $("#rcptDate").value,
+          amount_cents: $("#rcptAmount").value ? toCents($("#rcptAmount").value) : null,
+          filename: file.name, content_type: file.type || "", data_base64: String(dataUrl).split(",")[1] || "" } });
+        toast("Receipt added"); route();
+      } catch (e) { err(e); }
+    };
+    $$("[data-rcpt-open]", main).forEach((b) => (b.onclick = () => openReceipt(b.dataset.rcptOpen)));
+    $$("[data-rcpt-match]", main).forEach((b) => (b.onclick = () => receiptMatchModal(receipts.find((r) => r.id === b.dataset.rcptMatch))));
+    $$("[data-rcpt-del]", main).forEach((b) => (b.onclick = async () => {
+      try { await api(`/api/ledger/receipts/${b.dataset.rcptDel}`, { method: "DELETE" }); toast("Receipt deleted"); route(); } catch (e) { err(e); }
     }));
   };
   render();
@@ -1106,6 +1138,34 @@ function cashPlanModal() {
         try { await api("/api/ledger/plan", { method: "PUT", body: { monthly_in_cents: toCents(f.monthly_in), monthly_out_cents: toCents(f.monthly_out) } }); toast("Plan saved"); close(true); route(); } catch (e) { err(e); }
       };
     }).catch(err);
+  });
+}
+
+async function openReceipt(id) {
+  try {
+    const full = await api(`/api/ledger/receipts/${id}`);
+    const bytes = Uint8Array.from(atob(full.data_base64 || ""), (c) => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: full.content_type || "application/octet-stream" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = full.filename || "receipt"; link.rel = "noopener";
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (e) { err(e); }
+}
+
+function receiptMatchModal(receipt) {
+  if (!receipt) return;
+  return modal("Match receipt", async (el, close) => {
+    let entries = [];
+    try { entries = await api("/api/ledger/entries"); } catch (e) { err(e); }
+    el.innerHTML = `<p class="muted" style="margin-top:0">${esc(receipt.description || receipt.filename)} · ${fmtDate(receipt.date)}</p>
+      <form class="form"><label class="f" style="grid-column:1/-1">Posting<select name="entry_id"><option value="">Unmatched</option>${entries.slice(0, 200).map((e) => `<option value="${esc(e.id)}"${e.id === receipt.entry_id ? " selected" : ""}>#${e.number} · ${fmtDate(e.date)} · ${esc(e.memo)}</option>`).join("")}</select></label></form>
+      <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Save match</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("[data-ok]").onclick = async () => {
+      const entry_id = el.querySelector("[name=entry_id]").value || null;
+      try { await api(`/api/ledger/receipts/${receipt.id}/match`, { body: { entry_id } }); toast("Receipt match saved"); close(true); route(); } catch (e) { err(e); }
+    };
   });
 }
 
