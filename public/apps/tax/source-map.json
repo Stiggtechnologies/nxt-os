@@ -414,9 +414,9 @@
               "label": "Database maintenance",
               "source_label": "Database maintenance",
               "observation": "observed",
-              "native_route": null,
-              "native_scope": "No client-facing database rebuild. Recovery is a provider-level backup and restore procedure.",
-              "next_step": "Add an operator maintenance job with a dry-run verification report.",
+              "native_route": "#audit",
+              "native_scope": "Read-only maintenance dry run: state hash, return/family/archive counts and duplicate or orphan checks; it never compacts or rewrites state.",
+              "next_step": "Audit trail -> Run maintenance check.",
               "scope": "in_scope",
               "scope_reason": "Database maintenance compacts a local desktop database. NXT keeps state in a hosted store with its own operations.",
               "in_scope_since": "2026-11-22"

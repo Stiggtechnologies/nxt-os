@@ -6,12 +6,12 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 155,
+    "routed": 156,
     "linked": 26,
     "external": 13,
-    "open": 26,
+    "open": 25,
     "chrome": 22,
-    "percent": 70
+    "percent": 71
   },
   "products": [
     {
@@ -25,10 +25,10 @@
     {
       "product": "DT Max",
       "capabilities": 37,
-      "routed": 19,
+      "routed": 20,
       "linked": 0,
       "external": 5,
-      "open": 13
+      "open": 12
     },
     {
       "product": "WebTax4B",
@@ -47,7 +47,6 @@
     "dtmax.client-restore",
     "dtmax.ct23",
     "dtmax.database-in-use",
-    "dtmax.database-maintenance",
     "dtmax.efile-errors",
     "dtmax.efile-logs",
     "dtmax.efile-reports",

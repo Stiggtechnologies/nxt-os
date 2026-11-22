@@ -601,7 +601,7 @@
   }
   async function commitImport() { if (!state.preview) throw new Error("Preview the current package before committing it."); if (state.preview.committed_return_id) { state.section = "identity"; go(`return/${state.preview.committed_return_id}`); return; } const r = await request("/import/commit", { body: { preview_id: state.preview.id } }); state.section = "identity"; go(`return/${r.id}`); toast("Workpaper import committed"); }
   function resetImportPreview() { state.preview = null; const host = $("#import-preview"); if (host) host.innerHTML = empty("Preview the current package", "The package changed. Run a new preview before committing the import."); }
-  async function auditPage(version) { state.record = null; const events = list(await request("/audit")); page(version, "Tax audit trail", "Changes, calculation snapshots, imports and review decisions recorded by the workspace.", "", `<div class="card">${auditMarkup(events)}</div>`); }
+  async function auditPage(version) { state.record = null; const events = list(await request("/audit")); page(version, "Tax audit trail", "Changes, calculation snapshots, imports and review decisions recorded by the workspace.", `<button class="btn" id="maintenance">Run maintenance check</button>`, `<div class="card">${auditMarkup(events)}</div>`); const button = $("#maintenance"); if (button) button.onclick = () => maintenanceDialog(); }
   async function capabilitiesPage(version) {
     state.record = null; const c = await request("/capabilities");
     page(version, "Calculation coverage", "The actual independent-engine boundary, including unsupported and unconfigured capabilities.", "", `<div class="notice"><span>ⓘ</span><div><strong>Filing is disabled. This tax suite is not certified filing software.</strong><p>It prepares workpapers within declared narrow rulesets. Review every result and source before use.</p></div></div><div class="card"><h2>Versioned scope availability</h2>${coverageHtml(c.coverage)}</div><div class="capability-grid">${programs().map(p => `<article class="card"><div class="row"><h3>${esc(p.id.toUpperCase())} · ${esc(p.label)}</h3><span class="spacer"></span>${badge("neutral", "Independent")}</div><p>${esc(p.description)}</p><p>Verified browser-entry years: ${entryYears(p).map(esc).join(", ")}<br>Entry jurisdictions: ${list(p.jurisdictions).map(j => esc(typeof j === "string" ? j : j.label || j.value)).join(", ")}</p>${button("Create workpaper", "new-return-program", p.id, "sm")}</article>`).join("")}</div><div class="card" style="margin-top:16px"><h2>Declared limitations</h2><ul class="source-list">${list(c.limitations).map(x => `<li>${esc(typeof x === "string" ? x : x.message || x.label || "Ruleset limitation")}</li>`).join("")}</ul><div class="row">${badge("neutral", "Certification: not certified")}${badge("neutral", "DT Max SDK: not used for calculations")}${badge("neutral", "External filing: disabled")}</div><p class="form-note" style="margin-top:14px">Relationships and reviewer labels are metadata under shared workspace authentication. They do not create verified staff identities, filing authority, or client-company tenancy.</p></div>`);
@@ -778,6 +778,19 @@
       };
       render().catch(() => {});
     }, { wide: true });
+  }
+
+  async function maintenanceDialog() {
+    try {
+      const report = await request("/maintenance/check");
+      return modal("Maintenance dry run", (el, close) => {
+        el.innerHTML = `<p class="form-note">${esc(report.note || "")} State SHA-256 <span class="mono">${esc(String(report.state_sha256 || "").slice(0, 20))}…</span></p>
+          <div class="table-wrap"><table><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead><tbody>${list(report.checks).map(c => `<tr><td>${esc(c.check)}</td><td>${c.ok ? "OK" : "Needs attention"}</td><td>${esc(Array.isArray(c.detail) ? c.detail.join(", ") : String(c.detail ?? ""))}</td></tr>`).join("")}</tbody></table></div>
+          <p class="form-note">${Number(report.returns) || 0} returns · ${Number(report.families) || 0} families · ${Number(report.batch_archives) || 0} batch archives · ${Number(report.audit_events) || 0} audit events</p>
+          <div class="actions"><button class="btn primary" data-done>Done</button></div>`;
+        $("[data-done]", el).onclick = () => close();
+      }, { wide: true });
+    } catch (error) { toast(error.message, true); }
   }
 
   document.addEventListener("click", (event) => {

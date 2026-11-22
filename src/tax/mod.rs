@@ -241,6 +241,42 @@ impl Tax {
         Ok(())
     }
 
+    /// Read-only integrity dry run. It never compacts, rewrites or deletes state.
+    pub async fn maintenance_check(&self) -> TResult<Value> {
+        let state = self.load().await?;
+        let raw = self.store.get(STATE_KEY).await?.unwrap_or_default();
+        let state_sha256 = hex::encode(Sha256::digest(raw.as_bytes()));
+        let ids: std::collections::HashSet<&str> = state.returns.iter().map(|r| r.id.as_str()).collect();
+        let mut seen = std::collections::HashSet::new();
+        let mut duplicate_ids: Vec<&str> = Vec::new();
+        for record in &state.returns {
+            if !seen.insert(record.id.as_str()) { duplicate_ids.push(record.id.as_str()); }
+        }
+        let orphan_families: Vec<&str> = state.families.iter()
+            .filter(|family| !ids.contains(family.primary_return_id.as_str()) || !ids.contains(family.spouse_return_id.as_str()))
+            .map(|family| family.id.as_str()).collect();
+        let orphan_bindings: Vec<&str> = state.batch_archives.iter()
+            .flat_map(|archive| archive.bindings.iter().filter(|(id, _)| !ids.contains(id.as_str())).map(|(id, _)| id.as_str()))
+            .collect();
+        let checks = vec![
+            json!({ "check": "duplicate return ids", "ok": duplicate_ids.is_empty(), "detail": duplicate_ids }),
+            json!({ "check": "families reference stored returns", "ok": orphan_families.is_empty(), "detail": orphan_families }),
+            json!({ "check": "batch archives reference stored returns", "ok": orphan_bindings.is_empty(), "detail": orphan_bindings }),
+            json!({ "check": "audit events recorded", "ok": true, "detail": state.audit.len() }),
+        ];
+        let ok = checks.iter().all(|check| check["ok"] == true);
+        Ok(json!({
+            "ok": ok,
+            "state_sha256": state_sha256,
+            "returns": state.returns.len(),
+            "families": state.families.len(),
+            "batch_archives": state.batch_archives.len(),
+            "audit_events": state.audit.len(),
+            "checks": checks,
+            "note": "Read-only dry run. Nothing is compacted, rewritten or deleted.",
+        }))
+    }
+
     pub async fn get(&self, record_id: &str) -> TResult<TaxReturn> { self.load().await?.returns.into_iter().find(|r| r.id == record_id).ok_or_else(missing) }
     pub async fn summary(&self) -> TResult<Value> {
         let s = self.load().await?; let n = |status: &str| s.returns.iter().filter(|r|r.status == status).count();

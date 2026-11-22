@@ -58,6 +58,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/audit/verify",get(audit_verify))
         .route("/api/tax/rates",get(rates))
         .route("/api/tax/snippets",get(snippets).post(save_snippet))
+        .route("/api/tax/maintenance/check",get(maintenance_check))
         .route("/api/tax/snippets/{id}",axum::routing::delete(delete_snippet))
         .route("/api/tax/slips/aggregate",post(slips_aggregate))
         .route("/api/tax/gifi/from-trial-balance",post(gifi_from_tb))
@@ -199,6 +200,9 @@ pub(super) fn print_workpaper(r:&TaxReturn)->TResult<String>{
 
 async fn audit_verify(State(t):S) -> R { ok(super::verify_audit(&t.audit().await?)) }
 async fn rates() -> R { ok(super::coverage::rate_metadata()) }
+async fn maintenance_check(State(t): S) -> R {
+    ok(t.maintenance_check().await?)
+}
 async fn snippets(State(t): S) -> R {
     ok(t.snippets().await?)
 }
