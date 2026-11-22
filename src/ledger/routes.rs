@@ -234,6 +234,7 @@ fn routes(st: Arc<Ledger>) -> Router {
         .route("/api/ledger/plan", get(cash_plan).put(save_cash_plan))
         .route("/api/ledger/entries/batch", post(post_batch))
         .route("/api/ledger/payroll-settings", get(payroll_settings))
+        .route("/api/ledger/export", get(book_export))
         .route("/api/ledger/receipts", get(receipts).post(add_receipt))
         .route("/api/ledger/receipts/{id}", get(receipt).delete(delete_receipt))
         .route("/api/ledger/receipts/{id}/match", post(match_receipt))
@@ -428,6 +429,9 @@ async fn contact_custom(State(l): S, Path(id): Path<String>) -> R {
 }
 async fn set_contact_custom(State(l): S, Path(id): Path<String>, Json(b): Json<CustomValuesInput>) -> R {
     ok(l.set_contact_custom(&id, b).await)
+}
+async fn book_export(State(l): S) -> R {
+    ok(l.book_export().await)
 }
 async fn payroll_settings() -> R {
     Ok(Json(serde_json::to_value(crate::payroll::settings()).unwrap_or(Value::Null)))

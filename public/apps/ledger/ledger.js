@@ -258,6 +258,17 @@ async function docEditor(kind) {
   };
   form.contact_id.onchange = setDue; form.date.onchange = setDue;
   $("#newC").onclick = async () => { const c = await quickContact(ckind); if (c) { form.contact_id.innerHTML = contactOptions(ckind, c.id, "Choose…"); setDue(); } };
+  $("#exportBook").onclick = async () => {
+    try {
+      const bundle = await api("/api/ledger/export");
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = `nxt-book-${today()}.json`; document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      toast(`Export ready · SHA-256 ${String(bundle.sha256).slice(0, 12)}…`);
+    } catch (error) { err(error); }
+  };
   $("#fieldAdd").onsubmit = async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
@@ -1900,7 +1911,7 @@ function reportCsv(key, d, st = { from: "", to: "" }) {
 views.settings = async () => {
   const [c, payroll, customFields] = await Promise.all([api("/api/ledger/company"), api("/api/ledger/payroll-settings"), api("/api/ledger/custom-fields")]);
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  page("Company settings", "How your business appears on documents, and how your books behave.", "",
+  page("Company settings", "How your business appears on documents, and how your books behave.", `<button class="btn" id="exportBook">Download book export</button>`,
     `<div class="card"><form class="form" id="cf">
       <label class="f">Business name<input name="name" value="${esc(c.name)}"></label><label class="f">Legal name<input name="legal_name" value="${esc(c.legal_name)}"></label>
       <label class="f">Business number (BN)<input name="business_number" value="${esc(c.business_number)}" placeholder="123456789 RT0001"></label>
@@ -1943,6 +1954,17 @@ views.settings = async () => {
       ])}
       <p class="faint" style="margin:12px 0 0">Sources: ${(payroll.sources || []).map((u) => `<a href="${esc(u)}" rel="noopener" target="_blank">${esc(new URL(u).hostname)}</a>`).join(" · ")}</p>
     </div>`);
+  $("#exportBook").onclick = async () => {
+    try {
+      const bundle = await api("/api/ledger/export");
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = `nxt-book-${today()}.json`; document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      toast(`Export ready · SHA-256 ${String(bundle.sha256).slice(0, 12)}…`);
+    } catch (error) { err(error); }
+  };
   $("#fieldAdd").onsubmit = async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));

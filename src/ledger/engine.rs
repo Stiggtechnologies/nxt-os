@@ -1617,6 +1617,36 @@ impl Ledger {
         Ok(())
     }
 
+    // ---- operator export ------------------------------------------------------
+
+    /// A whole-book export bundle with a content hash the operator can re-check.
+    /// It is an artifact for the documented backup/restore runbook, not a restore
+    /// button and not a substitute for the encrypted store backup.
+    pub async fn book_export(&self) -> LResult<serde_json::Value> {
+        use sha2::{Digest, Sha256};
+        let payload = serde_json::json!({
+            "format": "nxt-ledger-book/v1",
+            "exported_at": now(),
+            "company": self.company().await?,
+            "accounts": self.accounts().await?,
+            "contacts": self.contacts(None).await?,
+            "entries": self.all::<Entry>("entries").await?,
+            "documents": self.docs(None).await?,
+            "payments": self.payments().await?,
+            "classes": self.classes().await?,
+            "budgets": self.budgets().await?,
+            "bank_rules": self.rules().await?,
+            "recurring": self.recurring().await?,
+            "cash_plan": self.cash_plan().await?,
+            "custom_fields": self.custom_fields().await?,
+            "custom_values": self.custom_values().await?,
+            "receipts": self.receipts().await?,
+        });
+        let bytes = serde_json::to_vec(&payload).map_err(|error| LedgerError::Storage(error.to_string()))?;
+        let sha256 = hex::encode(Sha256::digest(&bytes));
+        Ok(serde_json::json!({ "sha256": sha256, "payload": payload }))
+    }
+
     // ---- saved report views ---------------------------------------------------
 
     /// Report keys the browser can open; a saved view may only point at one of these.
