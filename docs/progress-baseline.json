@@ -6,10 +6,10 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 153,
+    "routed": 154,
     "linked": 26,
     "external": 13,
-    "open": 28,
+    "open": 27,
     "chrome": 22,
     "percent": 70
   },
@@ -17,10 +17,10 @@
     {
       "product": "QuickBooks",
       "capabilities": 143,
-      "routed": 113,
+      "routed": 114,
       "linked": 26,
       "external": 1,
-      "open": 3
+      "open": 2
     },
     {
       "product": "DT Max",
@@ -42,7 +42,6 @@
   "open_ids": [
     "all-apps--sales-get-paid--payment-links",
     "all-apps--sales-get-paid--quickbooks-payouts",
-    "create--suppliers--print-cheques",
     "dtmax.billing-setup",
     "dtmax.client-renumbering",
     "dtmax.client-restore",

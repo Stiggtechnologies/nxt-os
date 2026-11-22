@@ -40,6 +40,56 @@ fn new_id(prefix: &str) -> String {
     format!("{prefix}_{}", &uuid::Uuid::new_v4().simple().to_string()[..12])
 }
 
+/// Amount in words for the cheque face, e.g. "one hundred twenty-three dollars and 45/100".
+pub fn amount_words(cents: i64) -> LResult<String> {
+    if cents < 0 {
+        return bad("a cheque amount cannot be negative");
+    }
+    let dollars = cents / 100;
+    if dollars >= 1_000_000_000 {
+        return bad("the cheque amount is too large to render");
+    }
+    Ok(format!("{} dollars and {:02}/100", words(dollars), cents % 100))
+}
+
+fn words(n: i64) -> String {
+    const ONES: [&str; 20] = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+    const TENS: [&str; 10] = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+    fn under_thousand(n: i64) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        let hundreds = n / 100;
+        let rest = n % 100;
+        if hundreds > 0 {
+            parts.push(format!("{} hundred", ONES[hundreds as usize]));
+        }
+        if rest >= 20 {
+            let tens = TENS[(rest / 10) as usize];
+            let ones = ONES[(rest % 10) as usize];
+            parts.push(if ones.is_empty() { tens.to_string() } else { format!("{tens}-{ones}") });
+        } else if rest > 0 {
+            parts.push(ONES[rest as usize].to_string());
+        }
+        parts.join(" ")
+    }
+    if n == 0 {
+        return "zero".into();
+    }
+    let mut parts: Vec<String> = Vec::new();
+    let millions = n / 1_000_000;
+    let thousands = (n / 1_000) % 1_000;
+    let remainder = n % 1_000;
+    if millions > 0 {
+        parts.push(format!("{} million", under_thousand(millions)));
+    }
+    if thousands > 0 {
+        parts.push(format!("{} thousand", under_thousand(thousands)));
+    }
+    if remainder > 0 {
+        parts.push(under_thousand(remainder));
+    }
+    parts.join(" ")
+}
+
 fn advance_date(date: &str, frequency: &str) -> LResult<String> {
     let d = parse_date(date)?;
     let months: i32 = match frequency {
@@ -1615,6 +1665,45 @@ impl Ledger {
         self.save_receipt_list(&receipts).await?;
         self.audit("receipt.deleted", id.to_string()).await?;
         Ok(())
+    }
+
+    // ---- cheque printing -------------------------------------------------------
+
+    /// Printable cheque data for a recorded payment made. NXT renders the face of
+    /// the cheque only: it does not print MICR, sign, or move money.
+    pub async fn cheque(&self, payment_id: &str) -> LResult<serde_json::Value> {
+        let payment = self
+            .payments()
+            .await?
+            .into_iter()
+            .find(|payment| payment.id == payment_id)
+            .ok_or_else(|| LedgerError::NotFound(format!("no payment {payment_id}")))?;
+        if payment.direction != "made" {
+            return bad("only a payment made can print a cheque");
+        }
+        if payment.voided {
+            return Err(LedgerError::Conflict("this payment is void".into()));
+        }
+        let contact = self.contact(&payment.contact_id).await?;
+        let company = self.company().await?;
+        let bank = self.account(&payment.account_id).await?;
+        let docs = self.docs(None).await?;
+        let invoice_numbers: Vec<String> = payment
+            .applications
+            .iter()
+            .filter_map(|application| docs.iter().find(|doc| doc.id == application.doc_id).map(|doc| doc.number.clone()))
+            .collect();
+        Ok(serde_json::json!({
+            "payment_id": payment.id,
+            "payee": contact.name,
+            "amount_cents": payment.amount,
+            "amount_words": amount_words(payment.amount)?,
+            "date": payment.date,
+            "memo": if payment.memo.is_empty() { invoice_numbers.join(", ") } else { payment.memo.clone() },
+            "bank": bank.name,
+            "company": { "name": company.name, "legal_name": company.legal_name, "business_number": company.business_number },
+            "disclaimer": "Rendered cheque face only. NXT does not print MICR encoding, sign cheques or initiate payment.",
+        }))
     }
 
     // ---- operator export ------------------------------------------------------

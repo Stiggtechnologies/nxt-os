@@ -9,10 +9,10 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 153 |
+| Routed | 154 |
 | Linked | 26 |
 | External | 13 |
-| **Open** | **28** |
+| **Open** | **27** |
 | Routed coverage | 70% |
 | Source chrome excluded | 22 |
 
@@ -20,17 +20,16 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 143 | 113 | 26 | 1 | 3 | 79% |
+| QuickBooks | 143 | 114 | 26 | 1 | 2 | 80% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (3)
+### Open to build (2)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
-| Suppliers | Print cheques | Render recorded bill payments as printable cheque PDFs with a configurable layout; no MICR or signing claim. | Cheque printing needs bank cheque stock, MICR layout and a signing process. NXT records the payment journal instead of printing the instrument. |
 | Sales & Get Paid | Payment links | Add invoice payment-link records and a webhook contract; the merchant account stays a deployment dependency. | Payment links require a payment service provider and merchant account. NXT records invoices; it does not collect card payments. |
 | Sales & Get Paid | QuickBooks payouts | Add a payout import contract for a configured provider; no feed is shown without one. | Payouts are a QuickBooks Payments service artefact. NXT has no merchant processor and will not display a vendor payout feed. |
 

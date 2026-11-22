@@ -307,9 +307,10 @@ async function docView(kind, id) {
       ${d.memo ? `<p class="muted" style="margin-top:24px;white-space:pre-line">${esc(d.memo)}</p>` : ""}
       ${kind === "invoice" && co.invoice_footer ? `<p class="faint" style="margin-top:24px">${esc(co.invoice_footer)}</p>` : ""}
     </div>
-    ${payments.length ? `<div class="card no-print" style="margin-top:14px;max-width:860px"><h3 style="margin-bottom:10px">Payments</h3>${table([{ h: "Date", f: (p) => fmtDate(p.date) }, { h: "Account", f: (p) => esc(acctName(p.account_id)) }, { h: "Applied", num: 1, f: (p) => money(p.applications.find((a) => a.doc_id === d.id).amount) }, { h: "", f: (p) => `<button class="btn sm danger" data-vp="${p.id}">Void</button>` }], payments)}</div>` : ""}`);
+    ${payments.length ? `<div class="card no-print" style="margin-top:14px;max-width:860px"><h3 style="margin-bottom:10px">Payments</h3>${table([{ h: "Date", f: (p) => fmtDate(p.date) }, { h: "Account", f: (p) => esc(acctName(p.account_id)) }, { h: "Applied", num: 1, f: (p) => money(p.applications.find((a) => a.doc_id === d.id).amount) }, { h: "", f: (p) => `<div class="row" style="flex-wrap:nowrap">${p.direction === "made" ? `<button class="btn sm" data-chq="${p.id}">Cheque</button>` : ""}<button class="btn sm danger" data-vp="${p.id}">Void</button></div>` }], payments)}</div>` : ""}`);
   $("#pay")?.addEventListener("click", () => paymentModal(kind, c.id, [d]));
   $("#void")?.addEventListener("click", async () => { if (await confirm(`Void ${d.number}?`, "This reverses its accounting entry. It stays on file marked void.", "Void")) { try { await api(`/api/ledger/docs/${d.id}/void`, { body: {} }); toast("Voided"); route(); } catch (e) { err(e); } } });
+  $$("[data-chq]", main).forEach((b) => (b.onclick = () => chequeModal(b.dataset.chq)));
   $$("[data-vp]", main).forEach((b) => (b.onclick = async () => { if (await confirm("Void this payment?", "The document's balance will reopen.", "Void payment")) { try { await api(`/api/ledger/payments/${b.dataset.vp}/void`, { body: {} }); toast("Payment voided"); route(); } catch (e) { err(e); } } }));
 }
 
@@ -1216,6 +1217,29 @@ function receiptMatchModal(receipt) {
       try { await api(`/api/ledger/receipts/${receipt.id}/match`, { body: { entry_id } }); toast("Receipt match saved"); close(true); route(); } catch (e) { err(e); }
     };
   });
+}
+
+async function chequeModal(paymentId) {
+  try {
+    const c = await api(`/api/ledger/payments/${paymentId}/cheque`);
+    return modal("Cheque", (el, close) => {
+      el.innerHTML = `<div class="doc-paper" style="font-family:ui-monospace,monospace">
+        <div class="top"><div><b>${esc(c.company?.name || "")}</b><div class="muted" style="font-size:12px">${esc(c.company?.legal_name || "")}${c.company?.business_number ? " · BN " + esc(c.company.business_number) : ""}</div></div>
+          <div style="text-align:right"><b>CHEQUE</b><div class="muted" style="font-size:12px">${esc(c.bank || "")}</div></div></div>
+        <div style="margin-top:26px;line-height:2">
+          <div>PAY TO THE ORDER OF&nbsp; <b>${esc(c.payee)}</b></div>
+          <div>DATE&nbsp; ${fmtDate(c.date)}</div>
+          <div>AMOUNT&nbsp; <b>${money(c.amount_cents)}</b></div>
+          <div>${esc(c.amount_words)}</div>
+          <div>MEMO&nbsp; ${esc(c.memo || "")}</div>
+        </div>
+        <p class="faint" style="margin-top:24px">${esc(c.disclaimer || "")}</p>
+      </div>
+      <div class="actions"><button class="btn" data-x>Close</button><button class="btn primary" data-print>Print</button></div>`;
+      el.querySelector("[data-x]").onclick = () => close();
+      el.querySelector("[data-print]").onclick = () => window.print();
+    }, { wide: true });
+  } catch (e) { err(e); }
 }
 
 function salesReceiptModal() {
