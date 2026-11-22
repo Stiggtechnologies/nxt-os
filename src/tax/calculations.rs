@@ -552,7 +552,7 @@ pub(super) fn calculate_with_slips(
 }
 
 fn check_t1_2025_fields(obj: &Map<String, Value>, baseline: &[&str]) -> Result<(), String> {
-    let mut keys = baseline.to_vec();
+    let mut keys: Vec<&str> = baseline.to_vec();
     keys.push(super::t2125::CONFIRMATION);
     keys.push(super::t2125::CCA_VERIFIED);
     keys.extend(super::t2125::CCA_CLASSES.iter().flat_map(|class| [class.opening, class.claim]));
@@ -561,6 +561,7 @@ fn check_t1_2025_fields(obj: &Map<String, Value>, baseline: &[&str]) -> Result<(
     keys.push(schedule8_payroll::CONFIRMATION);
     keys.push(super::schedule8::MONTHS);
     keys.extend(super::t2125::EXPENSES.iter().map(|expense| expense.key));
+    keys.extend(super::t2125::input_keys().map(|key| -> &str { key }));
     check_fields(obj, &keys)
 }
 
@@ -752,32 +753,15 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     let pre_home_income = gross - expenses - cca;
     let home = t2125_home_expenses(c, obj, pre_home_income, &mut lines)?;
     let net_business = pre_home_income - home;
-    let has_business = gross > 0 || expenses > 0 || cca > 0 || home > 0;
-    if itemized && !has_business {
+    let business = gross > 0 || expenses > 0 || cca > 0;
+    if itemized && !business {
         return Err("Itemized expenses require business income, expenses or CCA.".into());
     }
     let mut se_net = 0;
     let mut se_ded = 0;
     let mut se_credit = 0;
     let mut se_cpp_payable = None;
-    let payroll_cpp = if calculate_payroll {
-        if confirmed || employment == 0 || boolean(obj, "born_1960_or_earlier")? {
-            return Err("Payroll CPP requires confirmed eligibility, positive employment income and an unselected Part 4 confirmation.".into());
-        }
-        if entered_deduction > 0 || entered_credit > 0
-            || money(obj, "cpp_base_credit_cents")? > 0 || money(obj, "cpp_enhanced_deduction_cents")? > 0
-        {
-            return Err("Clear the manually entered CPP amounts before calculating from saved T4s.".into());
-        }
-        let payroll = schedule8_payroll::Payroll::from_slips(slips, employment)?;
-        let transfers = schedule8_payroll::calculate(&payroll, net_business.max(0), cpp_period);
-        c.sources.push(source("CRA 2025 Schedule 8, Parts 3 and 5", super::schedule8::FORM));
-        lines.push(("44800".into(), "Schedule 8 CPP overpayment".into(), transfers.overpayment));
-        Some(transfers)
-    } else {
-        None
-    };
-    if has_business {
+    if business {
         require(c, obj, "t2125_verified", "Verify the T2125 totals and claim eligibility against the business records.")?;
         se_net = net_business;
         if cca > 0 && pre_home_income < 0 {
@@ -796,6 +780,56 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
         if itemized || calculated_cca || boolean(obj, super::t2125::HOME_VERIFIED)? {
             lines.push(("T2125:9946".into(), "Net business income under the confirmed scope".into(), se_net));
         }
+    }
+    // Professional and commission (T2125), farming (T2042) and fishing (T2121) lines.
+    let mut other_nets = vec![];
+    for a in super::t2125::ACTIVITIES {
+        let (g, e, k) = (money(obj, a.gross_key)?, money(obj, a.expenses_key)?, money(obj, a.cca_key)?);
+        if g == 0 && e == 0 && k == 0 { continue; }
+        require(c, obj, a.verify_key, &format!("Verify the {} {} totals and claim eligibility against the records.", a.form, a.label))?;
+        let net = g - e - k;
+        if k > 0 && net < 0 {
+            return Err(format!("CCA cannot create or increase a {} loss", a.label));
+        }
+        if a.id == "farming" && net < 0 {
+            c.diagnostic("farming_loss_not_calculated", "A farming loss needs the restricted farm loss and farm loss carryover rules, which NXT does not calculate. Prepare it separately.", Some(a.gross_key), true);
+        }
+        if !c.sources.iter().any(|known| known.url == a.form_url) { c.sources.push(source(&format!("CRA 2025 {}", a.form), a.form_url)); }
+        let label = &a.label[..1].to_uppercase();
+        let label = format!("{label}{}", &a.label[1..]);
+        let (fg, fe, fnet) = a.form_lines;
+        lines.extend([
+            (a.gross_line.into(), format!("{} gross {}", a.form, a.label), g),
+            (a.net_line.into(), format!("{} net {} (loss)", a.form, a.label), net),
+            (format!("{}:{}:{fg}", a.form, a.id), format!("{label}: gross income"), g),
+            (format!("{}:{}:{fe}", a.form, a.id), format!("{label}: total expenses including CCA"), sum(&[e, k])?),
+            (format!("{}:{}:{fnet}", a.form, a.id), format!("{label}: net income under the confirmed scope"), net),
+        ]);
+        other_nets.push(net);
+    }
+    let has_business = business || !other_nets.is_empty();
+    // T1 line 27: lines 13500, 13700, 13900, 14100 and 14300.
+    let mut line27 = se_net;
+    for net in &other_nets { line27 = sum(&[line27, *net])?; }
+    let any_loss = se_net < 0 || other_nets.iter().any(|net| *net < 0);
+    let payroll_cpp = if calculate_payroll {
+        if confirmed || employment == 0 || boolean(obj, "born_1960_or_earlier")? {
+            return Err("Payroll CPP requires confirmed eligibility, positive employment income and an unselected Part 4 confirmation.".into());
+        }
+        if entered_deduction > 0 || entered_credit > 0
+            || money(obj, "cpp_base_credit_cents")? > 0 || money(obj, "cpp_enhanced_deduction_cents")? > 0
+        {
+            return Err("Clear the manually entered CPP amounts before calculating from saved T4s.".into());
+        }
+        let payroll = schedule8_payroll::Payroll::from_slips(slips, employment)?;
+        let transfers = schedule8_payroll::calculate(&payroll, line27.max(0), cpp_period);
+        c.sources.push(source("CRA 2025 Schedule 8, Parts 3 and 5", super::schedule8::FORM));
+        lines.push(("44800".into(), "Schedule 8 CPP overpayment".into(), transfers.overpayment));
+        Some(transfers)
+    } else {
+        None
+    };
+    if has_business {
         if let Some(transfers) = &payroll_cpp {
             se_ded = transfers.business_deduction;
             se_credit = transfers.business_credit;
@@ -807,14 +841,14 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
                 || money(obj, "cpp_enhanced_deduction_cents")? > 0
                 || money(obj, "ei_credit_cents")? > 0
                 || boolean(obj, "born_1960_or_earlier")?
-                || se_net < 0
+                || any_loss
             {
-                return Err("Schedule 8 Part 4 requires confirmed CPP eligibility, no employment or payroll amounts, and nonnegative net business income.".into());
+                return Err("Schedule 8 Part 4 requires the confirmed full-year CPP scope, no employment or payroll amounts, and nonnegative net self-employment income on every line.".into());
             }
             if entered_deduction > 0 || entered_credit > 0 {
                 return Err("Clear the manually entered CPP deduction and credit before using Schedule 8 Part 4.".into());
             }
-            let schedule = super::schedule8::part4(se_net, cpp_period);
+            let schedule = super::schedule8::part4(line27, cpp_period);
             se_ded = schedule.deduction;
             se_credit = schedule.credit_amount;
             se_cpp_payable = Some(schedule.payable);
@@ -837,7 +871,7 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
         lines.push(("22200".into(), format!("{label} CPP deduction on self-employment earnings"), se_ded));
         lines.push(("31000".into(), format!("{label} base CPP credit amount on self-employment earnings"), se_credit));
     } else if entered_deduction > 0 || entered_credit > 0 || confirmed {
-        c.diagnostic("orphan_self_employed_cpp", "Self-employed CPP requires a saved business income, expense or CCA amount.", Some(super::schedule8::CONFIRMATION), true);
+        c.diagnostic("orphan_self_employed_cpp", "Self-employed CPP requires a saved business, professional, commission, farming or fishing income, expense or CCA amount.", Some(super::schedule8::CONFIRMATION), true);
         c.diagnostic("self_employed_cpp_payable_not_implemented", "CPP amounts require reconciliation against the applicable business schedule and Schedule 8 or RC381.", Some("se_cpp_verified"), true);
     }
     let (pr,acb,out)=(money(obj,"capital_proceeds_cents")?,money(obj,"capital_acb_cents")?,money(obj,"capital_outlays_cents")?);
@@ -873,10 +907,9 @@ fn t1_income_extras(c: &mut Calculation, obj: &Map<String,Value>, employment: i6
     }
     let oas=money(obj,"oas_pension_cents")?;
     if oas>0 { require(c,obj,"oas_verified","Verify T4A(OAS) box 18 OAS pension; recovery tax already withheld (box 22) must be entered as tax withheld. Net federal supplements and EI benefit repayments are not handled.")?; lines.push(("11300".into(),"Old age security pension".into(),oas)); }
-    let income=sum(&[se_net,taxable_gain,rental,pen,in_split,elig_div,other_div,oas])?;
+    let income=sum(&[line27,taxable_gain,rental,pen,in_split,elig_div,other_div,oas])?;
     Ok(T1Extra{income,deductions:sum(&[out_split,se_ded])?,pension_for_credit:(pen-out_split).max(0)+in_split,se_cpp_credit:se_credit,se_cpp_payable,payroll_cpp,elig_div,other_div,oas,lines})
 }
-
 fn t2125_opening_cca(
     c: &mut Calculation, obj: &Map<String, Value>, pre_cca_income: i64,
     lines: &mut Vec<(String, String, i64)>,
