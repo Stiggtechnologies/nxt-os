@@ -92,7 +92,7 @@ pub struct Ledger {
     keys: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct JournalInput {
     pub date: String,
     #[serde(default)]
@@ -240,6 +240,11 @@ pub struct BankRuleInput {
     pub tax_code: Option<String>,
     #[serde(default)]
     pub contact_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchInput {
+    pub entries: Vec<JournalInput>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1339,6 +1344,27 @@ impl Ledger {
         // record_payment applies the money to the stored document; return that state.
         let doc = self.doc(&doc.id).await?;
         Ok(serde_json::json!({ "doc": doc, "payment": payment }))
+    }
+
+    /// Post several journals as one unit: every entry is validated before any of
+    /// them reaches the books, so a bad row cannot leave a half-entered batch.
+    pub async fn post_batch(&self, input: BatchInput) -> LResult<Vec<Entry>> {
+        if input.entries.is_empty() {
+            return bad("add at least one entry");
+        }
+        if input.entries.len() > 50 {
+            return bad("a batch is limited to 50 entries");
+        }
+        for entry in &input.entries {
+            self.check_period(&entry.date).await?;
+            self.clean_lines(entry.lines.clone()).await?;
+        }
+        let mut posted = Vec::with_capacity(input.entries.len());
+        for entry in input.entries {
+            posted.push(self.create_journal(entry).await?);
+        }
+        self.audit("batch.posted", format!("{} entries", posted.len())).await?;
+        Ok(posted)
     }
 
     // ---- cash plan ------------------------------------------------------------

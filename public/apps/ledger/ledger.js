@@ -1306,7 +1306,7 @@ function accountModal(a) {
 
 views.journal = async () => {
   const [entries, recurring] = await Promise.all([api("/api/ledger/entries"), api("/api/ledger/recurring")]);
-  page("Journal entries", "Every posting in your books. Add adjusting entries here.", `<button class="btn primary" id="add">New journal entry</button>`,
+  page("Journal entries", "Every posting in your books. Add adjusting entries here.", `<button class="btn" id="batch">Batch</button><button class="btn primary" id="add">New journal entry</button>`,
     `<div class="card">${table([
       { h: "#", f: (e) => e.number }, { h: "Date", f: (e) => fmtDate(e.date) }, { h: "Type", f: (e) => esc(SOURCE_LABEL[e.source] || e.source) }, { h: "Description", f: (e) => esc(e.memo) },
       { h: "Amount", num: 1, f: (e) => money(e.lines.reduce((s, l) => s + l.debit, 0)) }, { h: "", f: (e) => (e.voided ? pill("void") : "") },
@@ -1321,6 +1321,7 @@ views.journal = async () => {
       ], recurring) : `<div class="empty">No memorized entries yet. Open a journal entry and choose Memorize.</div>`}
     </div>`);
   $("#add").onclick = journalModal;
+  $("#batch").onclick = batchJournalModal;
   $$("[data-post]", main).forEach((b) => (b.onclick = async () => { try { const e = await api(`/api/ledger/recurring/${b.dataset.post}/post`, { body: {} }); toast(`Posted entry #${e.number}`); route(); } catch (x) { err(x); } }));
   $$("[data-delrec]", main).forEach((b) => (b.onclick = async () => { try { await api(`/api/ledger/recurring/${b.dataset.delrec}`, { method: "DELETE" }); toast("Template deleted"); route(); } catch (x) { err(x); } }));
 };
@@ -1341,6 +1342,61 @@ function entryModal(e) {
       } catch (x) { err(x); }
     });
     $$("a", el).forEach((a) => a.addEventListener("click", () => close()));
+  }, { wide: true });
+}
+
+function batchJournalModal() {
+  const line = () => ({ account_id: "", debit: "", credit: "", memo: "" });
+  return modal("Batch journal entries", (el, close) => {
+    const entries = [{ date: today(), memo: "", lines: [line(), line()] }];
+    const render = () => {
+      el.innerHTML = `<p class="muted" style="margin-top:0">Every entry is validated before any of them is posted; one bad row stops the whole batch.</p>
+        <div data-batch>${entries.map((e, ei) => `<div class="card" style="margin-bottom:10px">
+          <div class="row" style="flex-wrap:nowrap;margin-bottom:8px">
+            <label class="f" style="margin:0">Date<input type="date" data-e="date" data-ei="${ei}" value="${esc(e.date)}"></label>
+            <label class="f" style="margin:0;flex:1">Memo<input data-e="memo" data-ei="${ei}" value="${esc(e.memo)}"></label>
+            <button class="btn sm ghost" data-remove-entry="${ei}" ${entries.length === 1 ? "disabled" : ""}>Remove</button>
+          </div>
+          <table class="lines"><thead><tr><th>Account</th><th style="width:110px">Debit</th><th style="width:110px">Credit</th><th>Memo</th><th></th></tr></thead><tbody>
+          ${e.lines.map((l, li) => `<tr><td><select data-l="account_id" data-ei="${ei}" data-li="${li}">${acctOptions(null, l.account_id, { blank: "Choose account…" })}</select></td>
+            <td><input data-l="debit" data-ei="${ei}" data-li="${li}" value="${esc(l.debit)}"></td>
+            <td><input data-l="credit" data-ei="${ei}" data-li="${li}" value="${esc(l.credit)}"></td>
+            <td><input data-l="memo" data-ei="${ei}" data-li="${li}" value="${esc(l.memo)}"></td>
+            <td><button type="button" class="del" data-del-line="${ei}:${li}">✕</button></td></tr>`).join("")}
+          </tbody></table>
+          <div class="row" style="margin-top:6px"><button class="btn sm" type="button" data-add-line="${ei}">+ Add line</button>
+            <span class="spacer"></span><span class="muted">Debits</span><b class="num" data-ed="${ei}"></b><span class="muted">Credits</span><b class="num" data-ec="${ei}"></b></div>
+        </div>`).join("")}</div>
+        <div class="actions"><button class="btn" data-add-entry>+ Add entry</button><span class="spacer"></span><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Post batch</button></div>`;
+      $$("[data-e]", el).forEach((inp) => (inp.oninput = inp.onchange = () => { entries[Number(inp.dataset.ei)][inp.dataset.e] = inp.value; }));
+      $$("[data-l]", el).forEach((inp) => (inp.oninput = inp.onchange = () => {
+        entries[Number(inp.dataset.ei)].lines[Number(inp.dataset.li)][inp.dataset.l] = inp.value;
+        totals();
+      }));
+      $$("[data-add-line]", el).forEach((b) => (b.onclick = () => { entries[Number(b.dataset.addLine)].lines.push(line()); render(); }));
+      $$("[data-del-line]", el).forEach((b) => (b.onclick = () => {
+        const [ei, li] = b.dataset.delLine.split(":").map(Number);
+        if (entries[ei].lines.length > 2) { entries[ei].lines.splice(li, 1); render(); }
+      }));
+      $$("[data-remove-entry]", el).forEach((b) => (b.onclick = () => { if (entries.length > 1) { entries.splice(Number(b.dataset.removeEntry), 1); render(); } }));
+      $("[data-add-entry]", el).onclick = () => { entries.push({ date: today(), memo: "", lines: [line(), line()] }); render(); };
+      $("[data-x]", el).onclick = () => close();
+      $("[data-ok]", el).onclick = async () => {
+        const payload = entries.map((e) => ({ date: e.date, memo: e.memo, lines: e.lines.filter((l) => l.account_id).map((l) => ({ account_id: l.account_id, debit: toCents(l.debit) || 0, credit: toCents(l.credit) || 0, memo: l.memo })) }));
+        try { const posted = await api("/api/ledger/entries/batch", { body: { entries: payload } }); toast(`Posted ${posted.length} entr${posted.length === 1 ? "y" : "ies"}`); close(true); route(); } catch (e) { err(e); }
+      };
+      totals();
+    };
+    const totals = () => {
+      entries.forEach((e, i) => {
+        const d = e.lines.reduce((s, l) => s + (toCents(l.debit) || 0), 0), c = e.lines.reduce((s, l) => s + (toCents(l.credit) || 0), 0);
+        const de = el.querySelector(`[data-ed="${i}"]`), ce = el.querySelector(`[data-ec="${i}"]`);
+        if (de) de.textContent = money(d);
+        if (ce) ce.textContent = money(c);
+        if (de && ce) de.style.color = ce.style.color = d === c && d > 0 ? "var(--good)" : "var(--bad)";
+      });
+    };
+    render();
   }, { wide: true });
 }
 

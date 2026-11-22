@@ -9,29 +9,28 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 146 |
+| Routed | 147 |
 | Linked | 24 |
 | External | 13 |
-| **Open** | **37** |
-| Routed coverage | 66% |
+| **Open** | **36** |
+| Routed coverage | 67% |
 | Source chrome excluded | 22 |
 
 ## By product
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 143 | 106 | 24 | 1 | 12 | 74% |
+| QuickBooks | 143 | 107 | 24 | 1 | 11 | 75% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (12)
+### Open to build (11)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
 | Suppliers | Print cheques | Render recorded bill payments as printable cheque PDFs with a configurable layout; no MICR or signing claim. | Cheque printing needs bank cheque stock, MICR layout and a signing process. NXT records the payment journal instead of printing the instrument. |
-| Other | Batch transactions | Stage several balanced journals and post them atomically behind one preview. | NXT books one transaction at a time with a preview and a balanced journal; a batch screen would remove that check rather than add capability. |
 | Reports | Custom reports | Add a saved-report builder over the existing report endpoints with field, filter and CSV selection. | NXT ships a fixed report set. A report builder is a separate authoring project, not a missing screen. |
 | Accounting | Receipts | Add a receipt inbox that attaches documents to an expense and requires human matching; no OCR claim. | Receipt capture pairs OCR with expense matching. NXT stores attachments against known documents but does not run a capture queue. |
 | Sales & Get Paid | Payment links | Add invoice payment-link records and a webhook contract; the merchant account stays a deployment dependency. | Payment links require a payment service provider and merchant account. NXT records invoices; it does not collect card payments. |

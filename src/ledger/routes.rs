@@ -229,6 +229,7 @@ fn routes(st: Arc<Ledger>) -> Router {
         .route("/api/ledger/credit-memos/{id}/apply", post(apply_credit))
         .route("/api/ledger/sales-receipts", post(sales_receipt))
         .route("/api/ledger/plan", get(cash_plan).put(save_cash_plan))
+        .route("/api/ledger/entries/batch", post(post_batch))
         .route("/api/ledger/classes", get(classes).post(save_class))
         .route("/api/ledger/classes/{id}", delete(delete_class))
         .route("/api/ledger/budgets", get(budgets).post(set_budget))
@@ -402,6 +403,9 @@ async fn create_credit_memo(State(l): S, Json(b): Json<DocInput>) -> R {
 }
 async fn apply_credit(State(l): S, Path(id): Path<String>, Json(b): Json<ApplyCreditInput>) -> R {
     ok(l.apply_credit(&id, b).await)
+}
+async fn post_batch(State(l): S, Json(b): Json<BatchInput>) -> R {
+    ok(l.post_batch(b).await)
 }
 async fn cash_plan(State(l): S) -> R {
     ok(l.cash_plan().await)
