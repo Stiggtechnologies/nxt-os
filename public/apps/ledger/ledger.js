@@ -624,7 +624,7 @@ views.banking = async () => {
       <div class="row" style="margin-top:10px;flex-wrap:nowrap">
         <input id="ruleKw" placeholder="Keyword, e.g. adobe" maxlength="80" style="max-width:220px">
         <select id="ruleAcct" style="max-width:220px">${acctOptions((a) => !isMoney(a) && !["receivable", "payable"].includes(a.role), "acc_6300")}</select>
-        <select id="ruleTax" style="max-width:170px">${taxOptions(S.company.default_tax_code)}</select>
+        <select id="ruleTax" style="max-width:170px">${taxOptions(S.company?.default_tax_code || "NONE")}</select>
         <button class="btn primary" id="ruleAdd">Add rule</button>
       </div></div>`;
     page("Bank feed", "Import statements, review each transaction, and NXT learns your categories.",
