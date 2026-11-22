@@ -4,7 +4,7 @@ use super::engine::{LResult, Ledger, parse_date, today};
 use super::models::*;
 use chrono::{Datelike, NaiveDate};
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 struct Books {
     company: Company,
@@ -336,6 +336,61 @@ fn ymd(d: NaiveDate) -> String {
 }
 
 impl Ledger {
+    /// Budget versus actual over [from, to]. Budget cells are monthly; actuals are the
+    /// account's natural movement from the committed journal for the same window.
+    pub async fn budget_vs_actual(&self, from: &str, to: &str) -> LResult<Value> {
+        parse_date(from)?;
+        parse_date(to)?;
+        if to < from {
+            return Err(super::engine::LedgerError::BadRequest("'to' is before 'from'".into()));
+        }
+        let books = self.books().await?;
+        let net = books.net(Some(from), to);
+        let from_month = &from[..7.min(from.len())];
+        let to_month = &to[..7.min(to.len())];
+        let mut budgeted: BTreeMap<String, i64> = BTreeMap::new();
+        for cell in self.budgets().await? {
+            if cell.month.as_str() >= from_month && cell.month.as_str() <= to_month {
+                *budgeted.entry(cell.account_id).or_insert(0) += cell.amount;
+            }
+        }
+        let mut ids: BTreeSet<String> = budgeted.keys().cloned().collect();
+        // Budget-vs-actual is a profit-and-loss view: balance-sheet movement only
+        // appears when the operator explicitly budgeted that account.
+        for account in &books.accounts {
+            if matches!(account.kind, AccountKind::Income | AccountKind::Expense)
+                && *net.get(&account.id).unwrap_or(&0) != 0
+            {
+                ids.insert(account.id.clone());
+            }
+        }
+        let accounts: HashMap<&str, &Account> = books.accounts.iter().map(|a| (a.id.as_str(), a)).collect();
+        let mut rows = Vec::new();
+        let (mut total_budget, mut total_actual) = (0_i64, 0_i64);
+        for id in ids {
+            let Some(account) = accounts.get(id.as_str()) else { continue };
+            let budget = *budgeted.get(&id).unwrap_or(&0);
+            let raw = *net.get(&id).unwrap_or(&0);
+            let actual = if account.kind.debit_normal() { raw } else { -raw };
+            let variance = actual - budget;
+            let variance_pct = if budget == 0 { Value::Null } else { json!(((variance as f64 / budget as f64) * 10000.0).round() / 100.0) };
+            total_budget += budget;
+            total_actual += actual;
+            rows.push(json!({
+                "account_id": id, "code": account.code, "name": account.name, "kind": account.kind,
+                "budget_cents": budget, "actual_cents": actual,
+                "variance_cents": variance, "variance_pct": variance_pct,
+            }));
+        }
+        rows.sort_by(|a, b| a["code"].as_str().cmp(&b["code"].as_str()));
+        let totals = json!({
+            "budget_cents": total_budget, "actual_cents": total_actual,
+            "variance_cents": total_actual - total_budget,
+        });
+        Ok(json!({ "from": from, "to": to, "rows": rows, "totals": totals,
+            "basis": "monthly budget cells versus the committed journal's natural movement" }))
+    }
+
     /// Cash forecast: open invoices expected in, open bills expected out, and any
     /// scheduled recurring entry that touches a bank account, bucketed by week.
     /// This is a projection over records that already exist; it invents nothing.

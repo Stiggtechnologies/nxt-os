@@ -22,6 +22,7 @@ coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 | Recurring entries | Memorized balanced journal templates with weekly/monthly/quarterly/yearly schedules, post-on-demand and month-end clamping; nothing posts automatically. | `f7d3f6d`; `tests/recurring_templates.rs` |
 | Credit memos | Native `DocKind::CreditMemo` posting Dr income / Dr GST-HST, Cr AR; application to an invoice for the same customer without a second posting; void releases the invoices it covered. | `7900950`; `tests/credit_memos.rs` |
 | Forecasts | Weekly cash projection from open invoice/bill due dates and scheduled recurring entries, with opening and projected closing cash; labelled a projection and shown at `#reports/forecast`. | `tests/forecast.rs` |
+| Budget vs actual | Monthly budget cells per account (replacing on re-entry, deletable) compared with the committed journal's natural movement; P&L accounts plus any explicitly budgeted account; `#reports/budget-vs-actual` with a budget editor. | `tests/budgets.rs` |
 
 Customer statements already existed on `main` (contact page → Statement) and
 were not rebuilt; the 2026-11-05 map predates that screen.
@@ -42,9 +43,9 @@ capabilities. The largest clusters:
   vehicle and other-expense worksheets, additional information, GIFI summary
   income statement, amendments, AT1 and CO-17 schedules.
 
-Outside the register but still open: class/department tagging and budgets with
-a budget-vs-actual report; Caseware AJE worksheet and materiality; Firm
-time/WIP; DocuSign template library; WebTax multi-year rules.
+Outside the register but still open: class/department tagging on ledger lines
+and reports; Caseware AJE worksheet and materiality; Firm time/WIP; DocuSign
+template library; WebTax multi-year rules.
 
 ## External gates (not closable in code)
 

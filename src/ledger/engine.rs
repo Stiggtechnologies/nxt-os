@@ -241,6 +241,14 @@ pub struct BankRuleInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BudgetInput {
+    pub account_id: String,
+    /// YYYY-MM
+    pub month: String,
+    pub amount: i64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ApplyCreditInput {
     pub invoice_id: String,
     pub amount: i64,
@@ -1261,6 +1269,53 @@ impl Ledger {
         }
         self.store.set_json(&self.key("rules"), &rules).await?;
         self.audit("bank_rule.deleted", keyword).await?;
+        Ok(())
+    }
+
+    // ---- budgets --------------------------------------------------------------
+
+    pub async fn budgets(&self) -> LResult<Vec<BudgetCell>> {
+        let mut cells: Vec<BudgetCell> = self.store.get_json(&self.key("budgets")).await?.unwrap_or_default();
+        cells.sort_by(|a, b| a.month.cmp(&b.month).then(a.account_id.cmp(&b.account_id)));
+        Ok(cells)
+    }
+
+    pub async fn set_budget(&self, input: BudgetInput) -> LResult<BudgetCell> {
+        let month = input.month.trim().to_string();
+        NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d")
+            .map_err(|_| LedgerError::BadRequest("month must be YYYY-MM".into()))?;
+        if input.amount < 0 {
+            return bad("budget amounts cannot be negative");
+        }
+        let account = match self.account(&input.account_id).await {
+            Ok(account) => account,
+            Err(LedgerError::NotFound(_)) => return bad("choose an existing account for the budget"),
+            Err(error) => return Err(error),
+        };
+        if account.archived {
+            return bad(format!("account {} {} is archived", account.code, account.name));
+        }
+        if account.is_money() {
+            return bad("set budgets on income or expense accounts, not bank or credit-card accounts");
+        }
+        let cell = BudgetCell { account_id: account.id, month: month.clone(), amount: input.amount };
+        let mut cells = self.budgets().await?;
+        cells.retain(|c| !(c.account_id == cell.account_id && c.month == month));
+        cells.push(cell.clone());
+        self.store.set_json(&self.key("budgets"), &cells).await?;
+        self.audit("budget.saved", format!("{} {}", cell.account_id, month)).await?;
+        Ok(cell)
+    }
+
+    pub async fn delete_budget(&self, account_id: &str, month: &str) -> LResult<()> {
+        let mut cells = self.budgets().await?;
+        let before = cells.len();
+        cells.retain(|c| !(c.account_id == account_id && c.month == month));
+        if cells.len() == before {
+            return Err(LedgerError::NotFound(format!("no budget for {account_id} in {month}")));
+        }
+        self.store.set_json(&self.key("budgets"), &cells).await?;
+        self.audit("budget.deleted", format!("{account_id} {month}")).await?;
         Ok(())
     }
 

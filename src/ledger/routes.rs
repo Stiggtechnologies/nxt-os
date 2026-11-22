@@ -227,6 +227,8 @@ fn routes(st: Arc<Ledger>) -> Router {
         .route("/api/ledger/recurring/{id}/post", post(post_recurring))
         .route("/api/ledger/credit-memos", get(credit_memos).post(create_credit_memo))
         .route("/api/ledger/credit-memos/{id}/apply", post(apply_credit))
+        .route("/api/ledger/budgets", get(budgets).post(set_budget))
+        .route("/api/ledger/budgets/{account_id}/{month}", delete(delete_budget))
         .route("/api/ledger/reconcile", get(reconciliations).post(reconcile))
         .route("/api/ledger/reports/{name}", get(report))
         .route("/api/ledger/audit", get(audit))
@@ -397,6 +399,15 @@ async fn create_credit_memo(State(l): S, Json(b): Json<DocInput>) -> R {
 async fn apply_credit(State(l): S, Path(id): Path<String>, Json(b): Json<ApplyCreditInput>) -> R {
     ok(l.apply_credit(&id, b).await)
 }
+async fn budgets(State(l): S) -> R {
+    ok(l.budgets().await)
+}
+async fn set_budget(State(l): S, Json(b): Json<BudgetInput>) -> R {
+    ok(l.set_budget(b).await)
+}
+async fn delete_budget(State(l): S, Path((account_id, month)): Path<(String, String)>) -> R {
+    ok(l.delete_budget(&account_id, &month).await.map(|_| json!({ "deleted": month })))
+}
 async fn reconciliations(State(l): S) -> R {
     ok(l.reconciliations().await)
 }
@@ -418,6 +429,7 @@ pub async fn run_report(l: &Ledger, name: &str, q: &Range) -> LResult<Value> {
         "sales-tax" => l.sales_tax(&q.from(), &q.to()).await,
         "cash-flow" => l.cash_flow(&q.from(), &q.to()).await,
         "forecast" => l.forecast(&q.from(), &q.to()).await,
+        "budget-vs-actual" => l.budget_vs_actual(&q.from(), &q.to()).await,
         "profit-loss-by-month" => l.profit_loss_by_month(&q.from(), &q.to()).await,
         "profit-loss-comparison" => l.profit_loss_comparison(&q.from(), &q.to()).await,
         "customer-balances" => l.contact_balances(DocKind::Invoice, &q.to()).await,

@@ -301,6 +301,14 @@ impl Default for Company {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetCell {
+    pub account_id: String,
+    /// YYYY-MM
+    pub month: String,
+    pub amount: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecurringTemplate {
     pub id: String,
     pub name: String,

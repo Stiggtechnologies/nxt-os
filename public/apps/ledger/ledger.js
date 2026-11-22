@@ -1070,6 +1070,36 @@ function creditMemoModal(kind) {
   });
 }
 
+function budgetModal() {
+  return modal("Budgets", (el, close) => {
+    const render = async () => {
+      const cells = await api("/api/ledger/budgets");
+      const accounts = (S.accounts || []).filter((a) => !["bank", "credit_card"].includes(a.role) && a.kind !== "equity" && !a.archived);
+      el.innerHTML = `<p class="muted" style="margin-top:0">One amount per account per month, compared with the committed journal. Amounts are positive figures in the account's natural direction.</p>
+        ${cells.length ? table([
+          { h: "Account", f: (c) => esc(acctName(c.account_id)) },
+          { h: "Month", f: (c) => esc(c.month) },
+          { h: "Budget", num: 1, f: (c) => money(c.amount) },
+          { h: "", f: (c) => `<button class="btn sm ghost" data-del-budget="${esc(c.account_id)}|${esc(c.month)}">Delete</button>` },
+        ], cells) : `<div class="empty">No budget cells yet.</div>`}
+        <form class="form" style="margin-top:12px"><label class="f">Account<select name="account_id">${accounts.map((a) => `<option value="${esc(a.id)}">${esc(a.code)} · ${esc(a.name)}</option>`).join("")}</select></label>
+          <label class="f">Month<input name="month" type="month" required value="${today().slice(0, 7)}"></label>
+          <label class="f">Amount<input name="amount" type="number" min="0" step="0.01" required placeholder="0.00"></label></form>
+        <div class="actions"><button class="btn" data-x>Close</button><button class="btn primary" data-save>Save budget</button></div>`;
+      el.querySelector("[data-x]").onclick = () => close();
+      el.querySelector("[data-save]").onclick = async () => {
+        const f = Object.fromEntries(new FormData(el.querySelector("form")));
+        try { await api("/api/ledger/budgets", { body: { account_id: f.account_id, month: f.month, amount: toCents(f.amount) } }); toast("Budget saved"); await render(); route(); } catch (e) { err(e); }
+      };
+      $$("[data-del-budget]", el).forEach((b) => (b.onclick = async () => {
+        const [account_id, month] = b.dataset.delBudget.split("|");
+        try { await api(`/api/ledger/budgets/${encodeURIComponent(account_id)}/${encodeURIComponent(month)}`, { method: "DELETE" }); await render(); route(); } catch (e) { err(e); }
+      }));
+    };
+    render().catch(err);
+  }, { wide: true });
+}
+
 function nativeMemoCard(memos, invoices) {
   if (company) return "";
   const open = (m) => m.total - m.paid;
@@ -1276,6 +1306,7 @@ const REPORTS = {
   "payroll-remittance": ["Payroll remittance", "CPP, EI and income tax withheld from recorded paystubs, by month.", "range"],
   "cash-flow": ["Cash flow", "Money in and out of bank accounts, by month.", "range"],
   forecast: ["Cash forecast", "Expected receipts, payments and scheduled entries, week by week.", "range"],
+  "budget-vs-actual": ["Budget vs actual", "Monthly budgets against the committed journal.", "range"],
   "profit-loss-by-month": ["Profit and loss by month", "Income, costs and net income, one column per month.", "range"],
   "profit-loss-comparison": ["Profit and loss comparison", "This period against the same period last year.", "range"],
   "customer-balances": ["Customer balance summary", "Open invoice balance per customer.", "asof"],
@@ -1320,6 +1351,7 @@ views.reports = async (name) => {
     page(meta[0], `${esc(S.company.name)} · ${meta[2] === "range" ? `${fmtDate(st.from)} to ${fmtDate(st.to)}` : `As of ${fmtDate(st.to)}`}`,
       `${meta[2] === "range" ? `<select id="preset"><option value="">Custom</option>${Object.keys(presets()).map((p) => `<option>${p}</option>`).join("")}</select><input type="date" id="from" value="${st.from}">` : ""}<input type="date" id="to" value="${st.to}">
        ${key === "general-ledger" ? `<select id="acctF">${acctOptions(null, st.account_id, { blank: "All accounts" })}</select>` : ""}
+       ${key === "budget-vs-actual" ? `<button class="btn" id="budgets">Set budgets</button>` : ""}
        <button class="btn" onclick="print()">Print</button><button class="btn" id="csv">Export</button>`,
       `<div class="card report">${renderReport(key, data, st)}</div>`);
     const upd = () => { st.from = $("#from")?.value || st.from; st.to = $("#to").value; st.account_id = $("#acctF")?.value || ""; history.replaceState(null, "", `#reports/${key}?${new URLSearchParams(st)}`); run().catch(err); };
@@ -1327,6 +1359,7 @@ views.reports = async (name) => {
     if ($("#preset")) $("#preset").onchange = (e) => { const p = presets()[e.target.value]; if (p) { [st.from, st.to] = p; $("#from").value = p[0]; $("#to").value = p[1]; upd(); } };
     $("#csv").onclick = () => csvDownload(`${key}-${st.to}.csv`, reportCsv(key, data, st));
     $("#remit")?.addEventListener("click", () => transferModal(true));
+    $("#budgets")?.addEventListener("click", () => budgetModal());
   };
   await run();
 };
@@ -1335,6 +1368,18 @@ function sectionRows(rows) { return rows.map((r) => `<tr class="click" onclick="
 function plain(rows) { return rows.map((r) => `<tr><td class="indent">${esc(r.code ? r.code + " · " : "")}${esc(r.name)}</td><td class="num">${money(r.amount)}</td></tr>`).join(""); }
 
 function renderReport(key, d, st = { from: "", to: "" }) {
+  if (key === "budget-vs-actual") {
+    const rows = Array.isArray(d.rows) ? d.rows : [];
+    const pct = (v) => v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${Number(v).toFixed(2)}%`;
+    return `${table([
+      { h: "Account", f: (r) => `<b>${esc(r.code)}</b> · ${esc(r.name)}` },
+      { h: "Budget", num: 1, f: (r) => money(r.budget_cents) },
+      { h: "Actual", num: 1, f: (r) => money(r.actual_cents) },
+      { h: "Variance", num: 1, f: (r) => money(r.variance_cents) },
+      { h: "Variance %", num: 1, f: (r) => pct(r.variance_pct) },
+    ], rows, { empty: "No budgets or activity in this period. Use Set budgets." })}
+    <p class="muted" style="margin:12px 0 0">Budget ${money(d.totals?.budget_cents)} · actual ${money(d.totals?.actual_cents)} · variance ${money(d.totals?.variance_cents)}. ${esc(d.basis || "")}</p>`;
+  }
   if (key === "forecast") {
     const rows = Array.isArray(d.buckets) ? d.buckets : [];
     const src = d.sources || {};
@@ -1453,6 +1498,11 @@ function renderReport(key, d, st = { from: "", to: "" }) {
 
 function reportCsv(key, d, st = { from: "", to: "" }) {
   const $c = (v) => window.NXTLedgerFormat.cents(v);
+  if (key === "budget-vs-actual") {
+    const rows = [["code", "account", "budget", "actual", "variance", "variance_pct"]];
+    for (const r of (Array.isArray(d.rows) ? d.rows : [])) rows.push([r.code, JSON.stringify(r.name), $c(r.budget_cents), $c(r.actual_cents), $c(r.variance_cents), r.variance_pct ?? ""]);
+    return rows.map((r) => r.join(",")).join("\n");
+  }
   if (key === "forecast") {
     const rows = [["start", "end", "expected_in", "expected_out", "net", "projected_cash"]];
     for (const b of (Array.isArray(d.buckets) ? d.buckets : [])) rows.push([b.start, b.end, $c(b.expected_in_cents), $c(b.expected_out_cents), $c(b.net_cents), $c(b.projected_cash_cents)]);
