@@ -44,7 +44,7 @@ test('public menu catalog contains generic navigation with unique IDs and no sou
   const nodes = flatten(catalog.groups);
   assert.ok(nodes.length > 100);
   assert.equal(new Set(nodes.map(n => n.id)).size, nodes.length);
-  const allowed = new Set(['id', 'label', 'observation', 'children', 'observed_path', 'native_route', 'native_scope', 'next_step', 'related', 'kind', 'scope', 'scope_reason']);
+  const allowed = new Set(['id', 'label', 'observation', 'children', 'observed_path', 'native_route', 'native_scope', 'next_step', 'related', 'kind', 'scope', 'scope_reason', 'in_scope_since']);
   for (const node of nodes) {
     assert.match(node.id, /^[a-z0-9][a-z0-9-]*$/);
     assert.ok(['observed', 'grouping', 'unverified'].includes(node.observation));
@@ -58,7 +58,7 @@ test('public menu catalog contains generic navigation with unique IDs and no sou
 test('every native and related mapping resolves to an existing bounded route', () => {
   const viewNames = new Set([...ledgerSource.matchAll(/views\.([a-z]+)\s*=/g)].map(match => match[1]));
   viewNames.add('native-create');
-  const reports = new Set(['profit-loss', 'balance-sheet', 'trial-balance', 'ar-aging', 'ap-aging', 'sales-tax', 'general-ledger', 'time', 'cash-flow', 'payroll-remittance']);
+  const reports = new Set(['profit-loss', 'balance-sheet', 'trial-balance', 'ar-aging', 'ap-aging', 'sales-tax', 'general-ledger', 'time', 'cash-flow', 'payroll-remittance', 'profit-loss-by-month', 'profit-loss-comparison', 'customer-balances', 'vendor-balances', 'forecast']);
   const forms = new Set(['expense', 'deposit', 'transfer', 'journal', 'customer', 'supplier']);
   for (const entry of flatten(catalog.groups)) {
     if (entry.native_route) assert.ok(entry.native_scope && entry.observation === 'observed', entry.id);

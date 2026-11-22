@@ -336,6 +336,84 @@ fn ymd(d: NaiveDate) -> String {
 }
 
 impl Ledger {
+    /// Cash forecast: open invoices expected in, open bills expected out, and any
+    /// scheduled recurring entry that touches a bank account, bucketed by week.
+    /// This is a projection over records that already exist; it invents nothing.
+    pub async fn forecast(&self, from: &str, to: &str) -> LResult<Value> {
+        let f = parse_date(from)?;
+        let t = parse_date(to)?;
+        if t < f {
+            return Err(super::engine::LedgerError::BadRequest("'to' is before 'from'".into()));
+        }
+        if (t - f).num_days() > 366 {
+            return Err(super::engine::LedgerError::BadRequest("select a forecast window of a year or less".into()));
+        }
+        let b = self.books().await?;
+        let banks: Vec<&Account> = b.accounts.iter().filter(|a| a.role == AccountRole::Bank).collect();
+        let is_bank = |id: &str| banks.iter().any(|a| a.id == id);
+        let opening_net = b.net(None, &day_before(from));
+        let opening: i64 = banks.iter().map(|a| natural(a.kind, *opening_net.get(&a.id).unwrap_or(&0))).sum();
+        let weeks = (((t - f).num_days() + 7) / 7).max(1) as usize;
+        let mut buckets: Vec<(i64, i64)> = vec![(0, 0); weeks];
+        let slot = |date: &str| -> usize {
+            let days = (parse_date(date).unwrap() - f).num_days();
+            if days < 0 { 0 } else { (days / 7).min(weeks as i64 - 1) as usize }
+        };
+        let mut invoices = 0;
+        for doc in self.docs(Some(DocKind::Invoice)).await? {
+            let bal = doc.balance();
+            if bal <= 0 || doc.voided || doc.date.as_str() > to || doc.due_date.as_str() > to { continue; }
+            let i = slot(&doc.due_date);
+            buckets[i].0 += bal;
+            invoices += 1;
+        }
+        let mut bills = 0;
+        for doc in self.docs(Some(DocKind::Bill)).await? {
+            let bal = doc.balance();
+            if bal <= 0 || doc.voided || doc.date.as_str() > to || doc.due_date.as_str() > to { continue; }
+            let i = slot(&doc.due_date);
+            buckets[i].1 += bal;
+            bills += 1;
+        }
+        let mut recurring = 0;
+        for template in self.recurring().await? {
+            if template.next_date.as_str() < from || template.next_date.as_str() > to { continue; }
+            let i = slot(&template.next_date);
+            let mut touches_cash = false;
+            for line in &template.lines {
+                if !is_bank(&line.account_id) { continue; }
+                touches_cash = true;
+                buckets[i].0 += line.debit;
+                buckets[i].1 += line.credit;
+            }
+            if touches_cash { recurring += 1; }
+        }
+        let mut rows = Vec::new();
+        let mut cash = opening;
+        for (i, (inflow, outflow)) in buckets.iter().enumerate() {
+            let start = f + chrono::Duration::days(7 * i as i64);
+            let end = (start + chrono::Duration::days(6)).min(t);
+            cash += inflow - outflow;
+            rows.push(json!({
+                "start": start.format("%Y-%m-%d").to_string(),
+                "end": end.format("%Y-%m-%d").to_string(),
+                "expected_in_cents": inflow,
+                "expected_out_cents": outflow,
+                "net_cents": inflow - outflow,
+                "projected_cash_cents": cash,
+            }));
+        }
+        Ok(json!({
+            "from": from, "to": to, "basis": "expected receipts, expected payments and scheduled recurring entries",
+            "opening_cash_cents": opening,
+            "buckets": rows,
+            "closing_cash_cents": cash,
+            "sources": { "open_invoices": invoices, "open_bills": bills, "recurring_entries": recurring },
+            "excludes": ["new sales not yet invoiced", "payroll and tax remittances not recorded", "financing and asset purchases not recorded"],
+            "note": "A projection over recorded documents, not a guarantee. Overdue documents are expected in the first week.",
+        }))
+    }
+
     /// Profit and Loss by Month: one column per calendar month in [from, to].
     pub async fn profit_loss_by_month(&self, from: &str, to: &str) -> LResult<Value> {
         let f = parse_date(from)?;

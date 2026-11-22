@@ -9,10 +9,10 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 142 |
+| Routed | 143 |
 | Linked | 24 |
 | External | 13 |
-| **Open** | **41** |
+| **Open** | **40** |
 | Routed coverage | 65% |
 | Source chrome excluded | 22 |
 
@@ -20,13 +20,13 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 143 | 102 | 24 | 1 | 16 | 71% |
+| QuickBooks | 143 | 103 | 24 | 1 | 15 | 72% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (16)
+### Open to build (15)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
@@ -36,7 +36,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Reports | Custom reports | Add a saved-report builder over the existing report endpoints with field, filter and CSV selection. | NXT ships a fixed report set. A report builder is a separate authoring project, not a missing screen. |
 | Reports | Performance centre | Add a firm performance dashboard over NXT metrics; do not import third-party benchmark data. | Benchmarking compares a firm against other QuickBooks users. NXT has no benchmark dataset and will not invent one. |
 | Financial planning | Cash flow planner | Add a projection report from user-entered assumptions, labelled as a plan rather than actuals. | A cash-flow planner projects future balances from assumptions. NXT reports actuals; forecasting is deliberately not modelled. |
-| Financial planning | Forecasts | Add a forecast from AR/AP due dates and recurring templates, clearly labelled as a projection. | Forecasts are projections, not bookkeeping. Deliberately out of scope until a forecasting model is specified. |
 | Accounting | Receipts | Add a receipt inbox that attaches documents to an expense and requires human matching; no OCR claim. | Receipt capture pairs OCR with expense matching. NXT stores attachments against known documents but does not run a capture queue. |
 | Sales & Get Paid | Payment links | Add invoice payment-link records and a webhook contract; the merchant account stays a deployment dependency. | Payment links require a payment service provider and merchant account. NXT records invoices; it does not collect card payments. |
 | Sales & Get Paid | QuickBooks payouts | Add a payout import contract for a configured provider; no feed is shown without one. | Payouts are a QuickBooks Payments service artefact. NXT has no merchant processor and will not display a vendor payout feed. |

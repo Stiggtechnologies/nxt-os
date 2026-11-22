@@ -1275,6 +1275,7 @@ const REPORTS = {
   "general-ledger": ["General ledger", "Every line, by account, with running balances.", "range"],
   "payroll-remittance": ["Payroll remittance", "CPP, EI and income tax withheld from recorded paystubs, by month.", "range"],
   "cash-flow": ["Cash flow", "Money in and out of bank accounts, by month.", "range"],
+  forecast: ["Cash forecast", "Expected receipts, payments and scheduled entries, week by week.", "range"],
   "profit-loss-by-month": ["Profit and loss by month", "Income, costs and net income, one column per month.", "range"],
   "profit-loss-comparison": ["Profit and loss comparison", "This period against the same period last year.", "range"],
   "customer-balances": ["Customer balance summary", "Open invoice balance per customer.", "asof"],
@@ -1334,6 +1335,20 @@ function sectionRows(rows) { return rows.map((r) => `<tr class="click" onclick="
 function plain(rows) { return rows.map((r) => `<tr><td class="indent">${esc(r.code ? r.code + " · " : "")}${esc(r.name)}</td><td class="num">${money(r.amount)}</td></tr>`).join(""); }
 
 function renderReport(key, d, st = { from: "", to: "" }) {
+  if (key === "forecast") {
+    const rows = Array.isArray(d.buckets) ? d.buckets : [];
+    const src = d.sources || {};
+    return `<div class="grid kpis" style="margin-bottom:14px"><div class="kpi"><div class="k">Opening cash</div><div class="v">${money(d.opening_cash_cents)}</div></div><div class="kpi"><div class="k">Projected close</div><div class="v">${money(d.closing_cash_cents)}</div></div><div class="kpi"><div class="k">Documents</div><div class="v" style="font-size:18px">${src.open_invoices || 0} in · ${src.open_bills || 0} out · ${src.recurring_entries || 0} scheduled</div></div></div>
+      ${table([
+        { h: "Week", f: (r) => `${fmtDate(r.start)} – ${fmtDate(r.end)}` },
+        { h: "Expected in", num: 1, f: (r) => money(r.expected_in_cents) },
+        { h: "Expected out", num: 1, f: (r) => money(r.expected_out_cents) },
+        { h: "Net", num: 1, f: (r) => money(r.net_cents) },
+        { h: "Projected cash", num: 1, f: (r) => money(r.projected_cash_cents) },
+      ], rows)}
+      <p class="muted" style="margin:12px 0 0">${esc(d.note || "")}</p>
+      <p class="faint" style="margin:4px 0 0">Excludes: ${(d.excludes || []).map(esc).join("; ")}.</p>`;
+  }
   if (key === "payroll-remittance") {
     const stubs = Array.isArray(d.paystubs) ? d.paystubs : [];
     const groups = new Map();
@@ -1438,6 +1453,11 @@ function renderReport(key, d, st = { from: "", to: "" }) {
 
 function reportCsv(key, d, st = { from: "", to: "" }) {
   const $c = (v) => window.NXTLedgerFormat.cents(v);
+  if (key === "forecast") {
+    const rows = [["start", "end", "expected_in", "expected_out", "net", "projected_cash"]];
+    for (const b of (Array.isArray(d.buckets) ? d.buckets : [])) rows.push([b.start, b.end, $c(b.expected_in_cents), $c(b.expected_out_cents), $c(b.net_cents), $c(b.projected_cash_cents)]);
+    return rows.map((r) => r.join(",")).join("\n");
+  }
   if (key === "payroll-remittance") {
     const groups = new Map();
     for (const stub of (Array.isArray(d.paystubs) ? d.paystubs : [])) {

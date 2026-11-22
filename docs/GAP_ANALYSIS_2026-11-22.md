@@ -8,7 +8,7 @@ Reconciles the generated [gap register](GAP_REGISTER.md), the dated
 recorded as *out of scope* back into scope. The 41 rows that were written off
 are now **open** in the register, each with a next step; the earlier reason is
 kept as the recorded rationale so the trade-offs stay visible. The register
-therefore reports **41 open** of 220 capabilities and **13 external**; routed
+therefore reports **40 open** of 220 capabilities and **13 external**; routed
 coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 
 ## Closed in this pass
@@ -21,6 +21,7 @@ coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 | Bank rules | List, save, replace and delete rules at `/api/ledger/rules`, with a Bank rules panel. Matching is longest-keyword-wins. | `0465077`; `tests/bank_rules.rs` |
 | Recurring entries | Memorized balanced journal templates with weekly/monthly/quarterly/yearly schedules, post-on-demand and month-end clamping; nothing posts automatically. | `f7d3f6d`; `tests/recurring_templates.rs` |
 | Credit memos | Native `DocKind::CreditMemo` posting Dr income / Dr GST-HST, Cr AR; application to an invoice for the same customer without a second posting; void releases the invoices it covered. | `7900950`; `tests/credit_memos.rs` |
+| Forecasts | Weekly cash projection from open invoice/bill due dates and scheduled recurring entries, with opening and projected closing cash; labelled a projection and shown at `#reports/forecast`. | `tests/forecast.rs` |
 
 Customer statements already existed on `main` (contact page → Statement) and
 were not rebuilt; the 2026-11-05 map predates that screen.
@@ -30,10 +31,10 @@ were not rebuilt; the 2026-11-05 map predates that screen.
 The [gap register](GAP_REGISTER.md) is authoritative and now lists 41 open
 capabilities. The largest clusters:
 
-- QuickBooks (16): cheque printing, batch transactions, item profitability,
-  custom report builder, performance centre, cash-flow planner, forecasts,
-  receipt inbox, payment links and payouts, form styles, payroll settings,
-  custom fields, backup-company action, shift scheduling, assignments.
+- QuickBooks (15): cheque printing, batch transactions, item profitability,
+  custom report builder, performance centre, cash-flow planner, receipt
+  inbox, payment links and payouts, form styles, payroll settings, custom
+  fields, backup-company action, shift scheduling, assignments.
 - DT Max (14): client renumbering/restore, EFILE reports/errors/logs,
   labels, FileCabinet export, CT23 packing slip, forms catalogue, billing
   setup, text macros, UI options, maintenance job, editing locks.
