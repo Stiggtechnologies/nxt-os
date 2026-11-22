@@ -57,6 +57,8 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/audit",get(audit))
         .route("/api/tax/audit/verify",get(audit_verify))
         .route("/api/tax/rates",get(rates))
+        .route("/api/tax/snippets",get(snippets).post(save_snippet))
+        .route("/api/tax/snippets/{id}",axum::routing::delete(delete_snippet))
         .route("/api/tax/slips/aggregate",post(slips_aggregate))
         .route("/api/tax/gifi/from-trial-balance",post(gifi_from_tb))
         .route("/api/tax/t2/schedules",post(t2_schedules))
@@ -197,6 +199,16 @@ pub(super) fn print_workpaper(r:&TaxReturn)->TResult<String>{
 
 async fn audit_verify(State(t):S) -> R { ok(super::verify_audit(&t.audit().await?)) }
 async fn rates() -> R { ok(super::coverage::rate_metadata()) }
+async fn snippets(State(t): S) -> R {
+    ok(t.snippets().await?)
+}
+async fn save_snippet(State(t): S, Json(b): Json<SnippetInput>) -> R {
+    ok(t.save_snippet(b).await?)
+}
+async fn delete_snippet(State(t): S, Path(snippet_id): Path<String>) -> R {
+    t.delete_snippet(&snippet_id).await?;
+    ok(json!({ "deleted": snippet_id }))
+}
 #[derive(Deserialize)] #[serde(deny_unknown_fields)] struct SlipsInput { slips: Vec<super::slips::Slip> }
 async fn slips_aggregate(Json(input):Json<SlipsInput>) -> R { ok(super::slips::aggregate(&input.slips).map_err(super::bad)?) }
 /// Body: the `rows` from GET /api/company-books/{company}/trial-balance plus an explicit account -> GIFI mapping.

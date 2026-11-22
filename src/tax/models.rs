@@ -195,3 +195,19 @@ pub struct TaxState {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FiledRecord { pub by: String, pub at: String, pub reference: String, pub t183_envelope_id: String }
+
+/// Reusable preparer text expandable into workpaper notes.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Snippet {
+    pub id: String,
+    pub name: String,
+    pub text: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SnippetInput {
+    pub name: String,
+    pub text: String,
+}

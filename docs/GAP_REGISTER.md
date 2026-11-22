@@ -9,10 +9,10 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 154 |
+| Routed | 155 |
 | Linked | 26 |
 | External | 13 |
-| **Open** | **27** |
+| **Open** | **26** |
 | Routed coverage | 70% |
 | Source chrome excluded | 22 |
 
@@ -21,7 +21,7 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | QuickBooks | 143 | 114 | 26 | 1 | 2 | 80% |
-| DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
+| DT Max | 37 | 19 | 0 | 5 | 13 | 51% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
@@ -41,7 +41,7 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 ## DT Max
 
-### Open to build (14)
+### Open to build (13)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
@@ -55,7 +55,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Printing and output | CT23 D-File packing slip | Add a CT23 D-File packing-slip export once the firm confirms the format. | CT23 D-File packing slips are an Ontario/Quebec interface format from the vendor; not modelled. |
 | Setup and preferences | Forms manager | Add a form-catalogue view over published CRA forms with version pinning. | The forms manager selects installed form files. NXT has no installed form library. |
 | Setup and preferences | Billing setup | Move time/WIP billing into Firm Operations with rate tables and invoice generation. | Billing setup configures DT Max's own time/billing add-on, which NXT does not ship. |
-| Setup and preferences | Text macros setup | Add reusable text snippets for preparer notes with expansion in workpapers. | Text macros are desktop template expansion. NXT has no macro library. |
 | Setup and preferences | User interface options | Add workspace layout preferences per operator. | UI options configure the desktop application's own layout, which has no NXT equivalent by design. |
 | Database and help | Database maintenance | Add an operator maintenance job with a dry-run verification report. | Database maintenance compacts a local desktop database. NXT keeps state in a hosted store with its own operations. |
 | Database and help | Database in use | Add per-return editing locks with an explicit takeover flow. | This is a desktop single-user lock notice. NXT has no local database file to lock. |

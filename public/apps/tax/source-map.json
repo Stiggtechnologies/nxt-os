@@ -375,9 +375,9 @@
               "label": "Text macros setup",
               "source_label": "Text macros setup",
               "observation": "observed",
-              "native_route": null,
-              "native_scope": "No macro library for preparer text.",
-              "next_step": "Add reusable text snippets for preparer notes with expansion in workpapers.",
+              "native_route": "#worklist",
+              "native_scope": "Reusable text snippets are managed from the return editor and inserted into review notes; they are workspace text, not filing content.",
+              "next_step": "Return editor -> Text snippets (Insert / Manage).",
               "scope": "in_scope",
               "scope_reason": "Text macros are desktop template expansion. NXT has no macro library.",
               "in_scope_since": "2026-11-22"

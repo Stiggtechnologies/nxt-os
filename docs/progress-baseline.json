@@ -6,10 +6,10 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 154,
+    "routed": 155,
     "linked": 26,
     "external": 13,
-    "open": 27,
+    "open": 26,
     "chrome": 22,
     "percent": 70
   },
@@ -25,10 +25,10 @@
     {
       "product": "DT Max",
       "capabilities": 37,
-      "routed": 18,
+      "routed": 19,
       "linked": 0,
       "external": 5,
-      "open": 14
+      "open": 13
     },
     {
       "product": "WebTax4B",
@@ -54,7 +54,6 @@
     "dtmax.filecabinet",
     "dtmax.forms-manager",
     "dtmax.print-labels",
-    "dtmax.text-macros",
     "dtmax.ui-options",
     "webtax4b.at1-schedules",
     "webtax4b.co17-schedules",

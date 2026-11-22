@@ -35,6 +35,8 @@ const STATE_KEY: &str = "tax:state:v1";
 const MAX_STATE_BYTES: usize = 8 * 1024 * 1024;
 pub type TResult<T> = Result<T, ApiError>;
 pub struct Tax { pub store: Store, signatures: std::sync::OnceLock<std::sync::Arc<crate::signatures::Signatures>> }
+
+const SNIPPETS_KEY: &str = "tax:snippets:v1";
 fn bad(message: impl Into<String>) -> ApiError { ApiError(StatusCode::BAD_REQUEST, message.into()) }
 fn conflict(message: impl Into<String>) -> ApiError { ApiError(StatusCode::CONFLICT, message.into()) }
 fn missing() -> ApiError { ApiError(StatusCode::NOT_FOUND, "tax return not found".into()) }
@@ -207,6 +209,38 @@ impl Tax {
             json!({"id":r.id,"program":r.program,"tax_year":r.tax_year,"jurisdiction":r.jurisdiction,"name":r.name,"client_ref":r.client_ref,"period_start":r.period_start,"period_end":r.period_end,"revision":r.revision,"input_revision":r.input_revision,"status":r.status,"created_at":r.created_at,"updated_at":r.updated_at,"calculation":calculation,"current_scope_supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction)})
         }).collect())
     }
+    // ---- text snippets --------------------------------------------------------
+
+    pub async fn snippets(&self) -> TResult<Vec<Snippet>> {
+        let mut snippets: Vec<Snippet> = self.store.get_json(SNIPPETS_KEY).await?.unwrap_or_default();
+        snippets.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(snippets)
+    }
+
+    pub async fn save_snippet(&self, input: SnippetInput) -> TResult<Snippet> {
+        text(&input.name, "snippet name", 60, true)?;
+        text(&input.text, "snippet text", 600, true)?;
+        let mut snippets = self.snippets().await?;
+        if snippets.iter().any(|snippet| snippet.name.eq_ignore_ascii_case(input.name.trim())) {
+            return Err(bad("a snippet with that name already exists"));
+        }
+        let snippet = Snippet { id: id("snip"), name: input.name.trim().to_string(), text: input.text, created_at: now() };
+        snippets.push(snippet.clone());
+        self.store.set_json(SNIPPETS_KEY, &snippets).await?;
+        Ok(snippet)
+    }
+
+    pub async fn delete_snippet(&self, snippet_id: &str) -> TResult<()> {
+        let mut snippets = self.snippets().await?;
+        let before = snippets.len();
+        snippets.retain(|snippet| snippet.id != snippet_id);
+        if snippets.len() == before {
+            return Err(ApiError(StatusCode::NOT_FOUND, "snippet not found".into()));
+        }
+        self.store.set_json(SNIPPETS_KEY, &snippets).await?;
+        Ok(())
+    }
+
     pub async fn get(&self, record_id: &str) -> TResult<TaxReturn> { self.load().await?.returns.into_iter().find(|r| r.id == record_id).ok_or_else(missing) }
     pub async fn summary(&self) -> TResult<Value> {
         let s = self.load().await?; let n = |status: &str| s.returns.iter().filter(|r|r.status == status).count();

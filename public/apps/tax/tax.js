@@ -5,7 +5,7 @@
   const $ = (s, root = document) => root.querySelector(s);
   const $$ = (s, root = document) => [...root.querySelectorAll(s)];
   const main = $("#main"), API = "/api/tax";
-  const state = { catalog: null, program: "", year: "", returns: [], record: null, draft: null, section: "", dirty: false, errors: {}, search: "", status: "", jurisdiction: "", sort: "", preview: null, audit: [], version: 0 };
+  const state = { catalog: null, program: "", year: "", returns: [], record: null, draft: null, section: "", dirty: false, errors: {}, search: "", status: "", jurisdiction: "", sort: "", preview: null, audit: [], snippets: [], version: 0 };
   const request = (path, options) => api(API + path, options);
   let sourceWorkspace=null,sourcePreparationAttempt=0,sourceWorkspaceEpoch=0,reportWorkspace=null;
   let batchWorkspace=null;
@@ -366,7 +366,7 @@
       NXTSlipGroups.mount(host,{record:state.record,isCurrent:()=>host.isConnected&&state.version===token&&state.record?.id===id&&state.record?.revision===revision&&state.section==="slip-groups",onSaved:saved=>{state.record=saved;state.draft=clone(saved);state.dirty=false;renderWorkspace();}});return;
     }
     if (state.section === "identity") {
-      host.innerHTML = `<div class="editor-title"><h2>Return information</h2>${badge("neutral", "NXT workpaper")}</div>${!editable ? '<p class="form-note">Reopen the workpaper as a draft before editing. Changing inputs invalidates the prior calculation and review.</p>' : ""}<div class="card"><div class="form">${field("Name", input("name", r.name, "text", 'data-meta required maxlength="160"'))}${field("Client reference", input("client_ref", r.client_ref || "", "text", 'data-meta maxlength="100"'))}${field("Tax year", select("tax_year", choices([...new Set([...list(p.years),r.tax_year])]), r.tax_year, 'disabled aria-label="Tax year, immutable; use roll forward for a new year"'))}${field("Jurisdiction", select("jurisdiction", choices(p.jurisdictions), r.jurisdiction, "data-meta"))}${field("Period start", input("period_start", r.period_start || "", "date", "data-meta"))}${field("Period end", input("period_end", r.period_end || "", "date", "data-meta"))}${field("Review notes", `<textarea name="notes" data-meta rows="6" maxlength="10000">${esc(r.notes || "")}</textarea>`, "Do not store passwords or filing credentials in these notes.", true)}</div></div><div class="notice" style="margin-top:17px"><span>ⓘ</span><div><strong>Independent calculation source</strong><p>${esc(p.description)} This module does not claim DT Max format compatibility or filing certification.</p></div></div>`;
+      host.innerHTML = `<div class="editor-title"><h2>Return information</h2>${badge("neutral", "NXT workpaper")}</div>${!editable ? '<p class="form-note">Reopen the workpaper as a draft before editing. Changing inputs invalidates the prior calculation and review.</p>' : ""}<div class="card"><div class="form">${field("Name", input("name", r.name, "text", 'data-meta required maxlength="160"'))}${field("Client reference", input("client_ref", r.client_ref || "", "text", 'data-meta maxlength="100"'))}${field("Tax year", select("tax_year", choices([...new Set([...list(p.years),r.tax_year])]), r.tax_year, 'disabled aria-label="Tax year, immutable; use roll forward for a new year"'))}${field("Jurisdiction", select("jurisdiction", choices(p.jurisdictions), r.jurisdiction, "data-meta"))}${field("Period start", input("period_start", r.period_start || "", "date", "data-meta"))}${field("Period end", input("period_end", r.period_end || "", "date", "data-meta"))}${field("Review notes", `<textarea name="notes" data-meta rows="6" maxlength="10000">${esc(r.notes || "")}</textarea>`, "Do not store passwords or filing credentials in these notes.", true)}${field("Text snippets", `<div class="row" style="flex-wrap:nowrap"><select data-snippet aria-label="Snippet">${list(state.snippets).map(sn => `<option value="${esc(sn.id)}">${esc(sn.name)}</option>`).join("")}</select><button type="button" class="btn sm" data-snippet-insert>Insert</button><button type="button" class="btn sm" data-snippet-manage>Manage</button></div>`, "Appends the snippet to the review notes above.", true)}</div></div><div class="notice" style="margin-top:17px"><span>ⓘ</span><div><strong>Independent calculation source</strong><p>${esc(p.description)} This module does not claim DT Max format compatibility or filing certification.</p></div></div>`;
     } else if (isCorporate(r) && corporateSections.includes(state.section)) renderCorporateEditor();
     else if (state.section === "parties") renderParties();
     else if (state.section === "calculation") renderCalculation();
@@ -755,7 +755,46 @@
     catch (e) { if (version !== state.version) return; if (e.status === 401) await signIn(); else { main.classList.remove("workspace-mode"); main.innerHTML = `<div class="card"><h2>This view couldn't load.</h2><p class="form-error">${esc(e.message)}</p>${button("Try again", "refresh")} <a class="btn" href="#worklist">Return to worklist</a></div>`; } }
     finally { if (version === state.version) main.removeAttribute("aria-busy"); }
   }
-  async function boot() { state.catalog = await request("/catalog"); if (!state.program) state.program = programs()[0]?.id || ""; renderPrograms(); await navigate(); }
+  async function boot() { state.catalog = await request("/catalog"); state.snippets = await request("/snippets").catch(() => []); if (!state.program) state.program = programs()[0]?.id || ""; renderPrograms(); await navigate(); }
+  function manageSnippets() {
+    modal("Text snippets", (el, close) => {
+      const render = async () => {
+        state.snippets = await request("/snippets").catch(() => []);
+        const rows = list(state.snippets).map(sn => `<tr><td><strong>${esc(sn.name)}</strong><div class="faint">${esc(sn.text)}</div></td><td><button type="button" class="btn sm" data-snippet-del="${esc(sn.id)}">Delete</button></td></tr>`).join("");
+        el.innerHTML = `<p class="form-note">Snippets append to the Review notes field. They are workspace text, not filing content and not a certification.</p>
+          ${rows ? `<div class="table-wrap"><table><thead><tr><th>Snippet</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="form-note">No snippets yet.</p>`}
+          <div class="form"><label class="f">Name<input name="name" maxlength="60" required></label><label class="f full">Text<textarea name="text" rows="3" maxlength="600" required></textarea></label></div>
+          <div class="actions"><button class="btn" data-x>Close</button><button class="btn primary" data-add>Add snippet</button></div>`;
+        $("[data-x]", el).onclick = () => close();
+        $("[data-add]", el).onclick = async () => {
+          const name = $("input[name=name]", el).value.trim();
+          const text = $("textarea[name=text]", el).value;
+          if (!name || !text.trim()) return toast("Enter a name and text", true);
+          try { await request("/snippets", { body: { name, text } }); toast("Snippet saved"); await render(); } catch (error) { toast(error.message, true); }
+        };
+        $$("[data-snippet-del]", el).forEach(b => (b.onclick = async () => {
+          try { await request(`/snippets/${encodeURIComponent(b.dataset.snippetDel)}`, { method: "DELETE" }); toast("Snippet deleted"); await render(); } catch (error) { toast(error.message, true); }
+        }));
+      };
+      render().catch(() => {});
+    }, { wide: true });
+  }
+
+  document.addEventListener("click", (event) => {
+    const insert = event.target.closest("[data-snippet-insert]");
+    if (insert) {
+      const select = insert.closest(".form")?.querySelector("[data-snippet]") || $("[data-snippet]");
+      const snippet = list(state.snippets).find(sn => sn.id === select?.value);
+      const notes = $('textarea[name="notes"]');
+      if (!snippet || !notes) return;
+      notes.value = (notes.value.trimEnd() ? notes.value.trimEnd() + "\n\n" : "") + snippet.text;
+      notes.dispatchEvent(new Event("input", { bubbles: true }));
+      toast("Snippet inserted");
+      return;
+    }
+    if (event.target.closest("[data-snippet-manage]")) manageSnippets();
+  });
+
   window.addEventListener("hashchange", navigate);
   boot().catch(async e => { if (e.status === 401) await signIn(); else { main.innerHTML = `<div class="card"><h2>Tax workspace unavailable</h2><p class="form-error">${esc(e.message)}</p>${button("Try again", "refresh")}</div>`; } });
 })();

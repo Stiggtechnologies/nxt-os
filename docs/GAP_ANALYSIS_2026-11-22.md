@@ -8,7 +8,7 @@ Reconciles the generated [gap register](GAP_REGISTER.md), the dated
 recorded as *out of scope* back into scope. The 41 rows that were written off
 are now **open** in the register, each with a next step; the earlier reason is
 kept as the recorded rationale so the trade-offs stay visible. The register
-therefore reports **27 open** of 220 capabilities and **13 external**; routed
+therefore reports **26 open** of 220 capabilities and **13 external**; routed
 coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 
 ## Closed in this pass
@@ -23,6 +23,7 @@ coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 | Credit memos | Native `DocKind::CreditMemo` posting Dr income / Dr GST-HST, Cr AR; application to an invoice for the same customer without a second posting; void releases the invoices it covered. | `7900950`; `tests/credit_memos.rs` |
 | Forecasts | Weekly cash projection from open invoice/bill due dates and scheduled recurring entries, with opening and projected closing cash; labelled a projection and shown at `#reports/forecast`. | `tests/forecast.rs` |
 | Budget vs actual | Monthly budget cells per account (replacing on re-entry, deletable) compared with the committed journal's natural movement; P&L accounts plus any explicitly budgeted account; `#reports/budget-vs-actual` with a budget editor. | `tests/budgets.rs` |
+| Text snippets | Reusable preparer text (name + up to 600 characters) stored per workspace; the return editor can insert one into Review notes or manage the list. Snippets are workspace text, not filing content. | `tests/tax_snippets.rs` |
 | Cheque printing | A bill payment renders a printable cheque face with payee, amount, amount in words and memo; the disclaimer states NXT does not print MICR, sign or initiate payment. Available from the bill's payment row. | `tests/cheques.rs` |
 | Book export | GET /api/ledger/export returns a whole-book bundle (company, accounts, contacts, entries, documents, payments, classes, budgets, rules, recurring, plan, custom fields/values, receipts) with a SHA-256 over the payload; Company settings downloads it as an operator artifact for the documented backup runbook. Restore remains the documented procedure, not a browser button. | `tests/book_export.rs` |
 | Custom fields | Declared fields (text, number, date, boolean) per workspace; contact values are validated against them and stored without a schema migration; declarations live in Company settings, values on the contact page. | `tests/custom_fields.rs` |
