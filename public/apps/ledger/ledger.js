@@ -1389,6 +1389,7 @@ const REPORTS = {
   "profit-loss-by-class": ["Profit and loss by class", "Income and expense grouped by class or department.", "range"],
   "item-profitability": ["Revenue by customer and item", "Invoice lines grouped by customer and description, net of credit memos.", "range"],
   "cash-plan": ["Cash plan", "Today's cash carried forward by planned monthly receipts and payments.", "range"],
+  performance: ["Performance centre", "Revenue, margin, receivables and top customers over the trailing year.", "asof"],
   "profit-loss-by-month": ["Profit and loss by month", "Income, costs and net income, one column per month.", "range"],
   "profit-loss-comparison": ["Profit and loss comparison", "This period against the same period last year.", "range"],
   "customer-balances": ["Customer balance summary", "Open invoice balance per customer.", "asof"],
@@ -1454,6 +1455,26 @@ function sectionRows(rows) { return rows.map((r) => `<tr class="click" onclick="
 function plain(rows) { return rows.map((r) => `<tr><td class="indent">${esc(r.code ? r.code + " · " : "")}${esc(r.name)}</td><td class="num">${money(r.amount)}</td></tr>`).join(""); }
 
 function renderReport(key, d, st = { from: "", to: "" }) {
+  if (key === "performance") {
+    const pct = (v) => v === null || v === undefined ? "—" : `${Number(v).toFixed(2)}%`;
+    const days = (v) => v === null || v === undefined ? "—" : `${Number(v).toFixed(0)} days`;
+    return `<div class="grid kpis" style="margin-bottom:14px">
+        <div class="kpi"><div class="k">Revenue (12m)</div><div class="v">${money(d.revenue_cents)}</div></div>
+        <div class="kpi"><div class="k">Net</div><div class="v">${money(d.net_cents)}</div><div class="s">margin ${pct(d.margin_pct)}</div></div>
+        <div class="kpi"><div class="k">Cash</div><div class="v">${money(d.cash_cents)}</div></div>
+        <div class="kpi"><div class="k">Receivable</div><div class="v">${money(d.receivable_cents)}</div><div class="s">${days(d.ar_days)}</div></div>
+        <div class="kpi"><div class="k">Payable</div><div class="v">${money(d.payable_cents)}</div><div class="s">${days(d.ap_days)}</div></div>
+      </div>
+      <div class="card"><h3 style="margin:0 0 8px">Monthly revenue</h3>${table([
+        { h: "Month", f: (r) => esc(r.month) },
+        { h: "Revenue", num: 1, f: (r) => money(r.revenue_cents) },
+      ], Array.isArray(d.monthly) ? d.monthly : [], { empty: "No revenue in the trailing year." })}</div>
+      <div class="card" style="margin-top:14px"><h3 style="margin:0 0 8px">Top customers</h3>${table([
+        { h: "Customer", f: (r) => esc(r.customer) },
+        { h: "Revenue", num: 1, f: (r) => money(r.revenue_cents) },
+      ], Array.isArray(d.top_customers) ? d.top_customers : [], { empty: "No invoices in the trailing year." })}</div>
+      <p class="muted" style="margin:12px 0 0">${esc(d.note || "")}</p>`;
+  }
   if (key === "cash-plan") {
     const rows = Array.isArray(d.rows) ? d.rows : [];
     return `<div class="grid kpis" style="margin-bottom:14px"><div class="kpi"><div class="k">Opening cash</div><div class="v">${money(d.opening_cash_cents)}</div></div><div class="kpi"><div class="k">Planned monthly net</div><div class="v">${money((d.monthly_in_cents || 0) - (d.monthly_out_cents || 0))}</div></div><div class="kpi"><div class="k">Projected close</div><div class="v">${money(d.closing_cash_cents)}</div></div></div>
@@ -1617,6 +1638,15 @@ function renderReport(key, d, st = { from: "", to: "" }) {
 
 function reportCsv(key, d, st = { from: "", to: "" }) {
   const $c = (v) => window.NXTLedgerFormat.cents(v);
+  if (key === "performance") {
+    const rows = [["metric", "value"],
+      ["revenue_cents", $c(d.revenue_cents)], ["expense_cents", $c(d.expense_cents)], ["net_cents", $c(d.net_cents)],
+      ["margin_pct", d.margin_pct ?? ""], ["cash_cents", $c(d.cash_cents)],
+      ["receivable_cents", $c(d.receivable_cents)], ["payable_cents", $c(d.payable_cents)],
+      ["ar_days", d.ar_days ?? ""], ["ap_days", d.ap_days ?? ""]];
+    for (const m of (Array.isArray(d.monthly) ? d.monthly : [])) rows.push([m.month, $c(m.revenue_cents)]);
+    return rows.map((r) => r.join(",")).join("\n");
+  }
   if (key === "cash-plan") {
     const rows = [["month", "planned_in", "planned_out", "net", "projected_cash"]];
     for (const r of (Array.isArray(d.rows) ? d.rows : [])) rows.push([r.month, $c(r.planned_in_cents), $c(r.planned_out_cents), $c(r.net_cents), $c(r.projected_cash_cents)]);

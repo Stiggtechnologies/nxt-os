@@ -391,6 +391,72 @@ impl Ledger {
             "basis": "monthly budget cells versus the committed journal's natural movement" }))
     }
 
+    /// Performance centre: NXT's own numbers over the trailing year. No external
+    /// benchmark data is used or implied.
+    pub async fn performance(&self) -> LResult<Value> {
+        let today_str = today();
+        let end = parse_date(&today_str)?;
+        let start = end - chrono::Duration::days(365);
+        let start_str = start.format("%Y-%m-%d").to_string();
+        let b = self.books().await?;
+        let window = b.net(Some(&start_str), &today_str);
+        let (mut revenue, mut expense) = (0_i64, 0_i64);
+        for account in &b.accounts {
+            let amount = natural(account.kind, *window.get(&account.id).unwrap_or(&0));
+            match account.kind {
+                AccountKind::Income => revenue += amount,
+                AccountKind::Expense => expense += amount,
+                _ => {}
+            }
+        }
+        let all = b.net(None, &today_str);
+        let by_role = |role: AccountRole| -> i64 {
+            b.accounts.iter().filter(|a| a.role == role)
+                .map(|a| natural(a.kind, *all.get(&a.id).unwrap_or(&0))).sum()
+        };
+        let cash: i64 = b.accounts.iter()
+            .filter(|a| a.role == AccountRole::Bank)
+            .map(|a| natural(a.kind, *all.get(&a.id).unwrap_or(&0))).sum();
+        let receivable = by_role(AccountRole::Receivable);
+        let payable = by_role(AccountRole::Payable);
+        let mut monthly: BTreeMap<String, i64> = BTreeMap::new();
+        for entry in b.entries.iter().filter(|e| !e.voided && e.date.as_str() >= start_str.as_str()) {
+            let month = entry.date.chars().take(7).collect::<String>();
+            for line in &entry.lines {
+                if let Some(account) = b.accounts.iter().find(|a| a.id == line.account_id) {
+                    if account.kind == AccountKind::Income {
+                        *monthly.entry(month.clone()).or_insert(0) += line.credit - line.debit;
+                    }
+                }
+            }
+        }
+        let contacts: HashMap<String, String> = self.contacts(None).await?.into_iter().map(|c| (c.id, c.name)).collect();
+        let mut by_customer: BTreeMap<String, i64> = BTreeMap::new();
+        for doc in self.docs(Some(DocKind::Invoice)).await? {
+            if doc.voided || doc.date.as_str() < start_str.as_str() { continue; }
+            let name = contacts.get(&doc.contact_id).cloned().unwrap_or_default();
+            *by_customer.entry(name).or_insert(0) += doc.lines.iter().map(|line| line.amount).sum::<i64>();
+        }
+        let mut top: Vec<Value> = by_customer.into_iter()
+            .map(|(customer, cents)| json!({ "customer": customer, "revenue_cents": cents }))
+            .collect();
+        top.sort_by(|a, b| b["revenue_cents"].as_i64().cmp(&a["revenue_cents"].as_i64()));
+        top.truncate(5);
+        let net = revenue - expense;
+        let pct = |part: i64, whole: i64| if whole == 0 { Value::Null } else { json!((part as f64 / whole as f64 * 10000.0).round() / 100.0) };
+        let days = |balance: i64, flow: i64| if flow == 0 { Value::Null } else { json!((balance as f64 * 365.0 / flow as f64).round()) };
+        let months: Vec<Value> = monthly.iter().map(|(month, cents)| json!({ "month": month, "revenue_cents": cents })).collect();
+        Ok(json!({
+            "as_of": today_str, "window": { "from": start_str, "to": today_str },
+            "revenue_cents": revenue, "expense_cents": expense, "net_cents": net,
+            "margin_pct": pct(net, revenue),
+            "cash_cents": cash, "receivable_cents": receivable, "payable_cents": payable,
+            "ar_days": days(receivable, revenue), "ap_days": days(payable, expense),
+            "monthly": months, "top_customers": top,
+            "note": "Trailing 12 months from NXT's own ledger. No external benchmark or peer data is used.",
+        }))
+    }
+
     /// Cash plan: today's bank balance carried forward by the operator's planned
     /// monthly receipts and payments. Assumptions are explicit; nothing here is actual.
     pub async fn cash_plan_projection(&self, from: &str, to: &str) -> LResult<Value> {

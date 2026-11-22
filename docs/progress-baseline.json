@@ -6,10 +6,10 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 145,
+    "routed": 146,
     "linked": 24,
     "external": 13,
-    "open": 38,
+    "open": 37,
     "chrome": 22,
     "percent": 66
   },
@@ -17,10 +17,10 @@
     {
       "product": "QuickBooks",
       "capabilities": 143,
-      "routed": 105,
+      "routed": 106,
       "linked": 24,
       "external": 1,
-      "open": 13
+      "open": 12
     },
     {
       "product": "DT Max",
@@ -62,7 +62,6 @@
     "observed-1118--assignments",
     "observed-1118--schedule",
     "reports--custom-reports",
-    "reports--performance-centre",
     "settings--lists--custom-fields",
     "settings--tools--backup-company",
     "settings--your-company--custom-form-styles",
