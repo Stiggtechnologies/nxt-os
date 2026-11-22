@@ -137,7 +137,7 @@ function docViews(kind) {
       const filtered = rows.filter((r) => filter === "all" || (filter === "open" ? ["open", "partial", "overdue"].includes(r.status) : r.status === filter));
       const list = window.NXTLedgerSort ? NXTLedgerSort.sortBy(filtered, sortKey, sortDir, docValue) : filtered;
       const open = rows.reduce((s, r) => s + r.balance, 0), overdue = rows.filter((r) => r.status === "overdue").reduce((s, r) => s + r.balance, 0);
-      page(Title + "s", kind === "invoice" ? "Money your customers owe you." : "Money you owe your vendors.", `<button class="btn" type="button" id="creditMemo">${kind === "invoice" ? "Credit memo" : "Supplier credit"}</button><button class="btn" type="button" id="csv">Export</button><a class="btn primary" href="#${plural}/new">New ${kind}</a>`,
+      page(Title + "s", kind === "invoice" ? "Money your customers owe you." : "Money you owe your vendors.", `${kind === "invoice" ? `<button class="btn" type="button" id="salesReceipt">Sales receipt</button>` : ""}<button class="btn" type="button" id="creditMemo">${kind === "invoice" ? "Credit memo" : "Supplier credit"}</button><button class="btn" type="button" id="csv">Export</button><a class="btn primary" href="#${plural}/new">New ${kind}</a>`,
         `<div class="grid kpis" style="margin-bottom:14px"><div class="kpi"><div class="k">Open</div><div class="v">${money(open)}</div></div><div class="kpi"><div class="k">Overdue</div><div class="v">${money(overdue)}</div></div></div>
         <div class="card"><div class="tabs">${["all", "open", "overdue", "paid", "void"].map((t) => `<button data-f="${t}" aria-selected="${t === filter}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</div>
         ${table([
@@ -147,6 +147,8 @@ function docViews(kind) {
         ], list, { onClick: (r) => go(plural + "/" + r.doc.id), empty: `No ${plural} yet. <a href="#${plural}/new">Create one</a>.` })}</div>${nativeMemoCard(nativeMemos, rows)}`);
       const creditAction = $("#creditMemo");
   if (creditAction) creditAction.onclick = () => creditMemoModal(kind);
+      const receiptAction = $("#salesReceipt");
+      if (receiptAction) receiptAction.onclick = () => salesReceiptModal();
       $$("[data-apply-credit]", main).forEach((b) => (b.onclick = () => applyCreditModal(nativeMemos.find((m) => m.id === b.dataset.applyCredit), rows)));
   $$(".tabs button", main).forEach((b) => (b.onclick = () => { filter = b.dataset.f; render(); }));
       $$("[data-sort]", main).forEach((b) => (b.onclick = () => {
@@ -1074,6 +1076,34 @@ function creditMemoModal(kind) {
         route();
       } catch (e) { toast(e.message, true); }
     };
+  });
+}
+
+function salesReceiptModal() {
+  return modal("Sales receipt", (el, close) => {
+    const customers = (S.contacts || []).filter((c) => c.kind === "customer" && !c.archived);
+    const income = (S.accounts || []).filter((a) => a.kind === "income" && !a.archived);
+    const money = (S.accounts || []).filter((a) => ["bank", "credit_card"].includes(a.role) && !a.archived);
+    el.innerHTML = `<form class="form">
+      <label class="f" style="grid-column:1/-1">Customer<select name="contact_id" required>${customers.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select></label>
+      <label class="f">Date<input name="date" type="date" required value="${today()}"></label>
+      <label class="f">Amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0.00"></label>
+      <label class="f" style="grid-column:1/-1">Income account<select name="account_id" required>${income.map((a) => `<option value="${esc(a.id)}">${esc(a.code)} · ${esc(a.name)}</option>`).join("")}</select></label>
+      <label class="f">Tax<select name="tax_code">${taxOptions(S.company?.default_tax_code || "NONE")}</select></label>
+      <label class="f">Deposit to<select name="deposit_id">${money.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")}</select></label>
+      <label class="f" style="grid-column:1/-1">Memo<input name="memo" placeholder="What was sold"></label>
+      <p class="form-note" style="grid-column:1/-1">Creates an invoice already paid in full and a matching bank deposit.</p></form>
+      <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Record receipt</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("[data-ok]").onclick = async () => {
+      const f = Object.fromEntries(new FormData(el.querySelector("form")));
+      try {
+        const r = await api("/api/ledger/sales-receipts", { body: { contact_id: f.contact_id, date: f.date, account_id: f.deposit_id, memo: f.memo || "",
+          lines: [{ description: f.memo || "Sale", qty: 1, rate: toCents(f.amount), account_id: f.account_id, tax_code: f.tax_code }] } });
+        toast(`Receipt ${r.doc.number} recorded and paid`); close(true); route();
+      } catch (e) { err(e); }
+    };
+    if (!customers.length) { el.querySelector("[data-ok]").disabled = true; el.querySelector("[data-ok]").textContent = "Add a customer first"; }
   });
 }
 

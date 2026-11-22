@@ -114,9 +114,9 @@
                   "label": "Sales receipt",
                   "observation": "observed",
                   "observed_path": "Create > Customers > Sales receipt",
-                  "native_route": "lists",
-                  "native_scope": "A sales receipt is recorded as a non-posting document in Lists.",
-                  "next_step": "It does not post a journal or settle an invoice. Nothing books, posts or moves stock, and nothing writes back to QuickBooks.",
+                  "native_route": "invoices",
+                  "native_scope": "Native sales receipt: an invoice settled in full at creation, with a matching received payment and bank deposit.",
+                  "next_step": "Recorded at #invoices via Sales receipt.",
                   "kind": "capability"
                 },
                 {

@@ -243,6 +243,19 @@ pub struct BankRuleInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct SalesReceiptInput {
+    pub contact_id: String,
+    pub date: String,
+    /// Bank or credit-card account the money landed in.
+    pub account_id: String,
+    #[serde(default)]
+    pub number: Option<String>,
+    #[serde(default)]
+    pub memo: String,
+    pub lines: Vec<DocLineInput>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ClassInput {
     #[serde(default)]
     pub id: Option<String>,
@@ -1291,6 +1304,41 @@ impl Ledger {
         self.store.set_json(&self.key("rules"), &rules).await?;
         self.audit("bank_rule.deleted", keyword).await?;
         Ok(())
+    }
+
+    /// A sale paid at the counter: one invoice, immediately settled by a received
+    /// payment for its full total. Both halves are ordinary documents, so the
+    /// customer statement and the payment register see them.
+    pub async fn create_sales_receipt(&self, input: SalesReceiptInput) -> LResult<serde_json::Value> {
+        let doc = self
+            .create_doc(
+                DocKind::Invoice,
+                DocInput {
+                    contact_id: input.contact_id.clone(),
+                    date: input.date.clone(),
+                    due_date: None,
+                    number: input.number,
+                    memo: input.memo.clone(),
+                    lines: input.lines,
+                },
+            )
+            .await?;
+        let payment = self
+            .record_payment(
+                "received",
+                PaymentInput {
+                    contact_id: input.contact_id,
+                    date: input.date,
+                    account_id: input.account_id,
+                    amount: doc.total,
+                    applications: vec![Application { doc_id: doc.id.clone(), amount: doc.total }],
+                    memo: if input.memo.is_empty() { format!("Sales receipt {}", doc.number) } else { input.memo },
+                },
+            )
+            .await?;
+        // record_payment applies the money to the stored document; return that state.
+        let doc = self.doc(&doc.id).await?;
+        Ok(serde_json::json!({ "doc": doc, "payment": payment }))
     }
 
     // ---- classes --------------------------------------------------------------

@@ -23,6 +23,7 @@ coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 | Credit memos | Native `DocKind::CreditMemo` posting Dr income / Dr GST-HST, Cr AR; application to an invoice for the same customer without a second posting; void releases the invoices it covered. | `7900950`; `tests/credit_memos.rs` |
 | Forecasts | Weekly cash projection from open invoice/bill due dates and scheduled recurring entries, with opening and projected closing cash; labelled a projection and shown at `#reports/forecast`. | `tests/forecast.rs` |
 | Budget vs actual | Monthly budget cells per account (replacing on re-entry, deletable) compared with the committed journal's natural movement; P&L accounts plus any explicitly budgeted account; `#reports/budget-vs-actual` with a budget editor. | `tests/budgets.rs` |
+| Sales receipts | POST /api/ledger/sales-receipts creates an invoice and settles it in full with a received payment, so the statement, payment register and GST/HST all see one ordinary sale; a Sales receipt modal sits on the invoices screen. | `tests/sales_receipts.rs` |
 | Class / department tagging | Classes are a ledger list; journal and invoice/bill lines carry `class_id` onto the posting; unknown or archived classes are rejected and a class in use cannot be deleted; `#reports/profit-loss-by-class` groups income and expenses and keeps an Unassigned row so totals reconcile. | `tests/classes.rs` |
 
 Customer statements already existed on `main` (contact page → Statement) and
@@ -44,9 +45,8 @@ capabilities. The largest clusters:
   vehicle and other-expense worksheets, additional information, GIFI summary
   income statement, amendments, AT1 and CO-17 schedules.
 
-Outside the register but still open: sales receipts (invoice plus immediate
-payment); Caseware AJE worksheet and materiality; Firm time/WIP; DocuSign
-template library; WebTax multi-year rules.
+Outside the register but still open: Caseware AJE worksheet and materiality;
+Firm time/WIP; DocuSign template library; WebTax multi-year rules.
 
 ## External gates (not closable in code)
 
