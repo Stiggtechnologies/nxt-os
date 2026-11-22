@@ -225,6 +225,8 @@ fn routes(st: Arc<Ledger>) -> Router {
         .route("/api/ledger/recurring", get(recurring).post(save_recurring))
         .route("/api/ledger/recurring/{id}", delete(delete_recurring))
         .route("/api/ledger/recurring/{id}/post", post(post_recurring))
+        .route("/api/ledger/credit-memos", get(credit_memos).post(create_credit_memo))
+        .route("/api/ledger/credit-memos/{id}/apply", post(apply_credit))
         .route("/api/ledger/reconcile", get(reconciliations).post(reconcile))
         .route("/api/ledger/reports/{name}", get(report))
         .route("/api/ledger/audit", get(audit))
@@ -385,6 +387,15 @@ async fn delete_recurring(State(l): S, Path(id): Path<String>) -> R {
 }
 async fn post_recurring(State(l): S, Path(id): Path<String>) -> R {
     ok(l.post_recurring(&id).await)
+}
+async fn credit_memos(State(l): S) -> R {
+    ok(l.docs(Some(DocKind::CreditMemo)).await)
+}
+async fn create_credit_memo(State(l): S, Json(b): Json<DocInput>) -> R {
+    ok(l.create_doc(DocKind::CreditMemo, b).await)
+}
+async fn apply_credit(State(l): S, Path(id): Path<String>, Json(b): Json<ApplyCreditInput>) -> R {
+    ok(l.apply_credit(&id, b).await)
 }
 async fn reconciliations(State(l): S) -> R {
     ok(l.reconciliations().await)

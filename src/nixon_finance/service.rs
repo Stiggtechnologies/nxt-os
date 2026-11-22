@@ -296,6 +296,7 @@ pub async fn load_context(ledger: &Ledger) -> Result<FinanceContext, NixonError>
                 kind: match d.kind {
                     crate::ledger::models::DocKind::Invoice => "invoice",
                     crate::ledger::models::DocKind::Bill => "bill",
+                    crate::ledger::models::DocKind::CreditMemo => "credit_memo",
                 }
                 .into(),
                 entry_id: d.entry_id,

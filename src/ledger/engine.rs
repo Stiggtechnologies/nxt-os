@@ -241,6 +241,12 @@ pub struct BankRuleInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ApplyCreditInput {
+    pub invoice_id: String,
+    pub amount: i64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct RecurringInput {
     #[serde(default)]
     pub id: Option<String>,
@@ -627,9 +633,13 @@ impl Ledger {
 
     pub async fn create_doc(&self, kind: DocKind, input: DocInput) -> LResult<Doc> {
         let contact = self.contact(&input.contact_id).await?;
-        let want = if kind == DocKind::Invoice { ContactKind::Customer } else { ContactKind::Vendor };
+        let (want, label) = match kind {
+            DocKind::Invoice => (ContactKind::Customer, "invoice"),
+            DocKind::Bill => (ContactKind::Vendor, "bill"),
+            DocKind::CreditMemo => (ContactKind::Customer, "credit memo"),
+        };
         if contact.kind != want {
-            return bad(format!("{} must be for a {:?}", if kind == DocKind::Invoice { "invoice" } else { "bill" }, want).to_lowercase());
+            return bad(format!("{label} must be for a {want:?}").to_lowercase());
         }
         if input.lines.is_empty() {
             return bad("add at least one line");
@@ -640,6 +650,8 @@ impl Ledger {
             Some(d) if !d.is_empty() => parse_date(d)?,
             _ => date + chrono::Duration::days(contact.terms_days),
         };
+        // A credit memo is not something the customer pays on a due date.
+        let due = if kind == DocKind::CreditMemo { date } else { due };
         if due < date {
             return bad("due date can't be before the document date");
         }
@@ -648,7 +660,7 @@ impl Ledger {
         for l in input.lines {
             let acct = self.account(&l.account_id).await?;
             let ok = match kind {
-                DocKind::Invoice => acct.kind == AccountKind::Income,
+                DocKind::Invoice | DocKind::CreditMemo => acct.kind == AccountKind::Income,
                 DocKind::Bill => matches!(acct.kind, AccountKind::Expense | AccountKind::Asset) && !acct.is_money(),
             };
             if !ok {
@@ -673,9 +685,16 @@ impl Ledger {
             None if kind == DocKind::Invoice => {
                 format!("{}{:04}", company.invoice_prefix, self.store.incr_by(&self.key("seq:invoice"), 1).await? + 1000)
             }
+            None if kind == DocKind::CreditMemo => {
+                format!("CM-{:04}", self.store.incr_by(&self.key("seq:credit_memo"), 1).await?)
+            }
             None => format!("BILL-{:04}", self.store.incr_by(&self.key("seq:bill"), 1).await?),
         };
-        let doc_id = new_id(if kind == DocKind::Invoice { "inv" } else { "bill" });
+        let doc_id = new_id(match kind {
+            DocKind::Invoice => "inv",
+            DocKind::Bill => "bill",
+            DocKind::CreditMemo => "cm",
+        });
         let cid = Some(contact.id.clone());
         let mut glines = Vec::new();
         match kind {
@@ -690,6 +709,17 @@ impl Ledger {
                     glines.push(Line { account_id: tp.id, credit: tax, memo: "GST/HST collected".into(), contact_id: cid.clone(), ..Default::default() });
                 }
             }
+            DocKind::CreditMemo => {
+                let ar = self.account_by_role(AccountRole::Receivable).await?;
+                glines.push(Line { account_id: ar.id, credit: total, contact_id: cid.clone(), memo: format!("Credit memo {number}"), ..Default::default() });
+                for l in &lines {
+                    glines.push(Line { account_id: l.account_id.clone(), debit: l.amount, memo: l.description.clone(), contact_id: cid.clone(), ..Default::default() });
+                }
+                if tax > 0 {
+                    let tp = self.account_by_role(AccountRole::TaxPayable).await?;
+                    glines.push(Line { account_id: tp.id, debit: tax, memo: "GST/HST reversed".into(), contact_id: cid.clone(), ..Default::default() });
+                }
+            }
             DocKind::Bill => {
                 let ap = self.account_by_role(AccountRole::Payable).await?;
                 for l in &lines {
@@ -702,9 +732,13 @@ impl Ledger {
                 glines.push(Line { account_id: ap.id, credit: total, contact_id: cid.clone(), memo: format!("Bill {number}"), ..Default::default() });
             }
         }
-        let src = if kind == DocKind::Invoice { "invoice" } else { "bill" };
+        let (src, doc_label) = match kind {
+            DocKind::Invoice => ("invoice", "Invoice"),
+            DocKind::Bill => ("bill", "Bill"),
+            DocKind::CreditMemo => ("credit_memo", "Credit memo"),
+        };
         let entry = self
-            .post(&input.date, &format!("{} {number} · {}", if kind == DocKind::Invoice { "Invoice" } else { "Bill" }, contact.name), glines, src, Some(doc_id.clone()))
+            .post(&input.date, &format!("{doc_label} {number} · {}", contact.name), glines, src, Some(doc_id.clone()))
             .await?;
         let doc = Doc {
             id: doc_id,
@@ -722,9 +756,50 @@ impl Ledger {
             voided: false,
             entry_id: entry.id,
             created_at: now(),
+            applications: Vec::new(),
         };
         self.put("docs", &doc.id, &doc).await?;
         Ok(doc)
+    }
+
+    /// Apply an unapplied credit memo to an open invoice for the same customer.
+    /// The memo already posted Dr income / Cr AR and the invoice Dr AR / Cr income,
+    /// so applying them is an allocation, not another posting.
+    pub async fn apply_credit(&self, credit_id: &str, input: ApplyCreditInput) -> LResult<Doc> {
+        if input.amount <= 0 {
+            return bad("amount must be positive");
+        }
+        let mut credit = self.doc(credit_id).await?;
+        if credit.kind != DocKind::CreditMemo {
+            return bad("only a credit memo can be applied");
+        }
+        if credit.voided {
+            return Err(LedgerError::Conflict("this credit memo is void".into()));
+        }
+        if input.amount > credit.balance() {
+            return bad(format!("the credit memo has {} left", fmt_money(credit.balance())));
+        }
+        let mut inv = self.doc(&input.invoice_id).await?;
+        if inv.kind != DocKind::Invoice || inv.voided {
+            return bad("apply the credit to an open invoice");
+        }
+        if inv.contact_id != credit.contact_id {
+            return bad("the credit memo and the invoice must belong to the same customer");
+        }
+        if input.amount > inv.balance() {
+            return bad(format!("{} can take at most {}", inv.number, fmt_money(inv.balance())));
+        }
+        inv.paid += input.amount;
+        credit.paid += input.amount;
+        if let Some(app) = credit.applications.iter_mut().find(|a| a.doc_id == inv.id) {
+            app.amount += input.amount;
+        } else {
+            credit.applications.push(Application { doc_id: inv.id.clone(), amount: input.amount });
+        }
+        self.put("docs", &inv.id, &inv).await?;
+        self.put("docs", &credit.id, &credit).await?;
+        self.audit("credit_memo.applied", format!("{} -> {} {}", credit.number, inv.number, fmt_money(input.amount))).await?;
+        Ok(credit)
     }
 
     pub async fn void_doc(&self, id: &str) -> LResult<Doc> {
@@ -732,7 +807,17 @@ impl Ledger {
         if d.voided {
             return Err(LedgerError::Conflict("already void".into()));
         }
-        if d.paid > 0 {
+        if d.kind == DocKind::CreditMemo {
+            // Voiding a credit memo takes it back off the invoices it was applied to.
+            for app in &d.applications {
+                if let Some(mut inv) = self.get::<Doc>("docs", &app.doc_id).await? {
+                    inv.paid = (inv.paid - app.amount).max(0);
+                    self.put("docs", &inv.id, &inv).await?;
+                }
+            }
+            d.paid = 0;
+            d.applications.clear();
+        } else if d.paid > 0 {
             return Err(LedgerError::Conflict("void the payments applied to this document first".into()));
         }
         self.void_entry_record(&d.entry_id).await?;

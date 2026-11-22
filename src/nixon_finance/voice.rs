@@ -663,11 +663,12 @@ async fn catalog(scope: &Scope) -> Vec<Record> {
             let kind = match doc.kind {
                 crate::ledger::models::DocKind::Invoice => "invoices",
                 crate::ledger::models::DocKind::Bill => "bills",
+                crate::ledger::models::DocKind::CreditMemo => "credit-memos",
             };
             out.push(Record {
                 app: "ledger".into(),
                 view: format!("{kind}/{}", doc.id),
-                label: format!("{} {}", if kind == "invoices" { "Invoice" } else { "Bill" }, doc.number),
+                label: format!("{} {}", if kind == "invoices" { "Invoice" } else if kind == "bills" { "Bill" } else { "Credit memo" }, doc.number),
                 summary: format!("{} {} totals {}.", if kind == "invoices" { "Invoice" } else { "Bill" }, doc.number, fmt_money(doc.total)),
                 keys: vec![doc.number.clone(), doc.id.clone(), format!("{kind} {}", doc.number)],
             });

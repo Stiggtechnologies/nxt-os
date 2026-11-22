@@ -149,6 +149,7 @@ fn default_terms() -> i64 {
 pub enum DocKind {
     Invoice,
     Bill,
+    CreditMemo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,6 +190,10 @@ pub struct Doc {
     pub voided: bool,
     pub entry_id: String,
     pub created_at: String,
+    /// Invoices this credit memo has been applied to. Empty for invoices and bills,
+    /// whose money is tracked by `Payment`.
+    #[serde(default)]
+    pub applications: Vec<Application>,
 }
 
 impl Doc {
@@ -199,6 +204,8 @@ impl Doc {
     pub fn status(&self, today: &str) -> &'static str {
         if self.voided {
             "void"
+        } else if self.kind == DocKind::CreditMemo {
+            if self.balance() <= 0 { "applied" } else if self.paid > 0 { "partly applied" } else { "open" }
         } else if self.balance() <= 0 {
             "paid"
         } else if self.due_date.as_str() < today {

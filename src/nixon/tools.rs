@@ -795,6 +795,7 @@ fn doc_kind_word(kind: DocKind) -> &'static str {
     match kind {
         DocKind::Invoice => "invoice",
         DocKind::Bill => "bill",
+        DocKind::CreditMemo => "credit memo",
     }
 }
 

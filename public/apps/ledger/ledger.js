@@ -124,6 +124,7 @@ function docViews(kind) {
     if (sub === "new") return docEditor(kind);
     if (sub) return docView(kind, sub);
     const rows = await api("/api/ledger/" + plural);
+    const nativeMemos = kind === "invoice" && !company ? await api("/api/ledger/credit-memos") : [];
     let filter = "all";
     let sortKey = ""; let sortDir = "asc";
     const docValue = (r, key) => key === "number" ? r.doc.number : key === "date" ? r.doc.date : key === "due" ? r.doc.due_date : key === "status" ? r.status : key === "total" ? r.doc.total : r.balance;
@@ -138,9 +139,10 @@ function docViews(kind) {
           { h: "Number", sort: "number", sortDir: sortKey === "number" ? sortDir : null, f: (r) => `<b>${esc(r.doc.number)}</b>` }, { h: Title === "Invoice" ? "Customer" : "Vendor", f: (r) => esc(r.contact_name) },
           { h: "Date", sort: "date", sortDir: sortKey === "date" ? sortDir : null, f: (r) => fmtDate(r.doc.date) }, { h: "Due", sort: "due", sortDir: sortKey === "due" ? sortDir : null, f: (r) => fmtDate(r.doc.due_date) }, { h: "Status", sort: "status", sortDir: sortKey === "status" ? sortDir : null, f: (r) => pill(r.status) },
           { h: "Total", num: 1, sort: "total", sortDir: sortKey === "total" ? sortDir : null, f: (r) => money(r.doc.total) }, { h: "Balance", num: 1, sort: "balance", sortDir: sortKey === "balance" ? sortDir : null, f: (r) => money(r.balance) },
-        ], list, { onClick: (r) => go(plural + "/" + r.doc.id), empty: `No ${plural} yet. <a href="#${plural}/new">Create one</a>.` })}</div>`);
+        ], list, { onClick: (r) => go(plural + "/" + r.doc.id), empty: `No ${plural} yet. <a href="#${plural}/new">Create one</a>.` })}</div>${nativeMemoCard(nativeMemos, rows)}`);
       const creditAction = $("#creditMemo");
   if (creditAction) creditAction.onclick = () => creditMemoModal(kind);
+      $$("[data-apply-credit]", main).forEach((b) => (b.onclick = () => applyCreditModal(nativeMemos.find((m) => m.id === b.dataset.applyCredit), rows)));
   $$(".tabs button", main).forEach((b) => (b.onclick = () => { filter = b.dataset.f; render(); }));
       $$("[data-sort]", main).forEach((b) => (b.onclick = () => {
         const key = b.dataset.sort;
@@ -1015,6 +1017,9 @@ function scheduleModal() {
 }
 
 function creditMemoModal(kind) {
+  // The workspace's own Ledger has native credit memos; only a client company book
+  // posts through the parallel-document migration path below.
+  if (!company && kind === "invoice") return nativeCreditMemoModal();
   const creditKind = kind === "invoice" ? "credit_memo" : "supplier_credit";
   const controlRole = kind === "invoice" ? "receivable" : "payable";
   const lineKinds = kind === "invoice" ? ["income", "revenue"] : ["expense", "cogs"];
@@ -1062,6 +1067,69 @@ function creditMemoModal(kind) {
         route();
       } catch (e) { toast(e.message, true); }
     };
+  });
+}
+
+function nativeMemoCard(memos, invoices) {
+  if (company) return "";
+  const open = (m) => m.total - m.paid;
+  return `<div class="card" style="margin-top:14px"><h3 style="margin:0 0 4px">Credit memos</h3>
+    <p class="muted" style="margin:0 0 10px">Issued credits reverse income and GST/HST. Apply one to an open invoice for the same customer; applying does not post again.</p>
+    ${memos.length ? table([
+      { h: "Number", f: (m) => `<b>${esc(m.number)}</b>` },
+      { h: "Customer", f: (m) => esc((S.contacts.find((c) => c.id === m.contact_id) || {}).name || "") },
+      { h: "Date", f: (m) => fmtDate(m.date) },
+      { h: "Total", num: 1, f: (m) => money(m.total) },
+      { h: "Unapplied", num: 1, f: (m) => money(open(m)) },
+      { h: "", f: (m) => (m.voided ? pill("void") : open(m) > 0 ? `<button class="btn sm primary" data-apply-credit="${m.id}">Apply</button>` : pill("applied")) },
+    ], memos) : `<div class="empty">No credit memos yet. Use the Credit memo button above.</div>`}
+  </div>`;
+}
+
+function applyCreditModal(memo, rows) {
+  if (!memo) return;
+  const unapplied = memo.total - memo.paid;
+  const options = rows.filter((r) => r.doc.kind === "invoice" && !r.doc.voided && r.doc.contact_id === memo.contact_id && r.balance > 0);
+  return modal(`Apply ${memo.number}`, (el, close) => {
+    el.innerHTML = `<form class="form"><label class="f" style="grid-column:1/-1">Invoice<select name="invoice_id" required>${options.map((r) => `<option value="${esc(r.doc.id)}">${esc(r.doc.number)} · ${money(r.balance)} open</option>`).join("")}</select></label>
+      <label class="f">Amount<input name="amount" type="number" min="0.01" step="0.01" value="${(Math.min(unapplied, options[0] ? options[0].balance : unapplied) / 100).toFixed(2)}" required></label>
+      <p class="form-note" style="grid-column:1/-1">Unapplied credit: ${money(unapplied)}. This allocates the credit; it does not post a new journal entry.</p></form>
+      <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok ${options.length ? "" : "disabled"}>Apply credit</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("[data-ok]").onclick = async () => {
+      const f = Object.fromEntries(new FormData(el.querySelector("form")));
+      try {
+        await api(`/api/ledger/credit-memos/${encodeURIComponent(memo.id)}/apply`, { body: { invoice_id: f.invoice_id, amount: toCents(f.amount) } });
+        toast("Credit applied"); close(true); route();
+      } catch (e) { err(e); }
+    };
+    if (!options.length) el.querySelector("[data-ok]").textContent = "No open invoice";
+  });
+}
+
+function nativeCreditMemoModal() {
+  return modal("New credit memo", (el, close) => {
+    const customers = (S.contacts || []).filter((c) => c.kind === "customer" && !c.archived);
+    const income = (S.accounts || []).filter((a) => a.kind === "income" && !a.archived);
+    el.innerHTML = `<form class="form">
+      <label class="f" style="grid-column:1/-1">Customer<select name="contact_id" required>${customers.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select></label>
+      <label class="f">Date<input name="date" type="date" required value="${today()}"></label>
+      <label class="f">Amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0.00"></label>
+      <label class="f" style="grid-column:1/-1">Income account<select name="account_id" required>${income.map((a) => `<option value="${esc(a.id)}">${esc(a.code)} · ${esc(a.name)}</option>`).join("")}</select></label>
+      <label class="f" style="grid-column:1/-1">Tax<select name="tax_code">${taxOptions(S.company?.default_tax_code || "NONE")}</select></label>
+      <label class="f" style="grid-column:1/-1">Memo<input name="memo" placeholder="Why the credit was issued"></label>
+      <p class="form-note" style="grid-column:1/-1">Posts Dr income and Dr GST/HST payable, Cr accounts receivable. Apply it to an invoice from the Credit memos list.</p></form>
+      <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Post credit</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("[data-ok]").onclick = async () => {
+      const f = Object.fromEntries(new FormData(el.querySelector("form")));
+      try {
+        await api("/api/ledger/credit-memos", { body: { contact_id: f.contact_id, date: f.date, memo: f.memo || "",
+          lines: [{ description: f.memo || "Credit memo", qty: 1, rate: toCents(f.amount), account_id: f.account_id, tax_code: f.tax_code }] } });
+        toast("Credit memo posted"); close(true); route();
+      } catch (e) { err(e); }
+    };
+    if (!customers.length) { el.querySelector("[data-ok]").disabled = true; el.querySelector("[data-ok]").textContent = "Add a customer first"; }
   });
 }
 
