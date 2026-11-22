@@ -222,6 +222,9 @@ fn routes(st: Arc<Ledger>) -> Router {
         .route("/api/ledger/feed/{id}/exclude", post(exclude))
         .route("/api/ledger/rules", get(rules).post(save_rule))
         .route("/api/ledger/rules/{keyword}", delete(delete_rule))
+        .route("/api/ledger/recurring", get(recurring).post(save_recurring))
+        .route("/api/ledger/recurring/{id}", delete(delete_recurring))
+        .route("/api/ledger/recurring/{id}/post", post(post_recurring))
         .route("/api/ledger/reconcile", get(reconciliations).post(reconcile))
         .route("/api/ledger/reports/{name}", get(report))
         .route("/api/ledger/audit", get(audit))
@@ -370,6 +373,18 @@ async fn save_rule(State(l): S, Json(b): Json<BankRuleInput>) -> R {
 }
 async fn delete_rule(State(l): S, Path(keyword): Path<String>) -> R {
     ok(l.delete_rule(&keyword).await.map(|_| json!({ "deleted": keyword })))
+}
+async fn recurring(State(l): S) -> R {
+    ok(l.recurring().await)
+}
+async fn save_recurring(State(l): S, Json(b): Json<RecurringInput>) -> R {
+    ok(l.save_recurring(b).await)
+}
+async fn delete_recurring(State(l): S, Path(id): Path<String>) -> R {
+    ok(l.delete_recurring(&id).await.map(|_| json!({ "deleted": id })))
+}
+async fn post_recurring(State(l): S, Path(id): Path<String>) -> R {
+    ok(l.post_recurring(&id).await)
 }
 async fn reconciliations(State(l): S) -> R {
     ok(l.reconciliations().await)

@@ -40,6 +40,31 @@ fn new_id(prefix: &str) -> String {
     format!("{prefix}_{}", &uuid::Uuid::new_v4().simple().to_string()[..12])
 }
 
+fn advance_date(date: &str, frequency: &str) -> LResult<String> {
+    let d = parse_date(date)?;
+    let months: i32 = match frequency {
+        "weekly" => 0,
+        "monthly" => 1,
+        "quarterly" => 3,
+        "yearly" => 12,
+        _ => return bad("frequency must be weekly, monthly, quarterly or yearly"),
+    };
+    let next = if months == 0 {
+        d + chrono::Duration::days(7)
+    } else {
+        let total = d.year() * 12 + d.month0() as i32 + months;
+        let (year, month) = (total.div_euclid(12), total.rem_euclid(12) as u32 + 1);
+        let last = days_in_month(year, month);
+        NaiveDate::from_ymd_opt(year, month, d.day().min(last)).ok_or_else(|| LedgerError::BadRequest("the next date is out of range".into()))?
+    };
+    Ok(next.format("%Y-%m-%d").to_string())
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    let (next_year, next_month) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    (NaiveDate::from_ymd_opt(next_year, next_month, 1).unwrap() - NaiveDate::from_ymd_opt(year, month, 1).unwrap()).num_days() as u32
+}
+
 pub fn parse_date(s: &str) -> LResult<NaiveDate> {
     NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
         .map_err(|_| LedgerError::BadRequest(format!("invalid date '{s}', expected YYYY-MM-DD")))
@@ -213,6 +238,23 @@ pub struct BankRuleInput {
     pub tax_code: Option<String>,
     #[serde(default)]
     pub contact_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RecurringInput {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub name: String,
+    #[serde(default = "monthly_frequency")]
+    pub frequency: String,
+    pub next_date: String,
+    #[serde(default)]
+    pub memo: String,
+    pub lines: Vec<Line>,
+}
+
+fn monthly_frequency() -> String {
+    "monthly".into()
 }
 
 #[derive(Debug, Deserialize)]
@@ -477,8 +519,9 @@ impl Ledger {
     }
 
     /// Validates and saves a balanced entry. All postings go through here.
-    async fn post(&self, date: &str, memo: &str, mut lines: Vec<Line>, source: &str, source_id: Option<String>) -> LResult<Entry> {
-        self.check_period(date).await?;
+    /// Drops zero lines and rejects unbalanced or unpostable lines. Every posting
+    /// and every saved recurring template goes through this check.
+    async fn clean_lines(&self, mut lines: Vec<Line>) -> LResult<Vec<Line>> {
         lines.retain(|l| l.debit != 0 || l.credit != 0);
         if lines.len() < 2 {
             return bad("an entry needs at least two non-zero lines");
@@ -500,6 +543,12 @@ impl Ledger {
         if dr != cr {
             return bad(format!("entry is out of balance: debits {dr} ≠ credits {cr}"));
         }
+        Ok(lines)
+    }
+
+    async fn post(&self, date: &str, memo: &str, lines: Vec<Line>, source: &str, source_id: Option<String>) -> LResult<Entry> {
+        self.check_period(date).await?;
+        let lines = self.clean_lines(lines).await?;
         let number = self.store.incr_by(&self.key("seq:entry"), 1).await?;
         let entry = Entry {
             id: new_id("je"),
@@ -1128,6 +1177,88 @@ impl Ledger {
         self.store.set_json(&self.key("rules"), &rules).await?;
         self.audit("bank_rule.deleted", keyword).await?;
         Ok(())
+    }
+
+    // ---- recurring / memorized entries -----------------------------------------
+
+    pub async fn recurring(&self) -> LResult<Vec<RecurringTemplate>> {
+        let mut list: Vec<RecurringTemplate> = self.store.get_json(&self.key("recurring")).await?.unwrap_or_default();
+        list.sort_by(|a, b| a.next_date.cmp(&b.next_date).then(a.name.cmp(&b.name)));
+        Ok(list)
+    }
+
+    /// Create or replace a memorized template. Lines are validated as if they were
+    /// about to be posted, so an unbalanced template cannot be saved.
+    pub async fn save_recurring(&self, input: RecurringInput) -> LResult<RecurringTemplate> {
+        let name = input.name.trim().to_string();
+        if name.is_empty() {
+            return bad("give the template a name");
+        }
+        if name.chars().count() > 120 {
+            return bad("template names are limited to 120 characters");
+        }
+        if !["weekly", "monthly", "quarterly", "yearly"].contains(&input.frequency.as_str()) {
+            return bad("frequency must be weekly, monthly, quarterly or yearly");
+        }
+        parse_date(&input.next_date)?;
+        if input.next_date.as_str() < today().as_str() {
+            return bad("the next date cannot be in the past");
+        }
+        let lines = self.clean_lines(input.lines).await?;
+        let mut list = self.recurring().await?;
+        let id = input.id.filter(|id| !id.is_empty()).unwrap_or_else(|| new_id("rec"));
+        let (created_at, last_posted) = list
+            .iter()
+            .find(|t| t.id == id)
+            .map(|t| (t.created_at.clone(), t.last_posted.clone()))
+            .unwrap_or_else(|| (now(), None));
+        let template = RecurringTemplate {
+            id: id.clone(),
+            name,
+            frequency: input.frequency,
+            next_date: input.next_date,
+            memo: input.memo.trim().to_string(),
+            lines,
+            active: true,
+            created_at,
+            last_posted,
+        };
+        list.retain(|t| t.id != id);
+        list.push(template.clone());
+        list.sort_by(|a, b| a.next_date.cmp(&b.next_date).then(a.name.cmp(&b.name)));
+        self.store.set_json(&self.key("recurring"), &list).await?;
+        self.audit("recurring.saved", format!("{} {}", id, template.name)).await?;
+        Ok(template)
+    }
+
+    pub async fn delete_recurring(&self, id: &str) -> LResult<()> {
+        let mut list = self.recurring().await?;
+        let before = list.len();
+        list.retain(|t| t.id != id);
+        if list.len() == before {
+            return Err(LedgerError::NotFound(format!("no recurring template {id}")));
+        }
+        self.store.set_json(&self.key("recurring"), &list).await?;
+        self.audit("recurring.deleted", id.to_string()).await?;
+        Ok(())
+    }
+
+    /// Post the template at its next date and advance the schedule by one period.
+    /// Nothing is posted automatically: this is the only way a template reaches the books.
+    pub async fn post_recurring(&self, id: &str) -> LResult<Entry> {
+        let mut list = self.recurring().await?;
+        let idx = list
+            .iter()
+            .position(|t| t.id == id)
+            .ok_or_else(|| LedgerError::NotFound(format!("no recurring template {id}")))?;
+        let date = list[idx].next_date.clone();
+        let memo = if list[idx].memo.is_empty() { list[idx].name.clone() } else { list[idx].memo.clone() };
+        let entry = self.create_journal(JournalInput { date: date.clone(), memo, lines: list[idx].lines.clone() }).await?;
+        let next = advance_date(&date, &list[idx].frequency)?;
+        list[idx].next_date = next;
+        list[idx].last_posted = Some(date);
+        self.store.set_json(&self.key("recurring"), &list).await?;
+        Ok(entry)
     }
 
     pub async fn categorize(&self, id: &str, input: CategorizeInput) -> LResult<FeedItem> {

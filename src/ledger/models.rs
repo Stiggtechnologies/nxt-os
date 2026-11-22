@@ -294,6 +294,22 @@ impl Default for Company {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringTemplate {
+    pub id: String,
+    pub name: String,
+    /// weekly | monthly | quarterly | yearly
+    pub frequency: String,
+    /// ISO date of the next posting; posting advances it by one period.
+    pub next_date: String,
+    pub memo: String,
+    pub lines: Vec<Line>,
+    pub active: bool,
+    pub created_at: String,
+    #[serde(default)]
+    pub last_posted: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BankRule {
     /// Lowercased keyword matched against feed descriptions.
     pub keyword: String,

@@ -28,6 +28,13 @@ async function loadRefs() {
   Object.assign(S, { accounts, contacts, taxCodes: meta.tax_codes, company });
 }
 const acct = (id) => S.accounts.find((a) => a.id === id);
+function nextMonthSameDay(iso) {
+  const d = new Date(iso + "T00:00:00"), day = d.getDate();
+  d.setDate(1); d.setMonth(d.getMonth() + 1);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, last));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 const acctName = (id) => { const a = acct(id); return a ? `${a.code} · ${a.name}` : id; };
 const contactName = (id) => S.contacts.find((c) => c.id === id)?.name || "";
 const isMoney = (a) => a.role === "bank" || a.role === "credit_card";
@@ -1122,13 +1129,24 @@ function accountModal(a) {
 }
 
 views.journal = async () => {
-  const entries = await api("/api/ledger/entries");
+  const [entries, recurring] = await Promise.all([api("/api/ledger/entries"), api("/api/ledger/recurring")]);
   page("Journal entries", "Every posting in your books. Add adjusting entries here.", `<button class="btn primary" id="add">New journal entry</button>`,
     `<div class="card">${table([
       { h: "#", f: (e) => e.number }, { h: "Date", f: (e) => fmtDate(e.date) }, { h: "Type", f: (e) => esc(SOURCE_LABEL[e.source] || e.source) }, { h: "Description", f: (e) => esc(e.memo) },
       { h: "Amount", num: 1, f: (e) => money(e.lines.reduce((s, l) => s + l.debit, 0)) }, { h: "", f: (e) => (e.voided ? pill("void") : "") },
-    ], entries, { onClick: entryModal, empty: "No entries yet." })}</div>`);
+    ], entries, { onClick: entryModal, empty: "No entries yet." })}</div>
+    <div class="card" style="margin-top:14px"><h3 style="margin:0 0 4px">Recurring entries</h3>
+      <p class="muted" style="margin:0 0 10px">Memorize a journal entry from its detail view, then post it here. Nothing posts automatically.</p>
+      ${recurring.length ? table([
+        { h: "Name", f: (t) => `<b>${esc(t.name)}</b><div class="faint" style="font-size:12px">${esc(t.frequency)}${t.last_posted ? ` · last ${fmtDate(t.last_posted)}` : ""}</div>` },
+        { h: "Next", f: (t) => fmtDate(t.next_date) },
+        { h: "Amount", num: 1, f: (t) => money(t.lines.reduce((s, l) => s + l.debit, 0)) },
+        { h: "", f: (t) => `<div class="row" style="flex-wrap:nowrap"><button class="btn sm primary" data-post="${t.id}">Post now</button><button class="btn sm ghost" data-delrec="${t.id}">Delete</button></div>` },
+      ], recurring) : `<div class="empty">No memorized entries yet. Open a journal entry and choose Memorize.</div>`}
+    </div>`);
   $("#add").onclick = journalModal;
+  $$("[data-post]", main).forEach((b) => (b.onclick = async () => { try { const e = await api(`/api/ledger/recurring/${b.dataset.post}/post`, { body: {} }); toast(`Posted entry #${e.number}`); route(); } catch (x) { err(x); } }));
+  $$("[data-delrec]", main).forEach((b) => (b.onclick = async () => { try { await api(`/api/ledger/recurring/${b.dataset.delrec}`, { method: "DELETE" }); toast("Template deleted"); route(); } catch (x) { err(x); } }));
 };
 
 function entryModal(e) {
@@ -1136,9 +1154,16 @@ function entryModal(e) {
   return modal(`Entry #${e.number}`, (el, close) => {
     el.innerHTML = `<p class="muted" style="margin-top:0">${fmtDate(e.date)} · ${esc(SOURCE_LABEL[e.source] || e.source)} · ${esc(e.memo)} ${e.voided ? pill("void") : ""}</p>
       <table><thead><tr><th>Account</th><th>Memo</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>${e.lines.map((l) => `<tr><td>${esc(acctName(l.account_id))}</td><td>${esc(l.memo)}</td><td class="num">${money(l.debit, { blankZero: true })}</td><td class="num">${money(l.credit, { blankZero: true })}</td></tr>`).join("")}</tbody></table>
-      <div class="actions">${voidable ? `<button class="btn danger" data-v>Void entry</button>` : ""}${e.source_id && ["invoice", "bill"].includes(e.source) ? `<a class="btn" href="#${e.source}s/${e.source_id}">Open ${e.source}</a>` : ""}<button class="btn primary" data-x>Close</button></div>`;
+      <div class="actions">${e.source === "journal" && !e.voided ? `<button class="btn" data-m>Memorize</button>` : ""}${voidable ? `<button class="btn danger" data-v>Void entry</button>` : ""}${e.source_id && ["invoice", "bill"].includes(e.source) ? `<a class="btn" href="#${e.source}s/${e.source_id}">Open ${e.source}</a>` : ""}<button class="btn primary" data-x>Close</button></div>`;
     el.querySelector("[data-x]").onclick = () => close();
     el.querySelector("[data-v]")?.addEventListener("click", async () => { try { await api(`/api/ledger/entries/${e.id}/void`, { body: {} }); toast("Entry voided"); close(true); route(); } catch (x) { err(x); } });
+    el.querySelector("[data-m]")?.addEventListener("click", async () => {
+      try {
+        await api("/api/ledger/recurring", { body: { name: e.memo || `Entry #${e.number}`, frequency: "monthly", next_date: nextMonthSameDay(e.date), memo: e.memo,
+          lines: e.lines.map((l) => ({ account_id: l.account_id, debit: l.debit, credit: l.credit, memo: l.memo, contact_id: l.contact_id })) } });
+        toast("Memorized — post it from Recurring entries"); close(true); route();
+      } catch (x) { err(x); }
+    });
     $$("a", el).forEach((a) => a.addEventListener("click", () => close()));
   }, { wide: true });
 }
