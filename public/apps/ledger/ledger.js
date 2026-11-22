@@ -1860,7 +1860,7 @@ function reportCsv(key, d, st = { from: "", to: "" }) {
 
 // ---------------------------------------------------------------- company
 views.settings = async () => {
-  const c = await api("/api/ledger/company");
+  const [c, payroll] = await Promise.all([api("/api/ledger/company"), api("/api/ledger/payroll-settings")]);
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   page("Company settings", "How your business appears on documents, and how your books behave.", "",
     `<div class="card"><form class="form" id="cf">
@@ -1874,7 +1874,23 @@ views.settings = async () => {
       <label class="f" style="grid-column:1/-1">Invoice footer<input name="invoice_footer" value="${esc(c.invoice_footer)}"></label>
       <label class="f">Invoice accent<input type="color" name="invoice_accent" value="${esc(c.invoice_accent || "#b8892b")}"></label>
       <label class="f" style="align-self:end"><span class="check"><input type="checkbox" name="invoice_show_logo"${c.invoice_show_logo === false ? "" : " checked"}> Show the company mark on printed documents</span></label>
-    </form><div class="row" style="margin-top:18px;justify-content:flex-end"><button class="btn primary" id="save">Save settings</button></div></div>`);
+    </form><div class="row" style="margin-top:18px;justify-content:flex-end"><button class="btn primary" id="save">Save settings</button></div></div>
+    <div class="card" style="margin-top:14px"><h3 style="margin:0 0 4px">Payroll settings — ${payroll.year} ${esc(payroll.jurisdiction)}</h3>
+      <p class="muted" style="margin:0 0 10px">${esc(payroll.note)}</p>
+      ${table([
+        { h: "Setting", f: (r) => `<b>${esc(r[0])}</b>` },
+        { h: "Value", f: (r) => esc(r[1]) },
+      ], [
+        ["CPP rate", `${(payroll.cpp_rate_bp / 100).toFixed(2)}%`],
+        ["CPP maximum pensionable earnings", money(payroll.cpp_ympe_cents)],
+        ["CPP basic exemption", money(payroll.cpp_exemption_cents)],
+        ["CPP2 rate above YMPE", `${(payroll.cpp2_rate_bp / 100).toFixed(2)}%`],
+        ["CPP2 ceiling (YAMPE)", money(payroll.cpp2_yampe_cents)],
+        ["EI rate", `${(payroll.ei_rate_bp / 100).toFixed(2)}%`],
+        ["EI maximum insurable earnings", money(payroll.ei_mie_cents)],
+      ])}
+      <p class="faint" style="margin:12px 0 0">Sources: ${(payroll.sources || []).map((u) => `<a href="${esc(u)}" rel="noopener" target="_blank">${esc(new URL(u).hostname)}</a>`).join(" · ")}</p>
+    </div>`);
   $("#save").onclick = async () => {
     const f = Object.fromEntries(new FormData($("#cf")));
     const body = { ...c, ...f, fiscal_year_start_month: Number(f.fiscal_year_start_month), closing_date: f.closing_date || null,

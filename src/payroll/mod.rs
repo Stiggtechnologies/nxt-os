@@ -58,6 +58,64 @@ pub mod constants {
     pub const FEDERAL_ABATEMENT_BP: i64 = 1_000;
 }
 
+/// Read-only description of the pinned statutory amounts. Payroll settings are
+/// deliberately not editable at runtime: a rate change ships with a ruleset release.
+#[derive(Clone, Debug, Serialize)]
+pub struct Settings {
+    pub jurisdiction: String,
+    pub year: i32,
+    pub currency: String,
+    pub editable: bool,
+    pub cpp_ympe_cents: i64,
+    pub cpp_exemption_cents: i64,
+    pub cpp_rate_bp: i64,
+    pub cpp2_yampe_cents: i64,
+    pub cpp2_rate_bp: i64,
+    pub ei_rate_bp: i64,
+    pub ei_mie_cents: i64,
+    pub federal_brackets: Vec<(i64, i64)>,
+    pub federal_top_bp: i64,
+    pub alberta_brackets: Vec<(i64, i64)>,
+    pub alberta_top_bp: i64,
+    pub federal_bpa_max_cents: i64,
+    pub federal_bpa_min_cents: i64,
+    pub canada_employment_cents: i64,
+    pub federal_abatement_bp: i64,
+    pub sources: Vec<String>,
+    pub note: String,
+}
+
+pub fn settings() -> Settings {
+    use constants::*;
+    Settings {
+        jurisdiction: "Alberta".into(),
+        year: YEAR,
+        currency: "CAD".into(),
+        editable: false,
+        cpp_ympe_cents: CPP_YMPE_CENTS,
+        cpp_exemption_cents: CPP_EXEMPTION_CENTS,
+        cpp_rate_bp: CPP_RATE_BP,
+        cpp2_yampe_cents: CPP2_YAMPE_CENTS,
+        cpp2_rate_bp: CPP2_RATE_BP,
+        ei_rate_bp: EI_RATE_BP,
+        ei_mie_cents: EI_MIE_CENTS,
+        federal_brackets: FEDERAL_BRACKETS.to_vec(),
+        federal_top_bp: FEDERAL_TOP_BP,
+        alberta_brackets: ALBERTA_BRACKETS.to_vec(),
+        alberta_top_bp: ALBERTA_TOP_BP,
+        federal_bpa_max_cents: FEDERAL_BPA_MAX_CENTS,
+        federal_bpa_min_cents: FEDERAL_BPA_MIN_CENTS,
+        canada_employment_cents: CANADA_EMPLOYMENT_CENTS,
+        federal_abatement_bp: FEDERAL_ABATEMENT_BP,
+        sources: vec![
+            "https://www.canada.ca/en/revenue-agency/services/tax/individuals/tax-rates-brackets/current-year.html".into(),
+            "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/canada-pension-plan-cpp/cpp-contribution-rates-maximums-exemptions.html".into(),
+            "https://www.canada.ca/en/employment-social-development/news/2025/09/canada-employment-insurance-commission-sets-the-2026-employment-insurance-premium-rate.html".into(),
+        ],
+        note: "Pinned 2026 Alberta amounts. They cannot be edited at runtime; a rate change ships with a ruleset release. This is an original estimate engine, not certified payroll software.".into(),
+    }
+}
+
 /// Provinces this engine can compute. Anything else is blocked, never approximated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

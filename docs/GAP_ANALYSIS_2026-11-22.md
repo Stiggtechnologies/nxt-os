@@ -8,7 +8,7 @@ Reconciles the generated [gap register](GAP_REGISTER.md), the dated
 recorded as *out of scope* back into scope. The 41 rows that were written off
 are now **open** in the register, each with a next step; the earlier reason is
 kept as the recorded rationale so the trade-offs stay visible. The register
-therefore reports **33 open** of 220 capabilities and **13 external**; routed
+therefore reports **32 open** of 220 capabilities and **13 external**; routed
 coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 
 ## Closed in this pass
@@ -23,6 +23,7 @@ coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 | Credit memos | Native `DocKind::CreditMemo` posting Dr income / Dr GST-HST, Cr AR; application to an invoice for the same customer without a second posting; void releases the invoices it covered. | `7900950`; `tests/credit_memos.rs` |
 | Forecasts | Weekly cash projection from open invoice/bill due dates and scheduled recurring entries, with opening and projected closing cash; labelled a projection and shown at `#reports/forecast`. | `tests/forecast.rs` |
 | Budget vs actual | Monthly budget cells per account (replacing on re-entry, deletable) compared with the committed journal's natural movement; P&L accounts plus any explicitly budgeted account; `#reports/budget-vs-actual` with a budget editor. | `tests/budgets.rs` |
+| Payroll settings | GET /api/ledger/payroll-settings returns the pinned 2026 Alberta CPP/CPP2/EI amounts, brackets, federal BPA figures and three CRA sources; it is typed and read-only, and there is no write path. A settings card displays it. | `tests/payroll_settings.rs` |
 | Invoice form styles | Company settings carry an accent colour and a company-mark toggle used by the printed invoice/bill; old company documents get safe defaults and invalid colours are rejected. | `tests/form_styles.rs` |
 | Receipt inbox | Upload an image/PDF into a bounded inbox (20 items, 12 MB payload), download it, explicitly match or unmatch it to a posting, and delete it. No OCR and no automatic matching. | `tests/receipts.rs` |
 | Saved report views | Any report can be saved under a name with its date window and account filter; saved views list on the reports index, open the live report, keep CSV/print, and can be deleted. | `tests/saved_reports.rs` |
@@ -41,9 +42,8 @@ were not rebuilt; the 2026-11-05 map predates that screen.
 The [gap register](GAP_REGISTER.md) is authoritative and now lists 41 open
 capabilities. The largest clusters:
 
-- QuickBooks (8): cheque printing, payment links and payouts, payroll
-  settings, custom fields, backup-company action, shift scheduling,
-  assignments.
+- QuickBooks (7): cheque printing, payment links and payouts, custom fields,
+  backup-company action, shift scheduling, assignments.
 - DT Max (14): client renumbering/restore, EFILE reports/errors/logs,
   labels, FileCabinet export, CT23 packing slip, forms catalogue, billing
   setup, text macros, UI options, maintenance job, editing locks.

@@ -230,6 +230,7 @@ fn routes(st: Arc<Ledger>) -> Router {
         .route("/api/ledger/sales-receipts", post(sales_receipt))
         .route("/api/ledger/plan", get(cash_plan).put(save_cash_plan))
         .route("/api/ledger/entries/batch", post(post_batch))
+        .route("/api/ledger/payroll-settings", get(payroll_settings))
         .route("/api/ledger/receipts", get(receipts).post(add_receipt))
         .route("/api/ledger/receipts/{id}", get(receipt).delete(delete_receipt))
         .route("/api/ledger/receipts/{id}/match", post(match_receipt))
@@ -408,6 +409,9 @@ async fn create_credit_memo(State(l): S, Json(b): Json<DocInput>) -> R {
 }
 async fn apply_credit(State(l): S, Path(id): Path<String>, Json(b): Json<ApplyCreditInput>) -> R {
     ok(l.apply_credit(&id, b).await)
+}
+async fn payroll_settings() -> R {
+    Ok(Json(serde_json::to_value(crate::payroll::settings()).unwrap_or(Value::Null)))
 }
 async fn receipts(State(l): S) -> R {
     ok(l.receipts().await)
