@@ -9,10 +9,10 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 151 |
-| Linked | 25 |
+| Routed | 152 |
+| Linked | 26 |
 | External | 13 |
-| **Open** | **31** |
+| **Open** | **29** |
 | Routed coverage | 69% |
 | Source chrome excluded | 22 |
 
@@ -20,22 +20,20 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 143 | 111 | 25 | 1 | 6 | 78% |
+| QuickBooks | 143 | 112 | 26 | 1 | 4 | 78% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (6)
+### Open to build (4)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
 | Suppliers | Print cheques | Render recorded bill payments as printable cheque PDFs with a configurable layout; no MICR or signing claim. | Cheque printing needs bank cheque stock, MICR layout and a signing process. NXT records the payment journal instead of printing the instrument. |
 | Sales & Get Paid | Payment links | Add invoice payment-link records and a webhook contract; the merchant account stays a deployment dependency. | Payment links require a payment service provider and merchant account. NXT records invoices; it does not collect card payments. |
 | Sales & Get Paid | QuickBooks payouts | Add a payout import contract for a configured provider; no feed is shown without one. | Payouts are a QuickBooks Payments service artefact. NXT has no merchant processor and will not display a vendor payout feed. |
-| LISTS | Custom fields | Add declared custom fields per entity type with validation and report columns; no user-defined schema migration. | Custom fields require a schema migration path and per-field validation. NXT keeps declared fields; user-defined schema is not modelled. |
 | TOOLS | Backup company | Expose the documented backup/restore runbook as an operator action with a verified artifact. | Backup is a whole-store operation documented in docs/BACKUPS.md, not a per-company UI action. Exposing a browser backup button would misstate who owns recovery. |
-| Company navigation (observed 2026-11-18) | Assignments | Add assignable firm projects and tasks with an audit trail. | Assignments assign work to people. Firm Operations owns projects and work items; the Ledger does not model assignment. |
 
 ### Blocked outside this codebase (1)
 

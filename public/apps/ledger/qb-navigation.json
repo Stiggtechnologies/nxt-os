@@ -1722,9 +1722,9 @@
                   "label": "Custom fields",
                   "observation": "observed",
                   "observed_path": "Settings > LISTS > Custom fields",
-                  "native_route": null,
-                  "native_scope": "No complete working native equivalent has been established for this source capability.",
-                  "next_step": "Add declared custom fields per entity type with validation and report columns; no user-defined schema migration.",
+                  "native_route": "settings",
+                  "native_scope": "Declared custom fields per workspace with typed values on contacts; no user-defined schema migration.",
+                  "next_step": "Declare in Company settings; enter values on the contact page.",
                   "kind": "capability",
                   "scope": "in_scope",
                   "scope_reason": "Custom fields require a schema migration path and per-field validation. NXT keeps declared fields; user-defined schema is not modelled.",
@@ -2159,12 +2159,19 @@
           "observation": "observed",
           "observed_path": "Time > Assignments",
           "native_route": null,
-          "native_scope": "No assignment workflow.",
-          "next_step": "Add assignable firm projects and tasks with an audit trail.",
+          "native_scope": "Work assignment lives in Firm Operations: project tasks carry an assignee and due date.",
+          "next_step": "Firm Operations -> Projects -> task assignee.",
           "kind": "capability",
           "scope": "in_scope",
           "scope_reason": "Assignments assign work to people. Firm Operations owns projects and work items; the Ledger does not model assignment.",
-          "in_scope_since": "2026-11-22"
+          "in_scope_since": "2026-11-22",
+          "related": [
+            {
+              "app": "firm",
+              "view": "projects",
+              "label": "Firm project tasks with assignees"
+            }
+          ]
         },
         {
           "id": "observed-1118--time-projects",

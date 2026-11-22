@@ -248,6 +248,24 @@ pub struct BatchInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CustomFieldInput {
+    pub key: String,
+    pub label: String,
+    #[serde(default = "text_kind")]
+    pub kind: String,
+}
+
+fn text_kind() -> String {
+    "text".into()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CustomValuesInput {
+    #[serde(default)]
+    pub values: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ReceiptInput {
     pub description: String,
     pub date: String,
@@ -1399,6 +1417,91 @@ impl Ledger {
         }
         self.audit("batch.posted", format!("{} entries", posted.len())).await?;
         Ok(posted)
+    }
+
+    // ---- custom fields --------------------------------------------------------
+
+    const CUSTOM_KINDS: [&'static str; 4] = ["text", "number", "date", "boolean"];
+
+    pub async fn custom_fields(&self) -> LResult<Vec<CustomField>> {
+        let mut fields: Vec<CustomField> = self.store.get_json(&self.key("custom_fields")).await?.unwrap_or_default();
+        fields.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+        Ok(fields)
+    }
+
+    pub async fn save_custom_field(&self, input: CustomFieldInput) -> LResult<CustomField> {
+        let key = input.key.trim().to_lowercase();
+        if key.is_empty() || key.len() > 40 || !key.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
+            return bad("the field key must be 1-40 lowercase letters, digits or underscores");
+        }
+        if !Self::CUSTOM_KINDS.contains(&input.kind.as_str()) {
+            return bad("the field kind must be text, number, date or boolean");
+        }
+        let label = input.label.trim().to_string();
+        if label.is_empty() || label.len() > 60 {
+            return bad("the field label must be 1-60 characters");
+        }
+        let mut fields = self.custom_fields().await?;
+        if fields.iter().any(|field| field.key != key && field.label.eq_ignore_ascii_case(&label)) {
+            return bad(format!("a custom field labelled '{label}' already exists"));
+        }
+        fields.retain(|field| field.key != key);
+        let field = CustomField { key, label, kind: input.kind, created_at: now() };
+        fields.push(field.clone());
+        self.store.set_json(&self.key("custom_fields"), &fields).await?;
+        self.audit("custom_field.saved", field.key.clone()).await?;
+        Ok(field)
+    }
+
+    pub async fn delete_custom_field(&self, key: &str) -> LResult<()> {
+        let mut fields = self.custom_fields().await?;
+        let before = fields.len();
+        fields.retain(|field| field.key != key);
+        if fields.len() == before {
+            return Err(LedgerError::NotFound(format!("no custom field {key}")));
+        }
+        self.store.set_json(&self.key("custom_fields"), &fields).await?;
+        self.audit("custom_field.deleted", key.to_string()).await?;
+        Ok(())
+    }
+
+    async fn custom_values(&self) -> LResult<HashMap<String, serde_json::Map<String, serde_json::Value>>> {
+        Ok(self.store.get_json(&self.key("custom_values")).await?.unwrap_or_default())
+    }
+
+    pub async fn contact_custom(&self, contact_id: &str) -> LResult<serde_json::Map<String, serde_json::Value>> {
+        Ok(self.custom_values().await?.remove(contact_id).unwrap_or_default())
+    }
+
+    /// Validate a contact's declared values against the current definitions, then
+    /// store them. Unknown keys and wrong kinds are rejected; nothing is coerced.
+    pub async fn set_contact_custom(&self, contact_id: &str, input: CustomValuesInput) -> LResult<serde_json::Map<String, serde_json::Value>> {
+        let contact = self.contact(contact_id).await?;
+        let _ = contact;
+        let fields = self.custom_fields().await?;
+        let by_key: HashMap<&str, &CustomField> = fields.iter().map(|field| (field.key.as_str(), field)).collect();
+        let mut clean = serde_json::Map::new();
+        for (key, value) in input.values {
+            let Some(field) = by_key.get(key.as_str()) else {
+                return bad(format!("'{key}' is not a declared custom field"));
+            };
+            let ok = match field.kind.as_str() {
+                "text" => value.as_str().is_some_and(|text| text.len() <= 200),
+                "number" => value.is_number(),
+                "date" => value.as_str().is_some_and(|text| parse_date(text).is_ok()),
+                "boolean" => value.is_boolean(),
+                _ => false,
+            };
+            if !ok {
+                return bad(format!("'{}' expects a {} value", field.label, field.kind));
+            }
+            clean.insert(key, value);
+        }
+        let mut all = self.custom_values().await?;
+        if clean.is_empty() { all.remove(contact_id); } else { all.insert(contact_id.to_string(), clean.clone()); }
+        self.store.set_json(&self.key("custom_values"), &all).await?;
+        self.audit("custom_field.values_set", contact_id.to_string()).await?;
+        Ok(clean)
     }
 
     // ---- receipt inbox --------------------------------------------------------

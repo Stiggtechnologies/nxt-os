@@ -6,10 +6,10 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 151,
-    "linked": 25,
+    "routed": 152,
+    "linked": 26,
     "external": 13,
-    "open": 31,
+    "open": 29,
     "chrome": 22,
     "percent": 69
   },
@@ -17,10 +17,10 @@
     {
       "product": "QuickBooks",
       "capabilities": 143,
-      "routed": 111,
-      "linked": 25,
+      "routed": 112,
+      "linked": 26,
       "external": 1,
-      "open": 6
+      "open": 4
     },
     {
       "product": "DT Max",
@@ -57,8 +57,6 @@
     "dtmax.print-labels",
     "dtmax.text-macros",
     "dtmax.ui-options",
-    "observed-1118--assignments",
-    "settings--lists--custom-fields",
     "settings--tools--backup-company",
     "webtax4b.at1-schedules",
     "webtax4b.co17-schedules",

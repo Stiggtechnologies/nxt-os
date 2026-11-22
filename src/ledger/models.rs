@@ -323,6 +323,17 @@ impl Default for Company {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomField {
+    /// Settings key (slug) used as the value key.
+    pub key: String,
+    pub label: String,
+    /// text | number | date | boolean
+    pub kind: String,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Receipt {
     pub id: String,
     pub description: String,

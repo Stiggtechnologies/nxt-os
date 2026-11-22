@@ -203,6 +203,9 @@ fn routes(st: Arc<Ledger>) -> Router {
         .route("/api/ledger/accounts/{id}/register", get(register))
         .route("/api/ledger/contacts", get(contacts).post(create_contact))
         .route("/api/ledger/contacts/{id}", get(contact).put(update_contact))
+        .route("/api/ledger/contacts/{id}/custom", get(contact_custom).put(set_contact_custom))
+        .route("/api/ledger/custom-fields", get(custom_fields).post(save_custom_field))
+        .route("/api/ledger/custom-fields/{key}", delete(delete_custom_field))
         .route("/api/ledger/entries", get(entries).post(create_journal))
         .route("/api/ledger/entries/{id}/void", post(void_entry))
         .route("/api/ledger/invoices", get(invoices).post(create_invoice))
@@ -286,7 +289,8 @@ async fn contact(State(l): S, Path(id): Path<String>) -> R {
         .map(|d| json!({ "status": d.status(&t), "balance": d.balance(), "doc": d }))
         .collect();
     let open: i64 = docs.iter().map(|d| d["balance"].as_i64().unwrap_or(0)).sum();
-    Ok(Json(json!({ "contact": c, "documents": docs, "open_balance": open })))
+    let custom = l.contact_custom(&id).await?;
+    Ok(Json(json!({ "contact": c, "documents": docs, "open_balance": open, "custom": custom })))
 }
 async fn create_contact(State(l): S, Json(b): Json<ContactInput>) -> R {
     ok(l.save_contact(None, b).await)
@@ -409,6 +413,21 @@ async fn create_credit_memo(State(l): S, Json(b): Json<DocInput>) -> R {
 }
 async fn apply_credit(State(l): S, Path(id): Path<String>, Json(b): Json<ApplyCreditInput>) -> R {
     ok(l.apply_credit(&id, b).await)
+}
+async fn custom_fields(State(l): S) -> R {
+    ok(l.custom_fields().await)
+}
+async fn save_custom_field(State(l): S, Json(b): Json<CustomFieldInput>) -> R {
+    ok(l.save_custom_field(b).await)
+}
+async fn delete_custom_field(State(l): S, Path(key): Path<String>) -> R {
+    ok(l.delete_custom_field(&key).await.map(|_| json!({ "deleted": key })))
+}
+async fn contact_custom(State(l): S, Path(id): Path<String>) -> R {
+    ok(l.contact_custom(&id).await)
+}
+async fn set_contact_custom(State(l): S, Path(id): Path<String>, Json(b): Json<CustomValuesInput>) -> R {
+    ok(l.set_contact_custom(&id, b).await)
 }
 async fn payroll_settings() -> R {
     Ok(Json(serde_json::to_value(crate::payroll::settings()).unwrap_or(Value::Null)))

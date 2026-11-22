@@ -258,6 +258,14 @@ async function docEditor(kind) {
   };
   form.contact_id.onchange = setDue; form.date.onchange = setDue;
   $("#newC").onclick = async () => { const c = await quickContact(ckind); if (c) { form.contact_id.innerHTML = contactOptions(ckind, c.id, "Choose…"); setDue(); } };
+  $("#fieldAdd").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    try { await api("/api/ledger/custom-fields", { body: { key: f.key.trim(), label: f.label.trim(), kind: f.kind } }); toast("Field declared"); route(); } catch (error) { err(error); }
+  };
+  $$("[data-del-field]", main).forEach((b) => (b.onclick = async () => {
+    try { await api(`/api/ledger/custom-fields/${encodeURIComponent(b.dataset.delField)}`, { method: "DELETE" }); toast("Field deleted"); route(); } catch (error) { err(error); }
+  }));
   $("#save").onclick = async () => {
     const f = Object.fromEntries(new FormData(form));
     if (!f.contact_id) return toast(`Choose a ${ckind}`, true);
@@ -559,15 +567,45 @@ function contactModal(kind, c) {
   });
 }
 
+async function contactCustomModal(contact, values) {
+  const fields = await api("/api/ledger/custom-fields");
+  const input = (f) => {
+    const value = values[f.key];
+    if (f.kind === "boolean") return `<label class="check"><input type="checkbox" data-cf="${esc(f.key)}"${value === true ? " checked" : ""}> ${esc(f.label)}</label>`;
+    if (f.kind === "number") return `<label class="f">${esc(f.label)}<input type="number" step="any" data-cf="${esc(f.key)}" value="${value ?? ""}"></label>`;
+    if (f.kind === "date") return `<label class="f">${esc(f.label)}<input type="date" data-cf="${esc(f.key)}" value="${esc(value ?? "")}"></label>`;
+    return `<label class="f">${esc(f.label)}<input data-cf="${esc(f.key)}" maxlength="200" value="${esc(value ?? "")}"></label>`;
+  };
+  return modal(`Custom fields · ${contact.name}`, (el, close) => {
+    el.innerHTML = `<p class="muted" style="margin-top:0">Values are validated against the declared fields; clear a value to remove it.</p>
+      <form class="form">${fields.length ? fields.map(input).join("") : `<p class="form-note">No custom fields declared. Add them in Company settings.</p>`}</form>
+      <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok ${fields.length ? "" : "disabled"}>Save values</button></div>`;
+    el.querySelector("[data-x]").onclick = () => close();
+    el.querySelector("[data-ok]").onclick = async () => {
+      const out = {};
+      fields.forEach((f) => {
+        const node = el.querySelector(`[data-cf="${f.key}"]`);
+        if (!node) return;
+        if (f.kind === "boolean") { out[f.key] = node.checked; return; }
+        const raw = String(node.value).trim();
+        if (raw === "") return;
+        out[f.key] = f.kind === "number" ? Number(raw) : raw;
+      });
+      try { await api(`/api/ledger/contacts/${contact.id}/custom`, { method: "PUT", body: { values: out } }); toast("Custom values saved"); close(true); route(); } catch (error) { err(error); }
+    };
+  });
+}
+
 async function contactDetail(kind, id) {
   const r = await api("/api/ledger/contacts/" + id);
   const c = r.contact, dkind = kind === "customer" ? "invoice" : "bill";
   page(c.name, `${kind === "customer" ? "Customer" : "Vendor"} · Net ${c.terms_days}${c.email ? " · " + esc(c.email) : ""}`,
-    `<a class="btn" href="#${kind}s">Back</a><button class="btn" id="edit">Edit</button>${r.open_balance > 0 ? `<button class="btn" id="statement">Statement</button><button class="btn" id="pay">${kind === "customer" ? "Receive payment" : "Pay bills"}</button>` : ""}<a class="btn primary" href="#${dkind}s/new">New ${dkind}</a>`,
+    `<a class="btn" href="#${kind}s">Back</a><button class="btn" id="edit">Edit</button><button class="btn" id="custom">Custom fields</button>${r.open_balance > 0 ? `<button class="btn" id="statement">Statement</button><button class="btn" id="pay">${kind === "customer" ? "Receive payment" : "Pay bills"}</button>` : ""}<a class="btn primary" href="#${dkind}s/new">New ${dkind}</a>`,
     `<div class="grid kpis" style="margin-bottom:14px"><div class="kpi"><div class="k">Open balance</div><div class="v">${money(r.open_balance)}</div></div></div>
     <div class="card">${table([{ h: "Number", f: (x) => esc(x.doc.number) }, { h: "Date", f: (x) => fmtDate(x.doc.date) }, { h: "Due", f: (x) => fmtDate(x.doc.due_date) }, { h: "Status", f: (x) => pill(x.status) }, { h: "Total", num: 1, f: (x) => money(x.doc.total) }, { h: "Balance", num: 1, f: (x) => money(x.balance) }],
       r.documents.sort((a, b) => b.doc.date.localeCompare(a.doc.date)), { onClick: (x) => go(dkind + "s/" + x.doc.id), empty: `No ${dkind}s yet.` })}</div>`);
   $("#edit").onclick = () => contactModal(kind, c);
+  $("#custom").onclick = () => contactCustomModal(c, r.custom || {});
   const statementButton = $("#statement");
   if (statementButton) statementButton.onclick = () => {
     if (!window.NXTLedgerStatement) { toast("Statements are unavailable.", true); return; }
@@ -1860,7 +1898,7 @@ function reportCsv(key, d, st = { from: "", to: "" }) {
 
 // ---------------------------------------------------------------- company
 views.settings = async () => {
-  const [c, payroll] = await Promise.all([api("/api/ledger/company"), api("/api/ledger/payroll-settings")]);
+  const [c, payroll, customFields] = await Promise.all([api("/api/ledger/company"), api("/api/ledger/payroll-settings"), api("/api/ledger/custom-fields")]);
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   page("Company settings", "How your business appears on documents, and how your books behave.", "",
     `<div class="card"><form class="form" id="cf">
@@ -1875,6 +1913,20 @@ views.settings = async () => {
       <label class="f">Invoice accent<input type="color" name="invoice_accent" value="${esc(c.invoice_accent || "#b8892b")}"></label>
       <label class="f" style="align-self:end"><span class="check"><input type="checkbox" name="invoice_show_logo"${c.invoice_show_logo === false ? "" : " checked"}> Show the company mark on printed documents</span></label>
     </form><div class="row" style="margin-top:18px;justify-content:flex-end"><button class="btn primary" id="save">Save settings</button></div></div>
+    <div class="card" style="margin-top:14px"><h3 style="margin:0 0 4px">Custom fields</h3>
+      <p class="muted" style="margin:0 0 10px">Declare fields for contacts; values are entered on the contact's page and validated against the declaration. No database schema is changed.</p>
+      ${customFields.length ? table([
+        { h: "Label", f: (f) => `<b>${esc(f.label)}</b>` },
+        { h: "Key", f: (f) => `<span class="mono">${esc(f.key)}</span>` },
+        { h: "Kind", f: (f) => esc(f.kind) },
+        { h: "", f: (f) => `<button class="btn sm ghost" data-del-field="${esc(f.key)}">Delete</button>` },
+      ], customFields) : `<div class="empty">No custom fields declared.</div>`}
+      <form id="fieldAdd" class="row" style="margin-top:10px;flex-wrap:nowrap">
+        <input name="key" placeholder="key (lowercase)" required maxlength="40" style="max-width:160px">
+        <input name="label" placeholder="Label" required maxlength="60" style="max-width:180px">
+        <select name="kind"><option value="text">text</option><option value="number">number</option><option value="date">date</option><option value="boolean">boolean</option></select>
+        <button class="btn primary">Declare field</button>
+      </form></div>
     <div class="card" style="margin-top:14px"><h3 style="margin:0 0 4px">Payroll settings — ${payroll.year} ${esc(payroll.jurisdiction)}</h3>
       <p class="muted" style="margin:0 0 10px">${esc(payroll.note)}</p>
       ${table([
@@ -1891,6 +1943,14 @@ views.settings = async () => {
       ])}
       <p class="faint" style="margin:12px 0 0">Sources: ${(payroll.sources || []).map((u) => `<a href="${esc(u)}" rel="noopener" target="_blank">${esc(new URL(u).hostname)}</a>`).join(" · ")}</p>
     </div>`);
+  $("#fieldAdd").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    try { await api("/api/ledger/custom-fields", { body: { key: f.key.trim(), label: f.label.trim(), kind: f.kind } }); toast("Field declared"); route(); } catch (error) { err(error); }
+  };
+  $$("[data-del-field]", main).forEach((b) => (b.onclick = async () => {
+    try { await api(`/api/ledger/custom-fields/${encodeURIComponent(b.dataset.delField)}`, { method: "DELETE" }); toast("Field deleted"); route(); } catch (error) { err(error); }
+  }));
   $("#save").onclick = async () => {
     const f = Object.fromEntries(new FormData($("#cf")));
     const body = { ...c, ...f, fiscal_year_start_month: Number(f.fiscal_year_start_month), closing_date: f.closing_date || null,
