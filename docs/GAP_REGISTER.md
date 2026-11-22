@@ -9,10 +9,10 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 149 |
+| Routed | 150 |
 | Linked | 24 |
 | External | 13 |
-| **Open** | **34** |
+| **Open** | **33** |
 | Routed coverage | 68% |
 | Source chrome excluded | 22 |
 
@@ -20,20 +20,19 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 143 | 109 | 24 | 1 | 9 | 76% |
+| QuickBooks | 143 | 110 | 24 | 1 | 8 | 77% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (9)
+### Open to build (8)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
 | Suppliers | Print cheques | Render recorded bill payments as printable cheque PDFs with a configurable layout; no MICR or signing claim. | Cheque printing needs bank cheque stock, MICR layout and a signing process. NXT records the payment journal instead of printing the instrument. |
 | Sales & Get Paid | Payment links | Add invoice payment-link records and a webhook contract; the merchant account stays a deployment dependency. | Payment links require a payment service provider and merchant account. NXT records invoices; it does not collect card payments. |
 | Sales & Get Paid | QuickBooks payouts | Add a payout import contract for a configured provider; no feed is shown without one. | Payouts are a QuickBooks Payments service artefact. NXT has no merchant processor and will not display a vendor payout feed. |
-| YOUR COMPANY | Custom form styles | Add bounded invoice and estimate template settings used by the print view. | Branded invoice and form templates need a template designer and print pipeline. NXT renders its own documents. |
 | YOUR COMPANY | Payroll settings | Add a typed payroll settings object with pinned 2026 Alberta rates; rate changes ship as a ruleset release. | NXT payroll deliberately has no configurable settings: 2026 Alberta rates are pinned in code so a setting cannot silently change a calculation. |
 | LISTS | Custom fields | Add declared custom fields per entity type with validation and report columns; no user-defined schema migration. | Custom fields require a schema migration path and per-field validation. NXT keeps declared fields; user-defined schema is not modelled. |
 | TOOLS | Backup company | Expose the documented backup/restore runbook as an operator action with a verified artifact. | Backup is a whole-store operation documented in docs/BACKUPS.md, not a per-company UI action. Exposing a browser backup button would misstate who owns recovery. |

@@ -6,10 +6,10 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 149,
+    "routed": 150,
     "linked": 24,
     "external": 13,
-    "open": 34,
+    "open": 33,
     "chrome": 22,
     "percent": 68
   },
@@ -17,10 +17,10 @@
     {
       "product": "QuickBooks",
       "capabilities": 143,
-      "routed": 109,
+      "routed": 110,
       "linked": 24,
       "external": 1,
-      "open": 9
+      "open": 8
     },
     {
       "product": "DT Max",
@@ -61,7 +61,6 @@
     "observed-1118--schedule",
     "settings--lists--custom-fields",
     "settings--tools--backup-company",
-    "settings--your-company--custom-form-styles",
     "settings--your-company--payroll-settings",
     "webtax4b.at1-schedules",
     "webtax4b.co17-schedules",

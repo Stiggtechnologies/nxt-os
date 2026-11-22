@@ -436,6 +436,12 @@ impl Ledger {
         if tax_rate(&c.default_tax_code).is_none() {
             return bad("unknown default_tax_code");
         }
+        if !c.invoice_accent.is_empty() {
+            let hex = c.invoice_accent.strip_prefix('#').unwrap_or("");
+            if hex.len() != 6 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+                return bad("invoice_accent must be a #rrggbb colour");
+            }
+        }
         self.store.set_json(&self.key("company"), c).await?;
         self.audit("company.updated", c.name.clone()).await
     }

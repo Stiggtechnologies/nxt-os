@@ -287,6 +287,20 @@ pub struct Company {
     pub default_tax_code: String,
     pub invoice_prefix: String,
     pub invoice_footer: String,
+    /// Hex colour used on printed invoices and estimates.
+    #[serde(default = "default_accent")]
+    pub invoice_accent: String,
+    /// Whether the printed document shows the company mark.
+    #[serde(default = "default_true")]
+    pub invoice_show_logo: bool,
+}
+
+fn default_accent() -> String {
+    "#b8892b".into()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Company {
@@ -302,6 +316,8 @@ impl Default for Company {
             default_tax_code: "HST13".into(),
             invoice_prefix: "INV-".into(),
             invoice_footer: "Thank you for your business.".into(),
+            invoice_accent: default_accent(),
+            invoice_show_logo: true,
         }
     }
 }

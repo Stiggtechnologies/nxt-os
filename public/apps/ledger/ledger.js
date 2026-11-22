@@ -276,9 +276,9 @@ async function docView(kind, id) {
   const payments = (await api("/api/ledger/payments")).filter((p) => !p.voided && p.applications.some((a) => a.doc_id === d.id));
   page(`${kind === "invoice" ? "Invoice" : "Bill"} ${d.number}`, `${esc(c.name)} · ${pill(r.status)}`,
     `<a class="btn" href="#${plural}">Back</a><button class="btn" onclick="print()">Print / PDF</button>${!d.voided && d.paid === 0 ? `<button class="btn danger" id="void">Void</button>` : ""}${r.balance > 0 ? `<button class="btn primary" id="pay">${kind === "invoice" ? "Receive payment" : "Pay bill"}</button>` : ""}`,
-    `<div class="doc-paper">
-      <div class="top"><div><span class="nxt-mark">${esc(co.name)}</span><div class="muted" style="margin-top:6px;font-size:13px">${esc(co.legal_name || "")}${co.business_number ? "<br>BN " + esc(co.business_number) : ""}</div></div>
-        <div style="text-align:right"><div class="title">${kind === "invoice" ? "INVOICE" : "BILL"}</div><div class="muted">${esc(d.number)}</div></div></div>
+    `<div class="doc-paper" style="border-top:4px solid ${esc(co.invoice_accent || "#b8892b")}">
+      <div class="top"><div>${co.invoice_show_logo === false ? `<b style="font-size:18px">${esc(co.name)}</b>` : `<span class="nxt-mark">${esc(co.name)}</span>`}<div class="muted" style="margin-top:6px;font-size:13px">${esc(co.legal_name || "")}${co.business_number ? "<br>BN " + esc(co.business_number) : ""}</div></div>
+        <div style="text-align:right"><div class="title" style="color:${esc(co.invoice_accent || "#b8892b")}">${kind === "invoice" ? "INVOICE" : "BILL"}</div><div class="muted">${esc(d.number)}</div></div></div>
       <div class="top"><div><div class="faint" style="font-size:12px">${kind === "invoice" ? "BILL TO" : "FROM"}</div><b>${esc(c.name)}</b><div class="muted" style="white-space:pre-line">${esc(c.address)}${c.email ? "\n" + esc(c.email) : ""}</div></div>
         <div style="text-align:right"><div><span class="muted">Date</span> ${fmtDate(d.date)}</div><div><span class="muted">Due</span> ${fmtDate(d.due_date)}</div></div></div>
       ${table([{ h: "Description", f: (l) => esc(l.description) || `<span class="faint">${esc(acctName(l.account_id))}</span>` }, { h: "Qty", num: 1, f: (l) => l.qty }, { h: "Rate", num: 1, f: (l) => money(l.rate) }, { h: "Tax", f: (l) => esc(l.tax_code === "NONE" ? "" : l.tax_code) }, { h: "Amount", num: 1, f: (l) => money(l.amount) }], d.lines)}
@@ -1872,10 +1872,13 @@ views.settings = async () => {
       <label class="f">Close the books through<input type="date" name="closing_date" value="${esc(c.closing_date || "")}"></label>
       <label class="f">Invoice prefix<input name="invoice_prefix" value="${esc(c.invoice_prefix)}"></label>
       <label class="f" style="grid-column:1/-1">Invoice footer<input name="invoice_footer" value="${esc(c.invoice_footer)}"></label>
+      <label class="f">Invoice accent<input type="color" name="invoice_accent" value="${esc(c.invoice_accent || "#b8892b")}"></label>
+      <label class="f" style="align-self:end"><span class="check"><input type="checkbox" name="invoice_show_logo"${c.invoice_show_logo === false ? "" : " checked"}> Show the company mark on printed documents</span></label>
     </form><div class="row" style="margin-top:18px;justify-content:flex-end"><button class="btn primary" id="save">Save settings</button></div></div>`);
   $("#save").onclick = async () => {
     const f = Object.fromEntries(new FormData($("#cf")));
-    const body = { ...c, ...f, fiscal_year_start_month: Number(f.fiscal_year_start_month), closing_date: f.closing_date || null };
+    const body = { ...c, ...f, fiscal_year_start_month: Number(f.fiscal_year_start_month), closing_date: f.closing_date || null,
+      invoice_show_logo: $("#cf [name=invoice_show_logo]").checked };
     try { S.company = await api("/api/ledger/company", { method: "PUT", body }); toast("Settings saved"); } catch (e) { err(e); }
   };
 };
