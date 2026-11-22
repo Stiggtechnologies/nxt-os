@@ -91,6 +91,9 @@ pub struct Line {
     pub memo: String,
     #[serde(default)]
     pub contact_id: Option<String>,
+    /// Optional class/department tag used by class reporting.
+    #[serde(default)]
+    pub class_id: Option<String>,
     #[serde(default)]
     pub cleared: bool,
 }
@@ -164,6 +167,9 @@ pub struct DocLine {
     /// Computed: round(qty * rate).
     #[serde(default)]
     pub amount: i64,
+    /// Optional class/department tag carried onto the posting line.
+    #[serde(default)]
+    pub class_id: Option<String>,
     /// Computed: tax on `amount`.
     #[serde(default)]
     pub tax: i64,
@@ -298,6 +304,14 @@ impl Default for Company {
             invoice_footer: "Thank you for your business.".into(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Class {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

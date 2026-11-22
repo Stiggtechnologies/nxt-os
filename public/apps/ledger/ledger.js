@@ -20,6 +20,11 @@ $("#mark").innerHTML = NXT.MARK + "<span>NXT Ledger</span>";
 try { const t = localStorage.getItem("nxt_theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 
 const S = { accounts: [], contacts: [], taxCodes: [], company: null };
+let CLASSES = [];
+async function loadClasses() { CLASSES = await api("/api/ledger/classes"); return CLASSES; }
+function classOptions(selected = "") {
+  return `<option value="">—</option>` + CLASSES.filter((c) => !c.archived).map((c) => `<option value="${esc(c.id)}"${c.id === selected ? " selected" : ""}>${esc(c.name)}</option>`).join("");
+}
 const KIND_LABEL = { asset: "Assets", liability: "Liabilities", equity: "Equity", income: "Income", expense: "Expenses" };
 const SOURCE_LABEL = { journal: "Journal", invoice: "Invoice", bill: "Bill", payment_received: "Payment received", payment_made: "Bill payment", money_in: "Deposit", money_out: "Expense", transfer: "Transfer", tax_payment: "GST/HST payment", opening_balance: "Opening balance" };
 
@@ -189,9 +194,10 @@ function lineEditor(host, { accountFilter, defaultAccount, defaultTax, withQty =
     return { sub, tax, total: sub + tax };
   };
   function render() {
-    host.innerHTML = `<div class="table-wrap"><table class="lines"><thead><tr><th style="min-width:180px">Description</th><th style="min-width:200px">Account</th>${withQty ? '<th style="width:80px">Qty</th>' : ""}<th style="width:120px">${withQty ? "Rate" : "Amount"}</th><th style="width:120px">Tax</th>${withQty ? '<th class="num" style="width:110px">Amount</th>' : ""}<th style="width:30px"></th></tr></thead>
+    host.innerHTML = `<div class="table-wrap"><table class="lines"><thead><tr><th style="min-width:180px">Description</th><th style="min-width:200px">Account</th><th style="min-width:130px">Class</th>${withQty ? '<th style="width:80px">Qty</th>' : ""}<th style="width:120px">${withQty ? "Rate" : "Amount"}</th><th style="width:120px">Tax</th>${withQty ? '<th class="num" style="width:110px">Amount</th>' : ""}<th style="width:30px"></th></tr></thead>
       <tbody>${lines.map((l, i) => `<tr data-i="${i}"><td><input data-k="description" value="${esc(l.description)}" placeholder="What was it for?"></td>
         <td><select data-k="account_id">${acctOptions(accountFilter, l.account_id)}</select></td>
+        <td><select data-k="class_id">${classOptions(l.class_id)}</select></td>
         ${withQty ? `<td><input data-k="qty" type="number" step="any" min="0" value="${esc(l.qty)}"></td>` : ""}
         <td><input data-k="rate" inputmode="decimal" placeholder="0.00" value="${esc(l.rate)}"></td>
         <td><select data-k="tax_code">${taxOptions(l.tax_code)}</select></td>
@@ -217,14 +223,15 @@ function lineEditor(host, { accountFilter, defaultAccount, defaultTax, withQty =
       return lines.filter((l) => toCents(l.rate) > 0 || l.description).map((l) => {
         const c = toCents(l.rate);
         if (Number.isNaN(c)) throw new Error(`"${l.rate}" isn't a valid amount`);
-        return withQty ? { description: l.description, qty: Number(l.qty) || 0, rate: c, account_id: l.account_id, tax_code: l.tax_code }
-          : { description: l.description, amount: c, account_id: l.account_id, tax_code: l.tax_code };
+        return withQty ? { description: l.description, qty: Number(l.qty) || 0, rate: c, account_id: l.account_id, tax_code: l.tax_code, class_id: l.class_id || null }
+          : { description: l.description, amount: c, account_id: l.account_id, tax_code: l.tax_code, class_id: l.class_id || null };
       });
     },
   };
 }
 
 async function docEditor(kind) {
+  await loadClasses();
   const ckind = kind === "invoice" ? "customer" : "vendor";
   const plural = kind + "s";
   page(`New ${kind}`, kind === "invoice" ? "Bill a customer. GST/HST is calculated per line." : "Record a vendor bill. GST/HST paid is tracked as an input tax credit.", "",
@@ -1070,6 +1077,31 @@ function creditMemoModal(kind) {
   });
 }
 
+function classModal() {
+  return modal("Classes and departments", (el, close) => {
+    const render = async () => {
+      const classes = await loadClasses();
+      el.innerHTML = `<p class="muted" style="margin-top:0">Tag income and expense lines with a class. Deleting a class is refused while postings still use it.</p>
+        ${classes.length ? table([
+          { h: "Name", f: (c) => `<b>${esc(c.name)}</b>` },
+          { h: "", f: (c) => `<button class="btn sm ghost" data-del-class="${c.id}">Delete</button>` },
+        ], classes) : `<div class="empty">No classes yet.</div>`}
+        <form class="form" style="margin-top:12px"><label class="f" style="grid-column:1/-1">New class name<input name="name" required maxlength="60" placeholder="e.g. Marketing"></label></form>
+        <div class="actions"><button class="btn" data-x>Close</button><button class="btn primary" data-save>Add class</button></div>`;
+      el.querySelector("[data-x]").onclick = () => close();
+      el.querySelector("[data-save]").onclick = async () => {
+        const name = el.querySelector("[name=name]").value.trim();
+        if (!name) return toast("Enter a class name", true);
+        try { await api("/api/ledger/classes", { body: { name } }); toast("Class added"); await render(); route(); } catch (e) { err(e); }
+      };
+      $$("[data-del-class]", el).forEach((b) => (b.onclick = async () => {
+        try { await api(`/api/ledger/classes/${encodeURIComponent(b.dataset.delClass)}`, { method: "DELETE" }); toast("Class deleted"); await render(); route(); } catch (e) { err(e); }
+      }));
+    };
+    render().catch(err);
+  });
+}
+
 function budgetModal() {
   return modal("Budgets", (el, close) => {
     const render = async () => {
@@ -1266,17 +1298,18 @@ function entryModal(e) {
   }, { wide: true });
 }
 
-function journalModal() {
+async function journalModal() {
+  await loadClasses();
   return modal("New journal entry", (el, close) => {
-    const lines = [{ account_id: "", debit: "", credit: "", memo: "" }, { account_id: "", debit: "", credit: "", memo: "" }];
+    const lines = [{ account_id: "", debit: "", credit: "", memo: "", class_id: "" }, { account_id: "", debit: "", credit: "", memo: "", class_id: "" }];
     el.innerHTML = `<form class="form" id="jh"><label class="f">Date<input type="date" name="date" value="${today()}"></label><label class="f" style="grid-column:span 2">Memo<input name="memo" placeholder="e.g. Record monthly depreciation"></label></form><div id="jl" style="margin-top:14px"></div>
       <div class="actions"><span class="spacer"></span><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Post entry</button></div>`;
     const render = () => {
-      $("#jl", el).innerHTML = `<table class="lines"><thead><tr><th>Account</th><th style="width:120px">Debit</th><th style="width:120px">Credit</th><th>Memo</th><th></th></tr></thead><tbody>${lines.map((l, i) => `<tr data-i="${i}"><td><select data-k="account_id">${acctOptions(null, l.account_id, { blank: "Choose account…" })}</select></td><td><input data-k="debit" inputmode="decimal" value="${esc(l.debit)}"></td><td><input data-k="credit" inputmode="decimal" value="${esc(l.credit)}"></td><td><input data-k="memo" value="${esc(l.memo)}"></td><td><button type="button" class="del" data-del>✕</button></td></tr>`).join("")}</tbody></table>
+      $("#jl", el).innerHTML = `<table class="lines"><thead><tr><th>Account</th><th style="width:140px">Class</th><th style="width:120px">Debit</th><th style="width:120px">Credit</th><th>Memo</th><th></th></tr></thead><tbody>${lines.map((l, i) => `<tr data-i="${i}"><td><select data-k="account_id">${acctOptions(null, l.account_id, { blank: "Choose account…" })}</select></td><td><select data-k="class_id">${classOptions(l.class_id)}</select></td><td><input data-k="debit" inputmode="decimal" value="${esc(l.debit)}"></td><td><input data-k="credit" inputmode="decimal" value="${esc(l.credit)}"></td><td><input data-k="memo" value="${esc(l.memo)}"></td><td><button type="button" class="del" data-del>✕</button></td></tr>`).join("")}</tbody></table>
         <div class="row" style="margin-top:8px"><button type="button" class="btn sm" data-add>+ Add line</button><span class="spacer"></span><span class="muted">Debits</span><b class="num" data-d></b><span class="muted">Credits</span><b class="num" data-c></b></div>`;
       $$("[data-k]", el).forEach((i) => (i.oninput = i.onchange = () => { lines[i.closest("tr").dataset.i][i.dataset.k] = i.value; tot(); }));
       $$("[data-del]", el).forEach((b) => (b.onclick = () => { if (lines.length > 2) { lines.splice(b.closest("tr").dataset.i, 1); render(); } }));
-      $("[data-add]", el).onclick = () => { lines.push({ account_id: "", debit: "", credit: "", memo: "" }); render(); };
+      $("[data-add]", el).onclick = () => { lines.push({ account_id: "", debit: "", credit: "", memo: "", class_id: "" }); render(); };
       tot();
     };
     const tot = () => {
@@ -1288,7 +1321,7 @@ function journalModal() {
     el.querySelector("[data-x]").onclick = () => close();
     el.querySelector("[data-ok]").onclick = async () => {
       const f = Object.fromEntries(new FormData($("#jh", el)));
-      const payload = lines.filter((l) => l.account_id).map((l) => ({ account_id: l.account_id, debit: toCents(l.debit) || 0, credit: toCents(l.credit) || 0, memo: l.memo }));
+      const payload = lines.filter((l) => l.account_id).map((l) => ({ account_id: l.account_id, debit: toCents(l.debit) || 0, credit: toCents(l.credit) || 0, memo: l.memo, class_id: l.class_id || null }));
       try { await api("/api/ledger/entries", { body: { date: f.date, memo: f.memo, lines: payload } }); toast("Entry posted"); close(true); route(); } catch (e) { err(e); }
     };
   }, { wide: true });
@@ -1307,6 +1340,7 @@ const REPORTS = {
   "cash-flow": ["Cash flow", "Money in and out of bank accounts, by month.", "range"],
   forecast: ["Cash forecast", "Expected receipts, payments and scheduled entries, week by week.", "range"],
   "budget-vs-actual": ["Budget vs actual", "Monthly budgets against the committed journal.", "range"],
+  "profit-loss-by-class": ["Profit and loss by class", "Income and expense grouped by class or department.", "range"],
   "profit-loss-by-month": ["Profit and loss by month", "Income, costs and net income, one column per month.", "range"],
   "profit-loss-comparison": ["Profit and loss comparison", "This period against the same period last year.", "range"],
   "customer-balances": ["Customer balance summary", "Open invoice balance per customer.", "asof"],
@@ -1352,6 +1386,7 @@ views.reports = async (name) => {
       `${meta[2] === "range" ? `<select id="preset"><option value="">Custom</option>${Object.keys(presets()).map((p) => `<option>${p}</option>`).join("")}</select><input type="date" id="from" value="${st.from}">` : ""}<input type="date" id="to" value="${st.to}">
        ${key === "general-ledger" ? `<select id="acctF">${acctOptions(null, st.account_id, { blank: "All accounts" })}</select>` : ""}
        ${key === "budget-vs-actual" ? `<button class="btn" id="budgets">Set budgets</button>` : ""}
+       ${key === "profit-loss-by-class" ? `<button class="btn" id="classes">Manage classes</button>` : ""}
        <button class="btn" onclick="print()">Print</button><button class="btn" id="csv">Export</button>`,
       `<div class="card report">${renderReport(key, data, st)}</div>`);
     const upd = () => { st.from = $("#from")?.value || st.from; st.to = $("#to").value; st.account_id = $("#acctF")?.value || ""; history.replaceState(null, "", `#reports/${key}?${new URLSearchParams(st)}`); run().catch(err); };
@@ -1360,6 +1395,7 @@ views.reports = async (name) => {
     $("#csv").onclick = () => csvDownload(`${key}-${st.to}.csv`, reportCsv(key, data, st));
     $("#remit")?.addEventListener("click", () => transferModal(true));
     $("#budgets")?.addEventListener("click", () => budgetModal());
+    $("#classes")?.addEventListener("click", () => classModal());
   };
   await run();
 };
@@ -1368,6 +1404,16 @@ function sectionRows(rows) { return rows.map((r) => `<tr class="click" onclick="
 function plain(rows) { return rows.map((r) => `<tr><td class="indent">${esc(r.code ? r.code + " · " : "")}${esc(r.name)}</td><td class="num">${money(r.amount)}</td></tr>`).join(""); }
 
 function renderReport(key, d, st = { from: "", to: "" }) {
+  if (key === "profit-loss-by-class") {
+    const rows = Array.isArray(d.rows) ? d.rows : [];
+    return `${table([
+      { h: "Class", f: (r) => `<b>${esc(r.name)}</b>` },
+      { h: "Income", num: 1, f: (r) => money(r.income_cents) },
+      { h: "Expenses", num: 1, f: (r) => money(r.expense_cents) },
+      { h: "Net", num: 1, f: (r) => money(r.net_cents) },
+    ], rows, { empty: "No classified income or expense in this period." })}
+    <p class="muted" style="margin:12px 0 0">Income ${money(d.totals?.income_cents)} · expenses ${money(d.totals?.expense_cents)} · net ${money(d.totals?.net_cents)}. ${esc(d.note || "")}</p>`;
+  }
   if (key === "budget-vs-actual") {
     const rows = Array.isArray(d.rows) ? d.rows : [];
     const pct = (v) => v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${Number(v).toFixed(2)}%`;
@@ -1498,6 +1544,11 @@ function renderReport(key, d, st = { from: "", to: "" }) {
 
 function reportCsv(key, d, st = { from: "", to: "" }) {
   const $c = (v) => window.NXTLedgerFormat.cents(v);
+  if (key === "profit-loss-by-class") {
+    const rows = [["class", "income", "expenses", "net"]];
+    for (const r of (Array.isArray(d.rows) ? d.rows : [])) rows.push([JSON.stringify(r.name), $c(r.income_cents), $c(r.expense_cents), $c(r.net_cents)]);
+    return rows.map((r) => r.join(",")).join("\n");
+  }
   if (key === "budget-vs-actual") {
     const rows = [["code", "account", "budget", "actual", "variance", "variance_pct"]];
     for (const r of (Array.isArray(d.rows) ? d.rows : [])) rows.push([r.code, JSON.stringify(r.name), $c(r.budget_cents), $c(r.actual_cents), $c(r.variance_cents), r.variance_pct ?? ""]);

@@ -391,6 +391,53 @@ impl Ledger {
             "basis": "monthly budget cells versus the committed journal's natural movement" }))
     }
 
+    /// Profit and loss grouped by class/department tag. Unassigned postings appear
+    /// in their own row so the totals always reconcile to the P&L.
+    pub async fn profit_loss_by_class(&self, from: &str, to: &str) -> LResult<Value> {
+        parse_date(from)?;
+        parse_date(to)?;
+        if to < from {
+            return Err(super::engine::LedgerError::BadRequest("'to' is before 'from'".into()));
+        }
+        let b = self.books().await?;
+        let accounts: HashMap<&str, &Account> = b.accounts.iter().map(|a| (a.id.as_str(), a)).collect();
+        let mut buckets: BTreeMap<String, (i64, i64)> = BTreeMap::new();
+        for entry in b.entries.iter().filter(|e| !e.voided && e.date.as_str() >= from && e.date.as_str() <= to) {
+            for line in &entry.lines {
+                let Some(account) = accounts.get(line.account_id.as_str()) else { continue };
+                let key = line.class_id.clone().unwrap_or_default();
+                let slot = buckets.entry(key).or_insert((0, 0));
+                match account.kind {
+                    AccountKind::Income => slot.0 += line.credit - line.debit,
+                    AccountKind::Expense => slot.1 += line.debit - line.credit,
+                    _ => {}
+                }
+            }
+        }
+        let classes = self.classes().await?;
+        let name_of = |id: &str| -> String {
+            if id.is_empty() { return "Unassigned".into(); }
+            classes.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_else(|| format!("Unknown class {id}"))
+        };
+        let mut rows = Vec::new();
+        let (mut total_income, mut total_expense) = (0_i64, 0_i64);
+        for (id, (income, expense)) in &buckets {
+            if *income == 0 && *expense == 0 { continue; }
+            total_income += income;
+            total_expense += expense;
+            rows.push(json!({
+                "class_id": id, "name": name_of(id),
+                "income_cents": income, "expense_cents": expense, "net_cents": income - expense,
+            }));
+        }
+        rows.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        Ok(json!({
+            "from": from, "to": to, "rows": rows,
+            "totals": { "income_cents": total_income, "expense_cents": total_expense, "net_cents": total_income - total_expense },
+            "note": "Income and expense postings only; balance-sheet lines carry their class but are not part of this report.",
+        }))
+    }
+
     /// Cash forecast: open invoices expected in, open bills expected out, and any
     /// scheduled recurring entry that touches a bank account, bucketed by week.
     /// This is a projection over records that already exist; it invents nothing.

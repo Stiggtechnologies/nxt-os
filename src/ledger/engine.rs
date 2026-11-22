@@ -109,6 +109,8 @@ pub struct DocLineInput {
     pub account_id: String,
     #[serde(default)]
     pub tax_code: Option<String>,
+    #[serde(default)]
+    pub class_id: Option<String>,
 }
 
 fn one() -> f64 {
@@ -238,6 +240,15 @@ pub struct BankRuleInput {
     pub tax_code: Option<String>,
     #[serde(default)]
     pub contact_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClassInput {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub name: String,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -551,6 +562,11 @@ impl Ledger {
                 Some(a) if a.archived => return bad(format!("account {} {} is archived", a.code, a.name)),
                 _ => {}
             }
+            if let Some(class_id) = l.class_id.as_deref().filter(|id| !id.is_empty()) {
+                if !self.known_class(class_id).await? {
+                    return bad(format!("unknown or archived class {class_id}"));
+                }
+            }
             dr += l.debit;
             cr += l.credit;
         }
@@ -677,10 +693,15 @@ impl Ledger {
             if !(l.qty.is_finite() && l.qty > 0.0) || l.rate < 0 {
                 return bad("quantity must be positive and rate non-negative");
             }
+            if let Some(class_id) = l.class_id.as_deref().filter(|id| !id.is_empty()) {
+                if !self.known_class(class_id).await? {
+                    return bad(format!("unknown or archived class {class_id}"));
+                }
+            }
             let tax_code = l.tax_code.filter(|t| !t.is_empty()).unwrap_or(default_tax.clone());
             let rate_bp = tax_rate(&tax_code).ok_or_else(|| LedgerError::BadRequest(format!("unknown tax code {tax_code}")))?;
             let amount = round_cents(l.qty * l.rate as f64);
-            lines.push(DocLine { description: l.description, qty: l.qty, rate: l.rate, account_id: acct.id, tax: tax_on(amount, rate_bp), tax_code, amount });
+            lines.push(DocLine { description: l.description, qty: l.qty, rate: l.rate, account_id: acct.id, tax: tax_on(amount, rate_bp), tax_code, amount, class_id: l.class_id });
         }
         let subtotal: i64 = lines.iter().map(|l| l.amount).sum();
         let tax: i64 = lines.iter().map(|l| l.tax).sum();
@@ -710,7 +731,7 @@ impl Ledger {
                 let ar = self.account_by_role(AccountRole::Receivable).await?;
                 glines.push(Line { account_id: ar.id, debit: total, contact_id: cid.clone(), memo: format!("Invoice {number}"), ..Default::default() });
                 for l in &lines {
-                    glines.push(Line { account_id: l.account_id.clone(), credit: l.amount, memo: l.description.clone(), contact_id: cid.clone(), ..Default::default() });
+                    glines.push(Line { account_id: l.account_id.clone(), credit: l.amount, memo: l.description.clone(), contact_id: cid.clone(), class_id: l.class_id.clone(), ..Default::default() });
                 }
                 if tax > 0 {
                     let tp = self.account_by_role(AccountRole::TaxPayable).await?;
@@ -721,7 +742,7 @@ impl Ledger {
                 let ar = self.account_by_role(AccountRole::Receivable).await?;
                 glines.push(Line { account_id: ar.id, credit: total, contact_id: cid.clone(), memo: format!("Credit memo {number}"), ..Default::default() });
                 for l in &lines {
-                    glines.push(Line { account_id: l.account_id.clone(), debit: l.amount, memo: l.description.clone(), contact_id: cid.clone(), ..Default::default() });
+                    glines.push(Line { account_id: l.account_id.clone(), debit: l.amount, memo: l.description.clone(), contact_id: cid.clone(), class_id: l.class_id.clone(), ..Default::default() });
                 }
                 if tax > 0 {
                     let tp = self.account_by_role(AccountRole::TaxPayable).await?;
@@ -731,7 +752,7 @@ impl Ledger {
             DocKind::Bill => {
                 let ap = self.account_by_role(AccountRole::Payable).await?;
                 for l in &lines {
-                    glines.push(Line { account_id: l.account_id.clone(), debit: l.amount, memo: l.description.clone(), contact_id: cid.clone(), ..Default::default() });
+                    glines.push(Line { account_id: l.account_id.clone(), debit: l.amount, memo: l.description.clone(), contact_id: cid.clone(), class_id: l.class_id.clone(), ..Default::default() });
                 }
                 if tax > 0 {
                     let tr = self.account_by_role(AccountRole::TaxRecoverable).await?;
@@ -1270,6 +1291,59 @@ impl Ledger {
         self.store.set_json(&self.key("rules"), &rules).await?;
         self.audit("bank_rule.deleted", keyword).await?;
         Ok(())
+    }
+
+    // ---- classes --------------------------------------------------------------
+
+    pub async fn classes(&self) -> LResult<Vec<Class>> {
+        let mut classes: Vec<Class> = self.store.get_json(&self.key("classes")).await?.unwrap_or_default();
+        classes.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(classes)
+    }
+
+    pub async fn save_class(&self, input: ClassInput) -> LResult<Class> {
+        let name = input.name.trim().to_string();
+        if name.is_empty() {
+            return bad("give the class a name");
+        }
+        if name.chars().count() > 60 {
+            return bad("class names are limited to 60 characters");
+        }
+        let mut classes = self.classes().await?;
+        let id = input.id.filter(|id| !id.is_empty()).unwrap_or_else(|| new_id("class"));
+        if classes.iter().any(|c| c.id != id && c.name.eq_ignore_ascii_case(&name)) {
+            return bad(format!("a class named '{name}' already exists"));
+        }
+        classes.retain(|c| c.id != id);
+        let class = Class { id: id.clone(), name, archived: input.archived };
+        classes.push(class.clone());
+        self.store.set_json(&self.key("classes"), &classes).await?;
+        self.audit("class.saved", format!("{id} {}", class.name)).await?;
+        Ok(class)
+    }
+
+    /// Remove a class. Refused while any posting or document line still references it,
+    /// so a report can never point at a tag that no longer exists.
+    pub async fn delete_class(&self, id: &str) -> LResult<()> {
+        let mut classes = self.classes().await?;
+        if !classes.iter().any(|c| c.id == id) {
+            return Err(LedgerError::NotFound(format!("no class {id}")));
+        }
+        let used = self.all::<Entry>("entries").await?.iter()
+            .any(|entry| entry.lines.iter().any(|line| line.class_id.as_deref() == Some(id)))
+            || self.all::<Doc>("docs").await?.iter()
+                .any(|doc| doc.lines.iter().any(|line| line.class_id.as_deref() == Some(id)));
+        if used {
+            return Err(LedgerError::Conflict(format!("class {id} is used by postings; archive it instead")));
+        }
+        classes.retain(|c| c.id != id);
+        self.store.set_json(&self.key("classes"), &classes).await?;
+        self.audit("class.deleted", id.to_string()).await?;
+        Ok(())
+    }
+
+    async fn known_class(&self, class_id: &str) -> LResult<bool> {
+        Ok(self.classes().await?.iter().any(|c| c.id == class_id && !c.archived))
     }
 
     // ---- budgets --------------------------------------------------------------

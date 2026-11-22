@@ -583,7 +583,7 @@ async fn sample_data(State(os): State<Os>) -> Result<Json<Value>, ApiError> {
             crate::ledger::models::Line { account_id: "acc_3000".into(), credit: 4_000_000, ..Default::default() },
         ],
     }).await?;
-    let line = |d: &str, qty: f64, rate: i64, acct: &str| DocLineInput { description: d.into(), qty, rate, account_id: acct.into(), tax_code: Some("HST13".into()) };
+    let line = |d: &str, qty: f64, rate: i64, acct: &str| DocLineInput { description: d.into(), qty, rate, account_id: acct.into(), tax_code: Some("HST13".into()), class_id: None };
     // Monthly invoices; older ones paid, recent ones open, one overdue.
     for m in 0..6i64 {
         let base = 170 - m * 30;

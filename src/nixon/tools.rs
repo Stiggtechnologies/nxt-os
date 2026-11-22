@@ -306,6 +306,7 @@ impl GuardVoice {
                                 rate,
                                 account_id: "acc_4000".into(),
                                 tax_code: None,
+                                class_id: None,
                             }],
                         },
                     )
