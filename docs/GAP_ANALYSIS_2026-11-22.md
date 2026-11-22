@@ -9,7 +9,18 @@ recorded as *out of scope* back into scope. The 41 rows that were written off
 are now **open** in the register, each with a next step; the earlier reason is
 kept as the recorded rationale so the trade-offs stay visible. The register
 therefore reports **24 open** of 220 capabilities and **13 external**; routed
-coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
+coverage is 70% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
+
+## Operational gates are separate
+
+The capability register says nothing about cutover readiness. The gates that keep
+live financial cutover at NO-GO were audited on 2026-11-22 and are recorded in
+[the cutover gate status](CUTOVER_GATE_STATUS_2026-11-22.md): individual
+authentication is verified (with break-glass/MFA configuration prerequisites),
+company/client isolation is verified at the API layer, the migration importer is
+not validated for real data, no rehearsal has run, the backup drill is partial
+and off-device key custody is not met. PR #145 remains an unmerged draft and is
+now blocked by `tests/cutover_guard.test.mjs`.
 
 ## Closed in this pass
 
