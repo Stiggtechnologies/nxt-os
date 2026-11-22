@@ -323,3 +323,71 @@ fn shift_month(d: NaiveDate, by: i32) -> NaiveDate {
     let total = d.year() * 12 + d.month() as i32 - 1 + by;
     NaiveDate::from_ymd_opt(total.div_euclid(12), (total.rem_euclid(12) + 1) as u32, 1).unwrap()
 }
+
+// ---- REA 2026-11-05: QuickBooks report parity (monthly/comparison P&L, balances) ----
+
+fn add_months(d: NaiveDate, n: u32) -> NaiveDate {
+    let m0 = d.month0() + n;
+    NaiveDate::from_ymd_opt(d.year() + (m0 / 12) as i32, m0 % 12 + 1, 1).unwrap()
+}
+
+fn ymd(d: NaiveDate) -> String {
+    d.format("%Y-%m-%d").to_string()
+}
+
+impl Ledger {
+    /// Profit and Loss by Month: one column per calendar month in [from, to].
+    pub async fn profit_loss_by_month(&self, from: &str, to: &str) -> LResult<Value> {
+        let f = parse_date(from)?;
+        let t = parse_date(to)?;
+        if t < f {
+            return Err(super::engine::LedgerError::BadRequest("'to' is before 'from'".into()));
+        }
+        let mut cols = Vec::new();
+        let mut start = f;
+        while start <= t && cols.len() < 120 {
+            let next = add_months(start, 1);
+            let end = (next - chrono::Duration::days(1)).min(t);
+            let pl = self.profit_loss(&ymd(start), &ymd(end)).await?;
+            cols.push(json!({ "label": start.format("%b %Y").to_string(), "from": ymd(start), "to": ymd(end),
+                "total_income": pl["total_income"], "total_cogs": pl["total_cogs"], "gross_profit": pl["gross_profit"],
+                "total_expenses": pl["total_expenses"], "net_income": pl["net_income"], "income": pl["income"], "expenses": pl["expenses"], "cogs": pl["cogs"] }));
+            start = next;
+        }
+        let total = self.profit_loss(from, to).await?;
+        Ok(json!({ "from": from, "to": to, "columns": cols, "total": total }))
+    }
+
+    /// Profit and Loss Comparison: the range against the same range one year earlier.
+    pub async fn profit_loss_comparison(&self, from: &str, to: &str) -> LResult<Value> {
+        let f = parse_date(from)?;
+        let t = parse_date(to)?;
+        let back = |d: NaiveDate| d.with_year(d.year() - 1).unwrap_or_else(|| d - chrono::Duration::days(365));
+        let (pf, pt) = (ymd(back(f)), ymd(back(t)));
+        let cur = self.profit_loss(from, to).await?;
+        let prior = self.profit_loss(&pf, &pt).await?;
+        let mut deltas = json!({});
+        for k in ["total_income", "total_cogs", "gross_profit", "total_expenses", "net_income"] {
+            let (c, p) = (cur[k].as_i64().unwrap_or(0), prior[k].as_i64().unwrap_or(0));
+            let pct = if p == 0 { Value::Null } else { json!(((c - p) as f64 / p.abs() as f64 * 10000.0).round() / 100.0) };
+            deltas[k] = json!({ "current": c, "prior": p, "change": c - p, "change_pct": pct });
+        }
+        Ok(json!({ "current": cur, "prior": prior, "prior_from": pf, "prior_to": pt, "comparison": deltas }))
+    }
+
+    /// Customer / Vendor Balance Summary: open document balance per contact.
+    pub async fn contact_balances(&self, kind: DocKind, as_of: &str) -> LResult<Value> {
+        parse_date(as_of)?;
+        let contacts: HashMap<String, String> = self.contacts(None).await?.into_iter().map(|c| (c.id, c.name)).collect();
+        let mut per: BTreeMap<String, (i64, usize)> = BTreeMap::new();
+        for doc in self.docs(Some(kind)).await?.into_iter().filter(|x| x.balance() > 0 && x.date.as_str() <= as_of) {
+            let name = contacts.get(&doc.contact_id).cloned().unwrap_or_default();
+            let e = per.entry(name).or_default();
+            e.0 += doc.balance();
+            e.1 += 1;
+        }
+        let total: i64 = per.values().map(|v| v.0).sum();
+        let rows: Vec<Value> = per.into_iter().map(|(n, (b, c))| json!({ "contact": n, "balance": b, "open_documents": c })).collect();
+        Ok(json!({ "as_of": as_of, "rows": rows, "total": total }))
+    }
+}
