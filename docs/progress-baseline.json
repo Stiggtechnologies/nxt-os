@@ -6,10 +6,10 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 143,
+    "routed": 144,
     "linked": 24,
     "external": 13,
-    "open": 40,
+    "open": 39,
     "chrome": 22,
     "percent": 65
   },
@@ -17,10 +17,10 @@
     {
       "product": "QuickBooks",
       "capabilities": 143,
-      "routed": 103,
+      "routed": 104,
       "linked": 24,
       "external": 1,
-      "open": 15
+      "open": 14
     },
     {
       "product": "DT Max",
@@ -64,7 +64,6 @@
     "reports--custom-reports",
     "reports--financial-planning--cash-flow-planner",
     "reports--performance-centre",
-    "reports--standard-reports--custom-report-builder--product-item-profitability-by-customer",
     "settings--lists--custom-fields",
     "settings--tools--backup-company",
     "settings--your-company--custom-form-styles",

@@ -8,7 +8,7 @@ Reconciles the generated [gap register](GAP_REGISTER.md), the dated
 recorded as *out of scope* back into scope. The 41 rows that were written off
 are now **open** in the register, each with a next step; the earlier reason is
 kept as the recorded rationale so the trade-offs stay visible. The register
-therefore reports **40 open** of 220 capabilities and **13 external**; routed
+therefore reports **39 open** of 220 capabilities and **13 external**; routed
 coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 
 ## Closed in this pass
@@ -23,6 +23,7 @@ coverage is unchanged at 65% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 | Credit memos | Native `DocKind::CreditMemo` posting Dr income / Dr GST-HST, Cr AR; application to an invoice for the same customer without a second posting; void releases the invoices it covered. | `7900950`; `tests/credit_memos.rs` |
 | Forecasts | Weekly cash projection from open invoice/bill due dates and scheduled recurring entries, with opening and projected closing cash; labelled a projection and shown at `#reports/forecast`. | `tests/forecast.rs` |
 | Budget vs actual | Monthly budget cells per account (replacing on re-entry, deletable) compared with the committed journal's natural movement; P&L accounts plus any explicitly budgeted account; `#reports/budget-vs-actual` with a budget editor. | `tests/budgets.rs` |
+| Revenue by customer and item | `#reports/item-profitability` groups invoice lines by customer and description, subtracts credit memos from the same row, and states that no cost allocation is made. | `tests/item_profitability.rs` |
 | Sales receipts | POST /api/ledger/sales-receipts creates an invoice and settles it in full with a received payment, so the statement, payment register and GST/HST all see one ordinary sale; a Sales receipt modal sits on the invoices screen. | `tests/sales_receipts.rs` |
 | Class / department tagging | Classes are a ledger list; journal and invoice/bill lines carry `class_id` onto the posting; unknown or archived classes are rejected and a class in use cannot be deleted; `#reports/profit-loss-by-class` groups income and expenses and keeps an Unassigned row so totals reconcile. | `tests/classes.rs` |
 
@@ -34,10 +35,10 @@ were not rebuilt; the 2026-11-05 map predates that screen.
 The [gap register](GAP_REGISTER.md) is authoritative and now lists 41 open
 capabilities. The largest clusters:
 
-- QuickBooks (15): cheque printing, batch transactions, item profitability,
-  custom report builder, performance centre, cash-flow planner, receipt
-  inbox, payment links and payouts, form styles, payroll settings, custom
-  fields, backup-company action, shift scheduling, assignments.
+- QuickBooks (14): cheque printing, batch transactions, custom report builder,
+  performance centre, cash-flow planner, receipt inbox, payment links and
+  payouts, form styles, payroll settings, custom fields, backup-company
+  action, shift scheduling, assignments.
 - DT Max (14): client renumbering/restore, EFILE reports/errors/logs,
   labels, FileCabinet export, CT23 packing slip, forms catalogue, billing
   setup, text macros, UI options, maintenance job, editing locks.

@@ -446,6 +446,7 @@ pub async fn run_report(l: &Ledger, name: &str, q: &Range) -> LResult<Value> {
         "forecast" => l.forecast(&q.from(), &q.to()).await,
         "budget-vs-actual" => l.budget_vs_actual(&q.from(), &q.to()).await,
         "profit-loss-by-class" => l.profit_loss_by_class(&q.from(), &q.to()).await,
+        "item-profitability" => l.item_profitability(&q.from(), &q.to()).await,
         "profit-loss-by-month" => l.profit_loss_by_month(&q.from(), &q.to()).await,
         "profit-loss-comparison" => l.profit_loss_comparison(&q.from(), &q.to()).await,
         "customer-balances" => l.contact_balances(DocKind::Invoice, &q.to()).await,

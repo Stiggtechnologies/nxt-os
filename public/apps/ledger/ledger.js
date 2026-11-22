@@ -1371,6 +1371,7 @@ const REPORTS = {
   forecast: ["Cash forecast", "Expected receipts, payments and scheduled entries, week by week.", "range"],
   "budget-vs-actual": ["Budget vs actual", "Monthly budgets against the committed journal.", "range"],
   "profit-loss-by-class": ["Profit and loss by class", "Income and expense grouped by class or department.", "range"],
+  "item-profitability": ["Revenue by customer and item", "Invoice lines grouped by customer and description, net of credit memos.", "range"],
   "profit-loss-by-month": ["Profit and loss by month", "Income, costs and net income, one column per month.", "range"],
   "profit-loss-comparison": ["Profit and loss comparison", "This period against the same period last year.", "range"],
   "customer-balances": ["Customer balance summary", "Open invoice balance per customer.", "asof"],
@@ -1434,6 +1435,17 @@ function sectionRows(rows) { return rows.map((r) => `<tr class="click" onclick="
 function plain(rows) { return rows.map((r) => `<tr><td class="indent">${esc(r.code ? r.code + " · " : "")}${esc(r.name)}</td><td class="num">${money(r.amount)}</td></tr>`).join(""); }
 
 function renderReport(key, d, st = { from: "", to: "" }) {
+  if (key === "item-profitability") {
+    const rows = Array.isArray(d.rows) ? d.rows : [];
+    return `${table([
+      { h: "Customer", f: (r) => `<b>${esc(r.customer)}</b>` },
+      { h: "Item", f: (r) => esc(r.item) },
+      { h: "Quantity", num: 1, f: (r) => String(r.quantity) },
+      { h: "Revenue", num: 1, f: (r) => money(r.revenue_cents) },
+      { h: "Documents", num: 1, f: (r) => r.documents },
+    ], rows, { empty: "No invoice lines in this period." })}
+    <p class="muted" style="margin:12px 0 0">Total ${money(d.total_cents)}. ${esc(d.note || "")}</p>`;
+  }
   if (key === "profit-loss-by-class") {
     const rows = Array.isArray(d.rows) ? d.rows : [];
     return `${table([
@@ -1574,6 +1586,11 @@ function renderReport(key, d, st = { from: "", to: "" }) {
 
 function reportCsv(key, d, st = { from: "", to: "" }) {
   const $c = (v) => window.NXTLedgerFormat.cents(v);
+  if (key === "item-profitability") {
+    const rows = [["customer", "item", "quantity", "revenue", "documents"]];
+    for (const r of (Array.isArray(d.rows) ? d.rows : [])) rows.push([JSON.stringify(r.customer), JSON.stringify(r.item), r.quantity, $c(r.revenue_cents), r.documents]);
+    return rows.map((r) => r.join(",")).join("\n");
+  }
   if (key === "profit-loss-by-class") {
     const rows = [["class", "income", "expenses", "net"]];
     for (const r of (Array.isArray(d.rows) ? d.rows : [])) rows.push([JSON.stringify(r.name), $c(r.income_cents), $c(r.expense_cents), $c(r.net_cents)]);

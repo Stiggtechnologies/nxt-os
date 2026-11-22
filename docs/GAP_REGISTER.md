@@ -9,10 +9,10 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 143 |
+| Routed | 144 |
 | Linked | 24 |
 | External | 13 |
-| **Open** | **40** |
+| **Open** | **39** |
 | Routed coverage | 65% |
 | Source chrome excluded | 22 |
 
@@ -20,19 +20,18 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| QuickBooks | 143 | 103 | 24 | 1 | 15 | 72% |
+| QuickBooks | 143 | 104 | 24 | 1 | 14 | 73% |
 | DT Max | 37 | 18 | 0 | 5 | 14 | 49% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
 
-### Open to build (15)
+### Open to build (14)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
 | Suppliers | Print cheques | Render recorded bill payments as printable cheque PDFs with a configurable layout; no MICR or signing claim. | Cheque printing needs bank cheque stock, MICR layout and a signing process. NXT records the payment journal instead of printing the instrument. |
 | Other | Batch transactions | Stage several balanced journals and post them atomically behind one preview. | NXT books one transaction at a time with a preview and a balanced journal; a batch screen would remove that check rather than add capability. |
-| Custom report builder | Product/Item Profitability by Customer | Add an item-level profitability report over invoice lines grouped by customer and item description. | Line-item profitability needs an item-level reporting engine over invoice lines. NXT reports at account level today; this is a later reporting project. |
 | Reports | Custom reports | Add a saved-report builder over the existing report endpoints with field, filter and CSV selection. | NXT ships a fixed report set. A report builder is a separate authoring project, not a missing screen. |
 | Reports | Performance centre | Add a firm performance dashboard over NXT metrics; do not import third-party benchmark data. | Benchmarking compares a firm against other QuickBooks users. NXT has no benchmark dataset and will not invent one. |
 | Financial planning | Cash flow planner | Add a projection report from user-entered assumptions, labelled as a plan rather than actuals. | A cash-flow planner projects future balances from assumptions. NXT reports actuals; forecasting is deliberately not modelled. |

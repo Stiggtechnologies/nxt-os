@@ -391,6 +391,46 @@ impl Ledger {
             "basis": "monthly budget cells versus the committed journal's natural movement" }))
     }
 
+    /// Revenue by customer and item (invoice line description). Credit memos reduce
+    /// the same customer/item row, so the report follows the books rather than
+    /// counting issuances only.
+    pub async fn item_profitability(&self, from: &str, to: &str) -> LResult<Value> {
+        parse_date(from)?;
+        parse_date(to)?;
+        if to < from {
+            return Err(super::engine::LedgerError::BadRequest("'to' is before 'from'".into()));
+        }
+        let contacts: HashMap<String, String> = self.contacts(None).await?.into_iter().map(|c| (c.id, c.name)).collect();
+        let mut rows: BTreeMap<(String, String), (f64, i64, usize)> = BTreeMap::new();
+        for kind in [DocKind::Invoice, DocKind::CreditMemo] {
+            let sign: f64 = if kind == DocKind::CreditMemo { -1.0 } else { 1.0 };
+            for doc in self.docs(Some(kind)).await? {
+                if doc.voided || doc.date.as_str() < from || doc.date.as_str() > to { continue; }
+                for line in &doc.lines {
+                    let name = contacts.get(&doc.contact_id).cloned().unwrap_or_default();
+                    let row = rows.entry((name, line.description.clone())).or_insert((0.0, 0, 0));
+                    row.0 += sign * line.qty;
+                    row.1 += (sign * line.amount as f64).round() as i64;
+                    row.2 += 1;
+                }
+            }
+        }
+        let mut out: Vec<Value> = rows
+            .into_iter()
+            .filter(|(_, (qty, cents, _))| *qty != 0.0 || *cents != 0)
+            .map(|((customer, item), (qty, cents, count))| json!({
+                "customer": customer, "item": item, "quantity": qty,
+                "revenue_cents": cents, "documents": count,
+            }))
+            .collect();
+        out.sort_by(|a, b| b["revenue_cents"].as_i64().cmp(&a["revenue_cents"].as_i64()));
+        let total: i64 = out.iter().map(|row| row["revenue_cents"].as_i64().unwrap_or(0)).sum();
+        Ok(json!({
+            "from": from, "to": to, "rows": out, "total_cents": total,
+            "note": "Revenue before tax, grouped by customer and invoice line description. Credit memos subtract from the same row; costs are not allocated, so this is not a gross-margin claim.",
+        }))
+    }
+
     /// Profit and loss grouped by class/department tag. Unassigned postings appear
     /// in their own row so the totals always reconcile to the P&L.
     pub async fn profit_loss_by_class(&self, from: &str, to: &str) -> LResult<Value> {
