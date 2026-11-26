@@ -24,6 +24,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/package",get(package))
         .route("/api/tax/returns/{id}/client-export",get(client_export))
         .route("/api/tax/returns/{id}/cabinet-export",get(cabinet_export))
+        .route("/api/tax/returns/{id}/gifi-statement",get(gifi_statement))
         .route("/api/tax/returns/{id}/lock",get(lock_status).post(acquire_lock).delete(release_lock))
         .route("/api/tax/clients/import",post(client_import))
         .route("/api/tax/clients/renumber",post(renumber_client))
@@ -288,6 +289,11 @@ async fn renumber_client(State(t): S, identity: Option<Extension<crate::firm::st
 }
 async fn client_renames(State(t): S) -> R {
     ok(t.client_renames().await?)
+}
+async fn gifi_statement(State(t): S, Path(id): Path<String>) -> R {
+    let record = t.get(&id).await?;
+    let profile = record.corporate.ok_or_else(|| super::bad("this return has no corporate GIFI profile"))?;
+    ok(super::gifi_statement::build(&profile.gifi))
 }
 async fn cabinet_export(State(t): S, Path(id): Path<String>) -> R {
     ok(super::client_bundle::cabinet_export(&t, &id).await?)

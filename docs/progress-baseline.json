@@ -6,10 +6,10 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 162,
+    "routed": 163,
     "linked": 26,
     "external": 13,
-    "open": 19,
+    "open": 18,
     "chrome": 22,
     "percent": 74
   },
@@ -33,10 +33,10 @@
     {
       "product": "WebTax4B",
       "capabilities": 40,
-      "routed": 22,
+      "routed": 23,
       "linked": 0,
       "external": 7,
-      "open": 11
+      "open": 10
     }
   ],
   "open_ids": [
@@ -54,7 +54,6 @@
     "webtax4b.home-expense",
     "webtax4b.nav-additional-information",
     "webtax4b.nav-amended",
-    "webtax4b.nav-gifi-summary",
     "webtax4b.noa",
     "webtax4b.other-expense",
     "webtax4b.t1135",

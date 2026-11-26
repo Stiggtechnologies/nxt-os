@@ -826,9 +826,9 @@
               "label": "GIFI - Summary income statement",
               "source_label": "GIFI - Summary income statement",
               "observation": "observed",
-              "native_route": null,
-              "native_scope": "No summary income statement view is generated from the native T2 workpaper.",
-              "next_step": "Generate a GIFI summary income statement from typed GIFI totals.",
+              "native_route": "#worklist",
+              "native_scope": "GIFI summary income statement built from declared income-statement rows (revenue detail 8000-8298 or 8299, expenses 8521-9367 or 9368, net compared with 9999); not a complete GIFI S125 statement.",
+              "next_step": "Corporate return -> GIFI statement.",
               "scope": "in_scope",
               "scope_reason": "A generated GIFI income statement needs full statement-level GIFI detail. NXT types selected GIFI totals only.",
               "in_scope_since": "2026-11-22"

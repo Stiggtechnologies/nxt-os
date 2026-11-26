@@ -9,10 +9,10 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 162 |
+| Routed | 163 |
 | Linked | 26 |
 | External | 13 |
-| **Open** | **19** |
+| **Open** | **18** |
 | Routed coverage | 74% |
 | Source chrome excluded | 22 |
 
@@ -22,7 +22,7 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | QuickBooks | 143 | 114 | 26 | 1 | 2 | 80% |
 | DT Max | 37 | 26 | 0 | 5 | 6 | 70% |
-| WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
+| WebTax4B | 40 | 23 | 0 | 7 | 10 | 57% |
 
 ## QuickBooks
 
@@ -64,7 +64,7 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 ## WebTax4B
 
-### Open to build (11)
+### Open to build (10)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
@@ -75,7 +75,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | In-product actions (shipped client assets) | Motor vehicle expense | Add a motor-vehicle operating-expense worksheet distinct from CCA caps. | A vehicle expense worksheet is separate from the CCA vehicle caps that Schedule 8 already models. Not in the declared scope. |
 | In-product actions (shipped client assets) | Other expenses | Add an other-expense worksheet with a declared line scope. | Other-expense worksheets are not modelled; the native T2 scope declares a bounded expense set. |
 | T2 return navigator (authenticated workspace) | Additional information | Add the additional-information questionnaire fields with declared arithmetic impact. | The additional-information section carries CRA questionnaire answers. Its rules are not modelled and it does not affect the declared arithmetic. |
-| T2 return navigator (authenticated workspace) | GIFI - Summary income statement | Generate a GIFI summary income statement from typed GIFI totals. | A generated GIFI income statement needs full statement-level GIFI detail. NXT types selected GIFI totals only. |
 | T2 return navigator (authenticated workspace) | Amended return | Add an amendment record that supersedes a filed return; filing stays external. | Amendments apply to filed returns. NXT does not file, so there is no filed return to amend; the capability follows the filing gate. |
 | Release coverage observed | AT1 MC43 schedule set | Add AT1 schedules from published Alberta forms when available. | AT1 schedules require published Alberta forms and a transmission path; both are external. |
 | Release coverage observed | CO-17 MC41.1.1 schedule set | Add CO-17 schedules from published Quebec forms when available. | CO-17 schedules require published Quebec forms and a transmission path; both are external. |

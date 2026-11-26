@@ -8,7 +8,7 @@ Reconciles the generated [gap register](GAP_REGISTER.md), the dated
 recorded as *out of scope* back into scope. The 41 rows that were written off
 are now **open** in the register, each with a next step; the earlier reason is
 kept as the recorded rationale so the trade-offs stay visible. The register
-therefore reports **19 open** of 220 capabilities and **13 external**; routed
+therefore reports **18 open** of 220 capabilities and **13 external**; routed
 coverage is 70% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 
 ## Operational gates are separate
@@ -34,6 +34,7 @@ now blocked by `tests/cutover_guard.test.mjs`.
 | Credit memos | Native `DocKind::CreditMemo` posting Dr income / Dr GST-HST, Cr AR; application to an invoice for the same customer without a second posting; void releases the invoices it covered. | `7900950`; `tests/credit_memos.rs` |
 | Forecasts | Weekly cash projection from open invoice/bill due dates and scheduled recurring entries, with opening and projected closing cash; labelled a projection and shown at `#reports/forecast`. | `tests/forecast.rs` |
 | Budget vs actual | Monthly budget cells per account (replacing on re-entry, deletable) compared with the committed journal's natural movement; P&L accounts plus any explicitly budgeted account; `#reports/budget-vs-actual` with a budget editor. | `tests/budgets.rs` |
+| GIFI summary | A summary income statement from declared GIFI income-statement rows: revenue detail 8000–8298 (else 8299), expenses 8521–9367 (else 9368), net compared with 9999; subtotal and detail rows are never summed together, and the statement states it is not a complete GIFI S125. | `tests/tax_gifi_statement.rs` |
 | Client renumbering | All returns and staff assignments move from one client reference to another; the old reference is kept in an immutable renumbering log, live staff assignments are remapped, and the operation refuses a taken target or an archived batch that binds the old reference. | `tests/tax_renumber.rs` |
 | Cabinet packet | A downloadable escaped HTML workpaper (identity, status, saved calculation lines) for filing into an external document cabinet; no vendor FileCabinet connection is claimed. | `tests/tax_cabinet.rs` |
 | Client labels | Printable three-column label sheet built from worklist client references (deduped, escaped), with program/year/jurisdiction on each label; browser print, no label-stock integration claimed. | `tests/client_labels.test.mjs` |

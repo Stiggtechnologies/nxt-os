@@ -20,6 +20,7 @@ pub mod family_workflow;
 pub mod t2_intake;
 pub mod filing_desk;
 pub mod client_bundle;
+pub mod gifi_statement;
 pub mod stripe;
 mod routes;
 pub use routes::router;
