@@ -282,9 +282,9 @@
               "label": "Print client labels",
               "source_label": "Print client labels",
               "observation": "observed",
-              "native_route": null,
-              "native_scope": "No label layout or label printer integration.",
-              "next_step": "Add a client-label print sheet (Avery-compatible PDF) from client records.",
+              "native_route": "#worklist",
+              "native_scope": "Printable client label sheet (three columns) from the worklist, one label per client reference, with name, program, year and jurisdiction. No label-stock or printer-driver integration is claimed.",
+              "next_step": "Worklist -> Print labels.",
               "scope": "in_scope",
               "scope_reason": "Client label printing needs label stock and a desktop print path.",
               "in_scope_since": "2026-11-22"

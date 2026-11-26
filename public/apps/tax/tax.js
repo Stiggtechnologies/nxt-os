@@ -217,7 +217,7 @@
     if (version !== state.version) return;
     state.returns = list(records); setStorage(summary.storage); renderPrograms();
     const years = [...new Set([...programs().flatMap(p => list(p.years)), ...state.returns.map(r => r.tax_year)])].sort((a, b) => b - a);
-    page(version, "Tax worklist", "Prepare, calculate and review independently versioned workpapers across the tax suite.", button("Export worklist", "export-worklist") + button("Preferences", "preferences") + button("Import package", "import") + button("Restore client bundle", "client-restore") + button("Create return", "new-return", "", "primary"),
+    page(version, "Tax worklist", "Prepare, calculate and review independently versioned workpapers across the tax suite.", button("Export worklist", "export-worklist") + button("Print labels", "print-labels") + button("Preferences", "preferences") + button("Import package", "import") + button("Restore client bundle", "client-restore") + button("Create return", "new-return", "", "primary"),
       restrictedNotice() + `<div id="dtmax-t1-source"></div><div class="summary-grid">${[["Draft workpapers", summary.drafts || 0], ["Calculated", summary.calculated || 0], ["Awaiting review", summary.in_review || 0], ["Approved", summary.approved || 0]].map(([label, value]) => `<div class="summary-tile"><span class="label">${label}</span><strong>${Number(value)}</strong></div>`).join("")}</div>
       <div class="card"><h2>NXT preparation workpapers</h2><p>The company selector filters these workpapers. Imported personal T1 source clients above are firm-wide.</p><div class="list-filters"><label>Program${select("program", [["", "All programs"], ...programs().map(p => [p.id, p.id.toUpperCase()])], state.program, "data-work-filter")}</label><label>Tax year${select("year", [["", "All years"], ...years.map(y => [y, y])], state.year, "data-work-filter")}</label><label>Status${select("status", statuses, state.status, "data-work-filter")}</label><label>Jurisdiction${select("jurisdiction", [["", "All jurisdictions"], ...(window.NXTTaxWorklist?.jurisdictions(state.returns) || []).map(j => [j, j])], state.jurisdiction, "data-work-filter")}</label><label>Sort${select("sort", [["", "Default order"], ["name", "Name"], ["year", "Tax year"], ["updated", "Last updated"], ["status", "Status"]], state.sort, "data-work-filter")}</label><label class="search">Search workpapers${input("search", state.search, "search", 'placeholder="Name or client reference" data-work-filter')}</label></div><div id="return-table"></div></div>`);
     renderWorkRows();
@@ -671,6 +671,15 @@
     "rollforward": () => rollforward(), "package": () => downloadReturn("package"), "print": () => downloadReturn("print"),
     "client-export": () => downloadClientBundle(), "client-restore": () => restoreClientBundle(),
     "preferences": () => preferencesDialog(),
+    "print-labels": () => {
+      const labels = window.NXTClientLabels?.build(state.returns) || [];
+      if (!labels.length) return toast("No client references to label", true);
+      modal("Client labels", (el, close) => {
+        el.innerHTML = `${window.NXTClientLabels.markup(labels)}<div class="actions"><button class="btn" data-x>Close</button><button class="btn primary" data-print>Print</button></div>`;
+        el.querySelector("[data-x]").onclick = () => close();
+        el.querySelector("[data-print]").onclick = () => window.print();
+      }, { wide: true });
+    },
     "lock-return": async () => {
       const record = state.record;
       if (!record) return;

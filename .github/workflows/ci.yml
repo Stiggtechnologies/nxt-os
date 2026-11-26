@@ -42,6 +42,7 @@ jobs:
           node --test tests/tax_batch_ui.test.mjs
           node --test tests/tax_scope_guard.test.mjs
           node --test tests/cutover_guard.test.mjs
+          node --test tests/client_labels.test.mjs
           node --test tests/tax_coverage_catalog.test.mjs
           node --check public/apps/tax/family-workflow.js
           node --test tests/tax_family_workspace.test.mjs
