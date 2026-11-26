@@ -5,7 +5,7 @@
   const $ = (s, root = document) => root.querySelector(s);
   const $$ = (s, root = document) => [...root.querySelectorAll(s)];
   const main = $("#main"), API = "/api/tax";
-  const state = { catalog: null, program: "", year: "", returns: [], record: null, draft: null, section: "", dirty: false, errors: {}, search: "", status: "", jurisdiction: "", sort: "", preview: null, audit: [], snippets: [], version: 0 };
+  const state = { catalog: null, program: "", year: "", returns: [], record: null, draft: null, section: "", dirty: false, errors: {}, search: "", status: "", jurisdiction: "", sort: "", preview: null, audit: [], snippets: [], prefs: null, version: 0 };
   const request = (path, options) => api(API + path, options);
   let sourceWorkspace=null,sourcePreparationAttempt=0,sourceWorkspaceEpoch=0,reportWorkspace=null;
   let batchWorkspace=null;
@@ -155,6 +155,32 @@
     }, { wide: true });
   }
 
+  function preferencesDialog() {
+    const prefs = state.prefs || { density: "comfortable", default_view: "worklist", show_keyword_codes: true };
+    return modal("Workspace preferences", (el, close) => {
+      el.innerHTML = `<p class="form-note">Stored against your staff account when you sign in as one person; the shared workspace key keeps a single set.</p>
+        <div class="form"><label class="f">Table density<select name="density"><option value="comfortable"${prefs.density !== "compact" ? " selected" : ""}>Comfortable</option><option value="compact"${prefs.density === "compact" ? " selected" : ""}>Compact</option></select></label>
+        <label class="f">Default screen<select name="default_view"><option value="worklist"${prefs.default_view !== "reports" ? " selected" : ""}>Tax worklist</option><option value="reports"${prefs.default_view === "reports" ? " selected" : ""}>Reports</option></select></label>
+        <label class="check full"><input type="checkbox" name="show_keyword_codes"${prefs.show_keyword_codes === false ? "" : " checked"}> Show keyword codes beside field labels</label></div>
+        <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Save preferences</button></div>`;
+      el.querySelector("[data-x]").onclick = () => close();
+      el.querySelector("[data-ok]").onclick = async () => {
+        const body = {
+          density: el.querySelector("[name=density]").value,
+          default_view: el.querySelector("[name=default_view]").value,
+          show_keyword_codes: el.querySelector("[name=show_keyword_codes]").checked,
+        };
+        try {
+          state.prefs = await request("/preferences", { method: "PUT", body });
+          applyPreferences(state.prefs);
+          toast("Preferences saved");
+          close(true);
+          await navigate();
+        } catch (error) { toast(error.message, true); }
+      };
+    });
+  }
+
   async function downloadClientBundle() {
     if (!state.record?.client_ref) return toast("This return has no client reference", true);
     try {
@@ -191,7 +217,7 @@
     if (version !== state.version) return;
     state.returns = list(records); setStorage(summary.storage); renderPrograms();
     const years = [...new Set([...programs().flatMap(p => list(p.years)), ...state.returns.map(r => r.tax_year)])].sort((a, b) => b - a);
-    page(version, "Tax worklist", "Prepare, calculate and review independently versioned workpapers across the tax suite.", button("Export worklist", "export-worklist") + button("Import package", "import") + button("Restore client bundle", "client-restore") + button("Create return", "new-return", "", "primary"),
+    page(version, "Tax worklist", "Prepare, calculate and review independently versioned workpapers across the tax suite.", button("Export worklist", "export-worklist") + button("Preferences", "preferences") + button("Import package", "import") + button("Restore client bundle", "client-restore") + button("Create return", "new-return", "", "primary"),
       restrictedNotice() + `<div id="dtmax-t1-source"></div><div class="summary-grid">${[["Draft workpapers", summary.drafts || 0], ["Calculated", summary.calculated || 0], ["Awaiting review", summary.in_review || 0], ["Approved", summary.approved || 0]].map(([label, value]) => `<div class="summary-tile"><span class="label">${label}</span><strong>${Number(value)}</strong></div>`).join("")}</div>
       <div class="card"><h2>NXT preparation workpapers</h2><p>The company selector filters these workpapers. Imported personal T1 source clients above are firm-wide.</p><div class="list-filters"><label>Program${select("program", [["", "All programs"], ...programs().map(p => [p.id, p.id.toUpperCase()])], state.program, "data-work-filter")}</label><label>Tax year${select("year", [["", "All years"], ...years.map(y => [y, y])], state.year, "data-work-filter")}</label><label>Status${select("status", statuses, state.status, "data-work-filter")}</label><label>Jurisdiction${select("jurisdiction", [["", "All jurisdictions"], ...(window.NXTTaxWorklist?.jurisdictions(state.returns) || []).map(j => [j, j])], state.jurisdiction, "data-work-filter")}</label><label>Sort${select("sort", [["", "Default order"], ["name", "Name"], ["year", "Tax year"], ["updated", "Last updated"], ["status", "Status"]], state.sort, "data-work-filter")}</label><label class="search">Search workpapers${input("search", state.search, "search", 'placeholder="Name or client reference" data-work-filter')}</label></div><div id="return-table"></div></div>`);
     renderWorkRows();
@@ -343,6 +369,7 @@
   async function returnWorkspace(version, id) {
     const record = await request(`/returns/${pid(id)}`);
     if (version !== state.version) return;
+    state.lock = (await request(`/returns/${pid(id)}/lock`).catch(() => ({ lock: null }))).lock;
     state.record = record; state.draft = clone(record); state.dirty = false; state.errors = {};
     state.program = program(record.program).id; state.year = String(record.tax_year);
     const p = program(record.program); if (!state.section || ![...list(p.sections).map(s => s.id), "identity", "parties", "slip-groups", "calculation", "diagnostics", "review", ...(isCorporate(record) ? corporateSections : [])].includes(state.section)) state.section = "identity";
@@ -366,7 +393,7 @@
   function renderWorkspace() {
     const r = state.record, p = program(r.program); main.classList.add("workspace-mode");
     const editable = canEdit(r);
-    main.innerHTML = `<div class="work-head">${r.program === "T1" ? t1WorkpaperTabs() : '<a class="back" href="#worklist">← Tax worklist</a>'}<div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary", r.program === "T1" ? "save" : "")}${button("Calculate", "calculate", "", "ink", r.program === "T1" ? "calculate" : "")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Export client", "client-export")}${button("Print workpaper", "print", "", "", r.program === "T1" ? "print" : "")}${schedule8PrintAvailable() ? button("Print Schedule 8", "schedule8-print") : ""}${button("Roll forward", "rollforward")}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
+    main.innerHTML = `<div class="work-head">${r.program === "T1" ? t1WorkpaperTabs() : '<a class="back" href="#worklist">← Tax worklist</a>'}<div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary", r.program === "T1" ? "save" : "")}${button("Calculate", "calculate", "", "ink", r.program === "T1" ? "calculate" : "")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Export client", "client-export")}${button("Print workpaper", "print", "", "", r.program === "T1" ? "print" : "")}${schedule8PrintAvailable() ? button("Print Schedule 8", "schedule8-print") : ""}${button("Roll forward", "rollforward")}${button(state.lock ? "Take over lock" : "Lock", "lock-return")}${state.lock ? button("Unlock", "unlock-return", "", "ghost") : ""}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span>·</span><span id="lock-status">${state.lock ? `Locked by ${esc(state.lock.holder)} until ${stamp(state.lock.expires_at)}` : "No editing lock"}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
       ${r.current_scope_supported===false?'<div class="notice" role="alert"><strong>Unsupported current calculation scope.</strong><p>Saved calculations and approvals are historical only. This workpaper cannot enter review, approval, authorization or recorded filing in this program, year and jurisdiction.</p></div>':""}${!browserEntryAvailable(r) && r.current_scope_supported!==false ? '<div class="notice" role="note"><strong>Year-specific browser editor pending.</strong><p>Input editing is unavailable for this saved workpaper. Its inputs remain unchanged; calculation results, diagnostics, history and exports remain available. A limited engine path does not verify an entry form.</p></div>' : ""}<div class="return-grid">${workspaceNavigation(r,p)}<section class="return-editor" id="return-editor" aria-label="Return data"></section><aside class="result-panel" id="result-panel" aria-label="Calculation status and diagnostics"></aside></div>`;
     $$("[data-action=save-return],[data-action=calculate]", main).forEach(b => b.disabled = !editable);
     renderEditor(); renderSidePanel(); setDirtyStatus();
@@ -420,7 +447,7 @@
     else if (f.kind === "json") control = `<textarea ${attr} rows="8" spellcheck="false">${esc(JSON.stringify(value ?? null, null, 2))}</textarea>`;
     else if (f.kind === "text" && f.multiline) control = `<textarea ${attr} rows="7">${esc(value || "")}</textarea>`;
     else control = `<input type="${f.kind === "number" ? "number" : "text"}" ${attr} value="${esc(f.kind === "money" ? (f.optional===true&&!Object.hasOwn(state.draft.inputs,f.key)?"":((Number(value) || 0) / 100).toFixed(2)) : value ?? "")}"${f.kind === "money" ? ' class="money" inputmode="decimal" autocomplete="off"' : ""}${f.kind === "number" ? (f.optional === true ? ` step="1" min="${f.min}" max="${f.max}"` : ' step="any"') : ""}>`;
-    return `<div class="keyword-field${state.errors[f.key] ? " invalid" : ""}" data-field="${esc(f.key)}"><label for="${esc(id)}"><code>${esc(f.key)}</code><span>${esc(f.label)}</span>${f.help ? `<span class="help">${esc(f.help)}</span>` : ""}${f.optional===true?`<span class="help">${f.kind==="boolean"?'Optional verification. Unchecked is not confirmation; Clear removes its saved value.':'Optional. Leave blank when no value is supplied.'} Verification is never automatic.</span>`:""}</label>${control}${f.optional===true?`<button class="btn sm" type="button" data-clear-optional="${esc(f.key)}"${grouped||!canEdit(state.record)?" disabled":""}>Clear optional value</button>`:""}${grouped?'<p class="help">Derived from saved slip groups. Edit the individual occurrences in Saved slip groups.</p>':""}<span class="field-error" data-error-for="${esc(f.key)}"${state.errors[f.key] ? "" : " hidden"}>${esc(state.errors[f.key] || "")}</span></div>`;
+    return `<div class="keyword-field${state.errors[f.key] ? " invalid" : ""}" data-field="${esc(f.key)}"><label for="${esc(id)}">${state.prefs?.show_keyword_codes === false ? "" : `<code>${esc(f.key)}</code>`}<span>${esc(f.label)}</span>${f.help ? `<span class="help">${esc(f.help)}</span>` : ""}${f.optional===true?`<span class="help">${f.kind==="boolean"?'Optional verification. Unchecked is not confirmation; Clear removes its saved value.':'Optional. Leave blank when no value is supplied.'} Verification is never automatic.</span>`:""}</label>${control}${f.optional===true?`<button class="btn sm" type="button" data-clear-optional="${esc(f.key)}"${grouped||!canEdit(state.record)?" disabled":""}>Clear optional value</button>`:""}${grouped?'<p class="help">Derived from saved slip groups. Edit the individual occurrences in Saved slip groups.</p>':""}<span class="field-error" data-error-for="${esc(f.key)}"${state.errors[f.key] ? "" : " hidden"}>${esc(state.errors[f.key] || "")}</span></div>`;
   }
   function renderPartnerAllocations(f, value) {
     return `<div class="partner-input" data-field="${esc(f.key)}"><div class="keyword-field"><label><code>${esc(f.key)}</code><span>${esc(f.label)}</span><span class="help">Enter percentage shares. 50.00% is stored as 5,000 basis points. Shares must total 100%.</span></label><button class="btn sm" type="button" data-add-partner>+ Add partner</button></div><div class="partner-rows">${list(value).map((p, i) => `<div class="keyword-field" data-partner-index="${i}"><label>${esc(p.name || "Partner " + (i + 1))}<input data-partner-prop="name" data-index="${i}" value="${esc(p.name || "")}" aria-label="Partner name" maxlength="160"></label><div class="row"><input data-partner-prop="share" data-index="${i}" value="${((Number(p.share_bps) || 0) / 100).toFixed(2)}" inputmode="decimal" aria-label="Partner share percent" style="width:90px;text-align:right"><span>%</span><button class="btn sm danger" type="button" data-delete-partner="${i}" aria-label="Remove partner">×</button></div></div>`).join("")}</div><div class="form-error" data-partner-errors></div></div>`;
@@ -643,6 +670,27 @@
     "review-return": () => transition("in_review"), "approve-return": () => transition("approved"), "reopen-return": () => transition("draft"), "archive-return": () => transition("archived"),
     "rollforward": () => rollforward(), "package": () => downloadReturn("package"), "print": () => downloadReturn("print"),
     "client-export": () => downloadClientBundle(), "client-restore": () => restoreClientBundle(),
+    "preferences": () => preferencesDialog(),
+    "lock-return": async () => {
+      const record = state.record;
+      if (!record) return;
+      try {
+        const lock = await request(`/returns/${pid(record.id)}/lock`, { body: { takeover: !!state.lock } });
+        state.lock = lock;
+        toast(state.lock && lock.holder ? `Lock held by ${lock.holder}` : "Lock acquired");
+        await navigate();
+      } catch (error) { toast(error.message, true); }
+    },
+    "unlock-return": async () => {
+      const record = state.record;
+      if (!record) return;
+      try {
+        await request(`/returns/${pid(record.id)}/lock`, { method: "DELETE" });
+        state.lock = null;
+        toast("Lock released");
+        await navigate();
+      } catch (error) { toast(error.message, true); }
+    },
     "schedule8-print": () => downloadReturn("schedule8-print"),
     "add-corporate": () => { if(!canEdit(state.record)||!isCorporate(state.record)) return; state.draft.corporate=newCorporateProfile(); markDirty(); renderEditor(); },
     "remove-corporate": async () => { if(!canEdit(state.record)||!state.draft.corporate) return; if(!await NXT.confirm("Remove corporate profile?","Remove the profile, financial lines and adjustments from this draft. The calculation inputs remain available. Save to record this change.","Remove profile")) return; state.draft.corporate=null; Object.keys(state.errors).filter(k=>k.startsWith("gifi-")||k.startsWith("adjustment-")).forEach(k=>delete state.errors[k]); markDirty(); renderEditor(); },
@@ -774,7 +822,8 @@
   }
   async function navigate() {
     if (!state.catalog) return;
-    const hash = location.hash.slice(1) || "worklist", [path, query = ""] = hash.split("?"), [view, id] = path.split("/");
+    const home = state.prefs?.default_view === "reports" ? "reports" : "worklist";
+    const hash = location.hash.slice(1) || home, [path, query = ""] = hash.split("?"), [view, id] = path.split("/");
     if (state.dirty && hash !== state.loadedHash && !await confirmDiscard()) { history.replaceState(null, "", "#" + state.loadedHash); if (window.parent !== window) window.parent.postMessage({ nxt: "view", view: state.loadedHash }, location.origin); return; }
     const version = ++state.version; state.loadedHash = hash;
     reportWorkspace?.dispose(); reportWorkspace=null;
@@ -786,7 +835,24 @@
     catch (e) { if (version !== state.version) return; if (e.status === 401) await signIn(); else { main.classList.remove("workspace-mode"); main.innerHTML = `<div class="card"><h2>This view couldn't load.</h2><p class="form-error">${esc(e.message)}</p>${button("Try again", "refresh")} <a class="btn" href="#worklist">Return to worklist</a></div>`; } }
     finally { if (version === state.version) main.removeAttribute("aria-busy"); }
   }
-  async function boot() { state.catalog = await request("/catalog"); state.snippets = await request("/snippets").catch(() => []); if (!state.program) state.program = programs()[0]?.id || ""; renderPrograms(); await navigate(); }
+  async function boot() {
+    state.catalog = await request("/catalog");
+    state.snippets = await request("/snippets").catch(() => []);
+    state.prefs = await request("/preferences").catch(() => null);
+    applyPreferences(state.prefs);
+    if (!state.program) state.program = programs()[0]?.id || "";
+    renderPrograms();
+    await navigate();
+  }
+  function applyPreferences(prefs) {
+    const density = prefs?.density === "compact" ? "compact" : "comfortable";
+    document.documentElement.dataset.density = density;
+    let style = document.getElementById("nxt-density");
+    if (!style) { style = document.createElement("style"); style.id = "nxt-density"; document.head.appendChild(style); }
+    style.textContent = density === "compact"
+      ? '[data-density="compact"] .table-wrap td,[data-density="compact"] .table-wrap th{padding-top:3px;padding-bottom:3px}[data-density="compact"] .card{padding:10px}'
+      : "";
+  }
   function manageSnippets() {
     modal("Text snippets", (el, close) => {
       const render = async () => {

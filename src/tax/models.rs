@@ -191,6 +191,20 @@ pub struct TaxState {
     /// Filing Desk state: filer grants, fee flags, walkthrough marks, confirmations, launch gate.
     #[serde(default)]
     pub desk: super::filing_desk::DeskState,
+    /// Short-lived editing locks per return.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub locks: Vec<ReturnLock>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReturnLock {
+    pub return_id: String,
+    /// Verified staff id, or "workspace" for the shared key.
+    pub holder_key: String,
+    /// Human label shown in the conflict message.
+    pub holder: String,
+    pub acquired_at: String,
+    pub expires_at: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -210,4 +224,33 @@ pub struct Snippet {
 pub struct SnippetInput {
     pub name: String,
     pub text: String,
+}
+
+/// Per-operator workspace presentation preferences.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UiPreferences {
+    #[serde(default = "default_density")]
+    pub density: String,
+    #[serde(default = "default_view_pref")]
+    pub default_view: String,
+    #[serde(default = "default_true_pref")]
+    pub show_keyword_codes: bool,
+}
+
+fn default_density() -> String {
+    "comfortable".into()
+}
+
+fn default_view_pref() -> String {
+    "worklist".into()
+}
+
+fn default_true_pref() -> bool {
+    true
+}
+
+impl Default for UiPreferences {
+    fn default() -> Self {
+        Self { density: default_density(), default_view: default_view_pref(), show_keyword_codes: true }
+    }
 }

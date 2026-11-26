@@ -6,12 +6,12 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 157,
+    "routed": 159,
     "linked": 26,
     "external": 13,
-    "open": 24,
+    "open": 22,
     "chrome": 22,
-    "percent": 71
+    "percent": 72
   },
   "products": [
     {
@@ -25,10 +25,10 @@
     {
       "product": "DT Max",
       "capabilities": 37,
-      "routed": 21,
+      "routed": 23,
       "linked": 0,
       "external": 5,
-      "open": 11
+      "open": 9
     },
     {
       "product": "WebTax4B",
@@ -45,14 +45,12 @@
     "dtmax.billing-setup",
     "dtmax.client-renumbering",
     "dtmax.ct23",
-    "dtmax.database-in-use",
     "dtmax.efile-errors",
     "dtmax.efile-logs",
     "dtmax.efile-reports",
     "dtmax.filecabinet",
     "dtmax.forms-manager",
     "dtmax.print-labels",
-    "dtmax.ui-options",
     "webtax4b.at1-schedules",
     "webtax4b.co17-schedules",
     "webtax4b.ct23",

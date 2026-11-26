@@ -9,11 +9,11 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 157 |
+| Routed | 159 |
 | Linked | 26 |
 | External | 13 |
-| **Open** | **24** |
-| Routed coverage | 71% |
+| **Open** | **22** |
+| Routed coverage | 72% |
 | Source chrome excluded | 22 |
 
 ## By product
@@ -21,7 +21,7 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | QuickBooks | 143 | 114 | 26 | 1 | 2 | 80% |
-| DT Max | 37 | 21 | 0 | 5 | 11 | 57% |
+| DT Max | 37 | 23 | 0 | 5 | 9 | 62% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
@@ -41,7 +41,7 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 ## DT Max
 
-### Open to build (11)
+### Open to build (9)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
@@ -54,8 +54,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Printing and output | CT23 D-File packing slip | Add a CT23 D-File packing-slip export once the firm confirms the format. | CT23 D-File packing slips are an Ontario/Quebec interface format from the vendor; not modelled. |
 | Setup and preferences | Forms manager | Add a form-catalogue view over published CRA forms with version pinning. | The forms manager selects installed form files. NXT has no installed form library. |
 | Setup and preferences | Billing setup | Move time/WIP billing into Firm Operations with rate tables and invoice generation. | Billing setup configures DT Max's own time/billing add-on, which NXT does not ship. |
-| Setup and preferences | User interface options | Add workspace layout preferences per operator. | UI options configure the desktop application's own layout, which has no NXT equivalent by design. |
-| Database and help | Database in use | Add per-return editing locks with an explicit takeover flow. | This is a desktop single-user lock notice. NXT has no local database file to lock. |
 
 ### Blocked outside this codebase (5)
 

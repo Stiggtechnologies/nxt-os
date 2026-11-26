@@ -23,6 +23,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/rollforward",post(rollforward))
         .route("/api/tax/returns/{id}/package",get(package))
         .route("/api/tax/returns/{id}/client-export",get(client_export))
+        .route("/api/tax/returns/{id}/lock",get(lock_status).post(acquire_lock).delete(release_lock))
         .route("/api/tax/clients/import",post(client_import))
         .route("/api/tax/returns/{id}/print",get(print))
         .route("/api/tax/returns/{id}/schedule8-print",get(print_schedule8))
@@ -59,6 +60,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/audit",get(audit))
         .route("/api/tax/audit/verify",get(audit_verify))
         .route("/api/tax/rates",get(rates))
+        .route("/api/tax/preferences",get(preferences).put(save_preferences))
         .route("/api/tax/snippets",get(snippets).post(save_snippet))
         .route("/api/tax/maintenance/check",get(maintenance_check))
         .route("/api/tax/snippets/{id}",axum::routing::delete(delete_snippet))
@@ -67,6 +69,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/t2/schedules",post(t2_schedules))
         .route("/api/tax/t5013/cca",post(t5013_cca))
         .layer(DefaultBodyLimit::max(1024 * 1024))
+        .layer(middleware::from_fn_with_state(tax.clone(), lock_guard))
         .layer(middleware::from_fn_with_state(tax.clone(), client_scope))
         .layer(middleware::from_fn(require_admin))
         .layer(middleware::map_response(|mut response: Response| async move {
@@ -202,6 +205,74 @@ pub(super) fn print_workpaper(r:&TaxReturn)->TResult<String>{
 
 async fn audit_verify(State(t):S) -> R { ok(super::verify_audit(&t.audit().await?)) }
 async fn rates() -> R { ok(super::coverage::rate_metadata()) }
+fn actor(identity: Option<Extension<crate::firm::staff::Identity>>) -> String {
+    identity.and_then(|Extension(id)| id.staff_id().map(str::to_string)).unwrap_or_else(|| "workspace".into())
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LockInput {
+    #[serde(default = "default_lock_minutes")]
+    minutes: i64,
+    #[serde(default)]
+    takeover: bool,
+}
+fn default_lock_minutes() -> i64 { 30 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReleaseQuery {
+    #[serde(default)]
+    force: bool,
+}
+fn lock_actor(identity: &Option<Extension<crate::firm::staff::Identity>>) -> (String, String) {
+    match identity.as_ref().and_then(|Extension(id)| id.staff_id().map(|staff| (staff.to_string(), id.label()))) {
+        Some(pair) => pair,
+        None => ("workspace".into(), "Shared workspace key".into()),
+    }
+}
+async fn lock_status(State(t): S, Path(id): Path<String>) -> R {
+    ok(json!({ "lock": t.lock_status(&id).await? }))
+}
+async fn acquire_lock(State(t): S, Path(id): Path<String>, identity: Option<Extension<crate::firm::staff::Identity>>, Json(body): Json<LockInput>) -> R {
+    let (key, label) = lock_actor(&identity);
+    ok(t.acquire_lock(&id, &key, &label, body.minutes, body.takeover).await?)
+}
+async fn release_lock(State(t): S, Path(id): Path<String>, identity: Option<Extension<crate::firm::staff::Identity>>, Query(query): Query<ReleaseQuery>) -> R {
+    let (key, _) = lock_actor(&identity);
+    t.release_lock(&id, &key, query.force).await?;
+    ok(json!({ "released": true }))
+}
+
+async fn lock_guard(State(t): S, req: axum::extract::Request, next: middleware::Next) -> Response {
+    use axum::http::Method;
+    if !matches!(*req.method(), Method::POST | Method::PUT | Method::PATCH | Method::DELETE) {
+        return next.run(req).await;
+    }
+    let path = req.uri().path().to_string();
+    let Some(rest) = path.strip_prefix("/api/tax/returns/") else { return next.run(req).await };
+    let mut pieces = rest.split('/');
+    let id = pieces.next().unwrap_or("");
+    let suffix = pieces.next().unwrap_or("");
+    if id.is_empty() || suffix == "lock" {
+        return next.run(req).await;
+    }
+    if let Ok(Some(lock)) = t.lock_status(id).await {
+        let key = req.extensions().get::<Identity>().and_then(|identity| identity.staff_id().map(str::to_string)).unwrap_or_else(|| "workspace".into());
+        if lock.holder_key != key {
+            return (StatusCode::CONFLICT, Json(json!({
+                "error": format!("{} holds an editing lock on this return", lock.holder),
+                "lock": lock,
+            }))).into_response();
+        }
+    }
+    next.run(req).await
+}
+
+async fn preferences(State(t): S, identity: Option<Extension<crate::firm::staff::Identity>>) -> R {
+    ok(t.preferences(&actor(identity)).await?)
+}
+async fn save_preferences(State(t): S, identity: Option<Extension<crate::firm::staff::Identity>>, Json(body): Json<super::models::UiPreferences>) -> R {
+    ok(t.save_preferences(&actor(identity), body).await?)
+}
 async fn client_export(State(t): S, Path(id): Path<String>) -> R {
     ok(super::client_bundle::export(&t, &id).await?)
 }

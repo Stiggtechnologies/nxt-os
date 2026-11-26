@@ -38,6 +38,7 @@ pub type TResult<T> = Result<T, ApiError>;
 pub struct Tax { pub store: Store, signatures: std::sync::OnceLock<std::sync::Arc<crate::signatures::Signatures>> }
 
 const SNIPPETS_KEY: &str = "tax:snippets:v1";
+const PREFS_KEY: &str = "tax:prefs:v1";
 fn bad(message: impl Into<String>) -> ApiError { ApiError(StatusCode::BAD_REQUEST, message.into()) }
 fn conflict(message: impl Into<String>) -> ApiError { ApiError(StatusCode::CONFLICT, message.into()) }
 fn missing() -> ApiError { ApiError(StatusCode::NOT_FOUND, "tax return not found".into()) }
@@ -210,6 +211,88 @@ impl Tax {
             json!({"id":r.id,"program":r.program,"tax_year":r.tax_year,"jurisdiction":r.jurisdiction,"name":r.name,"client_ref":r.client_ref,"period_start":r.period_start,"period_end":r.period_end,"revision":r.revision,"input_revision":r.input_revision,"status":r.status,"created_at":r.created_at,"updated_at":r.updated_at,"calculation":calculation,"current_scope_supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction)})
         }).collect())
     }
+    // ---- return editing locks -------------------------------------------------
+
+    pub async fn lock_status(&self, record_id: &str) -> TResult<Option<ReturnLock>> {
+        Ok(self.load().await?.locks.into_iter().find(|lock| lock.return_id == record_id && lock.expires_at.as_str() > now().as_str()))
+    }
+
+    /// Acquire or refresh a lock. Another holder blocks unless `takeover` is set, which
+    /// is recorded in the audit trail.
+    pub async fn acquire_lock(&self, record_id: &str, holder_key: &str, holder: &str, minutes: i64, takeover: bool) -> TResult<ReturnLock> {
+        self.get(record_id).await?;
+        if !(1..=240).contains(&minutes) {
+            return Err(bad("lock minutes must be between 1 and 240"));
+        }
+        let expires = (chrono::Utc::now() + chrono::Duration::minutes(minutes)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let holder_key = holder_key.to_string();
+        let holder = holder.to_string();
+        let lock = self.mutate_state(|state| {
+            const UNAVAILABLE: &str = "the return is not available";
+            let _ = UNAVAILABLE;
+            let existing = state.locks.iter().find(|lock| lock.return_id == record_id && lock.expires_at.as_str() > now().as_str()).cloned();
+            if let Some(lock) = existing {
+                if lock.holder_key != holder_key && !takeover {
+                    return Err(conflict(format!("{} holds an editing lock on this return", lock.holder)));
+                }
+                if lock.holder_key != holder_key {
+                    audit(state, record_id, "tax_lock_takeover", format!("{holder} took over from {}", lock.holder));
+                }
+            }
+            let lock = ReturnLock {
+                return_id: record_id.to_string(),
+                holder_key: holder_key.clone(),
+                holder: holder.clone(),
+                acquired_at: now(),
+                expires_at: expires.clone(),
+            };
+            state.locks.retain(|existing| existing.return_id != record_id);
+            state.locks.push(lock.clone());
+            audit(state, record_id, "tax_lock_acquired", format!("{holder} until {expires}"));
+            Ok(lock)
+        }).await?;
+        Ok(lock)
+    }
+
+    pub async fn release_lock(&self, record_id: &str, holder_key: &str, force: bool) -> TResult<()> {
+        let holder_key = holder_key.to_string();
+        self.mutate_state(|state| {
+            const UNAVAILABLE: &str = "the return is not available";
+            let _ = UNAVAILABLE;
+            let existing = state.locks.iter().find(|lock| lock.return_id == record_id && lock.expires_at.as_str() > now().as_str()).cloned();
+            if let Some(lock) = existing {
+                if lock.holder_key != holder_key && !force {
+                    return Err(conflict(format!("{} holds an editing lock on this return", lock.holder)));
+                }
+            }
+            state.locks.retain(|lock| lock.return_id != record_id);
+            audit(state, record_id, "tax_lock_released", holder_key.clone());
+            Ok(())
+        }).await?;
+        Ok(())
+    }
+
+    // ---- per-operator preferences ---------------------------------------------
+
+    /// Preferences keyed by verified staff id, or "workspace" for the shared key.
+    pub async fn preferences(&self, actor: &str) -> TResult<UiPreferences> {
+        let all: std::collections::HashMap<String, UiPreferences> = self.store.get_json(PREFS_KEY).await?.unwrap_or_default();
+        Ok(all.get(actor).cloned().unwrap_or_default())
+    }
+
+    pub async fn save_preferences(&self, actor: &str, input: UiPreferences) -> TResult<UiPreferences> {
+        if !["comfortable", "compact"].contains(&input.density.as_str()) {
+            return Err(bad("density must be comfortable or compact"));
+        }
+        if !["worklist", "reports"].contains(&input.default_view.as_str()) {
+            return Err(bad("default_view must be worklist or reports"));
+        }
+        let mut all: std::collections::HashMap<String, UiPreferences> = self.store.get_json(PREFS_KEY).await?.unwrap_or_default();
+        all.insert(actor.to_string(), input.clone());
+        self.store.set_json(PREFS_KEY, &all).await?;
+        Ok(input)
+    }
+
     // ---- text snippets --------------------------------------------------------
 
     pub async fn snippets(&self) -> TResult<Vec<Snippet>> {

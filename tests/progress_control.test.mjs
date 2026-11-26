@@ -67,7 +67,7 @@ test('the register names each open gap once and points at a screen or a task', (
   assert.match(markdown(data), /### Open to build/, 'open work is listed');
   assert.doesNotMatch(markdown(data), /### Out of scope, recorded decision/, 'nothing is written off as out of scope');
   const openRows = data.rows.filter(row => row.disposition === 'open');
-  assert.ok(openRows.length >= 24, 'the re-scoped capabilities are tracked as open work');
+  assert.ok(openRows.length >= 22, 'the re-scoped capabilities are tracked as open work');
   assert.ok(data.rows.some(row => row.id === 'reports--financial-planning--forecasts' && row.disposition === 'routed'), 're-scoped work that ships becomes routed');
   assert.ok(data.rows.some(row => row.id === 'reports--standard-reports--custom-report-builder--product-item-profitability-by-customer' && row.disposition === 'routed'), 'item profitability ships');
   assert.ok(openRows.every(row => row.next_step), 'each open gap states its next step');
