@@ -9,11 +9,11 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 163 |
+| Routed | 164 |
 | Linked | 26 |
 | External | 13 |
-| **Open** | **18** |
-| Routed coverage | 74% |
+| **Open** | **17** |
+| Routed coverage | 75% |
 | Source chrome excluded | 22 |
 
 ## By product
@@ -22,7 +22,7 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | QuickBooks | 143 | 114 | 26 | 1 | 2 | 80% |
 | DT Max | 37 | 26 | 0 | 5 | 6 | 70% |
-| WebTax4B | 40 | 23 | 0 | 7 | 10 | 57% |
+| WebTax4B | 40 | 24 | 0 | 7 | 9 | 60% |
 
 ## QuickBooks
 
@@ -64,12 +64,11 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 ## WebTax4B
 
-### Open to build (10)
+### Open to build (9)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
 | Filing and transmission | E-File T1135 (foreign property) | Add a T1135 data-collection worksheet; filing stays behind the CRA gate. | T1135 is a CRA filing. Without an authority channel NXT would only collect the numbers; filing stays blocked. |
-| CRA online services | View NOA | Add a notice-of-assessment document lane stored against a client year. | A notice of assessment is a CRA document. NXT does not call CRA or receive notices. |
 | Provincial and Quebec returns | CT23 (Ontario, to tax year 2009) | Add historical CT23 data entry for pre-2010 years if a client needs it. | CT23 is a historical Ontario corporate return (to 2009). Not modelled and not required for current clients. |
 | In-product actions (shipped client assets) | Home office expense | Add a business-use-of-home worksheet for T2 with per-year rules. | Home-office expense needs business-use-of-home rules per tax year. The native T2 scope declares ordinary active-business income only. |
 | In-product actions (shipped client assets) | Motor vehicle expense | Add a motor-vehicle operating-expense worksheet distinct from CCA caps. | A vehicle expense worksheet is separate from the CCA vehicle caps that Schedule 8 already models. Not in the declared scope. |

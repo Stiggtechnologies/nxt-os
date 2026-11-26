@@ -585,9 +585,9 @@
               "label": "View NOA",
               "source_label": "Auto-fill data from CRA, view NOA",
               "observation": "documented",
-              "native_route": null,
-              "native_scope": "No notice-of-assessment intake. Prior-year figures come only from preserved source facts.",
-              "next_step": "Add a notice-of-assessment document lane stored against a client year.",
+              "native_route": "#worklist",
+              "native_scope": "Notice-of-assessment lane on a return: received date, balance, note and an optional stored file (1.5 MB, 25 documents, 8 MB total), with download and delete. NXT does not call CRA or download notices.",
+              "next_step": "Return editor -> Notices (NOA).",
               "scope": "in_scope",
               "scope_reason": "A notice of assessment is a CRA document. NXT does not call CRA or receive notices.",
               "in_scope_since": "2026-11-22"

@@ -25,6 +25,8 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/client-export",get(client_export))
         .route("/api/tax/returns/{id}/cabinet-export",get(cabinet_export))
         .route("/api/tax/returns/{id}/gifi-statement",get(gifi_statement))
+        .route("/api/tax/returns/{id}/noa",get(noa_list).post(noa_add))
+        .route("/api/tax/returns/{id}/noa/{noa_id}",get(noa_get).delete(noa_delete))
         .route("/api/tax/returns/{id}/lock",get(lock_status).post(acquire_lock).delete(release_lock))
         .route("/api/tax/clients/import",post(client_import))
         .route("/api/tax/clients/renumber",post(renumber_client))
@@ -256,7 +258,7 @@ async fn lock_guard(State(t): S, req: axum::extract::Request, next: middleware::
     let mut pieces = rest.split('/');
     let id = pieces.next().unwrap_or("");
     let suffix = pieces.next().unwrap_or("");
-    if id.is_empty() || suffix == "lock" {
+    if id.is_empty() || suffix == "lock" || suffix == "noa" {
         return next.run(req).await;
     }
     if let Ok(Some(lock)) = t.lock_status(id).await {
@@ -289,6 +291,19 @@ async fn renumber_client(State(t): S, identity: Option<Extension<crate::firm::st
 }
 async fn client_renames(State(t): S) -> R {
     ok(t.client_renames().await?)
+}
+async fn noa_list(State(t): S, Path(id): Path<String>) -> R {
+    ok(super::noa::list(&t, &id).await?)
+}
+async fn noa_add(State(t): S, Path(id): Path<String>, Json(body): Json<super::noa::NoaInput>) -> R {
+    ok(super::noa::add(&t, &id, body).await?)
+}
+async fn noa_get(State(t): S, Path((id, noa_id)): Path<(String, String)>) -> R {
+    ok(super::noa::get(&t, &id, &noa_id).await?)
+}
+async fn noa_delete(State(t): S, Path((id, noa_id)): Path<(String, String)>) -> R {
+    super::noa::delete(&t, &id, &noa_id).await?;
+    ok(json!({ "deleted": noa_id }))
 }
 async fn gifi_statement(State(t): S, Path(id): Path<String>) -> R {
     let record = t.get(&id).await?;

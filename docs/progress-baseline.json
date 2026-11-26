@@ -6,12 +6,12 @@
   ],
   "total": {
     "capabilities": 220,
-    "routed": 163,
+    "routed": 164,
     "linked": 26,
     "external": 13,
-    "open": 18,
+    "open": 17,
     "chrome": 22,
-    "percent": 74
+    "percent": 75
   },
   "products": [
     {
@@ -33,10 +33,10 @@
     {
       "product": "WebTax4B",
       "capabilities": 40,
-      "routed": 23,
+      "routed": 24,
       "linked": 0,
       "external": 7,
-      "open": 10
+      "open": 9
     }
   ],
   "open_ids": [
@@ -54,7 +54,6 @@
     "webtax4b.home-expense",
     "webtax4b.nav-additional-information",
     "webtax4b.nav-amended",
-    "webtax4b.noa",
     "webtax4b.other-expense",
     "webtax4b.t1135",
     "webtax4b.vehicle-expense"

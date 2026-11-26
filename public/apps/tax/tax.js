@@ -155,6 +155,58 @@
     }, { wide: true });
   }
 
+  function noaDialog() {
+    const record = state.record;
+    if (!record) return;
+    return modal("Notices of assessment", (el, close) => {
+      const render = async () => {
+        const data = await request(`/returns/${pid(record.id)}/noa`);
+        const rows = list(data.notices).map((notice) => `<tr><td>${esc(notice.received_date)}</td><td><strong>${esc(notice.filename)}</strong><div class="faint">${esc(notice.note || "")}</div></td><td class="num">${notice.balance_cents === null || notice.balance_cents === undefined ? "—" : money(notice.balance_cents)}</td><td><div class="row" style="flex-wrap:nowrap">${notice.has_file ? `<button class="btn sm" data-noa-open="${esc(notice.id)}">Open</button>` : ""}<button class="btn sm ghost" data-noa-del="${esc(notice.id)}">Delete</button></div></td></tr>`).join("");
+        el.innerHTML = `<p class="form-note">A person files the notice they received; NXT never calls CRA or downloads notices.</p>
+          ${rows ? `<div class="table-wrap"><table><thead><tr><th>Received</th><th>Document</th><th class="num">Balance</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="form-note">No notices filed for this return.</p>`}
+          <div class="form" style="margin-top:12px"><label class="f">Received date<input name="received_date" type="date" value="${today()}"></label>
+          <label class="f">Balance (CAD)<input name="balance" type="number" step="0.01" placeholder="0.00"></label>
+          <label class="f">Note<input name="note" maxlength="1000" placeholder="e.g. 2025 NOA"></label>
+          <label class="f">File (optional)<input name="file" type="file" accept="application/pdf,image/*"></label></div>
+          <div class="actions"><button class="btn" data-x>Close</button><button class="btn primary" data-add>File notice</button></div>`;
+        el.querySelector("[data-x]").onclick = () => close();
+        el.querySelector("[data-add]").onclick = async () => {
+          const file = el.querySelector("[name=file]").files[0];
+          let data_base64 = null;
+          if (file) {
+            const dataUrl = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
+            data_base64 = String(dataUrl).split(",")[1] || null;
+          }
+          const rawBalance = el.querySelector("[name=balance]").value;
+          try {
+            await request(`/returns/${pid(record.id)}/noa`, { body: {
+              received_date: el.querySelector("[name=received_date]").value,
+              balance_cents: rawBalance ? toCents(rawBalance) : null,
+              note: el.querySelector("[name=note]").value.trim(),
+              filename: file ? file.name : el.querySelector("[name=note]").value.trim() || "notice.pdf",
+              content_type: file ? file.type : "",
+              data_base64,
+            } });
+            toast("Notice filed");
+            await render();
+          } catch (error) { toast(error.message, true); }
+        };
+        $$("[data-noa-open]", el).forEach((button) => (button.onclick = async () => {
+          const full = await request(`/returns/${pid(record.id)}/noa/${encodeURIComponent(button.dataset.noaOpen)}`);
+          const bytes = Uint8Array.from(atob(full.notice.data_base64 || ""), (c) => c.charCodeAt(0));
+          const url = URL.createObjectURL(new Blob([bytes], { type: full.notice.content_type || "application/octet-stream" }));
+          const link = document.createElement("a"); link.href = url; link.download = full.notice.filename || "notice"; link.rel = "noopener";
+          document.body.appendChild(link); link.click(); link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }));
+        $$("[data-noa-del]", el).forEach((button) => (button.onclick = async () => {
+          try { await request(`/returns/${pid(record.id)}/noa/${encodeURIComponent(button.dataset.noaDel)}`, { method: "DELETE" }); toast("Notice deleted"); await render(); } catch (error) { toast(error.message, true); }
+        }));
+      };
+      render().catch((error) => toast(error.message, true));
+    }, { wide: true });
+  }
+
   function renumberDialog() {
     return modal("Renumber a client", (el, close) => {
       el.innerHTML = `<p class="form-note">All returns for the old reference move to the new one. The old reference is kept in an immutable renumbering log, staff assignments move with it, and archived batch receipts block the change.</p>
@@ -427,7 +479,7 @@
   function renderWorkspace() {
     const r = state.record, p = program(r.program); main.classList.add("workspace-mode");
     const editable = canEdit(r);
-    main.innerHTML = `<div class="work-head">${r.program === "T1" ? t1WorkpaperTabs() : '<a class="back" href="#worklist">← Tax worklist</a>'}<div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary", r.program === "T1" ? "save" : "")}${button("Calculate", "calculate", "", "ink", r.program === "T1" ? "calculate" : "")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Export client", "client-export")}${button("FileCabinet export", "cabinet-export")}${isCorporate(r) ? button("GIFI statement", "gifi-statement") : ""}${button("Print workpaper", "print", "", "", r.program === "T1" ? "print" : "")}${schedule8PrintAvailable() ? button("Print Schedule 8", "schedule8-print") : ""}${button("Roll forward", "rollforward")}${button(state.lock ? "Take over lock" : "Lock", "lock-return")}${state.lock ? button("Unlock", "unlock-return", "", "ghost") : ""}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span>·</span><span id="lock-status">${state.lock ? `Locked by ${esc(state.lock.holder)} until ${stamp(state.lock.expires_at)}` : "No editing lock"}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
+    main.innerHTML = `<div class="work-head">${r.program === "T1" ? t1WorkpaperTabs() : '<a class="back" href="#worklist">← Tax worklist</a>'}<div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary", r.program === "T1" ? "save" : "")}${button("Calculate", "calculate", "", "ink", r.program === "T1" ? "calculate" : "")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Export client", "client-export")}${button("FileCabinet export", "cabinet-export")}${button("Notices (NOA)", "noa")}${isCorporate(r) ? button("GIFI statement", "gifi-statement") : ""}${button("Print workpaper", "print", "", "", r.program === "T1" ? "print" : "")}${schedule8PrintAvailable() ? button("Print Schedule 8", "schedule8-print") : ""}${button("Roll forward", "rollforward")}${button(state.lock ? "Take over lock" : "Lock", "lock-return")}${state.lock ? button("Unlock", "unlock-return", "", "ghost") : ""}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span>·</span><span id="lock-status">${state.lock ? `Locked by ${esc(state.lock.holder)} until ${stamp(state.lock.expires_at)}` : "No editing lock"}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
       ${r.current_scope_supported===false?'<div class="notice" role="alert"><strong>Unsupported current calculation scope.</strong><p>Saved calculations and approvals are historical only. This workpaper cannot enter review, approval, authorization or recorded filing in this program, year and jurisdiction.</p></div>':""}${!browserEntryAvailable(r) && r.current_scope_supported!==false ? '<div class="notice" role="note"><strong>Year-specific browser editor pending.</strong><p>Input editing is unavailable for this saved workpaper. Its inputs remain unchanged; calculation results, diagnostics, history and exports remain available. A limited engine path does not verify an entry form.</p></div>' : ""}<div class="return-grid">${workspaceNavigation(r,p)}<section class="return-editor" id="return-editor" aria-label="Return data"></section><aside class="result-panel" id="result-panel" aria-label="Calculation status and diagnostics"></aside></div>`;
     $$("[data-action=save-return],[data-action=calculate]", main).forEach(b => b.disabled = !editable);
     renderEditor(); renderSidePanel(); setDirtyStatus();
@@ -707,6 +759,7 @@
     "preferences": () => preferencesDialog(),
     "renumber-client": () => renumberDialog(),
     "cabinet-export": () => downloadCabinetPacket(),
+    "noa": () => noaDialog(),
     "gifi-statement": async () => {
       const record = state.record;
       if (!record) return;

@@ -21,6 +21,7 @@ pub mod t2_intake;
 pub mod filing_desk;
 pub mod client_bundle;
 pub mod gifi_statement;
+pub mod noa;
 pub mod stripe;
 mod routes;
 pub use routes::router;
