@@ -9,10 +9,10 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 160 |
+| Routed | 161 |
 | Linked | 26 |
 | External | 13 |
-| **Open** | **21** |
+| **Open** | **20** |
 | Routed coverage | 73% |
 | Source chrome excluded | 22 |
 
@@ -21,7 +21,7 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | QuickBooks | 143 | 114 | 26 | 1 | 2 | 80% |
-| DT Max | 37 | 24 | 0 | 5 | 8 | 65% |
+| DT Max | 37 | 25 | 0 | 5 | 7 | 68% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
@@ -41,7 +41,7 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 ## DT Max
 
-### Open to build (8)
+### Open to build (7)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
@@ -49,7 +49,6 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | EFILE | EFILE reports | Store and render transmission-result reports; producing real results still requires the CRA filing gate. | EFILE reports are produced from transmission results. Without a certified transmission path there is nothing to report. |
 | EFILE | EFILE errors | Model authority rejection codes behind the filing gate; no transmission today. | EFILE error handling interprets authority rejections. It is part of the disabled filing gate. |
 | EFILE | EFILE logs | Record transmission attempts locally once a certified path exists. | EFILE logs record transmission attempts. There are no attempts to log while filing is disabled. |
-| Printing and output | Print to DT FileCabinet | Add a Document Manager export bundle that can be filed into an external cabinet. | DT FileCabinet integration is vendor document management; NXT has no FileCabinet connection. |
 | Printing and output | CT23 D-File packing slip | Add a CT23 D-File packing-slip export once the firm confirms the format. | CT23 D-File packing slips are an Ontario/Quebec interface format from the vendor; not modelled. |
 | Setup and preferences | Forms manager | Add a form-catalogue view over published CRA forms with version pinning. | The forms manager selects installed form files. NXT has no installed form library. |
 | Setup and preferences | Billing setup | Move time/WIP billing into Firm Operations with rate tables and invoice generation. | Billing setup configures DT Max's own time/billing add-on, which NXT does not ship. |

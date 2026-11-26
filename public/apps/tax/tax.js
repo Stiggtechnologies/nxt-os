@@ -181,6 +181,21 @@
     });
   }
 
+  async function downloadCabinetPacket() {
+    if (!state.record) return;
+    try {
+      const packet = await request(`/returns/${pid(state.record.id)}/cabinet-export`);
+      const blob = new Blob([packet.html], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = packet.filename || "cabinet-packet.html";
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      toast("Cabinet packet downloaded");
+    } catch (error) { toast(error.message, true); }
+  }
+
   async function downloadClientBundle() {
     if (!state.record?.client_ref) return toast("This return has no client reference", true);
     try {
@@ -393,7 +408,7 @@
   function renderWorkspace() {
     const r = state.record, p = program(r.program); main.classList.add("workspace-mode");
     const editable = canEdit(r);
-    main.innerHTML = `<div class="work-head">${r.program === "T1" ? t1WorkpaperTabs() : '<a class="back" href="#worklist">← Tax worklist</a>'}<div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary", r.program === "T1" ? "save" : "")}${button("Calculate", "calculate", "", "ink", r.program === "T1" ? "calculate" : "")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Export client", "client-export")}${button("Print workpaper", "print", "", "", r.program === "T1" ? "print" : "")}${schedule8PrintAvailable() ? button("Print Schedule 8", "schedule8-print") : ""}${button("Roll forward", "rollforward")}${button(state.lock ? "Take over lock" : "Lock", "lock-return")}${state.lock ? button("Unlock", "unlock-return", "", "ghost") : ""}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span>·</span><span id="lock-status">${state.lock ? `Locked by ${esc(state.lock.holder)} until ${stamp(state.lock.expires_at)}` : "No editing lock"}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
+    main.innerHTML = `<div class="work-head">${r.program === "T1" ? t1WorkpaperTabs() : '<a class="back" href="#worklist">← Tax worklist</a>'}<div class="return-heading"><div><h1>${esc(r.name)}</h1><p>${esc(p.label)} · ${Number(r.tax_year)} · ${esc(r.jurisdiction)}${r.client_ref ? " · " + esc(r.client_ref) : ""}</p></div><div class="row">${badge(r.status)}${badge("neutral", `Revision ${r.revision}`)}</div></div><div class="work-actions">${button("Save", "save-return", "", "primary", r.program === "T1" ? "save" : "")}${button("Calculate", "calculate", "", "ink", r.program === "T1" ? "calculate" : "")}${reviewableCalculation() && r.status === "calculated" ? button("Submit for review", "review-return") : reviewableCalculation() && r.status === "in_review" ? button("Approve workpaper", "approve-return") : ""}${r.status === "in_review" || r.status === "approved" ? button("Reopen draft", "reopen-return") : ""}${button("Workpaper package", "package")}${button("Export client", "client-export")}${button("FileCabinet export", "cabinet-export")}${button("Print workpaper", "print", "", "", r.program === "T1" ? "print" : "")}${schedule8PrintAvailable() ? button("Print Schedule 8", "schedule8-print") : ""}${button("Roll forward", "rollforward")}${button(state.lock ? "Take over lock" : "Lock", "lock-return")}${state.lock ? button("Unlock", "unlock-return", "", "ghost") : ""}${r.program === "T1" && browserEntryAvailable(r) ? `<a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=profile">Guided interview</a><a class="btn" href="#tt-t1/${encodeURIComponent(r.id)}?screen=review">Guided review</a>` : ""}${r.status !== "archived" ? button("Archive", "archive-return", "", "ghost") : button("Restore draft", "reopen-return")}</div><div class="workspace-status"><span id="save-status">All changes saved</span><span>·</span><span>Input revision ${Number(r.input_revision || 0)}</span><span>·</span><span id="lock-status">${state.lock ? `Locked by ${esc(state.lock.holder)} until ${stamp(state.lock.expires_at)}` : "No editing lock"}</span><span class="key-hint">Ctrl S · save</span><span class="key-hint">Ctrl Enter · calculate</span></div>${isCorporate(r) ? corporateTopicStrip() : ""}</div>
       ${r.current_scope_supported===false?'<div class="notice" role="alert"><strong>Unsupported current calculation scope.</strong><p>Saved calculations and approvals are historical only. This workpaper cannot enter review, approval, authorization or recorded filing in this program, year and jurisdiction.</p></div>':""}${!browserEntryAvailable(r) && r.current_scope_supported!==false ? '<div class="notice" role="note"><strong>Year-specific browser editor pending.</strong><p>Input editing is unavailable for this saved workpaper. Its inputs remain unchanged; calculation results, diagnostics, history and exports remain available. A limited engine path does not verify an entry form.</p></div>' : ""}<div class="return-grid">${workspaceNavigation(r,p)}<section class="return-editor" id="return-editor" aria-label="Return data"></section><aside class="result-panel" id="result-panel" aria-label="Calculation status and diagnostics"></aside></div>`;
     $$("[data-action=save-return],[data-action=calculate]", main).forEach(b => b.disabled = !editable);
     renderEditor(); renderSidePanel(); setDirtyStatus();
@@ -671,6 +686,7 @@
     "rollforward": () => rollforward(), "package": () => downloadReturn("package"), "print": () => downloadReturn("print"),
     "client-export": () => downloadClientBundle(), "client-restore": () => restoreClientBundle(),
     "preferences": () => preferencesDialog(),
+    "cabinet-export": () => downloadCabinetPacket(),
     "print-labels": () => {
       const labels = window.NXTClientLabels?.build(state.returns) || [];
       if (!labels.length) return toast("No client references to label", true);

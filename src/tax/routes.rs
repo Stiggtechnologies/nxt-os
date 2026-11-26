@@ -23,6 +23,7 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/rollforward",post(rollforward))
         .route("/api/tax/returns/{id}/package",get(package))
         .route("/api/tax/returns/{id}/client-export",get(client_export))
+        .route("/api/tax/returns/{id}/cabinet-export",get(cabinet_export))
         .route("/api/tax/returns/{id}/lock",get(lock_status).post(acquire_lock).delete(release_lock))
         .route("/api/tax/clients/import",post(client_import))
         .route("/api/tax/returns/{id}/print",get(print))
@@ -272,6 +273,9 @@ async fn preferences(State(t): S, identity: Option<Extension<crate::firm::staff:
 }
 async fn save_preferences(State(t): S, identity: Option<Extension<crate::firm::staff::Identity>>, Json(body): Json<super::models::UiPreferences>) -> R {
     ok(t.save_preferences(&actor(identity), body).await?)
+}
+async fn cabinet_export(State(t): S, Path(id): Path<String>) -> R {
+    ok(super::client_bundle::cabinet_export(&t, &id).await?)
 }
 async fn client_export(State(t): S, Path(id): Path<String>) -> R {
     ok(super::client_bundle::export(&t, &id).await?)

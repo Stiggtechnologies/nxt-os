@@ -8,7 +8,7 @@ Reconciles the generated [gap register](GAP_REGISTER.md), the dated
 recorded as *out of scope* back into scope. The 41 rows that were written off
 are now **open** in the register, each with a next step; the earlier reason is
 kept as the recorded rationale so the trade-offs stay visible. The register
-therefore reports **21 open** of 220 capabilities and **13 external**; routed
+therefore reports **20 open** of 220 capabilities and **13 external**; routed
 coverage is 70% (QuickBooks 71%, DT Max 49%, WebTax4B 55%).
 
 ## Operational gates are separate
@@ -34,6 +34,7 @@ now blocked by `tests/cutover_guard.test.mjs`.
 | Credit memos | Native `DocKind::CreditMemo` posting Dr income / Dr GST-HST, Cr AR; application to an invoice for the same customer without a second posting; void releases the invoices it covered. | `7900950`; `tests/credit_memos.rs` |
 | Forecasts | Weekly cash projection from open invoice/bill due dates and scheduled recurring entries, with opening and projected closing cash; labelled a projection and shown at `#reports/forecast`. | `tests/forecast.rs` |
 | Budget vs actual | Monthly budget cells per account (replacing on re-entry, deletable) compared with the committed journal's natural movement; P&L accounts plus any explicitly budgeted account; `#reports/budget-vs-actual` with a budget editor. | `tests/budgets.rs` |
+| Cabinet packet | A downloadable escaped HTML workpaper (identity, status, saved calculation lines) for filing into an external document cabinet; no vendor FileCabinet connection is claimed. | `tests/tax_cabinet.rs` |
 | Client labels | Printable three-column label sheet built from worklist client references (deduped, escaped), with program/year/jurisdiction on each label; browser print, no label-stock integration claimed. | `tests/client_labels.test.mjs` |
 | Editing locks | Per-return locks (1–240 minutes) enforced by middleware on every write with a 409, an audited explicit takeover, holder release and force release; lock state shows in the return editor. | `tests/tax_locks.rs` |
 | Workspace preferences | Per-operator UI preferences (table density, default screen, keyword-code visibility) stored against the staff id, or the shared key as one workspace; applied on boot and editable from the worklist. | `tests/tax_preferences.rs` |

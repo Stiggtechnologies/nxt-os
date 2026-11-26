@@ -88,3 +88,70 @@ pub async fn import(t: &Tax, body: Value) -> TResult<Value> {
     }).await?;
     Ok(json!({ "imported": count, "families": imported_families, "client_ref": client_ref }))
 }
+
+fn escape(value: &str) -> String {
+    value.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+/// A single printable HTML packet for filing into an external document cabinet.
+/// It is a filing convenience, not a certified form or an electronic filing.
+pub async fn cabinet_export(t: &Tax, record_id: &str) -> TResult<Value> {
+    let record = t.get(record_id).await?;
+    let lines = record
+        .calculation
+        .as_ref()
+        .and_then(|calculation| calculation.result.get("lines"))
+        .and_then(|lines| lines.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let rows: String = lines
+        .iter()
+        .filter_map(|line| {
+            let code = line.get("code")?.as_str()?;
+            let label = line.get("label").and_then(|v| v.as_str()).unwrap_or("");
+            let amount = line.get("amount").and_then(|v| v.as_i64()).unwrap_or(0);
+            Some(format!(
+                "<tr><td>{}</td><td>{}</td><td class=\"num\">{}</td></tr>",
+                escape(code),
+                escape(label),
+                (amount as f64 / 100.0)
+            ))
+        })
+        .collect();
+    let html = format!(
+        "<!doctype html><html lang=\"en-CA\"><head><meta charset=\"utf-8\"><title>{} {} — {}</title>\
+<style>body{{font-family:system-ui,sans-serif;margin:32px;color:#222}}h1{{font-size:20px}}table{{border-collapse:collapse;width:100%;font-size:13px}}td,th{{border-bottom:1px solid #ddd;padding:5px 4px;text-align:left}}.num{{text-align:right;font-variant-numeric:tabular-nums}}.muted{{color:#666;font-size:12px}}</style></head><body>\
+<h1>{} <span class=\"muted\">{} {}</span></h1>\
+<p class=\"muted\">Jurisdiction {} · client reference <strong>{}</strong> · status {} · revision {} · updated {}</p>\
+<table><thead><tr><th>Line</th><th>Description</th><th class=\"num\">Amount (CAD)</th></tr></thead><tbody>{}</tbody></table>\
+<p class=\"muted\">Saved calculation snapshot, if any. This packet is an internal workpaper for an external document cabinet; it is not a certified form, a CRA acknowledgement or an electronic filing.</p>\
+</body></html>",
+        escape(&record.program),
+        escape(&record.tax_year.to_string()),
+        escape(&record.name),
+        escape(&record.name),
+        escape(&record.program),
+        escape(&record.tax_year.to_string()),
+        escape(&record.jurisdiction),
+        escape(&record.client_ref),
+        escape(&record.status),
+        record.revision,
+        escape(&record.updated_at),
+        rows
+    );
+    let filename = format!(
+        "{}-{}-{}.html",
+        record.client_ref.replace(|c: char| !c.is_ascii_alphanumeric(), "_"),
+        record.program,
+        record.tax_year
+    );
+    Ok(json!({
+        "format": "nxt-tax-cabinet/v1",
+        "return_id": record.id,
+        "client_ref": record.client_ref,
+        "filename": filename,
+        "generated_at": super::now(),
+        "html": html,
+        "note": "Internal workpaper packet for an external cabinet. Not a certified form, CRA acknowledgement or electronic filing.",
+    }))
+}

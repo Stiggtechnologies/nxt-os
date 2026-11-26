@@ -303,9 +303,9 @@
               "label": "Print to DT FileCabinet",
               "source_label": "Print to DT FileCabinet",
               "observation": "observed",
-              "native_route": null,
-              "native_scope": "No NXT document cabinet export. Engagement opaque-file versions are a different module and scope.",
-              "next_step": "Add a Document Manager export bundle that can be filed into an external cabinet.",
+              "native_route": "#worklist",
+              "native_scope": "Cabinet packet: a downloadable escaped HTML workpaper (identity, status, saved calculation lines) for filing into an external document cabinet; no vendor FileCabinet connection.",
+              "next_step": "Return editor -> FileCabinet export.",
               "scope": "in_scope",
               "scope_reason": "DT FileCabinet integration is vendor document management; NXT has no FileCabinet connection.",
               "in_scope_since": "2026-11-22"
