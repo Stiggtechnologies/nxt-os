@@ -26,6 +26,8 @@ pub fn router(tax: Arc<Tax>) -> Router {
         .route("/api/tax/returns/{id}/cabinet-export",get(cabinet_export))
         .route("/api/tax/returns/{id}/lock",get(lock_status).post(acquire_lock).delete(release_lock))
         .route("/api/tax/clients/import",post(client_import))
+        .route("/api/tax/clients/renumber",post(renumber_client))
+        .route("/api/tax/clients/renames",get(client_renames))
         .route("/api/tax/returns/{id}/print",get(print))
         .route("/api/tax/returns/{id}/schedule8-print",get(print_schedule8))
         .route("/api/tax/returns/{id}/filing",post(filing))
@@ -273,6 +275,19 @@ async fn preferences(State(t): S, identity: Option<Extension<crate::firm::staff:
 }
 async fn save_preferences(State(t): S, identity: Option<Extension<crate::firm::staff::Identity>>, Json(body): Json<super::models::UiPreferences>) -> R {
     ok(t.save_preferences(&actor(identity), body).await?)
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RenumberInput {
+    from: String,
+    to: String,
+}
+async fn renumber_client(State(t): S, identity: Option<Extension<crate::firm::staff::Identity>>, Json(body): Json<RenumberInput>) -> R {
+    let (actor, _) = lock_actor(&identity);
+    ok(t.renumber_client(&body.from, &body.to, &actor).await?)
+}
+async fn client_renames(State(t): S) -> R {
+    ok(t.client_renames().await?)
 }
 async fn cabinet_export(State(t): S, Path(id): Path<String>) -> R {
     ok(super::client_bundle::cabinet_export(&t, &id).await?)

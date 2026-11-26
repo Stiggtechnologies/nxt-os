@@ -211,6 +211,74 @@ impl Tax {
             json!({"id":r.id,"program":r.program,"tax_year":r.tax_year,"jurisdiction":r.jurisdiction,"name":r.name,"client_ref":r.client_ref,"period_start":r.period_start,"period_end":r.period_end,"revision":r.revision,"input_revision":r.input_revision,"status":r.status,"created_at":r.created_at,"updated_at":r.updated_at,"calculation":calculation,"current_scope_supported":calculations::supports_scope(&r.program,r.tax_year,&r.jurisdiction)})
         }).collect())
     }
+    // ---- client renumbering ---------------------------------------------------
+
+    pub async fn client_renames(&self) -> TResult<Vec<ClientRename>> {
+        Ok(self.load().await?.client_renames)
+    }
+
+    /// Renumber a client across its returns, keeping the old number in an immutable log
+    /// and moving staff assignments with it. Refused when the target exists or when an
+    /// archived batch binds the old reference.
+    pub async fn renumber_client(&self, from: &str, to: &str, by: &str) -> TResult<Value> {
+        let from = from.trim().to_string();
+        let to = to.trim().to_string();
+        if from.is_empty() || to.is_empty() || from.len() > 100 || to.len() > 100 {
+            return Err(bad("client references must be 1-100 characters"));
+        }
+        if from.eq_ignore_ascii_case(&to) {
+            return Err(bad("the new client reference is the same as the old one"));
+        }
+        let state = self.load().await?;
+        if state.returns.iter().any(|record| record.client_ref.eq_ignore_ascii_case(&to)) {
+            return Err(conflict(format!("client '{to}' already exists; choose an unused reference")));
+        }
+        let count = state.returns.iter().filter(|record| record.client_ref.eq_ignore_ascii_case(&from)).count();
+        if count == 0 {
+            return Err(ApiError(StatusCode::NOT_FOUND, format!("no returns for client '{from}'")));
+        }
+        if state.batch_archives.iter().any(|archive| archive.bindings.iter().any(|(_, client)| client.eq_ignore_ascii_case(&from))) {
+            return Err(conflict("archived batch receipts reference this client; renumbering would break their binding"));
+        }
+        let rename = self.mutate_state(|state| {
+            if state.returns.iter().any(|record| record.client_ref.eq_ignore_ascii_case(&to)) {
+                return Err(conflict(format!("client '{to}' already exists; choose an unused reference")));
+            }
+            let mut renamed = Vec::new();
+            for record in state.returns.iter_mut() {
+                if record.client_ref.eq_ignore_ascii_case(&from) {
+                    record.client_ref = to.clone();
+                    record.updated_at = now();
+                    renamed.push(record.id.clone());
+                }
+            }
+            if renamed.is_empty() {
+                return Err(ApiError(StatusCode::NOT_FOUND, format!("no returns for client '{from}'")));
+            }
+            let rename = ClientRename {
+                id: id("crename"),
+                from: from.clone(),
+                to: to.clone(),
+                returns: renamed,
+                staff_accounts: 0,
+                at: now(),
+                by: by.to_string(),
+            };
+            state.client_renames.push(rename.clone());
+            audit(state, "", "tax_client_renumbered", format!("{from} -> {to} ({} returns) by {by}", rename.returns.len()));
+            Ok(rename)
+        }).await?;
+        let staff_accounts = crate::firm::staff::rename_client_refs(&from, &to).await.unwrap_or(0);
+        let _ = self.mutate_state(|state| {
+            if let Some(last) = state.client_renames.last_mut() { if last.id == rename.id { last.staff_accounts = staff_accounts; } }
+            Ok(())
+        }).await;
+        Ok(json!({
+            "from": from, "to": to, "returns": rename.returns.len(),
+            "staff_accounts": staff_accounts, "renamed_at": rename.at,
+        }))
+    }
+
     // ---- return editing locks -------------------------------------------------
 
     pub async fn lock_status(&self, record_id: &str) -> TResult<Option<ReturnLock>> {

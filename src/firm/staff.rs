@@ -193,6 +193,11 @@ pub fn registry() -> Arc<Staff> {
     w.get_or_insert_with(|| Arc::new(Staff::new(Store::from_env()))).clone()
 }
 
+/// Renumber a client reference across staff assignments. No-op if no registry is installed.
+pub async fn rename_client_refs(from: &str, to: &str) -> SResult<usize> {
+    registry().rename_client_ref(from, to).await
+}
+
 fn user_key(id: &str) -> String { format!("firm:staff:user:{id}") }
 fn name_key(u: &str) -> String { format!("firm:staff:username:{}", u.trim().to_ascii_lowercase()) }
 fn session_key(h: &str) -> String { format!("firm:staff:session:{h}") }
@@ -265,6 +270,26 @@ impl Staff {
         for id in self.store.smembers(USERS).await.map_err(st)? { if let Some(u) = self.user(&id).await? { out.push(u); } }
         out.sort_by(|a, b| a.username.cmp(&b.username));
         Ok(out)
+    }
+
+    /// Move every account's client assignment from one reference to another.
+    pub async fn rename_client_ref(&self, from: &str, to: &str) -> SResult<usize> {
+        let mut touched = 0;
+        for mut user in self.users().await? {
+            let before = user.clients.clone();
+            let mut seen: Vec<String> = Vec::new();
+            for client in user.clients.iter_mut() {
+                if client.eq_ignore_ascii_case(from) { *client = to.to_string(); }
+                if !seen.iter().any(|existing| existing.eq_ignore_ascii_case(client)) { seen.push(client.clone()); }
+            }
+            if seen != before {
+                user.clients = seen;
+                user.updated_at = now();
+                self.put(&user).await?;
+                touched += 1;
+            }
+        }
+        Ok(touched)
     }
 
     pub async fn create_user(&self, by: &Identity, input: CreateUser) -> SResult<Value> {

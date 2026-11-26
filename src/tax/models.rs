@@ -194,6 +194,20 @@ pub struct TaxState {
     /// Short-lived editing locks per return.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub locks: Vec<ReturnLock>,
+    /// Immutable log of client-reference renumbering, keeping the old number as provenance.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub client_renames: Vec<ClientRename>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ClientRename {
+    pub id: String,
+    pub from: String,
+    pub to: String,
+    pub returns: Vec<String>,
+    pub staff_accounts: usize,
+    pub at: String,
+    pub by: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -155,6 +155,25 @@
     }, { wide: true });
   }
 
+  function renumberDialog() {
+    return modal("Renumber a client", (el, close) => {
+      el.innerHTML = `<p class="form-note">All returns for the old reference move to the new one. The old reference is kept in an immutable renumbering log, staff assignments move with it, and archived batch receipts block the change.</p>
+        <div class="form"><label class="f">Current reference<input name="from" required maxlength="100" placeholder="e.g. qbo-client-1234"></label>
+        <label class="f">New reference<input name="to" required maxlength="100" placeholder="e.g. NXT-0001"></label></div>
+        <div class="actions"><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Renumber</button></div>`;
+      el.querySelector("[data-x]").onclick = () => close();
+      el.querySelector("[data-ok]").onclick = async () => {
+        const body = { from: el.querySelector("[name=from]").value.trim(), to: el.querySelector("[name=to]").value.trim() };
+        try {
+          const result = await request("/clients/renumber", { body });
+          toast(`Renumbered ${Number(result.returns) || 0} return(s); ${Number(result.staff_accounts) || 0} staff account(s) updated`);
+          close(true);
+          await navigate();
+        } catch (error) { toast(error.message, true); }
+      };
+    });
+  }
+
   function preferencesDialog() {
     const prefs = state.prefs || { density: "comfortable", default_view: "worklist", show_keyword_codes: true };
     return modal("Workspace preferences", (el, close) => {
@@ -232,7 +251,7 @@
     if (version !== state.version) return;
     state.returns = list(records); setStorage(summary.storage); renderPrograms();
     const years = [...new Set([...programs().flatMap(p => list(p.years)), ...state.returns.map(r => r.tax_year)])].sort((a, b) => b - a);
-    page(version, "Tax worklist", "Prepare, calculate and review independently versioned workpapers across the tax suite.", button("Export worklist", "export-worklist") + button("Print labels", "print-labels") + button("Preferences", "preferences") + button("Import package", "import") + button("Restore client bundle", "client-restore") + button("Create return", "new-return", "", "primary"),
+    page(version, "Tax worklist", "Prepare, calculate and review independently versioned workpapers across the tax suite.", button("Export worklist", "export-worklist") + button("Print labels", "print-labels") + button("Renumber client", "renumber-client") + button("Preferences", "preferences") + button("Import package", "import") + button("Restore client bundle", "client-restore") + button("Create return", "new-return", "", "primary"),
       restrictedNotice() + `<div id="dtmax-t1-source"></div><div class="summary-grid">${[["Draft workpapers", summary.drafts || 0], ["Calculated", summary.calculated || 0], ["Awaiting review", summary.in_review || 0], ["Approved", summary.approved || 0]].map(([label, value]) => `<div class="summary-tile"><span class="label">${label}</span><strong>${Number(value)}</strong></div>`).join("")}</div>
       <div class="card"><h2>NXT preparation workpapers</h2><p>The company selector filters these workpapers. Imported personal T1 source clients above are firm-wide.</p><div class="list-filters"><label>Program${select("program", [["", "All programs"], ...programs().map(p => [p.id, p.id.toUpperCase()])], state.program, "data-work-filter")}</label><label>Tax year${select("year", [["", "All years"], ...years.map(y => [y, y])], state.year, "data-work-filter")}</label><label>Status${select("status", statuses, state.status, "data-work-filter")}</label><label>Jurisdiction${select("jurisdiction", [["", "All jurisdictions"], ...(window.NXTTaxWorklist?.jurisdictions(state.returns) || []).map(j => [j, j])], state.jurisdiction, "data-work-filter")}</label><label>Sort${select("sort", [["", "Default order"], ["name", "Name"], ["year", "Tax year"], ["updated", "Last updated"], ["status", "Status"]], state.sort, "data-work-filter")}</label><label class="search">Search workpapers${input("search", state.search, "search", 'placeholder="Name or client reference" data-work-filter')}</label></div><div id="return-table"></div></div>`);
     renderWorkRows();
@@ -686,6 +705,7 @@
     "rollforward": () => rollforward(), "package": () => downloadReturn("package"), "print": () => downloadReturn("print"),
     "client-export": () => downloadClientBundle(), "client-restore": () => restoreClientBundle(),
     "preferences": () => preferencesDialog(),
+    "renumber-client": () => renumberDialog(),
     "cabinet-export": () => downloadCabinetPacket(),
     "print-labels": () => {
       const labels = window.NXTClientLabels?.build(state.returns) || [];

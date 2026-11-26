@@ -9,11 +9,11 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | | Count |
 | --- | ---: |
 | Capabilities observed | 220 |
-| Routed | 161 |
+| Routed | 162 |
 | Linked | 26 |
 | External | 13 |
-| **Open** | **20** |
-| Routed coverage | 73% |
+| **Open** | **19** |
+| Routed coverage | 74% |
 | Source chrome excluded | 22 |
 
 ## By product
@@ -21,7 +21,7 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 | Product | Capabilities | Routed | Linked | External | Open | Coverage |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | QuickBooks | 143 | 114 | 26 | 1 | 2 | 80% |
-| DT Max | 37 | 25 | 0 | 5 | 7 | 68% |
+| DT Max | 37 | 26 | 0 | 5 | 6 | 70% |
 | WebTax4B | 40 | 22 | 0 | 7 | 11 | 55% |
 
 ## QuickBooks
@@ -41,11 +41,10 @@ Every observed capability is dispositioned exactly once: **routed** (opens a nat
 
 ## DT Max
 
-### Open to build (7)
+### Open to build (6)
 
 | Group | Gap | Next step | Recorded rationale |
 | --- | --- | --- | --- |
-| Client and return lifecycle | Client renumbering | Add a client-number remap that preserves the imported source number as provenance. | Client renumbering rewrites a local client database. NXT keeps imported source numbers as provenance and does not rewrite identity. |
 | EFILE | EFILE reports | Store and render transmission-result reports; producing real results still requires the CRA filing gate. | EFILE reports are produced from transmission results. Without a certified transmission path there is nothing to report. |
 | EFILE | EFILE errors | Model authority rejection codes behind the filing gate; no transmission today. | EFILE error handling interprets authority rejections. It is part of the disabled filing gate. |
 | EFILE | EFILE logs | Record transmission attempts locally once a certified path exists. | EFILE logs record transmission attempts. There are no attempts to log while filing is disabled. |

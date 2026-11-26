@@ -50,9 +50,9 @@
               "label": "Client renumbering",
               "source_label": "Client renumbering failed for %d client(s)",
               "observation": "observed",
-              "native_route": null,
-              "native_scope": "NXT Tax has no client renumbering operation. Imported source client numbers are retained verbatim as provenance.",
-              "next_step": "Add a client-number remap that preserves the imported source number as provenance.",
+              "native_route": "#worklist",
+              "native_scope": "Client renumbering moves every return and staff assignment to the new reference, keeps the old one in an immutable log, and refuses when the target exists or an archived batch binds the old reference.",
+              "next_step": "Worklist -> Renumber client.",
               "scope": "in_scope",
               "scope_reason": "Client renumbering rewrites a local client database. NXT keeps imported source numbers as provenance and does not rewrite identity.",
               "in_scope_since": "2026-11-22"
