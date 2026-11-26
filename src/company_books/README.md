@@ -31,3 +31,20 @@ Typed customers/suppliers, open AR/AP allocation, invoices/bills/payment states,
 `POST /{company}/archive` appends a terminal `archive` operation (`request_id`, `expected_head`, `operator_label`, `note`, optional `merged_into`). Nothing is deleted; further journal, reversal, lock or archive operations are refused. `merged_into` must be another active committed book. The inventory shows `archived` and `merged_into`.
 
 Source identities starting with `quickbooks_online:` are claimed per book at commit. A second company id cannot commit the same source identity while the first book is active; re-import into the existing company id (or archive the old copy first). Fixture identities are exempt.
+
+## Reconstructed bank statements
+
+`source.system = "reconstructed_bank_statements"` is a separate lane for a company that has no QuickBooks file. QuickBooks Online and synthetic imports are unchanged: they still require their own evidence, and they must omit `source.reconstruction`.
+
+A reconstructed import is rejected unless it includes:
+
+- `archive_sha256` equal to `reconstruction.statements_sha256` (the bank-statement / transaction file)
+- a different `reconstruction.package_sha256` (the reconstruction workbook)
+- `journal_sha256` and `trial_balance_sha256` of the normalized journal and trial balance
+- a named `approver`, an RFC3339 `approved_at`, and an `approval_memo` that contains the approver's name
+- `record_id_coverage = "bank_statement_row"`
+- no source `period_lock` (a provisional year-end is `reconstruction.provisional_year_end` plus `year_end`)
+- journal entries that each balance, and a one-sided trial-balance control per account
+- `statement_tie_outs`: opening and closing per statement, continuing from one statement to the next, with journal activity on that account and `statement_id` equal to closing minus opening
+
+Every read of the book (inventory, detail, preview, entries, trial balance, general ledger, payroll) adds `book_posture.label = "DRAFT / RECONSTRUCTED"`. Commit `reviewer_label` must be the named approver. The loader is `scripts/reconstructed-books-load.py`. It is a dry-run unless `--commit` is passed, and it refuses `os.nxtcorporation.ca` unless `--allow-production` is also passed.

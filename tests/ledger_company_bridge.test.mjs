@@ -130,6 +130,15 @@ test('a client-scoped staff account gets a scope message, not a disabled picker,
  const m=h.mount({openLedger:()=>{}});await m.ready;await new Promise(r=>setTimeout(r,0));
  assert.ok(!/<select[^>]*disabled/.test(h.host.innerHTML));assert.match(h.host.innerHTML,/assigned clients/);assert.match(h.host.innerHTML,/value="client-a"/);m.destroy();
 });
+test('a reconstructed book is labelled draft in the company picker',async()=>{
+  const reconstructed={...book('11943995'),book_posture:{label:'DRAFT / RECONSTRUCTED',source_system:'reconstructed_bank_statements'},previews:[{company:{name:'11943995 Canada Inc.'},source:{system:'reconstructed_bank_statements'}}]};
+  const h=harness(path=>path.endsWith('/roster')?roster([]):path==='/api/migrations'?source([]):page([reconstructed]));
+  const m=h.mount();await m.ready;
+  assert.match(h.host.innerHTML,/DRAFT \/ RECONSTRUCTED/);
+  assert.ok(!h.host.innerHTML.includes('Journal imported'));
+  assert.ok(!/QuickBooks/i.test(h.host.innerHTML));
+  m.destroy();
+});
 test('archived books are counted for pagination but not listed',async()=>{
  const h=harness();const archived={...book('B'),head:{company_id:'B',archived:true}};let n=0;
  const rows=await h.subject.booksRows(async()=>++n===1?page([book('A'),archived],3,0,true):page([book('C')],3,2,false),()=>true);

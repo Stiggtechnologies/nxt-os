@@ -70,7 +70,7 @@ impl CompanyBooks {
             }
         }
         let next = offset + rows.len();
-        Ok(json!({
+        Ok(reconstructed::with_book_posture(json!({
             "company_id": company, "head": h, "order": "immutable source order",
             "entries_total": entries.len(), "lines_total": total_lines, "total": total_lines,
             "source_entries": p.analysis.entries, "source_lines": p.analysis.lines,
@@ -78,7 +78,7 @@ impl CompanyBooks {
             "offset": offset, "limit": limit, "from": from, "to": to, "rows": rows,
             "has_more": next < total_lines, "next_offset": (next < total_lines).then_some(next),
             "controls": controls(),
-        }))
+        }), &p.input.source))
     }
 
     /// A watcher uses one fully validated, coherent snapshot for both its trial
@@ -96,7 +96,8 @@ impl CompanyBooks {
     }
 
     pub async fn payroll_view(&self, company: &str) -> Result<Value> {
-        let (h, _, accounts, entries) = self.book(company).await?;
+        let (h, preview, accounts, entries) = self.book(company).await?;
+        let draft = preview.input.source.system == reconstructed::SYSTEM;
         let pay: BTreeMap<&str, &str> = accounts.iter().filter(|a| is_payroll_account(&a.name))
             .map(|a| (a.id.as_str(), a.name.as_str())).collect();
         let mut years: BTreeMap<String, (usize, i128, i128)> = BTreeMap::new();
@@ -118,11 +119,15 @@ impl CompanyBooks {
                 "source_id": e.source_id, "payroll_lines": hit.len(), "lines": e.lines.len(),
                 "payroll_debit_cents": d.to_string(), "payroll_credit_cents": c.to_string()}));
         }
-        Ok(json!({
+        Ok(reconstructed::with_book_posture(json!({
             "company_id": company, "head": h,
             "basis": "journal_lines_on_payroll_named_accounts",
             "pay_stubs_available": false, "employees_available": false,
-            "note": "Derived from the committed journal. Gross, net and deductions per pay run need a payroll register export (QBO payroll .xls or QBD payroll summary); none is attached to this book.",
+            "note": if draft {
+                "Derived from the committed draft reconstructed journal. This book has no payroll register."
+            } else {
+                "Derived from the committed journal. Gross, net and deductions per pay run need a payroll register export (QBO payroll .xls or QBD payroll summary); none is attached to this book."
+            },
             "payroll_accounts": per_acct.iter().map(|(n, s)| json!({"name": n, "lines": s.0,
                 "debit_cents": s.1.to_string(), "credit_cents": s.2.to_string()})).collect::<Vec<_>>(),
             "transactions_total": txns.len(),
@@ -131,7 +136,7 @@ impl CompanyBooks {
             "offset": 0, "total": txns.len(), "has_more": false,
             "transactions": txns,
             "controls": controls(),
-        }))
+        }), &preview.input.source))
     }
 }
 

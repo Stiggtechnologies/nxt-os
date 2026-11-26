@@ -8,6 +8,7 @@ mod subledger;
 mod summaries;
 mod views;
 pub mod models;
+mod reconstructed;
 mod roster;
 mod routes;
 pub mod source_lists;
@@ -222,7 +223,10 @@ fn controls() -> Value {
     json!({"source_authoritative":true,"parallel_test":true,"live_cutover_allowed":false,"identity_limit":"Source identity, currency and reviewer labels are operator assertions under a shared workspace key; they are not independently authenticated identities.","scope":"Complete submitted journal and trial balance only; attachments, bank reconciliation, subledger allocations, payroll and tax filing are not inferred."})
 }
 fn preview_value(id: &str, p: &Preview) -> Value {
-    json!({"preview_id":id,"stage":if p.analysis.controls_passed {"preview_ready"} else {"assessment_blocked"},"preview":p,"controls":controls()})
+    reconstructed::with_book_posture(
+        json!({"preview_id":id,"stage":if p.analysis.controls_passed {"preview_ready"} else {"assessment_blocked"},"preview":p,"controls":controls()}),
+        &p.input.source,
+    )
 }
 /// Durable stores accept a book that fails its controls only when the owner turns this on. Such a
 /// book is history under review, flagged on every read, and never a basis for cutover.
@@ -383,7 +387,7 @@ impl CompanyBooks {
             || !text(&c.name, 300)
             || !text(&c.source_company_id, 200)
             || !text(&c.currency, 3)
-            || !matches!(s.system.as_str(), "quickbooks_online" | "synthetic")
+            || !reconstructed::known_system(&s.system)
             || ![
                 &s.archive_sha256,
                 &s.journal_sha256,
@@ -394,32 +398,34 @@ impl CompanyBooks {
             || !date(&s.period_start)
             || !date(&s.period_end)
             || s.period_start > s.period_end
-            || !matches!(
-                s.record_id_coverage.as_str(),
-                "archive_row" | "durable_source_id"
-            )
+            || !reconstructed::coverage_ok(&s.system, &s.record_id_coverage)
         {
             return Err(bad("Invalid company/source provenance"));
         }
+        reconstructed::bind(c, s)?;
         let mut blockers = vec![];
-        if !c.identity_verified || c.source_company_id.trim().is_empty() {
-            blockers.push("source_identity_unverified".into());
-        }
-        if !c.currency_verified
-            || c.currency.len() != 3
-            || !c.currency.bytes().all(|b| b.is_ascii_uppercase())
-        {
-            blockers.push("source_currency_unverified".into());
-        }
-        if !s.full_history {
-            blockers.push("source_history_incomplete".into());
-        }
-        match &s.period_lock {
-            Some(lock)
-                if lock.verified
-                    && digest(&lock.evidence_sha256)
-                    && lock.closed_through.as_deref().is_none_or(date) => {}
-            _ => blockers.push("source_period_lock_unverified".into()),
+        // Reconstructed books are approved by a named person and tied to statements.
+        // They do not inherit QuickBooks identity, history, or period-lock blockers.
+        if s.system != reconstructed::SYSTEM {
+            if !c.identity_verified || c.source_company_id.trim().is_empty() {
+                blockers.push("source_identity_unverified".into());
+            }
+            if !c.currency_verified
+                || c.currency.len() != 3
+                || !c.currency.bytes().all(|b| b.is_ascii_uppercase())
+            {
+                blockers.push("source_currency_unverified".into());
+            }
+            if !s.full_history {
+                blockers.push("source_history_incomplete".into());
+            }
+            match &s.period_lock {
+                Some(lock)
+                    if lock.verified
+                        && digest(&lock.evidence_sha256)
+                        && lock.closed_through.as_deref().is_none_or(date) => {}
+                _ => blockers.push("source_period_lock_unverified".into()),
+            }
         }
         let mut totals: BTreeMap<String, (&Account, i128, i128)> = BTreeMap::new();
         let mut account_rows: BTreeMap<String, u32> = BTreeMap::new();
@@ -494,13 +500,23 @@ impl CompanyBooks {
                 cr = cr.checked_add(lc).ok_or_else(|| bad("Amount overflow"))?;
             }
             if d != cr {
+                if s.system == reconstructed::SYSTEM {
+                    return Err(bad("Reconstructed journal entry is unbalanced"));
+                }
                 blockers.push(format!("journal_unbalanced:{}", e.id));
             }
             td = td.checked_add(d).ok_or_else(|| bad("Amount overflow"))?;
             tc = tc.checked_add(cr).ok_or_else(|| bad("Amount overflow"))?;
         }
+        if s.system == reconstructed::SYSTEM {
+            let ids: HashSet<String> = totals.keys().cloned().collect();
+            reconstructed::tie(s, entries, &ids)?;
+        }
         let mut checks = BTreeMap::new();
         for t in &input.trial_balance {
+            if s.system == reconstructed::SYSTEM && t.held_residual.is_some() {
+                return Err(bad("A reconstructed trial balance cannot carry a held residual"));
+            }
             if !valid_id(&t.account_id)
                 || checks
                     .insert(
@@ -641,6 +657,9 @@ impl CompanyBooks {
         }
         blockers.sort();
         blockers.dedup();
+        if s.system == reconstructed::SYSTEM && !blockers.is_empty() {
+            return Err(bad("Reconstructed trial balance does not match the journal"));
+        }
         Ok(Analysis {
             accounts: accounts.len(),
             entries: entries.len(),
@@ -891,6 +910,19 @@ impl CompanyBooks {
                 "Unresolved source identity, currency, completeness or reconciliation blockers",
             ));
         }
+        if p.input.source.system == reconstructed::SYSTEM
+            && input.reviewer_label.trim()
+                != p.input
+                    .source
+                    .reconstruction
+                    .as_ref()
+                    .map(|r| r.approver.trim())
+                    .unwrap_or("")
+        {
+            return Err(bad(
+                "Reconstructed book commit requires the named approver as reviewer",
+            ));
+        }
         let mut review_blockers = p.analysis.blockers.clone();
         review_blockers.extend(input.review_blockers.iter().cloned());
         if input.needs_review && review_blockers.is_empty() {
@@ -919,9 +951,10 @@ impl CompanyBooks {
                         && receipt.reviewer_label == input.reviewer_label
                         && receipt.review == review
                     {
-                        return Ok(
+                        return Ok(reconstructed::with_book_posture(
                             json!({"head_sha256":rid,"head":receipt,"current_head_sha256":raw,"idempotent_replay":true,"controls":controls()}),
-                        );
+                            &p.input.source,
+                        ));
                     }
                     return Err(err(
                         StatusCode::CONFLICT,
@@ -979,7 +1012,10 @@ impl CompanyBooks {
         {
             return self.commit_replay(company, &input, h.preview_id).await;
         }
-        Ok(json!({"head_sha256":head_id,"head":h,"idempotent_replay":false,"controls":controls()}))
+        Ok(reconstructed::with_book_posture(
+            json!({"head_sha256":head_id,"head":h,"idempotent_replay":false,"controls":controls()}),
+            &p.input.source,
+        ))
     }
     /// Replace an unadjusted needs_review base with a corrected staging of the
     /// same source exports (e.g. derived year-end closes and controls). Every
@@ -1010,10 +1046,12 @@ impl CompanyBooks {
         let old = self.load_preview(company, &current.preview_id).await?;
         let (a, b) = (&old.input, &p.input);
         if a.company.name != b.company.name
+            || a.source.system != b.source.system
             || a.source.archive_sha256 != b.source.archive_sha256
             || a.source.journal_sha256 != b.source.journal_sha256
             || a.source.trial_balance_sha256 != b.source.trial_balance_sha256
             || a.source.period_lock != b.source.period_lock
+            || a.source.reconstruction != b.source.reconstruction
         {
             return Err(err(
                 StatusCode::CONFLICT,
@@ -1056,7 +1094,10 @@ impl CompanyBooks {
         {
             return self.commit_replay(company, input, h.preview_id).await;
         }
-        Ok(json!({"head_sha256":head_id,"head":h,"superseded_head_sha256":current_id,"idempotent_replay":false,"controls":controls()}))
+        Ok(reconstructed::with_book_posture(
+            json!({"head_sha256":head_id,"head":h,"superseded_head_sha256":current_id,"idempotent_replay":false,"controls":controls()}),
+            &p.input.source,
+        ))
     }
     /// One active book per real source company. Fixture identities are exempt.
     async fn claim_source(&self, company: &str, p: &Preview) -> Result<()> {
@@ -1115,9 +1156,11 @@ impl CompanyBooks {
                 && receipt.reviewer_label == input.reviewer_label
                 && receipt.previous_head == input.expected_head
             {
-                return Ok(
-                    json!({"head_sha256":rid,"head":receipt,"current_head_sha256":raw,"idempotent_replay":true,"controls":controls()}),
-                );
+                let mut body = json!({"head_sha256":rid,"head":receipt,"current_head_sha256":raw,"idempotent_replay":true,"controls":controls()});
+                if let Ok(preview) = self.load_preview_metadata(company, &preview_id).await {
+                    body = reconstructed::with_book_posture(body, &preview.input.source);
+                }
+                return Ok(body);
             }
         }
         Err(err(
@@ -1136,15 +1179,21 @@ impl CompanyBooks {
         let (_, ids) = self.preview_catalog(company).await?;
         let total = ids.len();
         let mut previews = vec![];
+        let mut label: Option<Source> = None;
         for id in ids.into_iter().skip(offset).take(limit) {
             let p = self.load_preview_metadata(company, &id).await?;
-            previews.push(json!({"preview_id":id,"company":p.input.company,"source":p.input.source,"accounts":p.analysis.accounts,"entries":p.analysis.entries,"lines":p.analysis.lines,"blockers":p.analysis.blockers,"stage":if p.analysis.controls_passed{"preview_ready"}else{"assessment_blocked"}}));
+            if p.input.source.system == reconstructed::SYSTEM {
+                label = Some(p.input.source.clone());
+            }
+            previews.push(reconstructed::with_book_posture(json!({"preview_id":id,"company":p.input.company,"source":p.input.source,"accounts":p.analysis.accounts,"entries":p.analysis.entries,"lines":p.analysis.lines,"blockers":p.analysis.blockers,"stage":if p.analysis.controls_passed{"preview_ready"}else{"assessment_blocked"}}), &p.input.source));
         }
         previews.sort_by(|a, b| a["preview_id"].as_str().cmp(&b["preview_id"].as_str()));
         let head = self.current(company).await?;
-        Ok(
-            json!({"company_id":company,"stage":if head.is_some(){"import_committed"}else if total==0{"acquisition_pending"}else{"staged"},"head_sha256":head.as_ref().map(|(r,_)|r),"head":head.map(|(_,h)|h),"previews":previews,"previews_total":total,"offset":offset,"limit":limit,"next_offset":if offset.saturating_add(limit)<total{Some(offset+limit)}else{None},"has_more":offset.saturating_add(limit)<total,"history_integrity":"metadata_only; active book fully validated","controls":controls()}),
-        )
+        let body = json!({"company_id":company,"stage":if head.is_some(){"import_committed"}else if total==0{"acquisition_pending"}else{"staged"},"head_sha256":head.as_ref().map(|(r,_)|r),"head":head.map(|(_,h)|h),"previews":previews,"previews_total":total,"offset":offset,"limit":limit,"next_offset":if offset.saturating_add(limit)<total{Some(offset+limit)}else{None},"has_more":offset.saturating_add(limit)<total,"history_integrity":"metadata_only; active book fully validated","controls":controls()});
+        Ok(match label {
+            Some(source) => reconstructed::with_book_posture(body, &source),
+            None => body,
+        })
     }
     pub async fn list(&self) -> Result<Value> {
         self.list_page(0, 25).await
@@ -1269,7 +1318,8 @@ impl CompanyBooks {
             let (pid, p) = previews.remove(&id).ok_or_else(corrupt)?;
             let head = heads.remove(&id);
             let head_summary=head.as_ref().map(|(_,h)|json!({"format":h.format,"company_id":h.company_id,"preview_id":h.preview_id,"revision":h.revision,"committed_at":h.committed_at,"locked_through":h.locked_through,"review":h.review,"operation_kind":h.operation.as_ref().map(|o|match o{Operation::Journal{..}=>"journal",Operation::Reversal{..}=>"reversal",Operation::PeriodLock{..}=>"period_lock",Operation::Archive{..}=>"archive"}),"archived":matches!(h.operation,Some(Operation::Archive{..})),"merged_into":match &h.operation{Some(Operation::Archive{input})=>input.merged_into.clone(),_=>None},"supersedes":h.supersedes}));
-            companies.push(json!({"company_id":id,"stage":if head.is_some(){"import_committed"}else{"staged"},"head_sha256":head.as_ref().map(|(id,_)|id),"head":head_summary,"head_truncated":true,"previews":[{"preview_id":pid,"company":p.input.company,"source":p.input.source,"accounts":p.analysis.accounts,"entries":p.analysis.entries,"lines":p.analysis.lines,"blockers":p.analysis.blockers,"stage":if p.analysis.controls_passed{"preview_ready"}else{"assessment_blocked"}}],"previews_truncated":true,"integrity_check":"metadata_only; full journal and history validation occurs on company book reads","controls":controls()}));
+            let preview_row = reconstructed::with_book_posture(json!({"preview_id":pid,"company":p.input.company,"source":p.input.source,"accounts":p.analysis.accounts,"entries":p.analysis.entries,"lines":p.analysis.lines,"blockers":p.analysis.blockers,"stage":if p.analysis.controls_passed{"preview_ready"}else{"assessment_blocked"}}), &p.input.source);
+            companies.push(reconstructed::with_book_posture(json!({"company_id":id,"stage":if head.is_some(){"import_committed"}else{"staged"},"head_sha256":head.as_ref().map(|(id,_)|id),"head":head_summary,"head_truncated":true,"previews":[preview_row],"previews_truncated":true,"integrity_check":"metadata_only; full journal and history validation occurs on company book reads","controls":controls()}), &p.input.source));
         }
         let v = json!({"companies":companies,"total":total,"offset":offset,"limit":limit,"has_more":offset.saturating_add(limit)<total,"integrity_check":"metadata_only; full journal and history validation occurs on company book reads","controls":controls()});
         if encoded(&v)?.len() > 4 * 1024 * 1024 {
@@ -1333,9 +1383,10 @@ impl CompanyBooks {
             }
         }
         let (rows, total, next_offset, page_bytes) = page_rows(result, offset, limit, max_bytes)?;
-        Ok(
+        Ok(reconstructed::with_book_posture(
             json!({"company_id":company,"company":p.input.company,"head":h,"offset":offset,"limit":limit,"total":total,"rows":rows,"next_offset":next_offset,"has_more":next_offset.is_some(),"max_bytes":max_bytes,"page_bytes":page_bytes,"order":"immutable source order","controls":controls()}),
-        )
+            &p.input.source,
+        ))
     }
     pub async fn trial_balance(&self, company: &str) -> Result<Value> {
         self.trial_balance_page(company, 0, 100, DEFAULT_PAGE_BYTES)
@@ -1431,8 +1482,9 @@ impl CompanyBooks {
         analysis.as_object_mut().unwrap().remove("balances");
         let mut baseline = serde_json::to_value(&source).map_err(|_| corrupt())?;
         baseline.as_object_mut().unwrap().remove("balances");
-        Ok(
+        Ok(reconstructed::with_book_posture(
             json!({"company_id":company,"company":p.input.company,"head":h,"source":p.input.source,"analysis":analysis,"source_baseline_analysis":baseline,"balances":rows,"offset":offset,"limit":limit,"total":total,"next_offset":next_offset,"has_more":next_offset.is_some(),"max_bytes":max_bytes,"page_bytes":page_bytes,"native_delta":{"entries":native.len(),"lines":nl,"total_debit_cents":nd.to_string(),"total_credit_cents":nc.to_string()},"reconciliation":match &h.review { None => json!({"source_baseline_unchanged":true,"source_controls_passed":true,"combined_balances_match_source":matches_source}), Some(r) => json!({"source_baseline_unchanged":true,"source_controls_passed":p.analysis.controls_passed,"review_status":r.status,"combined_balances_match_source":matches_source}) },"controls":controls()}),
-        )
+            &p.input.source,
+        ))
     }
 }

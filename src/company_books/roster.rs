@@ -39,7 +39,7 @@ struct Publish {
 
 fn validate(c: &Capture) -> Result<()> {
     if c.format != FORMAT
-        || !matches!(c.source_system.as_str(), "quickbooks_online" | "synthetic")
+        || !super::reconstructed::known_system(&c.source_system)
         || !digest(&c.source_capture_sha256)
         || chrono::DateTime::parse_from_rfc3339(&c.observed_at).is_err()
         || c.companies.is_empty()
@@ -86,10 +86,17 @@ fn view(current: Option<(String, Capture)>) -> Value {
     match current {
         None => json!({"roster_present":false,"head_sha256":null,"companies":[],"count":0,
             "inventory_complete":false,"financial_imports_inferred":false}),
-        Some((id, c)) => json!({"roster_present":true,"head_sha256":id,"count":c.companies.len(),
-            "capture":c,"companies":c.companies,"inventory_complete":false,
-            "identity_basis":"Observed source selector references and NXT cohort aliases; not durable source company identities",
-            "financial_imports_inferred":false,"verification_basis":"Operator-supplied capture hash; reconcile each company separately"}),
+        Some((id, c)) => {
+            let posture = super::reconstructed::roster_posture(&c.source_system);
+            let mut result = json!({"roster_present":true,"head_sha256":id,"count":c.companies.len(),
+                "capture":c,"companies":c.companies,"inventory_complete":false,
+                "identity_basis":"Observed source selector references and NXT cohort aliases; not durable source company identities",
+                "financial_imports_inferred":false,"verification_basis":"Operator-supplied capture hash; reconcile each company separately"});
+            if let Some(posture) = posture {
+                result["book_posture"] = posture;
+            }
+            result
+        }
     }
 }
 async fn list(State(s): State<Arc<CompanyBooks>>) -> Result<Json<Value>> {
@@ -242,5 +249,28 @@ mod tests {
         let mut raw = serde_json::to_value(input().capture).unwrap();
         raw["financially_verified"] = json!(true);
         assert!(serde_json::from_value::<Capture>(raw).is_err());
+    }
+    #[tokio::test]
+    async fn reconstructed_roster_is_labelled_and_unknown_sources_stay_rejected() {
+        let s = Arc::new(CompanyBooks::new(Store::memory()));
+        let mut body = input();
+        body.capture.source_system = "reconstructed_bank_statements".into();
+        body.capture.companies[0].company_id = "11943995".into();
+        body.capture.companies[0].company_name = "11943995 Canada Inc.".into();
+        let published = publish(State(s.clone()), Json(body)).await.ok().unwrap().0;
+        assert_eq!(published["book_posture"]["label"], "DRAFT / RECONSTRUCTED");
+        assert_eq!(
+            published["book_posture"]["source_system"],
+            "reconstructed_bank_statements"
+        );
+        assert!(
+            !published
+                .to_string()
+                .to_ascii_lowercase()
+                .contains("quickbooks")
+        );
+        let mut unknown = input();
+        unknown.capture.source_system = "quickbooks".into();
+        assert!(validate(&unknown.capture).is_err());
     }
 }
