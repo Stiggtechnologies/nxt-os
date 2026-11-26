@@ -107,6 +107,21 @@ test('a known stale-head rejection clears only the rejected operation attempt fo
   const h=harness(),ctx=h.context();h.setRequest(async()=>{const e=Error('Stale expected head');e.status=409;throw e;});await assert.rejects(h.api.bookCommand(ctx,'lock','/period-lock',{expected_head:hsh}),/Stale/);assert.equal(h.api.S.attempts.size,0);
 });
 
+test('a reconstructed company is labelled draft and is not described as an ordinary committed journal',()=>{
+  const h=harness();
+  h.api.S.search='';
+  h.api.S.booksAvailable=true;
+  h.api.S.sourcesAvailable=true;
+  h.api.S.companies=[{company_id:'11943995',company_name:'11943995 Canada Inc.',source_navigation_ref:null,snapshots:[],book:{company_id:'11943995',head:{company_id:'11943995'},book_posture:{label:'DRAFT / RECONSTRUCTED',source_system:'reconstructed_bank_statements',posture:'draft',approver:'Orville Davis'},previews:[{source:{system:'reconstructed_bank_statements'},entries:965,accounts:31,stage:'preview_ready'}],stage:'import_committed'}}];
+  h.api.companiesMarkup();
+  const html=h.node('#company-list').innerHTML;
+  assert.match(html,/DRAFT \/ RECONSTRUCTED/);
+  assert.match(html,/Orville Davis/);
+  assert.ok(!html.includes('Committed company journal'));
+  assert.ok(!/QuickBooks/i.test(html));
+  assert.ok(!/synthetic/i.test(html));
+});
+
 test('late financial page responses are ignored after company navigation',async()=>{
   const h=harness(),ctx=h.context(),gate=deferred();h.setRequest(()=>gate.promise);const pending=h.api.companyDataPage(ctx,{id:ctx.id,section:'entries',reference:'',offset:0},'entries');h.api.S.version++;gate.resolve(pageData());assert.equal(await pending,null);
 });

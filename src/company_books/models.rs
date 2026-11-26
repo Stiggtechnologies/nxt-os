@@ -57,6 +57,47 @@ pub struct Source {
     pub record_id_coverage: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub period_lock: Option<SourcePeriodLock>,
+    /// Present only when `system` is `reconstructed_bank_statements`.
+    /// QuickBooks and synthetic imports omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconstruction: Option<Reconstruction>,
+}
+/// Evidence for a book built from bank statements, with no source accounting file.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Reconstruction {
+    pub format: String,
+    /// SHA-256 of the source bank-statement / transaction file.
+    pub statements_sha256: String,
+    /// SHA-256 of the reconstruction package (the workbook bytes).
+    pub package_sha256: String,
+    /// Named human who approved this reconstruction for import.
+    pub approver: String,
+    /// RFC3339 timestamp of that approval.
+    pub approved_at: String,
+    /// Approval sentence, kept verbatim.
+    pub approval_memo: String,
+    pub statement_tie_outs: Vec<StatementTieOut>,
+    /// Fiscal year-end is provisional (not a closed source period).
+    pub provisional_year_end: bool,
+    /// Required when `provisional_year_end` is true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub year_end: Option<String>,
+}
+/// Opening and closing balance of one source statement, tied to one book account.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct StatementTieOut {
+    pub statement_id: String,
+    pub account_id: String,
+    pub opening_date: String,
+    pub closing_date: String,
+    pub opening_debit_cents: String,
+    pub opening_credit_cents: String,
+    pub closing_debit_cents: String,
+    pub closing_credit_cents: String,
+    /// Hash of the transaction file this statement was read from.
+    pub source_sha256: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]

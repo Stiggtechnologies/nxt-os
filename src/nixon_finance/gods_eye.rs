@@ -270,13 +270,15 @@ fn liability_payroll(name: &str) -> bool {
         && !["expense", "wage", "salar", "vacation"].iter().any(|t| n.contains(t))
 }
 
-async fn book_watch(scope: &Scope, company: &str, as_of: NaiveDate, out: &mut Vec<Hit>, gaps: &mut Vec<Value>) -> Result<Option<String>, NixonError> {
+async fn book_watch(scope: &Scope, company: &str, as_of: NaiveDate, out: &mut Vec<Hit>, gaps: &mut Vec<Value>) -> Result<Option<(String, &'static str)>, NixonError> {
     let books = &scope.company_books;
     let (tb, gl) = books.watcher_snapshot(company, as_of, WINDOW_DAYS, GL_PAGE * GL_MAX_PAGES).await.map_err(|e| err500(e.1))?;
     if tb["head"]["operation"]["kind"] == "archive" {
         return Ok(None); // Archived books (e.g. retired QuickBooks Desktop files) are not watched.
     }
     let name = tb["company"]["name"].as_str().unwrap_or(company).to_string();
+    let reconstructed = tb["book_posture"]["source_system"].as_str() == Some("reconstructed_bank_statements")
+        || tb["source"]["system"].as_str() == Some("reconstructed_bank_statements");
     let analysis = &tb["analysis"];
     let (dr, cr) = (cents(&analysis["total_debit_cents"]), cents(&analysis["total_credit_cents"]));
     let tb_ref = format!("company-books:{company}/trial-balance");
@@ -298,11 +300,24 @@ async fn book_watch(scope: &Scope, company: &str, as_of: NaiveDate, out: &mut Ve
             "Keep this company out of filing work until the review clears.".into()));
     }
     if review["combined_balances_match_source"] == false {
+        let (title, detail, action) = if reconstructed {
+            (
+                "Draft reconstructed balances differ from the imported statement baseline",
+                "Native journals changed balances after the bank-statement reconstruction. That needs a reviewer's sign-off.",
+                "Staff: review the native adjustments on this DRAFT / RECONSTRUCTED book and confirm each is approved.",
+            )
+        } else {
+            (
+                "Books differ from the imported QuickBooks baseline",
+                "Native NXT journals changed balances after import. That is expected after adjustments but needs a reviewer's sign-off.",
+                "Staff: review the native adjustments list and confirm each is approved. Nothing is written back to QuickBooks.",
+            )
+        };
         out.push(hit(company, "books_integrity", "native_delta", "low",
-            "Books differ from the imported QuickBooks baseline".into(),
-            "Native NXT journals changed balances after import. That is expected after adjustments but needs a reviewer's sign-off.".into(),
+            title.into(),
+            detail.into(),
             vec![evidence("e_delta", tb_ref.clone(), "nxt.company_books", None, "native_delta on the trial balance.".into())], vec![],
-            "Staff: review the native adjustments list and confirm each is approved. Nothing is written back to QuickBooks.".into(),
+            action.into(),
             "Confirm before the next close.".into()));
     }
 
@@ -374,7 +389,7 @@ async fn book_watch(scope: &Scope, company: &str, as_of: NaiveDate, out: &mut Ve
                 "Review before the next close.".into()));
         }
     }
-    Ok(Some(name))
+    Ok(Some((name, if reconstructed { "reconstructed_bank_statements" } else { "imported_company_books" })))
 }
 
 // ---- tax deadlines -------------------------------------------------------------
@@ -474,10 +489,10 @@ async fn collect(scope: &Scope, as_of: NaiveDate) -> Result<(Vec<Company>, Vec<H
         let (id, result, mine, missing) = task.await.map_err(|_| err500("Books watcher task failed"))?;
         hits.extend(mine); gaps.extend(missing);
         match result {
-            Ok(Some(name)) => {
+            Ok(Some((name, source_key))) => {
                 let c = companies.entry(id.clone()).or_insert(Company { id: id.clone(), name: name.clone(), sources: vec![] });
                 if c.name.is_empty() || c.name == id { c.name = name; }
-                c.sources.push("imported_company_books");
+                c.sources.push(source_key);
             }
             Ok(None) => {}
             Err(e) => gaps.push(json!({"company_id": id, "note": format!("Books could not be read: {}", e.message)})),
@@ -548,7 +563,7 @@ pub fn source_health(companies: &[Value], gaps: &[Value], checked_at: &str) -> V
         "display_as_live": can_display_source_as_live("customer_operational", st, "unreviewed", false),
     });
     let firm = if firm_failed { ("unavailable", "The firm ledger could not be read; shown as a gap.".to_string()) } else { ("connected", "Read in full.".to_string()) };
-    vec![
+    let mut rows = vec![
         src("firm_ledger", "Firm ledger (NXT Ledger)", "tenant_authorized", "GST/HST, AR aging, books integrity", firm, Some(usize::from(!firm_failed))),
         src("company_ledgers", "Company ledgers (NXT Ledger)", "tenant_authorized", "GST/HST, AR aging, books integrity per company",
             state(with("company_ledger"), ledger_failed, ledger_cut, "No company ledger is open."), Some(with("company_ledger"))),
@@ -556,7 +571,19 @@ pub fn source_health(companies: &[Value], gaps: &[Value], checked_at: &str) -> V
             state(with("imported_company_books"), books_failed, books_cut, "No imported company book is committed."), Some(with("imported_company_books"))),
         src("tax_workspace", "NXT Tax returns", "tenant_authorized", "T1/T2 filing deadlines", ("connected", "Read in full on every view.".to_string()), None),
         src("cra_notices", "CRA notices", "context_only", "CRA notice watcher", ("not_connected", "NXT has no CRA notice source. The watcher reports no_source.".to_string()), Some(0)),
-    ]
+    ];
+    let reconstructed_books = with("reconstructed_bank_statements");
+    if reconstructed_books > 0 {
+        rows.push(src(
+            "reconstructed_bank_statements",
+            "DRAFT / RECONSTRUCTED (bank statements)",
+            "source_asserted",
+            "Human-approved reconstruction from bank statements",
+            state(reconstructed_books, 0, false, ""),
+            Some(reconstructed_books),
+        ));
+    }
+    rows
 }
 
 /// The live view. Reads only; writes nothing, not even an audit row. `oidc_header` only

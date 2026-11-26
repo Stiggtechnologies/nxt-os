@@ -48,7 +48,12 @@
     for(const row of clients?.clients||[]){if(validId(row.client_id))get(row.client_id).ledger=row.ledger_open===true;}
     return [...rows.values()].sort((a,b)=>Number(!!b.book?.head)-Number(!!a.book?.head)||a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
   }
+  function reconstructed(row){
+    const source=row.book?.previews?.[0]?.source;
+    return row.book?.book_posture?.label==='DRAFT / RECONSTRUCTED'||row.book?.book_posture?.source_system==='reconstructed_bank_statements'||source?.system==='reconstructed_bank_statements';
+  }
   function status(row,available){
+    if(reconstructed(row))return 'DRAFT / RECONSTRUCTED';
     if(row.ledger)return 'Ledger open';
     if(row.book?.head)return 'Journal imported';
     if(row.book)return 'Journal assessment saved';
